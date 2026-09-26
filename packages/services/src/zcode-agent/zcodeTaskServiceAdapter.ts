@@ -130,6 +130,11 @@ import type {
   SessionMessageSendRequested,
 } from "#src/session/sessionMailbox.js";
 import { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
+import {
+  DispatchDeskRepo,
+  type DeskTicket,
+  type DeskTaskRef,
+} from "#src/session/dispatchDeskRepo.js";
 import type {
   IZCodeAgentService,
   ZCodeAgentServiceEvent,
@@ -178,6 +183,7 @@ interface TaskOverlay {
 interface CreateZCodeTaskServiceAdapterOptions {
   zcodeAgentService: IZCodeAgentService;
   taskIndexRepo?: TaskIndexRepo;
+  dispatchDeskRepo?: DispatchDeskRepo;
   // syncer 现在持有 workspace emitter 和 broadcast 入口，adapter 必须共用同一实例，
   // 否则 desktop-continuous 路径和 task adapter 路径的事件订阅会分裂成两份，UI 收不全。
   taskIndexSyncer: ZCodeTaskIndexSyncer;
@@ -273,6 +279,7 @@ export function createZCodeTaskServiceAdapter(
     overlays: overlays.size,
   }));
   const taskIndexRepo = options.taskIndexRepo ?? new TaskIndexRepo();
+  const dispatchDeskRepo = options.dispatchDeskRepo ?? new DispatchDeskRepo();
   const taskIndexSyncer = options.taskIndexSyncer;
 
   // 之前 adapter 自带 notifySyncerSession 时把 syncer 视为可选；现在 syncer 是构造必填项，
@@ -1733,6 +1740,7 @@ export function createZCodeTaskServiceAdapter(
     taskIndexTerminalDisposable.dispose();
     taskIndexReadyDisposable.dispose();
     taskIndexRepo.close();
+    dispatchDeskRepo.close();
     for (const emitter of taskEmitters.values()) emitter.dispose();
     for (const emitter of globalTaskEmitters.values()) emitter.dispose();
     errorEmitter.dispose();
@@ -3038,6 +3046,17 @@ export function createZCodeTaskServiceAdapter(
       const meta = await updateIndexedTaskState(params, { archived: false });
       emitWorkspaceTaskListChanged(params, meta, "task_unarchived");
       return meta;
+    },
+
+    // 派活台人工通道只开这两个入口；仓库方法自带 ensureReady 与守卫，null 原样传播给 UI 回弹。
+    async recordReviewDecision(
+      params: DeskTaskRef & { decision: "approved" | "changes_requested"; now: number },
+    ): Promise<DeskTicket | null> {
+      return dispatchDeskRepo.recordReviewDecision(params, params);
+    },
+
+    async manualRequeue(params: DeskTaskRef & { now: number }): Promise<DeskTicket | null> {
+      return dispatchDeskRepo.manualRequeue(params, params);
     },
 
     async branchTaskFromPrompt(): Promise<ZCodeTaskCreateResult> {

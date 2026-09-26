@@ -39,6 +39,7 @@ import type {
   SessionMessageDeliveryResult,
   SessionMessageSendRequested,
 } from "#src/session/sessionMailbox.js";
+import type { DeskTicket, DeskTaskRef } from "#src/session/dispatchDeskRepo.js";
 import type {
   ZCodeTaskListQuery,
   ZCodeTaskListResult,
@@ -700,6 +701,18 @@ export interface IZCodeTaskService {
     workspaceIdentity?: string;
     sourceTaskId: string;
   }): Promise<ZCodeTaskCreateResult>;
+
+  // ---- 派活台人工通道 ----
+
+  // 红线：调度器与代理通道的票状态机方法不上服务面——UI 只能经本人工通道动票。
+
+  /** 人工评审裁决（转发派活台仓库同名方法）：唯一能写 approved 的人工入口；null=票不在可裁决状态。 */
+  recordReviewDecision(
+    params: DeskTaskRef & { decision: "approved" | "changes_requested"; now: number },
+  ): Promise<DeskTicket | null>;
+
+  /** 人工接手重派（封顶"卡住"票唯一出路）：failed_to_dispatch 回 idle 且 attempts 归零；null=票不在该状态。 */
+  manualRequeue(params: DeskTaskRef & { now: number }): Promise<DeskTicket | null>;
 
   // ---- 流式事件 ----
 

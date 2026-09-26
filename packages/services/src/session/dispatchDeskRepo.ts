@@ -581,4 +581,32 @@ export class DispatchDeskRepo {
     if (result.changes !== 1) return null;
     return rowToTicket(this.getRow(workspaceKey, ref.taskId)!);
   }
+
+  /**
+   * 人工接手重派：failed_to_dispatch（重试达限的"卡住"票）唯一出路，回 idle 且
+   * dispatch_attempts 归零=人工给了新预算；retry_at/claimed_at/last_dispatch_error 一并清空。
+   */
+  async manualRequeue(ref: DeskTaskRef, params: { now: number }): Promise<DeskTicket | null> {
+    await this.ensureReady();
+    const workspaceKey = resolveWorkspaceKey(ref);
+    const result = this.getDatabase()
+      .prepare(
+        `UPDATE tasks
+        SET dispatch_state = 'idle',
+            dispatch_attempts = 0,
+            retry_at = NULL,
+            claimed_at = NULL,
+            last_dispatch_error = NULL,
+            updated_at = @now
+        WHERE workspace_key = @workspace_key AND task_id = @task_id
+          AND dispatch_state = 'failed_to_dispatch'`,
+      )
+      .run({
+        now: params.now,
+        workspace_key: workspaceKey,
+        task_id: ref.taskId,
+      });
+    if (result.changes !== 1) return null;
+    return rowToTicket(this.getRow(workspaceKey, ref.taskId)!);
+  }
 }

@@ -476,6 +476,68 @@ test("retry cap: ticket at DESK_DISPATCH_MAX_ATTEMPTS stops being claimable", as
   }
 });
 
+test("manualRequeue: only failed_to_dispatch is requeueable; fields reset to a fresh budget", async () => {
+  const ctx = await setup();
+  try {
+    // 守卫票放 /blocked：claimed/dispatched 会占单飞槽，不能挡住 /w 里 m-failed 的重领验证。
+    const BLOCKED = { workspacePath: "/blocked" };
+    for (const taskId of ["m-idle", "m-claimed", "m-dispatched", "m-pending"]) {
+      seedTicket(ctx.raw, { workspacePath: "/blocked", taskId, acceptanceCriteria: "done" });
+    }
+    seedTicket(ctx.raw, { workspacePath: "/w", taskId: "m-failed", acceptanceCriteria: "done" });
+    ctx.raw
+      .prepare(
+        `UPDATE tasks SET dispatch_state='claimed', claimed_at=500 WHERE task_id='m-claimed'`,
+      )
+      .run();
+    ctx.raw
+      .prepare(
+        `UPDATE tasks SET dispatch_state='dispatched', claimed_at=500 WHERE task_id='m-dispatched'`,
+      )
+      .run();
+    ctx.raw
+      .prepare(`UPDATE tasks SET review_state='pending_review' WHERE task_id='m-pending'`)
+      .run();
+    // 封顶现场：attempts 达限、退避与错误信息齐全，等人工接手。
+    ctx.raw
+      .prepare(
+        `UPDATE tasks SET dispatch_state='failed_to_dispatch',
+        dispatch_attempts=${DESK_DISPATCH_MAX_ATTEMPTS}, retry_at=99999, claimed_at=500,
+        last_dispatch_error='boom' WHERE task_id='m-failed'`,
+      )
+      .run();
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+
+    // idle/claimed/dispatched/pending_review 都不是人工接手对象：null 且状态原样。
+    for (const taskId of ["m-idle", "m-claimed", "m-dispatched", "m-pending"]) {
+      assert.equal(await repo.manualRequeue({ ...BLOCKED, taskId }, { now: 1000 }), null, taskId);
+    }
+    assert.equal(rawTicket(ctx.raw, "m-claimed").dispatch_state, "claimed");
+    assert.equal(rawTicket(ctx.raw, "m-dispatched").dispatch_state, "dispatched");
+    assert.equal(rawTicket(ctx.raw, "m-pending").review_state, "pending_review");
+    // 不存在的票同样 null。
+    assert.equal(await repo.manualRequeue({ ...WS, taskId: "m-missing" }, { now: 1000 }), null);
+
+    // failed（含封顶）票：成功且字段归位（idle / 0 / NULL / NULL / NULL）。
+    const requeued = await repo.manualRequeue({ ...WS, taskId: "m-failed" }, { now: 2000 });
+    assert.ok(requeued);
+    assert.equal(requeued.dispatchState, "idle");
+    assert.equal(requeued.dispatchAttempts, 0);
+    assert.equal(requeued.retryAt, null);
+    assert.equal(requeued.claimedAt, null);
+    assert.equal(requeued.lastDispatchError, null);
+    assert.equal(requeued.updatedAt, 2000);
+    assert.equal(rawTicket(ctx.raw, "m-failed").dispatch_state, "idle");
+    // 人工给了新预算：归位后立刻可被调度器重新认领。
+    const reClaimed = await repo.claimDueTickets({ now: 3000, limit: 5 });
+    assert.deepEqual(reClaimed.map((t) => t.taskId), ["m-failed"]);
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
 test("review gate: agent path can only submit for review, never approve", async () => {
   const ctx = await setup();
   try {
