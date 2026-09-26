@@ -8,6 +8,7 @@ import {
   computeDispatchRetryAt,
   DESK_CLAIM_STALE_MS,
   DESK_DISPATCH_MAX_ATTEMPTS,
+  DESK_DISPATCH_RETRY_BASE_MS,
   DispatchDeskRepo,
 } from "../src/session/dispatchDeskRepo.js";
 
@@ -323,15 +324,21 @@ test("dispatch handoff uses claim token; backoff and zombie reclaim work", async
     assert.equal(dispatched?.dispatchState, "dispatched");
     assert.equal(dispatched?.claimedAt, retried[0].claimedAt);
 
-    // 僵尸回收：claimed 超时未结算 → 回收并当场重新认领。
+    // 僵尸回收：claimed 超时未结算 → 转 failed_to_dispatch 走基础退避（不回 idle 同 tick
+    // 立即重领），退避到期后恢复可派。
     ctx.raw
       .prepare(`UPDATE tasks SET dispatch_state='claimed', claimed_at=? WHERE task_id='handoff'`)
       .run(99);
     const zombies = await repo.claimDueTickets({ now: 100 + STALE_MS, limit: 5 });
-    assert.deepEqual(zombies.map((t) => t.taskId), ["handoff"]);
+    assert.deepEqual(zombies.map((t) => t.taskId), []);
     const after = rawTicket(ctx.raw, "handoff");
-    assert.equal(after.dispatch_state, "claimed");
-    assert.equal(after.claimed_at, 100 + STALE_MS);
+    assert.equal(after.dispatch_state, "failed_to_dispatch");
+    assert.equal(after.dispatch_attempts, 2);
+    const recovered = await repo.claimDueTickets({
+      now: 100 + STALE_MS + DESK_DISPATCH_RETRY_BASE_MS + 1,
+      limit: 5,
+    });
+    assert.deepEqual(recovered.map((t) => t.taskId), ["handoff"]);
     repo.close();
   } finally {
     await ctx.cleanup();
@@ -353,14 +360,83 @@ test("claim-stale boundary: reclaimed exactly at DESK_CLAIM_STALE_MS, 1ms freshe
     await repo.ensureReady();
 
     const now = 777 + DESK_CLAIM_STALE_MS;
-    const claimed = await repo.claimDueTickets({ now, limit: 5 });
-    // claimed_at == now - STALE → 回收并当场重新认领（claimed_at 被刷新为 now）。
-    assert.deepEqual(claimed.map((t) => t.taskId), ["edge-exact"]);
-    assert.equal(rawTicket(ctx.raw, "edge-exact").claimed_at, now);
+    const recycled = await repo.claimDueTickets({ now, limit: 5 });
+    // claimed_at == now - STALE → 回收：转 failed_to_dispatch 走基础退避（retry future，同 tick 不可重领）。
+    assert.deepEqual(recycled.map((t) => t.taskId), []);
+    const exact = rawTicket(ctx.raw, "edge-exact");
+    assert.equal(exact.dispatch_state, "failed_to_dispatch");
+    assert.equal(exact.claimed_at, null);
     // 晚 1ms：claimed_at > now - STALE → 不回收，仍持有原凭据。
     const fresh = rawTicket(ctx.raw, "edge-fresh");
     assert.equal(fresh.dispatch_state, "claimed");
     assert.equal(fresh.claimed_at, 778);
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("claim-stale reclaim: failed_to_dispatch with base backoff, not instantly re-claimable", async () => {
+  const ctx = await setup();
+  try {
+    seedTicket(ctx.raw, { workspacePath: "/w", taskId: "slow-holder", acceptanceCriteria: "done" });
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+    const [claimed] = await repo.claimDueTickets({ now: 1000, limit: 1 });
+    assert.equal(claimed?.taskId, "slow-holder");
+
+    // 持有者超时未结算：不再回 idle（同 tick 立即重派会双跑慢而未死的 session），
+    // 而是转 failed_to_dispatch 走基础退避。
+    const recycleNow = 1000 + DESK_CLAIM_STALE_MS;
+    const recycled = await repo.claimDueTickets({ now: recycleNow, limit: 5 });
+    assert.deepEqual(recycled.map((t) => t.taskId), []);
+    const after = await repo.getTicket({ ...WS, taskId: "slow-holder" });
+    assert.equal(after?.dispatchState, "failed_to_dispatch");
+    assert.equal(after?.dispatchAttempts, 1);
+    assert.equal(after?.retryAt, computeDispatchRetryAt(recycleNow, 1));
+    assert.equal(after?.lastDispatchError, "claim went stale without settlement");
+    // 退避到期后恢复可派。
+    const recovered = await repo.claimDueTickets({
+      now: recycleNow + DESK_DISPATCH_RETRY_BASE_MS + 1,
+      limit: 5,
+    });
+    assert.deepEqual(recovered.map((t) => t.taskId), ["slow-holder"]);
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("claim-stale reclaim counts toward retry cap: poisoned ticket converges to stuck", async () => {
+  const ctx = await setup();
+  try {
+    seedTicket(ctx.raw, { workspacePath: "/w", taskId: "poison", acceptanceCriteria: "done" });
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+
+    // 毒票循环：领 → 不结算 → stale 回收，每轮 attempts+1，封顶后停死。
+    let now = 1000;
+    for (let round = 1; round <= DESK_DISPATCH_MAX_ATTEMPTS; round++) {
+      const [claimed] = await repo.claimDueTickets({ now, limit: 1 });
+      assert.ok(claimed, `第 ${round} 轮应可认领`);
+      now += DESK_CLAIM_STALE_MS;
+      assert.deepEqual(
+        (await repo.claimDueTickets({ now, limit: 5 })).map((t) => t.taskId),
+        [],
+      );
+      const failed = await repo.getTicket({ ...WS, taskId: "poison" });
+      assert.equal(failed?.dispatchState, "failed_to_dispatch");
+      assert.equal(failed?.dispatchAttempts, round);
+      now = failed!.retryAt! + 1;
+    }
+    const stuck = await repo.getTicket({ ...WS, taskId: "poison" });
+    assert.equal(stuck?.dispatchState, "failed_to_dispatch");
+    assert.equal(stuck?.dispatchAttempts, DESK_DISPATCH_MAX_ATTEMPTS);
+    // 此后 stale/退避任凭时间怎么推都领不到：封顶接管，看板"卡住"列承接。
+    assert.deepEqual(
+      await repo.claimDueTickets({ now: now + DESK_CLAIM_STALE_MS, limit: 5 }),
+      [],
+    );
     repo.close();
   } finally {
     await ctx.cleanup();

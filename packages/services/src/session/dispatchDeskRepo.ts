@@ -292,13 +292,25 @@ export class DispatchDeskRepo {
       : null;
     db.exec("BEGIN IMMEDIATE");
     try {
-      // 先回收僵尸认领（持有者崩溃，claimed 超时未结算）。
+      // 先回收僵尸认领（持有者崩溃或过慢，claimed 超时未结算）：与 dispatched 阶段回收同构，
+      // 转 failed_to_dispatch 走基础退避——回 idle 会让毒票循环永不累计 attempts（看板"卡住"
+      // 列永远看不见）且同 tick 立即重派会双跑慢而未死的 session；恢复多等一个基础退避是
+      // 已裁决的取舍（防双跑收益大于延迟代价）。
       db.prepare(
         `UPDATE tasks
-        SET dispatch_state = 'idle', claimed_at = NULL, updated_at = @now
+        SET dispatch_state = 'failed_to_dispatch',
+            dispatch_attempts = dispatch_attempts + 1,
+            retry_at = @now + @retry_base,
+            last_dispatch_error = 'claim went stale without settlement',
+            claimed_at = NULL,
+            updated_at = @now
         WHERE dispatch_state = 'claimed' AND deleted = 0
           AND claimed_at IS NOT NULL AND claimed_at <= @stale`,
-      ).run({ now: options.now, stale: options.now - DESK_CLAIM_STALE_MS });
+      ).run({
+        now: options.now,
+        stale: options.now - DESK_CLAIM_STALE_MS,
+        retry_base: DESK_DISPATCH_RETRY_BASE_MS,
+      });
 
       // dispatched 阶段的僵尸回收：持有会话已终态却从未交活（代理在提交前崩溃）。
       // - task_status=error：转 failed_to_dispatch 走基础退避重派（失败重试是派活台本职）；
