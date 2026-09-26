@@ -702,9 +702,15 @@ export interface IZCodeTaskService {
     sourceTaskId: string;
   }): Promise<ZCodeTaskCreateResult>;
 
-  // ---- 派活台人工通道 ----
+  // ---- 派活台通道 ----
 
-  // 红线：调度器与代理通道的票状态机方法不上服务面——UI 只能经本人工通道动票。
+  // 红线：调度器与代理通道的票状态机方法不上服务面——UI 只能经人工通道动票；
+  // 作者通道只写验收标准，不碰任何状态机字段。
+
+  /** 作者通道（转发派活台仓库同名方法）：店主写验收标准，是票据进看板的唯一门票；null=票不在库。空 criteria 由仓库抛错，UI 捕获给 toast，不得吞。 */
+  setTicketSpec(
+    params: DeskTaskRef & { acceptanceCriteria: string; now: number },
+  ): Promise<DeskTicket | null>;
 
   /** 人工评审裁决（转发派活台仓库同名方法）：唯一能写 approved 的人工入口；null=票不在可裁决状态。 */
   recordReviewDecision(

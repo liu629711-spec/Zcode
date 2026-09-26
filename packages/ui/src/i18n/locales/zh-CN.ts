@@ -1786,6 +1786,11 @@ const zhCN: Record<string, string> = {
   "dispatchDesk.moveFailed": "流转失败，请重试",
   "dispatchDesk.loadFailedRetry": "加载失败，点击重试",
   "dispatchDesk.deliverable.open": "打开预览",
+  "dispatchDesk.writeSpec": "写验收标准",
+  "dispatchDesk.writeSpec.hint":
+    "写下这张票的验收标准；非空才能进派活台看板，店主可在任意阶段补改。",
+  "dispatchDesk.specSaved": "已进派活台",
+  "dispatchDesk.specFailed": "保存失败",
   "taskList.feedback": "反馈问题",
   "taskList.viewModelTrajectory": "查看调用轨迹",
   "taskList.feedbackOpened": "已打开反馈，并自动带上当前任务信息",
@@ -4764,7 +4769,8 @@ const zhCN: Record<string, string> = {
   "chat.toolCall.workflow.graph.status.done": "已完成",
   "chat.toolCall.workflow.graph.status.failed": "已失败",
   "chat.toolCall.workflow.graph.status.pending": "待开始",
-  "chat.toolCall.workflow.timeline.runStalled": "运行停滞：整条工作流已有一段阈值没有任何成功的模型请求",
+  "chat.toolCall.workflow.timeline.runStalled":
+    "运行停滞：整条工作流已有一段阈值没有任何成功的模型请求",
   // ── 阶段名兜底──
   // `unphased` 是合成阶段：它装的是首个 `phase()` 标记之前的 step，不是作者写下的名字。
   "chat.toolCall.workflow.graph.phase.unphased": "未分组",

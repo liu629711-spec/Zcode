@@ -62,6 +62,7 @@ function GroupedTaskItemComponent({
   onMoveTaskToGroup,
   onMoveTaskToTop,
   onStartRenameTask,
+  onWriteTicketSpec,
   onArchiveTask,
   onMarkTaskAsUnread,
   dragId,
@@ -83,6 +84,7 @@ function GroupedTaskItemComponent({
   onMoveTaskToGroup: (task: ZCodeTaskMeta, groupId: string | null) => void;
   onMoveTaskToTop: (task: ZCodeTaskMeta) => void;
   onStartRenameTask: (task: ZCodeTaskMeta) => void;
+  onWriteTicketSpec: (task: ZCodeTaskMeta) => void;
   onArchiveTask: (task: ZCodeTaskMeta) => void;
   onMarkTaskAsUnread: (task: ZCodeTaskMeta) => void;
   dragId?: UniqueIdentifier;
@@ -107,6 +109,7 @@ function GroupedTaskItemComponent({
         onMoveTaskToGroup={onMoveTaskToGroup}
         onMoveTaskToTop={onMoveTaskToTop}
         onStartRenameTask={onStartRenameTask}
+        onWriteTicketSpec={onWriteTicketSpec}
         onArchiveTask={onArchiveTask}
         onMarkTaskAsUnread={onMarkTaskAsUnread}
         dragId={dragId}

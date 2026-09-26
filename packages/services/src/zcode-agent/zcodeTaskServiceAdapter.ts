@@ -3048,7 +3048,14 @@ export function createZCodeTaskServiceAdapter(
       return meta;
     },
 
-    // 派活台人工通道只开这两个入口；仓库方法自带 ensureReady 与守卫，null 原样传播给 UI 回弹。
+    // 派活台服务面只开作者通道（setTicketSpec）与人工通道三个入口；仓库方法自带 ensureReady
+    // 与守卫，null 原样传播给 UI 回弹，空 criteria 抛错原样上抛（UI toast，不吞）。
+    async setTicketSpec(
+      params: DeskTaskRef & { acceptanceCriteria: string; now: number },
+    ): Promise<DeskTicket | null> {
+      return dispatchDeskRepo.setTicketSpec(params, params);
+    },
+
     async recordReviewDecision(
       params: DeskTaskRef & { decision: "approved" | "changes_requested"; now: number },
     ): Promise<DeskTicket | null> {

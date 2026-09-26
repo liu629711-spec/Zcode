@@ -24,6 +24,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { TaskRenameDialog } from "@/TaskRenameDialog.js";
+import { TaskSpecDialog } from "@/TaskSpecDialog.js";
 import { shouldHideGroupedTaskContent, useGroupedTaskView } from "@/hooks/useGroupedTaskView.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
@@ -603,6 +604,7 @@ export function WorkspaceGroupedTasksSection({
     updateGroupColor,
     ungroupGroup,
     applyOrder,
+    refresh,
   } = useGroupedTaskView({
     workspaceTabs,
   });
@@ -649,6 +651,8 @@ export function WorkspaceGroupedTasksSection({
   const workbenchPointerPositionTrackerRef = useRef<WorkbenchPointerPositionTracker | null>(null);
   const [renamingTaskKey, setRenamingTaskKey] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [specTask, setSpecTask] = useState<ZCodeTaskMeta | null>(null);
+  const [specDraft, setSpecDraft] = useState("");
   const [newGroupSetupId, setNewGroupSetupId] = useState<string | null>(null);
   const [activeDragTaskKey, setActiveDragTaskKey] = useState<string | null>(null);
   const [activeDragGroupId, setActiveDragGroupId] = useState<string | null>(null);
@@ -947,6 +951,45 @@ export function WorkspaceGroupedTasksSection({
     setRenamingTaskKey(taskKey(task));
     setRenameDraft(task.title ?? "");
   }, []);
+
+  // 上票入口（作者通道）：预填既有 criteria，允许台主在任意阶段补改 spec。
+  const handleWriteTicketSpec = useCallback((task: ZCodeTaskMeta) => {
+    setSpecTask(task);
+    setSpecDraft(task.acceptanceCriteria ?? "");
+  }, []);
+
+  const handleSubmitTicketSpec = useCallback(async () => {
+    if (!specTask) {
+      return;
+    }
+    const workspaceServices = workspaceServiceLookup.get(
+      buildTaskWorkspaceKey(specTask.workspacePath, specTask.workspaceIdentity),
+    );
+    if (!workspaceServices) {
+      setSpecTask(null);
+      return;
+    }
+    try {
+      // 空 criteria 由仓库抛错，原样上抛到这里 toast（不吞）；null=票不在库，提示后回弹。
+      const ticket = await workspaceServices.services.zcodeTaskService.setTicketSpec({
+        taskId: specTask.taskId,
+        workspacePath: specTask.workspacePath,
+        ...(specTask.workspaceIdentity ? { workspaceIdentity: specTask.workspaceIdentity } : {}),
+        acceptanceCriteria: specDraft,
+        now: Date.now(),
+      });
+      if (!ticket) {
+        toast(intl.formatMessage({ id: "dispatchDesk.specFailed" }));
+        return;
+      }
+      toast(intl.formatMessage({ id: "dispatchDesk.specSaved" }));
+      setSpecTask(null);
+      // 列表缓存补上 acceptance_criteria；看板挂载时经 useGroupedTaskView 拉新，票自然落待派列。
+      void refresh();
+    } catch {
+      toast(intl.formatMessage({ id: "dispatchDesk.specFailed" }));
+    }
+  }, [intl, refresh, specDraft, specTask, workspaceServiceLookup]);
 
   const handleMoveTaskToGroup = useCallback(
     (task: ZCodeTaskMeta, groupId: string | null) => {
@@ -1551,6 +1594,7 @@ export function WorkspaceGroupedTasksSection({
             onMoveTaskToGroup={handleMoveTaskToGroup}
             onMoveTaskToTop={handleMoveTaskToTop}
             onStartRenameTask={handleStartRenameTask}
+            onWriteTicketSpec={handleWriteTicketSpec}
             onArchiveTask={handleCloseTask}
             onMarkTaskAsUnread={handleMarkTaskAsUnread}
             newGroupSetup={newGroupSetupId === node.group.id}
@@ -1578,6 +1622,7 @@ export function WorkspaceGroupedTasksSection({
           onMoveTaskToGroup={handleMoveTaskToGroup}
           onMoveTaskToTop={handleMoveTaskToTop}
           onStartRenameTask={handleStartRenameTask}
+          onWriteTicketSpec={handleWriteTicketSpec}
           onArchiveTask={handleCloseTask}
           onMarkTaskAsUnread={handleMarkTaskAsUnread}
           dragId={taskKey(node.task)}
@@ -1665,6 +1710,7 @@ export function WorkspaceGroupedTasksSection({
             onMoveTaskToGroup={handleMoveTaskToGroup}
             onMoveTaskToTop={handleMoveTaskToTop}
             onStartRenameTask={handleStartRenameTask}
+            onWriteTicketSpec={handleWriteTicketSpec}
             onArchiveTask={handleCloseTask}
             onMarkTaskAsUnread={handleMarkTaskAsUnread}
             dragId={activeDragTaskKey ?? undefined}
@@ -1697,6 +1743,19 @@ export function WorkspaceGroupedTasksSection({
         onCancel={handleCancelRenameTask}
         onConfirm={() => {
           void handleSubmitRenameTask();
+        }}
+      />
+      <TaskSpecDialog
+        open={specTask !== null}
+        value={specDraft}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSpecTask(null);
+          }
+        }}
+        onChange={setSpecDraft}
+        onConfirm={() => {
+          void handleSubmitTicketSpec();
         }}
       />
       <DndContext

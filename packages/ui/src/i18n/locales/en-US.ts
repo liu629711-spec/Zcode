@@ -1908,6 +1908,11 @@ const enUS: Record<string, string> = {
   "dispatchDesk.moveFailed": "Move failed, please retry",
   "dispatchDesk.loadFailedRetry": "Load failed, click to retry",
   "dispatchDesk.deliverable.open": "Open preview",
+  "dispatchDesk.writeSpec": "Write acceptance criteria",
+  "dispatchDesk.writeSpec.hint":
+    "Describe the acceptance criteria; a ticket needs them to enter the dispatch desk board. The owner can revise them at any stage.",
+  "dispatchDesk.specSaved": "Entered the dispatch desk",
+  "dispatchDesk.specFailed": "Failed to save",
   "taskList.feedback": "Report issue",
   "taskList.viewModelTrajectory": "View model trajectory",
   "taskList.feedbackOpened": "Feedback opened with the current task context attached",
@@ -5058,7 +5063,8 @@ const enUS: Record<string, string> = {
   "chat.toolCall.workflow.graph.status.done": "done",
   "chat.toolCall.workflow.graph.status.failed": "failed",
   "chat.toolCall.workflow.graph.status.pending": "pending",
-  "chat.toolCall.workflow.timeline.runStalled": "Run stalled: no successful model request for a while across the whole workflow",
+  "chat.toolCall.workflow.timeline.runStalled":
+    "Run stalled: no successful model request for a while across the whole workflow",
   "chat.toolCall.workflow.graph.phase.unphased": "Ungrouped",
   "chat.toolCall.workflow.graph.phase.workflow": "Workflow",
   "chat.toolCall.workflow.timeline.rounds": "visited {count} times",

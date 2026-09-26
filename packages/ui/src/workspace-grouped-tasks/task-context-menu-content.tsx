@@ -21,6 +21,7 @@ export function GroupedTaskContextMenuContent({
   onMoveTaskToGroup,
   onMoveTaskToTop,
   onStartRenameTask,
+  onWriteTicketSpec,
   onArchiveTask,
   onMarkTaskAsUnread,
   onOpenTaskPathInFileManager,
@@ -40,6 +41,7 @@ export function GroupedTaskContextMenuContent({
   onMoveTaskToGroup: (task: ZCodeTaskMeta, groupId: string | null) => void;
   onMoveTaskToTop: (task: ZCodeTaskMeta) => void;
   onStartRenameTask: (task: ZCodeTaskMeta) => void;
+  onWriteTicketSpec: (task: ZCodeTaskMeta) => void;
   onArchiveTask: (task: ZCodeTaskMeta) => void;
   onMarkTaskAsUnread: (task: ZCodeTaskMeta) => void;
   onOpenTaskPathInFileManager: () => void;
@@ -105,6 +107,18 @@ export function GroupedTaskContextMenuContent({
         }}
       >
         {intl.formatMessage({ id: "taskList.rename" })}
+      </ContextMenuItem>
+      {/* 上票入口（作者通道）：写验收标准是任务进派活台看板的唯一门票；未进台的任务不在看板上。 */}
+      <ContextMenuItem
+        disabled={Boolean(disabledReason)}
+        title={disabledReason}
+        onSelect={() => {
+          if (!disabledReason) {
+            onWriteTicketSpec(task);
+          }
+        }}
+      >
+        {intl.formatMessage({ id: "dispatchDesk.writeSpec" })}
       </ContextMenuItem>
       <ContextMenuItem
         disabled={Boolean(disabledReason)}
