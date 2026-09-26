@@ -7,9 +7,6 @@ export type SidebarTaskSortBy = "created" | "updated";
 interface SidebarTaskPreferences {
   organizeBy: SidebarTaskOrganizeBy;
   sortBy: SidebarTaskSortBy;
-  // 派活台看板开关是独立布尔：organizeBy 的 union 被 resolveSidebarTaskViewMode 下游多处消费，
-  // 扩值要全查；列模式只挂在 grouped 分支下二选一渲染，与列表模式互不感知。
-  boardMode: boolean;
 }
 
 const SIDEBAR_TASK_PREFERENCES_STORAGE_KEY = "zcode-sidebar-task-preferences";
@@ -17,7 +14,6 @@ const SIDEBAR_TASK_PREFERENCES_STORAGE_KEY = "zcode-sidebar-task-preferences";
 const DEFAULT_SIDEBAR_TASK_PREFERENCES: SidebarTaskPreferences = {
   organizeBy: "project",
   sortBy: "updated",
-  boardMode: false,
 };
 
 function isSidebarTaskOrganizeBy(value: unknown): value is SidebarTaskOrganizeBy {
@@ -50,10 +46,6 @@ export function readSidebarTaskPreferences(
       sortBy: isSidebarTaskSortBy(parsed.sortBy)
         ? parsed.sortBy
         : DEFAULT_SIDEBAR_TASK_PREFERENCES.sortBy,
-      boardMode:
-        typeof parsed.boardMode === "boolean"
-          ? parsed.boardMode
-          : DEFAULT_SIDEBAR_TASK_PREFERENCES.boardMode,
     };
   } catch {
     return DEFAULT_SIDEBAR_TASK_PREFERENCES;
@@ -73,7 +65,6 @@ export function persistSidebarTaskPreferences(
       JSON.stringify({
         organizeBy: preferences.organizeBy,
         sortBy: preferences.sortBy,
-        boardMode: preferences.boardMode,
       }),
     );
   } catch {

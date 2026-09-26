@@ -843,6 +843,9 @@ export function App({
     setOpenAutomationTab(target.automationTab ?? null);
     setWorkspaceMainView("automations");
   }, []);
+  const handleNavigateToDispatchDeskMain = useCallback(() => {
+    setWorkspaceMainView("dispatch-desk");
+  }, []);
   const handleNavigateToPluginStoreMain = useCallback(() => {
     // 通用入口没有 scope 上下文，默认回到 User；Settings 显式带 scope 的入口会在
     // 导航完成后覆盖这次默认值，避免沿用上一次 Workspace scope。
@@ -1132,6 +1135,7 @@ export function App({
         onWorkspaceMainViewChange={setWorkspaceMainView}
         onOpenAutomationConsumed={handleOpenAutomationConsumed}
         handleOpenAutomations={handleOpenAutomations}
+        handleOpenDispatchDesk={handleNavigateToDispatchDeskMain}
         handleOpenPluginStore={handleOpenPluginStoreForScope}
         handleManageInstalledPlugins={handleManageInstalledPlugins}
         onConnectRemote={onConnectRemote}

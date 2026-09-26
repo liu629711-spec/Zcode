@@ -164,7 +164,7 @@ function DispatchDeskColumnView(props: {
       aria-label={intl.formatMessage({ id: `dispatchDesk.column.${props.column.id}` })}
       // 悬停高亮替换底色而不是叠加：两个 bg-* 同层时由样式表顺序裁决，不可靠。
       className={cn(
-        "flex w-[272px] shrink-0 flex-col rounded-xl p-2",
+        "flex min-w-[272px] flex-1 flex-col rounded-xl p-2",
         isOver ? "bg-selected" : COLUMN_BACKGROUND[props.column.id],
       )}
     >
@@ -311,8 +311,9 @@ export function DispatchDeskKanbanBoard(props: {
 
   const dragOverlayNode = activeDrag ? (
     <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(0.2, 0, 0, 1)" }}>
-      {/* 列宽恒 272px、内衬 p-2，卡宽恒 256px（w-64）：overlay 与原卡同宽。 */}
-      <div className="w-64">
+      {/* 列宽自适应（min 272px、flex-1 均分），卡宽随主区宽度浮动约 256~360px；
+          overlay 取中位近似 w-80（320px），避免引入测量逻辑，宽度误差有界可接受。 */}
+      <div className="w-80">
         <DispatchDeskCard task={activeDrag.task} projection={activeDrag.projection} dragOverlay />
       </div>
     </DragOverlay>

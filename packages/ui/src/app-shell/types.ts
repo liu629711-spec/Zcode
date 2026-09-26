@@ -117,7 +117,7 @@ export interface GitChangeSummary {
   removed: number;
 }
 
-export type WorkspaceMainView = "chat" | "automations" | "plugin-store";
+export type WorkspaceMainView = "chat" | "automations" | "dispatch-desk" | "plugin-store";
 
 export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackService"> {
   workspaceReadOnlyReason?: string;
@@ -128,6 +128,8 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   onWorkspaceMainViewChange: (view: WorkspaceMainView) => void;
   onOpenAutomationConsumed: () => void;
   handleOpenAutomations: OpenAutomationsMain;
+  /** 侧栏派活台入口；WorkspaceShellLayout 转发给 WorkspaceSidebar。 */
+  handleOpenDispatchDesk?: () => void;
   handleOpenPluginStore: () => void;
   handleManageInstalledPlugins: () => void;
   workspaceShellZCodeState: WorkspaceShellZCodeState;

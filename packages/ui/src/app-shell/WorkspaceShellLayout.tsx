@@ -46,6 +46,8 @@ import type {
 } from "@/settings/saved-workflows/SavedWorkflowsSection.js";
 import { AutomationsMainBreadcrumbFrame } from "@/settings/AutomationsMainBreadcrumbFrame.js";
 import { PluginStorePage } from "@/settings/PluginStorePage.js";
+import { DispatchDeskKanbanBoard } from "@/workspace-grouped-tasks/kanban-board.js";
+import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { TaskFindDialog } from "@/quickpick/TaskFindDialog.js";
 import { WorkspaceHeader } from "@/WorkspaceHeader.js";
 import { WorkspaceSidebar, type SidebarFileTreeOpenRequest } from "@/WorkspaceSidebar.js";
@@ -197,6 +199,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   onWorkspaceMainViewChange,
   onOpenAutomationConsumed,
   handleOpenAutomations,
+  handleOpenDispatchDesk,
   handleOpenPluginStore,
   handleManageInstalledPlugins,
   onConnectRemote,
@@ -755,6 +758,26 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       )?.localWorkspacePath,
     [workspaceAbsPath, workspaceIdentity, workspaceTabs],
   );
+  // 主区派活台是寄生项目语义：只看板当前活动 workspace，不聚合整个 tabStore。
+  // workspaceTabs prop 是去 kind/id 的结构类型，看板 scope 只消费 path/identity/purpose，
+  // 这里按 WorkspaceTabState 形状补齐。
+  const dispatchDeskWorkspaceTabs = useMemo<WorkspaceTabState[]>(() => {
+    const activeTab = workspaceTabs.find(
+      (tab) =>
+        tab.workspacePath === workspaceAbsPath &&
+        (!workspaceIdentity || tab.workspaceIdentity === workspaceIdentity),
+    );
+    return [
+      {
+        id: `workspace:${workspaceAbsPath}`,
+        kind: "workspace",
+        label: activeTab?.label ?? getPathLeaf(workspaceAbsPath),
+        workspacePath: workspaceAbsPath,
+        workspaceIdentity,
+        workspacePurpose: activeTab?.workspacePurpose,
+      },
+    ];
+  }, [workspaceAbsPath, workspaceIdentity, workspaceTabs]);
   const workspaceShellSplitStyle = useMemo(
     () =>
       ({
@@ -1492,7 +1515,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   // 与 Task Header 分叉。桌面端统一复用 WorkspaceHeader，只由 variant 裁剪 task 专属内容；
   // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
   const shouldRenderMainViewHeader =
-    workspaceMainView !== "automations" && workspaceMainView !== "plugin-store";
+    workspaceMainView !== "automations" &&
+    workspaceMainView !== "plugin-store" &&
+    workspaceMainView !== "dispatch-desk";
   const shouldRenderWorkspaceHeader =
     shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
   // ErrorBoundary resetKeys 的数组如果每次 render 都重新创建，
@@ -1600,6 +1625,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     automationsActive={workspaceMainView === "automations"}
                     onOpenPluginStore={handleOpenPluginStore}
                     pluginStoreActive={workspaceMainView === "plugin-store"}
+                    onOpenDispatchDesk={handleOpenDispatchDesk}
+                    dispatchDeskActive={workspaceMainView === "dispatch-desk"}
                     onFileTreeOpenChange={setIsSidebarFileTreeOpen}
                   />
                 </WorkflowRunOpenProvider>
@@ -1821,6 +1848,31 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                             </div>
                           </AutomationsMainBreadcrumbFrame>
                         </main>
+                      ) : workspaceMainView === "dispatch-desk" ? (
+                        <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
+                          <AutomationsMainBreadcrumbFrame
+                            isDesktop={Boolean(isDesktop)}
+                            sectionLabel={intl.formatMessage({ id: "dispatchDesk.title" })}
+                            ariaLabel={intl.formatMessage({ id: "dispatchDesk.title" })}
+                          >
+                            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+                              <ScopedErrorBoundary
+                                scope="dispatch-desk-main"
+                                resetKeys={workspaceOnlyResetKeys}
+                                variant="panel"
+                                className="min-h-full"
+                              >
+                                {/* 全宽容器：看板自带横向滚动与列宽自适应，不做 max-w 居中。 */}
+                                <div className="flex w-full flex-col px-4 py-4 md:px-6 md:py-6">
+                                  <DispatchDeskKanbanBoard
+                                    workspaceTabs={dispatchDeskWorkspaceTabs}
+                                    onOpenCodeViewer={handleOpenCodeViewer}
+                                  />
+                                </div>
+                              </ScopedErrorBoundary>
+                            </div>
+                          </AutomationsMainBreadcrumbFrame>
+                        </main>
                       ) : (
                         <main className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
                           {renderChatFindDialog()}
@@ -1899,7 +1951,9 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     </div>
                   </section>
                 </ResizablePanel>
-                {workspaceMainView !== "automations" && workspaceMainView !== "plugin-store" ? (
+                {workspaceMainView !== "automations" &&
+                workspaceMainView !== "plugin-store" &&
+                workspaceMainView !== "dispatch-desk" ? (
                   <AnimatedTerminalPanel
                     frameClassName={cn(
                       isSidePaneVisible
