@@ -12,6 +12,9 @@ export * from "./workflow-observation-display.js";
 export * from "./snapshot.js";
 export * from "./workflow-runs.js";
 export * from "./workflow-runs-reducer.js";
+// 回放折叠（T1 行车记录仪）：journal 事件流 → 按 attempt 分组的节点状态序列。
+// 单一实现纪律同 reducer：adapters 的服务端投影与桌面回放区共用这一份。
+export * from "./workflow-run-replay.js";
 // workflowRuns 的键级增量（diff / apply / 规范键序）；op 本身在 delta.js。
 export * from "./workflow-runs-delta.js";
 // 界留下的痕迹：被拒实例计数、条目预算、步数读法；表满时的腾位；以及给旧消费者的裁剪。

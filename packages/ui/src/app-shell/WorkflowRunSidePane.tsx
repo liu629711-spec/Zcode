@@ -10,6 +10,7 @@ import { workflowSummaryParts } from "@/components/workflow-timeline/timeline-su
 import { WorkflowRunArtifactsSection } from "@/app-shell/WorkflowRunArtifactsSection.js";
 import { WorkflowRunPhaseList } from "@/app-shell/WorkflowRunPhaseList.js";
 import { WorkflowRunProvenance } from "@/app-shell/WorkflowRunProvenance.js";
+import { WorkflowRunReplaySection } from "@/app-shell/WorkflowRunReplaySection.js";
 import {
   WorkflowRunResultSections,
   WorkflowRunStatusHeader,
@@ -408,6 +409,16 @@ const WorkflowRunContent = memo(function WorkflowRunContent({
           {intl.formatMessage({ id: "chat.toolCall.workflow.run.graph.unavailable" })}
         </p>
       )}
+
+      {/*
+       * 回放区（T1 行车记录仪）：journal 事件折叠成按 attempt 分组的节点状态序列，
+       *           只读 journal（既有 workflowRunEvents 查询），冷恢复的 run 一样回放得完整。
+       *           零件 / 能力缺席时整区缺席；默认收起——审计动作，不是常看内容。
+       */}
+      <WorkflowRunReplaySection
+        runId={tab.runId}
+        sessionId={tab.parentSessionId}
+      />
 
       {/*
        * Artifacts 区：脚本用 `artifact.*` 交付给**用户**的产出。面板的最后一节、默认展开——它是

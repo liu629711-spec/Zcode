@@ -5203,6 +5203,16 @@ const zhCN: Record<string, string> = {
   // 折叠 aria-label。这一节**默认展开**（产物是交付物，紧贴图之下常开）。
   "chat.toolCall.workflow.run.artifacts.expand": "展开产物",
   "chat.toolCall.workflow.run.artifacts.collapse": "收起产物",
+  // 回放区（T1 行车记录仪）：journal 事件折叠成按 attempt 分组的节点状态序列。
+  // 与产物区相反**默认收起**：回放是审计动作，不是每次打开面板都要看的东西。
+  "chat.toolCall.workflow.run.replay.title": "回放",
+  "chat.toolCall.workflow.run.replay.expand": "展开回放",
+  "chat.toolCall.workflow.run.replay.collapse": "收起回放",
+  "chat.toolCall.workflow.run.replay.attemptAll": "全部",
+  "chat.toolCall.workflow.run.replay.attempt": "第 {attempt} 轮",
+  "chat.toolCall.workflow.run.replay.empty": "这条 run 没有可回放的事件。",
+  "chat.toolCall.workflow.run.replay.error": "回放读取失败",
+  "chat.toolCall.workflow.run.replay.truncated": "事件过多，只折叠前 {limit} 条。",
   // 六个 kind 词 = facade `artifact.*` 的六个成员。file/markdown 是内容产物（有字节与版本），
   // 其余四个是 journal 投影出来的看板（没有字节）。
   "chat.toolCall.workflow.run.artifacts.kind.file": "文件",

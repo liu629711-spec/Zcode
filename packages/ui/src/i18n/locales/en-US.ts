@@ -5468,6 +5468,16 @@ const enUS: Record<string, string> = {
   "chat.toolCall.workflow.run.artifacts.title": "Artifacts",
   "chat.toolCall.workflow.run.artifacts.expand": "Show artifacts",
   "chat.toolCall.workflow.run.artifacts.collapse": "Hide artifacts",
+  // Replay section (T1 dashcam): journal events folded into per-attempt node state trails.
+  // Unlike artifacts this section is **collapsed by default**: replay is an audit action.
+  "chat.toolCall.workflow.run.replay.title": "Replay",
+  "chat.toolCall.workflow.run.replay.expand": "Show replay",
+  "chat.toolCall.workflow.run.replay.collapse": "Hide replay",
+  "chat.toolCall.workflow.run.replay.attemptAll": "All",
+  "chat.toolCall.workflow.run.replay.attempt": "Attempt {attempt}",
+  "chat.toolCall.workflow.run.replay.empty": "This run has no events to replay.",
+  "chat.toolCall.workflow.run.replay.error": "Failed to load replay",
+  "chat.toolCall.workflow.run.replay.truncated": "Event cap reached; folded the first {limit}.",
   "chat.toolCall.workflow.run.artifacts.kind.file": "File",
   "chat.toolCall.workflow.run.artifacts.kind.markdown": "Document",
   "chat.toolCall.workflow.run.artifacts.kind.chart": "Chart",

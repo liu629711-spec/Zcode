@@ -47,6 +47,11 @@ export const TID_WORKFLOW_RUN_ROW = "workflow-run-row";
 // 其余分区（`workflow-run-questions` 等）保持同一习惯。
 export const TID_WORKFLOW_ARTIFACTS_SECTION = "workflow-run-artifacts";
 export const TID_WORKFLOW_ARTIFACTS_TOGGLE = "workflow-run-artifacts-toggle";
+// 回放区（T1 行车记录仪）：区、折叠开关、attempt 切换按钮三样进这里，理由同上——
+// 桌面 e2e 的落脚点。区内的实例行仍是组件内字面量。
+export const TID_WORKFLOW_REPLAY_SECTION = "workflow-run-replay";
+export const TID_WORKFLOW_REPLAY_TOGGLE = "workflow-run-replay-toggle";
+export const TID_WORKFLOW_REPLAY_ATTEMPT = "workflow-run-replay-attempt";
 export const TID_WORKFLOW_ARTIFACT_CARD = "workflow-run-artifact-card";
 /** `workflow-artifact` 侧板 tab 的根节点。 */
 export const TID_WORKFLOW_ARTIFACT_PANE = "workflow-artifact-pane";
