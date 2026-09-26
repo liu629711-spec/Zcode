@@ -4,13 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import test from "node:test";
-import { computeDispatchRetryAt, DispatchDeskRepo } from "../src/session/dispatchDeskRepo.js";
+import {
+  computeDispatchRetryAt,
+  DESK_CLAIM_STALE_MS,
+  DESK_DISPATCH_MAX_ATTEMPTS,
+  DispatchDeskRepo,
+} from "../src/session/dispatchDeskRepo.js";
 
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 
 const WS = { workspacePath: "/w" };
-const STALE_MS = 10 * 60_000;
+const STALE_MS = DESK_CLAIM_STALE_MS;
 
 interface Ctx {
   dbPath: string;
@@ -235,15 +240,13 @@ test("claim honors limit, workspace filter, and per-workspace single-flight", as
     const repo = new DispatchDeskRepo(ctx.dbPath);
     await repo.ensureReady();
 
-    // 每 tick 认领至多 N 张（limit=2，按 created_at/task_id FIFO）。
-    const first = await repo.claimDueTickets({ now: 1000, limit: 2 });
-    assert.deepEqual(
-      first.map((t) => t.taskId).sort(),
-      ["w1-a", "w1-b"],
-    );
-    // 单飞：w1 已有 claimed 在途，w1 剩余票整队跳过；w2 不受影响。
+    // 同一次调用内同 workspace 至多认领一张：3 张 w1 票 limit=5 只领 FIFO 头一张，
+    // 不同 workspace（w2）同调用各领一张。
+    const first = await repo.claimDueTickets({ now: 1000, limit: 5 });
+    assert.deepEqual(first.map((t) => t.taskId), ["w1-a", "w2-a"]);
+    // 跨调用单飞照旧：w1 已有 claimed 在途，剩余票整队跳过；w2 已被上一 tick 认领占住。
     const second = await repo.claimDueTickets({ now: 2000, limit: 10 });
-    assert.deepEqual(second.map((t) => t.taskId), ["w2-a"]);
+    assert.deepEqual(second.map((t) => t.taskId), []);
     // workspace 过滤：只看 w1 → 仍被单飞挡住。
     const filtered = await repo.claimDueTickets({
       now: 3000,
@@ -252,6 +255,25 @@ test("claim honors limit, workspace filter, and per-workspace single-flight", as
     });
     assert.deepEqual(filtered, []);
     await assert.rejects(repo.claimDueTickets({ now: 1, limit: 0 }), /limit/);
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("limit caps total claims across workspaces in one call", async () => {
+  const ctx = await setup();
+  try {
+    for (const ws of ["/a", "/b", "/c"]) {
+      seedTicket(ctx.raw, { workspacePath: ws, taskId: `${ws}-t`, acceptanceCriteria: "done" });
+    }
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+    // limit 是本 tick 认领总数的硬上限（按 created_at/task_id FIFO）。
+    const claimed = await repo.claimDueTickets({ now: 1000, limit: 2 });
+    assert.deepEqual(claimed.map((t) => t.taskId), ["/a-t", "/b-t"]);
+    const leftover = await repo.getTicket({ workspacePath: "/c", taskId: "/c-t" });
+    assert.equal(leftover?.dispatchState, "idle");
     repo.close();
   } finally {
     await ctx.cleanup();
@@ -310,6 +332,68 @@ test("dispatch handoff uses claim token; backoff and zombie reclaim work", async
     const after = rawTicket(ctx.raw, "handoff");
     assert.equal(after.dispatch_state, "claimed");
     assert.equal(after.claimed_at, 100 + STALE_MS);
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("claim-stale boundary: reclaimed exactly at DESK_CLAIM_STALE_MS, 1ms fresher is not", async () => {
+  const ctx = await setup();
+  try {
+    seedTicket(ctx.raw, { workspacePath: "/wa", taskId: "edge-exact", acceptanceCriteria: "done" });
+    seedTicket(ctx.raw, { workspacePath: "/wb", taskId: "edge-fresh", acceptanceCriteria: "done" });
+    ctx.raw
+      .prepare(`UPDATE tasks SET dispatch_state='claimed', claimed_at=? WHERE task_id='edge-exact'`)
+      .run(777);
+    ctx.raw
+      .prepare(`UPDATE tasks SET dispatch_state='claimed', claimed_at=? WHERE task_id='edge-fresh'`)
+      .run(778);
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+
+    const now = 777 + DESK_CLAIM_STALE_MS;
+    const claimed = await repo.claimDueTickets({ now, limit: 5 });
+    // claimed_at == now - STALE → 回收并当场重新认领（claimed_at 被刷新为 now）。
+    assert.deepEqual(claimed.map((t) => t.taskId), ["edge-exact"]);
+    assert.equal(rawTicket(ctx.raw, "edge-exact").claimed_at, now);
+    // 晚 1ms：claimed_at > now - STALE → 不回收，仍持有原凭据。
+    const fresh = rawTicket(ctx.raw, "edge-fresh");
+    assert.equal(fresh.dispatch_state, "claimed");
+    assert.equal(fresh.claimed_at, 778);
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("retry cap: ticket at DESK_DISPATCH_MAX_ATTEMPTS stops being claimable", async () => {
+  const ctx = await setup();
+  try {
+    seedTicket(ctx.raw, { workspacePath: "/w", taskId: "capped", acceptanceCriteria: "done" });
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+
+    let now = 1000;
+    for (let attempt = 1; attempt <= DESK_DISPATCH_MAX_ATTEMPTS; attempt++) {
+      const [claimed] = await repo.claimDueTickets({ now, limit: 1 });
+      assert.ok(claimed, `第 ${attempt} 次派发应可认领`);
+      assert.equal(
+        await repo.markDispatchFailed(
+          { ...WS, taskId: "capped" },
+          { claimedAt: claimed.claimedAt!, now, error: `boom-${attempt}` },
+        ),
+        true,
+      );
+      const failed = await repo.getTicket({ ...WS, taskId: "capped" });
+      now = failed!.retryAt! + 1;
+    }
+
+    const capped = await repo.getTicket({ ...WS, taskId: "capped" });
+    assert.equal(capped?.dispatchState, "failed_to_dispatch");
+    assert.equal(capped?.dispatchAttempts, DESK_DISPATCH_MAX_ATTEMPTS);
+    // retry_at 早已到期也领不到：达限票停在该状态，人工接手（T4 看板"卡住"列）是唯一出路。
+    assert.deepEqual(await repo.claimDueTickets({ now: now + 60_000, limit: 5 }), []);
     repo.close();
   } finally {
     await ctx.cleanup();
@@ -441,6 +525,33 @@ test("done stays human: completed-without-submission tickets are never auto redi
     );
     const rework = await repo.claimDueTickets({ now: STALE_MS + 20_003, limit: 10 });
     assert.deepEqual(rework.map((t) => t.taskId), ["stuck-completed"]);
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
+test("dispatched ticket with NULL task_status is reclaimed and frees the workspace slot", async () => {
+  const ctx = await setup();
+  try {
+    seedTicket(ctx.raw, { workspacePath: "/w", taskId: "z-null", acceptanceCriteria: "done" });
+    seedTicket(ctx.raw, { workspacePath: "/w", taskId: "z-mate", acceptanceCriteria: "done" });
+    // Host 在 markDispatched 之后、session 落 task_status 之前崩溃的现场。
+    ctx.raw
+      .prepare(`UPDATE tasks SET dispatch_state='dispatched', claimed_at=500 WHERE task_id='z-null'`)
+      .run();
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+
+    const next = await repo.claimDueTickets({ now: 5000, limit: 5 });
+    const zombie = await repo.getTicket({ ...WS, taskId: "z-null" });
+    // 回收：活没开始干（NULL 不适用 done-stays-human），同 error 走退避重派而非回 idle。
+    assert.equal(zombie?.dispatchState, "failed_to_dispatch");
+    assert.equal(zombie?.dispatchAttempts, 1);
+    assert.equal(zombie?.retryAt, computeDispatchRetryAt(5000, 1));
+    assert.equal(zombie?.lastDispatchError, "session ended before reporting task status");
+    // 不再占槽：同 workspace 的另一张票在同一次调用即可认领。
+    assert.deepEqual(next.map((t) => t.taskId), ["z-mate"]);
     repo.close();
   } finally {
     await ctx.cleanup();

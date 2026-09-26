@@ -39,6 +39,10 @@ export const DESK_CLAIM_STALE_MS = 10 * 60_000;
 export const DESK_DISPATCH_RETRY_BASE_MS = 30_000;
 export const DESK_DISPATCH_RETRY_CAP_MS = 15 * 60_000;
 
+/** 重试次数封顶：达限票停在 failed_to_dispatch 不再自动重派，人工接手由看板承接。
+    语义对齐 automationRepo 的 DISPATCH_MAX_ATTEMPTS，常量独立一份勿互相引用。 */
+export const DESK_DISPATCH_MAX_ATTEMPTS = 5;
+
 /** 退避重试时间：now + min(BASE * 2^(attempts-1), CAP)。 */
 export function computeDispatchRetryAt(now: number, attempts: number): number {
   const backoff = Math.min(
@@ -257,15 +261,16 @@ export class DispatchDeskRepo {
   /**
    * single-flight 认领到期票据（模板 = automationRepo.claimDue）：原子写 dispatch_state
    * guarded UPDATE + changes 校验（SQLite 无 SKIP LOCKED，BEGIN IMMEDIATE 串行写者）。
-   * 参数化每 tick 认领至多 limit 张 + 可选按 workspace 过滤；每 workspace 单飞由候选过滤与
-   * 认领事务共同保证。同时回收认领超时的僵尸项（claimed 超时回到 idle）。
+   * 参数化每 tick 认领至多 limit 张 + 可选按 workspace 过滤；每 workspace 单飞由候选过滤、
+   * tick 内已认领集合与认领事务共同保证。同时回收认领超时的僵尸项（claimed 超时回到 idle）。
    *
    * 认领条件：
    * - acceptance_criteria 非空（进台标记）；
    * - 评审闸机：review_state 为 NULL 或 changes_requested（pending_review/approved 不可再派）；
    * - done stays human：task_status=completed 且从未进入评审的票不自动重跑，
    *   仅 changes_requested（人工打回）可作为返工重新派发；
-   * - dispatch_state=idle，或 failed_to_dispatch 且 retry_at 到期（退避绕不过）。
+   * - dispatch_state=idle，或 failed_to_dispatch 且 retry_at 到期且未达 DESK_DISPATCH_MAX_ATTEMPTS
+   *   封顶（退避绕不过；达限票停在该状态，人工接手由看板承接）。
    */
   async claimDueTickets(options: {
     now: number;
@@ -291,14 +296,17 @@ export class DispatchDeskRepo {
       db.prepare(
         `UPDATE tasks
         SET dispatch_state = 'idle', claimed_at = NULL, updated_at = @now
-        WHERE dispatch_state = 'claimed'
+        WHERE dispatch_state = 'claimed' AND deleted = 0
           AND claimed_at IS NOT NULL AND claimed_at <= @stale`,
       ).run({ now: options.now, stale: options.now - DESK_CLAIM_STALE_MS });
 
       // dispatched 阶段的僵尸回收：持有会话已终态却从未交活（代理在提交前崩溃）。
       // - task_status=error：转 failed_to_dispatch 走基础退避重派（失败重试是派活台本职）；
       // - task_status=completed：只释放 workspace 单飞槽回 idle，票本身因 done-stays-human
-      //   仍不可自动重派，等人工在 recordReviewDecision 强制打回返工。
+      //   仍不可自动重派，等人工在 recordReviewDecision 强制打回返工；
+      // - task_status IS NULL：Host 标记 dispatched 后、session 落 task_status 前崩溃，
+      //   活未开始干不适用 done-stays-human，同 error 走退避重派——放回 idle 会让崩溃
+      //   路径每 tick 立即重派成快循环，退避+次数封顶让它最终停在 failed_to_dispatch 等人接手。
       db.prepare(
         `UPDATE tasks
         SET dispatch_state = 'failed_to_dispatch',
@@ -316,9 +324,22 @@ export class DispatchDeskRepo {
         WHERE dispatch_state = 'dispatched' AND review_state IS NULL
           AND task_status = 'completed' AND deleted = 0`,
       ).run({ now: options.now });
+      db.prepare(
+        `UPDATE tasks
+        SET dispatch_state = 'failed_to_dispatch',
+            dispatch_attempts = dispatch_attempts + 1,
+            retry_at = @now + @retry_base,
+            last_dispatch_error = 'session ended before reporting task status',
+            claimed_at = NULL,
+            updated_at = @now
+        WHERE dispatch_state = 'dispatched' AND review_state IS NULL
+          AND task_status IS NULL AND deleted = 0`,
+      ).run({ now: options.now, retry_base: DESK_DISPATCH_RETRY_BASE_MS });
 
       // 每 workspace 单飞在候选查询内过滤：workspace 里已有 claimed/dispatched 的票则整队跳过。
-      // 认领 UPDATE 在同一写事务内复检状态值，guard+changes 兜住任何并发路径。
+      // 候选结果是快照，本 tick 刚认领出的 claimed 不在其 NOT EXISTS 视野里，认领循环再以
+      // 已认领集合跳过同 workspace 的后续行；认领 UPDATE 在同一写事务内复检状态值，
+      // guard+changes 兜住任何并发路径。
       const dueRows = db
         .prepare(
           `SELECT workspace_key, workspace_path, task_id, title, task_status, dispatch_state,
@@ -333,7 +354,8 @@ export class DispatchDeskRepo {
             AND (
               dispatch_state = 'idle'
               OR (dispatch_state = 'failed_to_dispatch'
-                  AND (retry_at IS NULL OR retry_at <= @now))
+                  AND (retry_at IS NULL OR retry_at <= @now)
+                  AND dispatch_attempts < @max_attempts)
             )
             AND (@workspace_key IS NULL OR workspace_key = @workspace_key)
             AND NOT EXISTS (
@@ -350,9 +372,12 @@ export class DispatchDeskRepo {
           now: options.now,
           workspace_key: workspaceKey,
           limit: options.limit,
+          max_attempts: DESK_DISPATCH_MAX_ATTEMPTS,
         }) as unknown as DeskTicketRow[];
 
       const claimed: DeskTicket[] = [];
+      // 本 tick 已认领的 workspace：同一次调用内至多认领一张（快照 SELECT 看不见本次认领）。
+      const claimedWorkspaces = new Set<string>();
       const claim = db.prepare(
         `UPDATE tasks
         SET dispatch_state = 'claimed', claimed_at = @now, updated_at = @now
@@ -364,12 +389,14 @@ export class DispatchDeskRepo {
           )`,
       );
       for (const row of dueRows) {
+        if (claimedWorkspaces.has(row.workspace_key)) continue;
         const result = claim.run({
           now: options.now,
           workspace_key: row.workspace_key,
           task_id: row.task_id,
         });
         if (result.changes === 1) {
+          claimedWorkspaces.add(row.workspace_key);
           claimed.push(
             rowToTicket({
               ...row,
@@ -424,39 +451,49 @@ export class DispatchDeskRepo {
     await this.ensureReady();
     const db = this.getDatabase();
     const workspaceKey = resolveWorkspaceKey(ref);
-    const row = db
-      .prepare(
-        `SELECT dispatch_attempts FROM tasks
-        WHERE workspace_key = ? AND task_id = ? AND dispatch_state = 'claimed' AND claimed_at = ?`,
-      )
-      .get(workspaceKey, ref.taskId, params.claimedAt) as
-      | { dispatch_attempts: number }
-      | undefined;
-    if (!row) return false;
-    const attempts = row.dispatch_attempts + 1;
-    const retryAt = computeDispatchRetryAt(params.now, attempts);
-    const result = db
-      .prepare(
-        `UPDATE tasks
-        SET dispatch_state = 'failed_to_dispatch',
-            dispatch_attempts = @attempts,
-            retry_at = @retry_at,
-            last_dispatch_error = @error,
-            claimed_at = NULL,
-            updated_at = @now
-        WHERE workspace_key = @workspace_key AND task_id = @task_id
-          AND dispatch_state = 'claimed' AND claimed_at = @claimed_at`,
-      )
-      .run({
-        attempts,
-        retry_at: retryAt,
-        error: params.error,
-        now: params.now,
-        workspace_key: workspaceKey,
-        task_id: ref.taskId,
-        claimed_at: params.claimedAt,
-      });
-    return result.changes === 1;
+    // 读-改-写包进写事务：指数退避只能在 JS 侧算（SQLite math 函数不可依赖），
+    // BEGIN IMMEDIATE 保证 attempts 读取与自增取同一快照；BUSY 上抛契约同 claimDueTickets。
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = db
+        .prepare(
+          `SELECT dispatch_attempts FROM tasks
+          WHERE workspace_key = ? AND task_id = ? AND dispatch_state = 'claimed' AND claimed_at = ?`,
+        )
+        .get(workspaceKey, ref.taskId, params.claimedAt) as
+        | { dispatch_attempts: number }
+        | undefined;
+      if (!row) {
+        db.exec("COMMIT");
+        return false;
+      }
+      const attempts = row.dispatch_attempts + 1;
+      const result = db
+        .prepare(
+          `UPDATE tasks
+          SET dispatch_state = 'failed_to_dispatch',
+              dispatch_attempts = dispatch_attempts + 1,
+              retry_at = @retry_at,
+              last_dispatch_error = @error,
+              claimed_at = NULL,
+              updated_at = @now
+          WHERE workspace_key = @workspace_key AND task_id = @task_id
+            AND dispatch_state = 'claimed' AND claimed_at = @claimed_at`,
+        )
+        .run({
+          retry_at: computeDispatchRetryAt(params.now, attempts),
+          error: params.error,
+          now: params.now,
+          workspace_key: workspaceKey,
+          task_id: ref.taskId,
+          claimed_at: params.claimedAt,
+        });
+      db.exec("COMMIT");
+      return result.changes === 1;
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   // ---- 交活（代理通道） ----
