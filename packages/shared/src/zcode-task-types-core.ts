@@ -327,6 +327,24 @@ export interface ZCodeTaskMeta {
   forkedFromTaskId?: string;
   /** 未读任务记录最近一次标记/产生未读的时间，用于跨重启保留蓝点状态。 */
   unreadAt?: number;
+  // —— 派活台旁路列只读投影（tasks 表 migration 0004 列）：唯一写侧是 DispatchDeskRepo
+  // 状态机（只写列不写 meta_json），TaskIndexRepo 恒以列为准读出，语义对齐其 DeskTicket。 ——
+  /** 派发四态：idle=未派/已结算、claimed/dispatched=在途、failed_to_dispatch=失败退避中；老票为 idle。 */
+  dispatchState?: "idle" | "claimed" | "dispatched" | "failed_to_dispatch";
+  /** 评审态：pending_review/approved/changes_requested；NULL=未进入评审流。 */
+  reviewState?: "pending_review" | "approved" | "changes_requested";
+  /** 派单方填写的验收标准。 */
+  acceptanceCriteria?: string;
+  /** 交活产物 json 解析结果；列解析失败时为 undefined（防御手工改库）。 */
+  deliverables?: unknown;
+  /** 最近一次认领时间戳（单飞凭据）；NULL=未持有。 */
+  claimedAt?: number;
+  /** 累计派发尝试次数；老票为 0。 */
+  dispatchAttempts?: number;
+  /** 下次自动重派时间戳；NULL=无待重试。 */
+  retryAt?: number;
+  /** 最近一次派发失败原因。 */
+  lastDispatchError?: string;
   /** 持久化的任务状态，记录最后一次 prompt 的结果 */
   status?: ZCodeTaskPersistStatus;
   /** sessions-index 提供的队首阻塞交互摘要，供未打开的后台 task 渲染侧栏状态。 */

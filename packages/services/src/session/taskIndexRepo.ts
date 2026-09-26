@@ -67,6 +67,15 @@ interface TaskIndexRow {
   forked_from_task_id: string | null;
   cron_automation_id: string | null;
   off_peak_task_id: string | null;
+  // 派活台旁路列（migration 0004）：写侧是 DispatchDeskRepo 状态机，本仓库只读投影。
+  dispatch_state: string;
+  review_state: string | null;
+  acceptance_criteria: string | null;
+  deliverables: string | null;
+  claimed_at: number | null;
+  dispatch_attempts: number;
+  retry_at: number | null;
+  last_dispatch_error: string | null;
   created_at: number;
   updated_at: number;
   unread_at: number | null;
@@ -202,6 +211,46 @@ function resolveTaskIndexRowWorkspaceIdentity(row: TaskIndexRow): string | undef
   return undefined;
 }
 
+/** deliverables 列是 json text（写侧 DispatchDeskRepo 恒写合法 JSON）；解析失败回退 undefined 不抛（防御手工改库）。 */
+function parseDeliverablesColumn(raw: string | null): unknown {
+  if (raw === null) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 派活台旁路列投影：唯一写侧是 DispatchDeskRepo 状态机（只写列，meta_json schema 不收这些键），
+ * 读取恒以列为准——不能像 cronAutomationId 那样 meta_json 优先，否则残留副本会盖掉列上的实时状态机。
+ * 主/回退两条 meta 路径共用；老票走列默认值（idle/0），未进入的态为 NULL 归一成 undefined。
+ */
+function dispatchDeskProjection(row: TaskIndexRow): Pick<
+  ZCodeTaskMeta,
+  | "dispatchState"
+  | "reviewState"
+  | "acceptanceCriteria"
+  | "deliverables"
+  | "claimedAt"
+  | "dispatchAttempts"
+  | "retryAt"
+  | "lastDispatchError"
+> {
+  return {
+    dispatchState: row.dispatch_state as ZCodeTaskMeta["dispatchState"],
+    reviewState: (row.review_state ?? undefined) as ZCodeTaskMeta["reviewState"],
+    acceptanceCriteria: row.acceptance_criteria ?? undefined,
+    deliverables: parseDeliverablesColumn(row.deliverables),
+    claimedAt: row.claimed_at ?? undefined,
+    dispatchAttempts: row.dispatch_attempts,
+    retryAt: row.retry_at ?? undefined,
+    lastDispatchError: row.last_dispatch_error ?? undefined,
+  };
+}
+
 function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
   const workspaceIdentity = resolveTaskIndexRowWorkspaceIdentity(row);
   try {
@@ -222,6 +271,8 @@ function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
         cronAutomationId: parsed.data.cronAutomationId ?? row.cron_automation_id ?? undefined,
         // off-peak 身份同款策略：meta_json 为准、列兜底——存量迁移只写列即可生效。
         offPeakTaskId: parsed.data.offPeakTaskId ?? row.off_peak_task_id ?? undefined,
+        // 派活台旁路列（见 dispatchDeskProjection）：恒以列为准。
+        ...dispatchDeskProjection(row),
         titleOverridden: row.title_overridden === 1,
       };
     }
@@ -251,6 +302,8 @@ function rowToMeta(row: TaskIndexRow): ZCodeTaskMeta {
     cronAutomationId: row.cron_automation_id ?? undefined,
     offPeakTaskId: row.off_peak_task_id ?? undefined,
     unreadAt: row.unread_at ?? undefined,
+    // meta_json 回退路径同样要带上看板数据：旁路列投影不依赖 meta_json 可解析。
+    ...dispatchDeskProjection(row),
     status: (row.task_status as ZCodeTaskMeta["status"]) ?? undefined,
   };
 }
@@ -699,6 +752,14 @@ export class TaskIndexRepo {
           forked_from_task_id,
           cron_automation_id,
           off_peak_task_id,
+          dispatch_state,
+          review_state,
+          acceptance_criteria,
+          deliverables,
+          claimed_at,
+          dispatch_attempts,
+          retry_at,
+          last_dispatch_error,
           created_at,
           updated_at,
           unread_at,
@@ -907,6 +968,14 @@ export class TaskIndexRepo {
           forked_from_task_id,
           cron_automation_id,
           off_peak_task_id,
+          dispatch_state,
+          review_state,
+          acceptance_criteria,
+          deliverables,
+          claimed_at,
+          dispatch_attempts,
+          retry_at,
+          last_dispatch_error,
           created_at,
           updated_at,
           unread_at,
@@ -1698,6 +1767,14 @@ export class TaskIndexRepo {
           forked_from_task_id,
           cron_automation_id,
           off_peak_task_id,
+          dispatch_state,
+          review_state,
+          acceptance_criteria,
+          deliverables,
+          claimed_at,
+          dispatch_attempts,
+          retry_at,
+          last_dispatch_error,
           created_at,
           updated_at,
           unread_at,
@@ -1780,6 +1857,14 @@ export class TaskIndexRepo {
           forked_from_task_id,
           cron_automation_id,
           off_peak_task_id,
+          dispatch_state,
+          review_state,
+          acceptance_criteria,
+          deliverables,
+          claimed_at,
+          dispatch_attempts,
+          retry_at,
+          last_dispatch_error,
           created_at,
           updated_at,
           unread_at,
@@ -1862,6 +1947,14 @@ export class TaskIndexRepo {
           forked_from_task_id,
           cron_automation_id,
           off_peak_task_id,
+          dispatch_state,
+          review_state,
+          acceptance_criteria,
+          deliverables,
+          claimed_at,
+          dispatch_attempts,
+          retry_at,
+          last_dispatch_error,
           created_at,
           updated_at,
           unread_at,
@@ -2111,6 +2204,14 @@ export class TaskIndexRepo {
                 migration_source,
                 forked_from_task_id,
                 cron_automation_id,
+                dispatch_state,
+                review_state,
+                acceptance_criteria,
+                deliverables,
+                claimed_at,
+                dispatch_attempts,
+                retry_at,
+                last_dispatch_error,
                 created_at,
                 updated_at,
                 unread_at,

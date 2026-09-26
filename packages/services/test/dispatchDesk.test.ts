@@ -634,6 +634,25 @@ test("dispatched ticket with NULL task_status is reclaimed and frees the workspa
   }
 });
 
+test("corrupt deliverables column reads as undefined instead of throwing (handwritten db edits)", async () => {
+  const ctx = await setup();
+  try {
+    seedTicket(ctx.raw, { workspacePath: "/w", taskId: "bad-json" });
+    ctx.raw
+      .prepare(`UPDATE tasks SET deliverables='{oops' WHERE task_id='bad-json'`)
+      .run();
+    const repo = new DispatchDeskRepo(ctx.dbPath);
+    await repo.ensureReady();
+    const ticket = await repo.getTicket({ ...WS, taskId: "bad-json" });
+    assert.ok(ticket);
+    assert.equal(ticket.deliverables, undefined);
+    assert.equal(ticket.dispatchState, "idle");
+    repo.close();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
 test("setTicketSpec: non-empty criteria required, deliverables COALESCE keeps existing", async () => {
   const ctx = await setup();
   try {
