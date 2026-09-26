@@ -636,6 +636,8 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
   const viewRef = useRef(view);
   viewRef.current = view;
   const [loading, setLoading] = useState(false);
+  // 只服务错误态呈现（看板"加载失败+重试"）；列表视图不消费它，既有行为不变。
+  const [loadError, setLoadError] = useState(false);
   const [remoteDataInitialized, setRemoteDataInitialized] = useState(
     () => readCachedGroupedView(localWorkspaceScopeSignature) !== undefined,
   );
@@ -766,6 +768,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         requestIdRef.current === requestId &&
         remoteDataLoader.isCurrent(remoteDataKey, remoteData)
       ) {
+        setLoadError(false);
         const { structure, membership } = remoteData;
         const nextView = buildGroupedTaskViewFromSessions({
           structure,
@@ -786,6 +789,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
       // 重新形成日志风暴。旧请求仍会进入 finally，但不能关闭最新一代 loading。
       if (requestIdRef.current === requestId) {
         logger.error("[useGroupedTaskView] 加载 grouped task 视图失败", error);
+        setLoadError(true);
       }
     } finally {
       if (requestIdRef.current === requestId) {
@@ -1084,6 +1088,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     setView,
     loading,
     initialized,
+    loadError,
     saving,
     refresh,
     createGroup,

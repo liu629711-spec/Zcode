@@ -27,6 +27,7 @@ import {
   Minimize2,
   Plus,
   Search,
+  SquareKanbanIcon,
   X,
 } from "lucide-react";
 import {
@@ -118,6 +119,7 @@ import { WorkspacePinnedTasksSection } from "@/WorkspacePinnedTasksSection.js";
 import { WorkspaceTimelineTasksSection } from "@/WorkspaceTimelineTasksSection.js";
 import { WorkspaceGroupedTasksSection } from "@/WorkspaceGroupedTasksSection.js";
 import { StickyGroupHeaderSlot } from "@/workspace-grouped-tasks/sticky-group-header-slot.js";
+import { DispatchDeskKanbanBoard } from "@/workspace-grouped-tasks/kanban-board.js";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 import {
   SortableWorkspaceSidebarItem,
@@ -396,6 +398,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const [taskSortBy, setTaskSortBy] = useState<TaskSortBy>(
     () => readSidebarTaskPreferences().sortBy,
   );
+  // 派活台看板开关：独立布尔偏好，只改 grouped 分支渲染哪棵子树，列表模式不感知。
+  const [dispatchBoardMode, setDispatchBoardMode] = useState(
+    () => readSidebarTaskPreferences().boardMode,
+  );
   const [purposeSectionPreferences, setPurposeSectionPreferences] = useState(
     readSidebarPurposeSectionPreferences,
   );
@@ -555,8 +561,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     persistSidebarTaskPreferences({
       organizeBy: taskOrganizeBy,
       sortBy: taskSortBy,
+      boardMode: dispatchBoardMode,
     });
-  }, [taskOrganizeBy, taskSortBy]);
+  }, [taskOrganizeBy, taskSortBy, dispatchBoardMode]);
   useEffect(() => {
     if (taskOrganizeBy === "project" || taskOrganizeBy === "chronological") {
       setWorkspaceTaskOrganizeBy(taskOrganizeBy);
@@ -1068,7 +1075,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-            {toggleAllTaskGroupsPresentation ? (
+            {!dispatchBoardMode && toggleAllTaskGroupsPresentation ? (
               <ControlHintTooltip
                 title={intl.formatMessage({
                   id: toggleAllTaskGroupsPresentation.messageId,
@@ -1096,6 +1103,30 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {taskViewMode === "grouped" ? (
+              <ControlHintTooltip
+                title={intl.formatMessage({ id: "dispatchDesk.title" })}
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn(
+                    "shrink-0",
+                    dispatchBoardMode
+                      ? "text-foreground"
+                      : "text-foreground-subtle hover:text-foreground",
+                  )}
+                  aria-label={intl.formatMessage({ id: "dispatchDesk.title" })}
+                  aria-pressed={dispatchBoardMode}
+                  onClick={() => {
+                    setDispatchBoardMode((current) => !current);
+                  }}
+                >
+                  <SquareKanbanIcon className="size-3.5" />
+                </Button>
+              </ControlHintTooltip>
+            ) : null}
+            {taskViewMode === "grouped" && !dispatchBoardMode ? (
               <ControlHintTooltip
                 title={workspaceReadOnlyReason ?? intl.formatMessage({ id: "taskGroup.newGroup" })}
               >
@@ -1387,25 +1418,30 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                     onSelectTask={onSelectTask}
                   />
                 ) : taskViewMode === "grouped" ? (
-                  <WorkspaceGroupedTasksSection
-                    workspaceTabs={workspaceTabs}
-                    activeWorkspacePath={workspacePath}
-                    activeWorkspaceIdentity={workspaceIdentity}
-                    activeTaskId={activeTaskId}
-                    onSelectTask={onSelectTask}
-                    onCreateTask={onCreateTask}
-                    onOpenFileTree={(target) => {
-                      setFileTreeTarget(target);
-                      setIsFileTreeOpen(true);
-                    }}
-                    onCreateGroupActionChange={handleCreateGroupActionChange}
-                    onCreateDraftTaskActionChange={handleCreateDraftTaskActionChange}
-                    collapsedGroupIds={collapsedGroupedTaskGroupIds}
-                    onGroupedTaskGroupIdsChange={handleGroupedTaskGroupIdsChange}
-                    onCollapsedGroupIdsChange={handleCollapsedGroupedTaskGroupIdsChange}
-                    onStickyGroupHeaderChange={setGroupedStickyHeader}
-                    onOpenAutomations={handleOpenAutomationsMain}
-                  />
+                  dispatchBoardMode ? (
+                    // 列模式只读看板：与分组列表二选一渲染，互不感知；零拖拽零写路径。
+                    <DispatchDeskKanbanBoard workspaceTabs={workspaceTabs} />
+                  ) : (
+                    <WorkspaceGroupedTasksSection
+                      workspaceTabs={workspaceTabs}
+                      activeWorkspacePath={workspacePath}
+                      activeWorkspaceIdentity={workspaceIdentity}
+                      activeTaskId={activeTaskId}
+                      onSelectTask={onSelectTask}
+                      onCreateTask={onCreateTask}
+                      onOpenFileTree={(target) => {
+                        setFileTreeTarget(target);
+                        setIsFileTreeOpen(true);
+                      }}
+                      onCreateGroupActionChange={handleCreateGroupActionChange}
+                      onCreateDraftTaskActionChange={handleCreateDraftTaskActionChange}
+                      collapsedGroupIds={collapsedGroupedTaskGroupIds}
+                      onGroupedTaskGroupIdsChange={handleGroupedTaskGroupIdsChange}
+                      onCollapsedGroupIdsChange={handleCollapsedGroupedTaskGroupIdsChange}
+                      onStickyGroupHeaderChange={setGroupedStickyHeader}
+                      onOpenAutomations={handleOpenAutomationsMain}
+                    />
+                  )
                 ) : taskViewMode === "timeline" ? (
                   <WorkspaceTimelineTasksSection
                     workspaceTabs={workspaceTabs}

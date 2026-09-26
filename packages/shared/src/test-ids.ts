@@ -141,6 +141,12 @@ export const TID_PREVIEW_NEXT_BUTTON = "preview-next-button";
 export const TID_TOOL_CODE_VIEWER_BUTTON = "tool-code-viewer-button";
 /** 工具调用摘要行触发按钮（动态后缀为 toolId） */
 export const TID_TOOL_SUMMARY_TRIGGER = "tool-summary-trigger";
+/** 派活台看板（列模式只读看板容器） */
+export const TID_DISPATCH_DESK_BOARD = "dispatch-desk-board";
+/** 派活台看板单列（data-column 标注列 id） */
+export const TID_DISPATCH_DESK_COLUMN = "dispatch-desk-column";
+/** 派活台看板卡片 */
+export const TID_DISPATCH_DESK_CARD = "dispatch-desk-card";
 
 // Terminal
 /** 终端容器 */
