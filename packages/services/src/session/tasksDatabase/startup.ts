@@ -9,6 +9,7 @@ const { DatabaseSync } = createRequire(import.meta.url)(
 import { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
 import { AutomationRepo } from "#src/session/automationRepo.js";
 import { OffPeakTaskRepo } from "#src/session/offPeakTaskRepo.js";
+import { DispatchDeskRepo } from "#src/session/dispatchDeskRepo.js";
 import {
   runTasksDatabaseMigrations,
   inspectTasksMigrationKind,
@@ -100,6 +101,7 @@ export async function prepareTasksIndexStorage(
     new TaskIndexRepo(path, LOCK_WAIT_MS),
     new AutomationRepo(path, LOCK_WAIT_MS),
     new OffPeakTaskRepo(path, LOCK_WAIT_MS),
+    new DispatchDeskRepo(path, LOCK_WAIT_MS),
   ];
   let preparationFailure: unknown;
   try {

@@ -8,6 +8,7 @@ import {
 } from "#src/session/tasksDatabase/schema-v1.js";
 import { importLegacyAutomationSelections } from "#src/session/tasksDatabase/provider-selection-v2.js";
 import { OFFICIAL_GLM_SELECTION_MIGRATION_SQL } from "#src/session/tasksDatabase/official-glm-selection-v3.js";
+import { DISPATCH_DESK_MIGRATION_SQL } from "#src/session/tasksDatabase/dispatch-desk-v4.js";
 
 // 冻结历史列声明，不能以实时 Repo/schema 代替，否则新版构建会改变已应用 checksum。
 const columns = [
@@ -64,7 +65,20 @@ const definitions = [
     id: "0003_official_glm_selection",
     checksumInput: [OFFICIAL_GLM_SELECTION_MIGRATION_SQL],
   },
+  {
+    id: "0004_dispatch_desk",
+    checksumInput: [DISPATCH_DESK_MIGRATION_SQL],
+  },
 ] as const;
+
+// 每个 migration 的执行器显式建表：新增 migration 忘记登记执行器时在编译期报错，
+// 不再用兜底 else（否则新迁移会误跑上一个迁移的 SQL）。
+const executors: Record<(typeof definitions)[number]["id"], (db: DatabaseSync) => void> = {
+  "0001_adopt_task_schema": adoptSchema,
+  "0002_provider_selection": importLegacyAutomationSelections,
+  "0003_official_glm_selection": (db) => db.exec(OFFICIAL_GLM_SELECTION_MIGRATION_SQL),
+  "0004_dispatch_desk": (db) => db.exec(DISPATCH_DESK_MIGRATION_SQL),
+};
 
 export function runTasksDatabaseMigrations(
   db: DatabaseSync,
@@ -111,9 +125,7 @@ export function runTasksDatabaseMigrations(
       }
       if (migrationFacts.kind === "none") migrationFacts.kind = "upgrade";
       options.onProgress?.("migrating", { ...migrationFacts });
-      if (migration.id === "0001_adopt_task_schema") adoptSchema(db);
-      else if (migration.id === "0002_provider_selection") importLegacyAutomationSelections(db);
-      else db.exec(OFFICIAL_GLM_SELECTION_MIGRATION_SQL);
+      executors[migration.id](db);
       migrationFacts.executedCount++;
       db.prepare("INSERT INTO tasks_schema_migration VALUES(?,?,?)").run(
         migration.id,
