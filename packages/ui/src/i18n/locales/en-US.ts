@@ -1907,6 +1907,7 @@ const enUS: Record<string, string> = {
   "dispatchDesk.ticketStateChanged": "The ticket state has changed; the action was not applied",
   "dispatchDesk.moveFailed": "Move failed, please retry",
   "dispatchDesk.loadFailedRetry": "Load failed, click to retry",
+  "dispatchDesk.deliverable.open": "Open preview",
   "taskList.feedback": "Report issue",
   "taskList.viewModelTrajectory": "View model trajectory",
   "taskList.feedbackOpened": "Feedback opened with the current task context attached",

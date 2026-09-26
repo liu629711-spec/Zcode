@@ -147,6 +147,10 @@ export const TID_DISPATCH_DESK_BOARD = "dispatch-desk-board";
 export const TID_DISPATCH_DESK_COLUMN = "dispatch-desk-column";
 /** 派活台看板卡片 */
 export const TID_DISPATCH_DESK_CARD = "dispatch-desk-card";
+/** 派活台卡片成卡/交付行迷你卡（动态后缀为序号:path） */
+export const TID_DISPATCH_DESK_DELIVERABLE = "dispatch-desk-deliverable";
+/** 派活台成卡行打开预览按钮 */
+export const TID_DISPATCH_DESK_DELIVERABLE_OPEN = "dispatch-desk-deliverable-open";
 
 // Terminal
 /** 终端容器 */

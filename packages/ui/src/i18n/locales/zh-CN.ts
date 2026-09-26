@@ -1785,6 +1785,7 @@ const zhCN: Record<string, string> = {
   "dispatchDesk.ticketStateChanged": "票据状态已变化，操作未生效",
   "dispatchDesk.moveFailed": "流转失败，请重试",
   "dispatchDesk.loadFailedRetry": "加载失败，点击重试",
+  "dispatchDesk.deliverable.open": "打开预览",
   "taskList.feedback": "反馈问题",
   "taskList.viewModelTrajectory": "查看调用轨迹",
   "taskList.feedbackOpened": "已打开反馈，并自动带上当前任务信息",

@@ -22,6 +22,7 @@ import type { ZCodeTaskMeta } from "@zcode/shared";
 import { TID_DISPATCH_DESK_BOARD, TID_DISPATCH_DESK_COLUMN } from "@zcode/shared";
 import type { ZCodeGroupedTaskView } from "@zcode/services";
 import { cn } from "@/components/lib/utils.js";
+import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -182,8 +183,12 @@ function DispatchDeskColumnView(props: {
   );
 }
 
-export function DispatchDeskKanbanBoard(props: { workspaceTabs: WorkspaceTabState[] }) {
-  const { workspaceTabs } = props;
+export function DispatchDeskKanbanBoard(props: {
+  workspaceTabs: WorkspaceTabState[];
+  /** 成卡行预览入口透传（拖拽 overlay 克隆不传）：可选回调，缺席即卡片无预览按钮。 */
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
+}) {
+  const { workspaceTabs, onOpenCodeViewer } = props;
   const { intl } = useZCodeIntl();
   const services = useBaseWorkspaceServices();
   const { view, loading, initialized, loadError, refresh } = useGroupedTaskView({
@@ -367,6 +372,7 @@ export function DispatchDeskKanbanBoard(props: { workspaceTabs: WorkspaceTabStat
                     onAction={(kind) => {
                       performAction({ kind, task });
                     }}
+                    onOpenCodeViewer={onOpenCodeViewer}
                   />
                 ))
               )}

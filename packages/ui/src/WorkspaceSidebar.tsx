@@ -1420,7 +1420,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 ) : taskViewMode === "grouped" ? (
                   dispatchBoardMode ? (
                     // 列模式只读看板：与分组列表二选一渲染，互不感知；零拖拽零写路径。
-                    <DispatchDeskKanbanBoard workspaceTabs={workspaceTabs} />
+                    <DispatchDeskKanbanBoard
+                      workspaceTabs={workspaceTabs}
+                      onOpenCodeViewer={onOpenCodeViewer}
+                    />
                   ) : (
                     <WorkspaceGroupedTasksSection
                       workspaceTabs={workspaceTabs}

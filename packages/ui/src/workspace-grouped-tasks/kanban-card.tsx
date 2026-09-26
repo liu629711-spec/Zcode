@@ -9,6 +9,7 @@ import { TID_DISPATCH_DESK_CARD } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
+import type { CodeViewerSource, FileCodeViewerSource } from "@/lib/codeViewer.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 import { getPathLeaf } from "@/lib/path.js";
@@ -21,6 +22,7 @@ import {
   getDispatchDeskCardActions,
   type DispatchDeskActionKind,
 } from "@/workspace-grouped-tasks/kanban-transitions.js";
+import { DispatchDeskCardDeliverables } from "@/workspace-grouped-tasks/kanban-deliverables.js";
 import { taskKey } from "@/workspace-grouped-tasks/ids.js";
 
 /** 待审确认系带：TaskInteractionBadge.tsx 的 badgeClassName 词汇（同色不同控件，语义同源）。 */
@@ -51,9 +53,20 @@ export function DispatchDeskCard(props: {
   /** 动作进行中锁卡：禁二次点击与拖拽（服务在途，重复发起只会收到 null）。 */
   locked?: boolean;
   onAction?: (kind: DispatchDeskActionKind) => void;
+  /** 成卡行预览入口：缺席时成卡行不渲染打开按钮（拖拽 overlay 克隆天然缺席）。 */
+  onOpenCodeViewer?: (source: CodeViewerSource) => void;
 }) {
-  const { task, projection, dragOverlay = false, locked = false, onAction } = props;
+  const { task, projection, dragOverlay = false, locked = false, onAction, onOpenCodeViewer } = props;
   const { intl } = useZCodeIntl();
+  // 成卡项的 source 补上任务 workspace 作用域，PreviewPane 才能用正确 host 读取文件。
+  const openDeliverable = onOpenCodeViewer
+    ? (source: FileCodeViewerSource) =>
+        onOpenCodeViewer({
+          ...source,
+          workspacePath: task.workspacePath,
+          ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+        })
+    : undefined;
   const backoff =
     projection.column === "failed" && !projection.needsHuman && !projection.blockedDone;
   const actions = dragOverlay ? [] : getDispatchDeskCardActions(projection);
@@ -125,6 +138,11 @@ export function DispatchDeskCard(props: {
           <span className="truncate">{task.lastDispatchError}</span>
         </div>
       ) : null}
+      {/* 第 5 行 成卡/交付行：deliverables 缺席/不可辨时整行缺席（无则缺席）。 */}
+      <DispatchDeskCardDeliverables
+        deliverables={task.deliverables}
+        onOpenCodeViewer={openDeliverable}
+      />
       <div
         className={cn(
           "mt-1.5 flex items-center justify-between gap-2 text-ui-sm text-foreground-subtle",
