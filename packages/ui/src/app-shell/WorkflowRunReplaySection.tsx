@@ -7,6 +7,7 @@ import {
 } from "@zcode/shared";
 import type { WorkflowRunReplayInstance } from "@zcode/shared/zcode-protocol-v4";
 import { cn } from "@/components/lib/utils.js";
+import { REPLAY_MAX_EVENTS } from "@/hooks/workflowRunReplayPaging.js";
 import { useWorkflowRunReplay } from "@/hooks/useWorkflowRunReplay.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 
@@ -91,7 +92,12 @@ export const WorkflowRunReplaySection = memo(function WorkflowRunReplaySection({
       </button>
 
       {expanded && replay.status === "loading" ? (
-        <p className="px-4 pb-3 text-ui-xs text-foreground-subtle">…</p>
+        <p
+          aria-busy="true"
+          className="px-4 pb-3 text-ui-xs text-foreground-subtle"
+        >
+          {intl.formatMessage({ id: "chat.toolCall.workflow.run.replay.loading" })}
+        </p>
       ) : null}
 
       {expanded && replay.status === "error" ? (
@@ -105,7 +111,10 @@ export const WorkflowRunReplaySection = memo(function WorkflowRunReplaySection({
         <div className="pb-3">
           {replay.truncated ? (
             <p className="px-4 pb-2 text-ui-xs text-foreground-subtle">
-              {intl.formatMessage({ id: "chat.toolCall.workflow.run.replay.truncated" })}
+              {intl.formatMessage(
+                { id: "chat.toolCall.workflow.run.replay.truncated" },
+                { limit: REPLAY_MAX_EVENTS.toLocaleString() },
+              )}
             </p>
           ) : null}
 

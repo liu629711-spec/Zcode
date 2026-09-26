@@ -5,6 +5,7 @@ import {
   DwfRunReplayError,
   loadDwfRunReplay,
 } from "../src/storage/session-store/repositories/dwf-journal-replay.js";
+import { createDwfJournalStore } from "../src/storage/session-store/repositories/dwf-journal.js";
 
 // ============================================================
 // 回放投影的单测：折叠核经真实 sqlite 装载路径一起钉
@@ -242,6 +243,26 @@ test("超大 run：几千事件一次折叠，分组与计数不漂移", () => {
   assert.equal(replay.timeline.lastSequence, sequence - 1);
 });
 
+test("artifact-failed：交付失败进轨迹并记终局，不是 steps:[] 的幽灵空行", () => {
+  const db = openDb();
+  insertRun(db, "run-artifact");
+  insertEvent(db, "run-artifact", 0, "artifact-failed", {
+    instance: { siteId: "cover", ordinal: 0 },
+    error: { name: "ArtifactRejected", message: "文件越界" },
+  });
+  const replay = loadDwfRunReplay(db, "run-artifact");
+  const instance = replay.timeline.instances[0];
+  assert.ok(instance, "artifact-failed 带实例，必须产出实例轨迹");
+  assert.equal(instance.siteId, "cover");
+  assert.deepEqual(
+    instance.steps.map((step) => step.state),
+    ["artifact-failed"],
+  );
+  assert.equal(instance.outcome, "failed");
+  assert.equal(instance.error, "文件越界");
+  assert.equal(instance.steps[0]?.detail, "文件越界");
+});
+
 test("缺表：校验器点名缺失的表", () => {
   const db = openDb();
   insertRun(db, "run-x");
@@ -312,4 +333,27 @@ test("坏数据：payload_json 解不开 / 不是对象，报到 sequence", () =
     assert.equal(error.table, "dwf_event");
     assert.match(error.message, /sequence 1/);
   }
+});
+
+test("接线：缺表走 journal 查询路径也点名缺失的表", () => {
+  // v4 workflowRunEvents 最终落到 SqliteDwfJournalStore.listEvents——bare 库（migration 一条
+  // 没跑）走这条用户路径必须拿到点名的校验错误，而不是裸的 sqlite "no such table"。
+  const store = createDwfJournalStore(new DatabaseSync(":memory:"));
+  try {
+    store.listEvents("run-x", {});
+    assert.fail("应当抛出 DwfRunReplayError");
+  } catch (error) {
+    assert.ok(error instanceof DwfRunReplayError);
+    assert.match(error.message, /dwf_run/);
+    assert.match(error.message, /dwf_event/);
+  }
+
+  // 表其实齐全时查询照常：转译只认缺表这一类，正常路径零附加代价。
+  const db = openDb();
+  insertRun(db, "run-ok");
+  insertEvent(db, "run-ok", 0, "run-launched", { name: "ok" });
+  const events = createDwfJournalStore(db).listEvents("run-ok", {});
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.sequence, 0);
+  assert.deepEqual(events[0]?.event, { name: "ok" });
 });

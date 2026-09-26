@@ -24,6 +24,9 @@ import type {
   StoredEvent,
 } from "@zcode/dynamic-workflow";
 import { encodeJson } from "../json.js";
+// 只用于 listEvents 的缺表转译（v4 workflowRunEvents 这条用户读面缺表时点名缺哪张）：
+// 不往端口上加任何「回放」概念，纪律见 dwf-journal-replay.ts 文件头。
+import { loadDwfRunReplay } from "./dwf-journal-replay.js";
 // 产物读面自成一个模块：它只要一个 db 句柄，与 run/actor/node/event 的写入-读取无共享状态，
 // 而它的两条查询各自带着一大段「为什么是这个取数源、这个排序、这个游标」的论证。
 import {
@@ -411,17 +414,25 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
   }
 
   listEvents(runId: string, opts?: ListEventsOptions): StoredEvent[] {
-    // cursor 与 limit 都下推到 SQL：在这里取全量再切片，等于每翻一页把整条 journal
-    // 读进内存——分页存在的理由就是不这么做。cursor 语义是"严格大于"（内存实现同）。
-    const after = opts?.afterSequence;
-    const limit = opts?.limit;
-    const where = after === undefined ? "run_id = ?" : "run_id = ? and sequence > ?";
-    const params: Array<string | number> = after === undefined ? [runId] : [runId, after];
-    // `limit -1` 是 SQLite 的"不限"写法，因此缺省与显式 limit 共用同一条语句形状。
-    const rows = this.db
-      .prepare(`select * from dwf_event where ${where} order by sequence limit ?`)
-      .all(...params, limit === undefined ? -1 : Math.max(0, limit)) as unknown as DwfEventRow[];
-    return rows.map(decodeEvent);
+    try {
+      // cursor 与 limit 都下推到 SQL：在这里取全量再切片，等于每翻一页把整条 journal
+      // 读进内存——分页存在的理由就是不这么做。cursor 语义是"严格大于"（内存实现同）。
+      const after = opts?.afterSequence;
+      const limit = opts?.limit;
+      const where = after === undefined ? "run_id = ?" : "run_id = ? and sequence > ?";
+      const params: Array<string | number> = after === undefined ? [runId] : [runId, after];
+      // `limit -1` 是 SQLite 的"不限"写法，因此缺省与显式 limit 共用同一条语句形状。
+      const rows = this.db
+        .prepare(`select * from dwf_event where ${where} order by sequence limit ?`)
+        .all(...params, limit === undefined ? -1 : Math.max(0, limit)) as unknown as DwfEventRow[];
+      return rows.map(decodeEvent);
+    } catch (error) {
+      // 缺表（migration 未应用 / 库被外来工具动过）在这里转译成点名的校验错误：三表齐全
+      // 校验器一次查出全部缺失表并抛 DwfRunReplayError，UI 的 error 态直接显示 message。
+      // 表其实齐全的原样上抛——转译只认缺表这一类，正常路径零附加代价。
+      if (isMissingTableSqliteError(error)) loadDwfRunReplay(this.db, runId);
+      throw error;
+    }
   }
 
   /** UPDATE 影响 0 行即"未知 run"——SQLite 不会为此报错，必须显式检出并大声失败。 */
@@ -433,4 +444,13 @@ class SqliteDwfJournalStore implements JournalStorePort, DwfRunIntrospectionQuer
 /** 在既有 session 库上开一个 dwf journal 视图；表由 migration `0019_dwf_journal` 建立。 */
 export function createDwfJournalStore(db: DatabaseSync): JournalStorePort {
   return new SqliteDwfJournalStore(db);
+}
+
+/** node:sqlite 的缺表错误形状：ERR_SQLITE_ERROR + "no such table: <表名>"。 */
+function isMissingTableSqliteError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as { code?: unknown }).code === "ERR_SQLITE_ERROR" &&
+    error.message.startsWith("no such table:")
+  );
 }

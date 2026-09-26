@@ -4,6 +4,7 @@ import {
   type WorkflowRunReplayTimeline,
 } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@/logger.js";
+import { collectReplayEvents, REPLAY_PAGE_SIZE } from "@/hooks/workflowRunReplayPaging.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 
 /**
@@ -13,14 +14,9 @@ import { useV4Conversation } from "@/v4/V4ConversationContext.js";
  * @zcode/shared 的 `foldWorkflowRunReplay`——与 adapters 的服务端投影 `loadDwfRunReplay`
  * **同一份折叠核**：两边对同一份 journal 必须给出同一份证据，折叠不允许长两份。
  *
- * 分页循环到没有更多为止（cursor = journal sequence，永不失效，见 transport.ts 那边的论证）。
- * 上界 {@link REPLAY_MAX_EVENTS} 只防「一个失控 run 把渲染器内存吃穿」：到界即停，`truncated`
- * 置真——回放少一截尾巴，比渲染器先死，是正确的取舍。折叠本身是一次 O(n) 单遍扫，几千事件
- * 毫秒级，不在意；在意的是 n 失控，所以界卡在取数这层。
+ * 取数循环（逐页 + 封顶 + 截断判据）抽在 workflowRunReplayPaging.ts：纯异步函数，不碰
+ * React，假分页器单测钉住「恰满 cap ≠ 截断」——截断以末页 hasMore 为准。
  */
-const REPLAY_MAX_EVENTS = 20_000;
-/** 每页条数；与 CLI 侧允许的单页上界（500）一致，少几次往返。 */
-const REPLAY_PAGE_SIZE = 500;
 
 /**
  * 能力缺席（旧 CLI 没有这个 query / run service 没构造）与普通失败分开——与
@@ -43,7 +39,7 @@ export type WorkflowRunReplayStatus =
 export interface WorkflowRunReplayState {
   status: WorkflowRunReplayStatus;
   timeline: WorkflowRunReplayTimeline | undefined;
-  /** 事件数撞上 {@link REPLAY_MAX_EVENTS} 被截断。 */
+  /** 事件数撞上取数上界（workflowRunReplayPaging 的 REPLAY_MAX_EVENTS）被截断。 */
   truncated: boolean;
   error: string | null;
 }
@@ -79,30 +75,25 @@ export function useWorkflowRunReplay(options: {
       return;
     }
     setState({ status: "loading", timeline: undefined, truncated: false, error: null });
-    const collected: Array<{ sequence: number; type: string; payload: Record<string, unknown> }> = [];
-    let afterSequence: number | undefined;
     let alive = true;
     void (async () => {
       try {
-        let truncated = false;
-        // 逐页累进：cursor 语义是「严格大于」，journal 条目不可变（sequence 契约），
-        // 读过程中新落的事件只会出现在下一页的尾部——不重不漏，无需快照锁。
-        while (collected.length < REPLAY_MAX_EVENTS) {
-          const page = await workflowRunEvents({
-            sessionId,
-            runId,
-            ...(afterSequence === undefined ? {} : { afterSequence }),
-            limit: REPLAY_PAGE_SIZE,
-          });
-          if (requestVersion !== requestVersionRef.current || !alive) return;
-          collected.push(...page.events);
-          if (!page.hasMore) break;
-          const last = page.events.at(-1)?.sequence;
-          if (last === undefined) break;
-          afterSequence = last;
-        }
-        if (collected.length >= REPLAY_MAX_EVENTS) truncated = true;
-        const timeline = foldWorkflowRunReplay(collected);
+        // 迟到响应两道闸：shouldContinue 在每页到手后弃掉过期请求（省白跑的分页），
+        // 归并完再查一次——折叠期间切换的请求不许污染新 run 的证据（与产物 hook 同一把闸）。
+        const { events, truncated } = await collectReplayEvents({
+          fetchPage: async (afterSequence) => {
+            const page = await workflowRunEvents({
+              sessionId,
+              runId,
+              ...(afterSequence === undefined ? {} : { afterSequence }),
+              limit: REPLAY_PAGE_SIZE,
+            });
+            return { events: page.events, hasMore: page.hasMore };
+          },
+          shouldContinue: () => requestVersion === requestVersionRef.current && alive,
+        });
+        if (requestVersion !== requestVersionRef.current || !alive) return;
+        const timeline = foldWorkflowRunReplay(events);
         setState({
           status: timeline.eventCount === 0 ? "empty" : "ready",
           timeline,

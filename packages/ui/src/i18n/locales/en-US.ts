@@ -5476,7 +5476,7 @@ const enUS: Record<string, string> = {
   "chat.toolCall.workflow.run.replay.collapse": "Hide replay",
   "chat.toolCall.workflow.run.replay.attemptAll": "All",
   "chat.toolCall.workflow.run.replay.attempt": "Attempt {attempt}",
-  "chat.toolCall.workflow.run.replay.empty": "This run has no events to replay.",
+  "chat.toolCall.workflow.run.replay.loading": "Reading replay records…",
   "chat.toolCall.workflow.run.replay.error": "Failed to load replay",
   "chat.toolCall.workflow.run.replay.truncated": "Event cap reached; folded the first {limit}.",
   "chat.toolCall.workflow.run.artifacts.kind.file": "File",

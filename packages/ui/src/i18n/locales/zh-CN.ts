@@ -5211,7 +5211,7 @@ const zhCN: Record<string, string> = {
   "chat.toolCall.workflow.run.replay.collapse": "收起回放",
   "chat.toolCall.workflow.run.replay.attemptAll": "全部",
   "chat.toolCall.workflow.run.replay.attempt": "第 {attempt} 轮",
-  "chat.toolCall.workflow.run.replay.empty": "这条 run 没有可回放的事件。",
+  "chat.toolCall.workflow.run.replay.loading": "正在读取回放记录…",
   "chat.toolCall.workflow.run.replay.error": "回放读取失败",
   "chat.toolCall.workflow.run.replay.truncated": "事件过多，只折叠前 {limit} 条。",
   // 六个 kind 词 = facade `artifact.*` 的六个成员。file/markdown 是内容产物（有字节与版本），

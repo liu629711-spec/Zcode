@@ -103,6 +103,7 @@ const REPLAY_STATE_BY_EVENT_TYPE: Readonly<Record<string, string>> = {
 const REPLAY_STATE_BY_DELIVERY_EVENT_TYPE: Readonly<Record<string, string>> = {
   report: "report",
   "artifact-published": "artifact",
+  "artifact-failed": "artifact-failed",
   "import-cache-closed": "import-closed",
 };
 
@@ -200,8 +201,14 @@ export function foldWorkflowRunReplay(
 
     const delivery = REPLAY_STATE_BY_DELIVERY_EVENT_TYPE[type];
     if (delivery !== undefined) {
-      const detail =
-        delivery === "artifact" ? nonEmptyString(readArtifactId(payload)) : undefined;
+      // artifact-failed 的失败事实与 settle 同构：终局 failed + 错误摘要，先到先得。live
+      // reducer 认得这条事件（刻意不改状态），回放轨不能把它丢成幽灵空行。
+      const failure = delivery === "artifact-failed" ? errorDetail(payload.error) : undefined;
+      if (delivery === "artifact-failed") {
+        instance.outcome ??= "failed";
+        instance.error ??= failure;
+      }
+      const detail = delivery === "artifact" ? nonEmptyString(readArtifactId(payload)) : failure;
       instance.steps.push({ sequence, type, state: delivery, ...(detail === undefined ? {} : { detail }) });
       instance.lastSequence = sequence;
     }
