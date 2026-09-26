@@ -5034,6 +5034,7 @@ const enUS: Record<string, string> = {
   "chat.toolCall.workflow.graph.status.done": "done",
   "chat.toolCall.workflow.graph.status.failed": "failed",
   "chat.toolCall.workflow.graph.status.pending": "pending",
+  "chat.toolCall.workflow.timeline.runStalled": "Run stalled: no successful model request for a while across the whole workflow",
   "chat.toolCall.workflow.graph.phase.unphased": "Ungrouped",
   "chat.toolCall.workflow.graph.phase.workflow": "Workflow",
   "chat.toolCall.workflow.timeline.rounds": "visited {count} times",

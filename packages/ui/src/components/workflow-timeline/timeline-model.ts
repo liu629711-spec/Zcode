@@ -157,6 +157,12 @@ export interface WorkflowTimelineModel {
   runningIndex: number | undefined;
   /** 是否有 run 投影参与（决定灯 / 墨迹是否有话说）。 */
   live: boolean;
+  /**
+   * run 级停滞（driver 的 RunStallClock 观察经 `run-stalled` 事件到达）：整个 run
+   * 连续 `afterMs` 没有一次成功的模型请求。**只属于 run**——单个 actor 在等槽位
+   * 是正常排队，不是停滞；停滞色因此只染整条时间线，不染任何一枚药丸。
+   */
+  stalled?: true;
   /** 流式草稿：站由笔逐字写出，子代理只计数不画（`draft-scan.ts`）。分析器的模型没有它。 */
   draft?: { agents: number };
 }
@@ -433,7 +439,15 @@ function computeWorkflowTimeline(
     }),
   }));
 
-  return { arcs, bands, live: run !== undefined, rails, runningIndex, stations };
+  return {
+    arcs,
+    bands,
+    live: run !== undefined,
+    rails,
+    runningIndex,
+    stations,
+    ...(run?.stalled === true ? { stalled: true as const } : {}),
+  };
 }
 
 /** 一枚药丸「正在做什么」：优先正在跑的 step 的 label，其次最后一个已结算的，再次第一个。 */

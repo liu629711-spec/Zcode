@@ -51,6 +51,7 @@ import {
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "./explore-tools.js";
 import { formatLocalAgentTaskNotification } from "./completion-notification.js";
 import { filterSubagentChildToolNames } from "./tool-policy.js";
+import { createStallSentinel, type StallObservation } from "./stall-sentinel.js";
 import {
   ErrorPayloadRole,
   selectExecutionErrorMessage,
@@ -212,6 +213,34 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
         request,
         signal: taskAbort.signal,
         timeoutMs: options.inactivityTimeoutMs ?? DEFAULT_MODEL_STREAM_IDLE_TIMEOUT_MS,
+        // 停滞旁路上报：沿用 SubagentSpawned 的会话事件通道（emitParentEvent → appendEvent），
+        // 让投影/时间线能在中止前看到「没动静」。事件只是观察，失败不落地为错误。
+        onStalled: (info) => {
+          void emitSubagentEvent(
+            options,
+            SessionEventType.SubagentStalled,
+            request,
+            lifecycle.runTraceContext,
+            {
+              agentId: lifecycle.agentId,
+              agentType: request.agentType,
+              childSessionId: lifecycle.childSessionId,
+              parentToolCallId: request.parentToolCallId,
+              status: "stalled",
+              idleMs: info.idleMs,
+              lastActivityAt: info.lastActivityAt,
+              timeoutMs: info.timeoutMs,
+              abortTriggered: info.abortTriggered,
+            },
+          ).catch(() => {
+            options.logger?.warn("Failed to emit subagent stall event", {
+              ...traceContextToLogContext(lifecycle.runTraceContext),
+              agentId: lifecycle.agentId,
+              event: "subagent.stalled_emit_failed",
+              module: "core.subagent",
+            });
+          });
+        },
       });
       const readyGate = createSubagentSessionReadyGate();
       // child persistence/resume 可能在 onSessionReady 前永久挂起；watchdog 和
@@ -1195,6 +1224,14 @@ function createSubagentActivityWatchdog(options: {
   request: SubagentRunRequest;
   signal: AbortSignal;
   timeoutMs: number;
+  /**
+   * 停滞旁路观察（可选）：abort 落地**之前** idle 越过阈值（超时的一半）时报一次
+   * `abortTriggered:false`；看门狗超时中止的那一次报 `abortTriggered:true`——报完照旧
+   * 同步调 `abort`，中止语义（触发时刻、错误构造、日志）一字不动。没接就不产生任何
+   * 额外定时器。仅当本看门狗的 abort 是真正落地的那个（signal 尚未 aborted）才报：
+   * 用户手动停止 / 父级取消的先到者不冒充停滞。
+   */
+  onStalled?: (info: StallObservation & { abortTriggered: boolean; timeoutMs: number }) => void;
 }): {
   reportActivity: () => void;
   start: () => void;
@@ -1210,12 +1247,29 @@ function createSubagentActivityWatchdog(options: {
 
   let lastActivityAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // 中止前的预警线：超时的一半。哨兵每段安静期至多报一次，活动即归零重来。
+  // 没接 onStalled 就不装哨兵——不给无关调用方白挂一只定时器。
+  const stallSentinel =
+    options.onStalled === undefined
+      ? undefined
+      : createStallSentinel({
+          afterMs: Math.max(1, Math.floor(options.timeoutMs / 2)),
+          onStalled: (observation) => {
+            options.onStalled?.({
+              abortTriggered: false,
+              idleMs: observation.idleMs,
+              lastActivityAt: observation.lastActivityAt,
+              timeoutMs: options.timeoutMs,
+            });
+          },
+        });
 
   const stop = () => {
     if (timer) {
       clearTimeout(timer);
       timer = undefined;
     }
+    stallSentinel?.stop();
   };
 
   const schedule = () => {
@@ -1250,6 +1304,16 @@ function createSubagentActivityWatchdog(options: {
         status: "failed",
         timeoutMs: options.timeoutMs,
       });
+      // 旁路事件先行（fire-and-forget），abort 仍在同一个同步 tick 里落地。
+      if (!options.signal.aborted) {
+        options.onStalled?.({
+          abortTriggered: true,
+          idleMs,
+          lastActivityAt,
+          timeoutMs: options.timeoutMs,
+        });
+      }
+      stallSentinel?.stop();
       options.abort(error);
     }, options.timeoutMs);
   };
@@ -1257,6 +1321,7 @@ function createSubagentActivityWatchdog(options: {
   const reportActivity = () => {
     lastActivityAt = Date.now();
     schedule();
+    if (!options.signal.aborted) stallSentinel?.noteActivity();
   };
 
   return {

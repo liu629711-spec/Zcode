@@ -4740,6 +4740,7 @@ const zhCN: Record<string, string> = {
   "chat.toolCall.workflow.graph.status.done": "已完成",
   "chat.toolCall.workflow.graph.status.failed": "已失败",
   "chat.toolCall.workflow.graph.status.pending": "待开始",
+  "chat.toolCall.workflow.timeline.runStalled": "运行停滞：整条工作流已有一段阈值没有任何成功的模型请求",
   // ── 阶段名兜底──
   // `unphased` 是合成阶段：它装的是首个 `phase()` 标记之前的 step，不是作者写下的名字。
   "chat.toolCall.workflow.graph.phase.unphased": "未分组",

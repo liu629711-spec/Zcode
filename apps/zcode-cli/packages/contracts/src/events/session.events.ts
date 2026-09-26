@@ -167,6 +167,9 @@ export const SessionEventType = {
   SubagentSpawned: "subagent_spawned",
   SubagentMessage: "subagent_message",
   SubagentStopped: "subagent_stopped",
+  // 活动看门狗判定停滞时的旁路观察（不改变 abort 语义）：abort 落地前报一次
+  // （abortTriggered:false），看门狗超时中止时再报一次（abortTriggered:true）。
+  SubagentStalled: "subagent_stalled",
   Interrupt: "interrupt",
   Cancel: "cancel",
   Resume: "resume",

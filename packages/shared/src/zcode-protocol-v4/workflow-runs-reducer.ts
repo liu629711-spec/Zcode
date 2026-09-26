@@ -69,6 +69,7 @@ import { readRunIdField, readWorkflowRunStopReason } from "./workflow-runs-linea
 import { carryNodeProgress, reduceNodeProgress } from "./workflow-runs-node-progress.js";
 import { reducePhaseEntered, reduceRunLaunched } from "./workflow-runs-phases.js";
 import { reduceRunStarted } from "./workflow-runs-started.js";
+import { resolveStall } from "./workflow-runs-stall.js";
 import { upsertBoundedByInstance, upsertBoundedByQid } from "./workflow-runs-tables.js";
 
 /**
@@ -182,11 +183,14 @@ function applyWorkflowRunEvent(
     limits: WorkflowRunEntryLimits;
   },
 ): WorkflowRunState {
-  const run: WorkflowRunState = {
-    ...base,
-    ...(derived.toolCallId && !base.toolCallId ? { toolCallId: derived.toolCallId } : {}),
-    lastEventSequence: derived.sequence,
-  };
+  const run: WorkflowRunState = resolveStall(
+    {
+      ...base,
+      ...(derived.toolCallId && !base.toolCallId ? { toolCallId: derived.toolCallId } : {}),
+      lastEventSequence: derived.sequence,
+    },
+    eventType,
+  );
 
   switch (eventType) {
     /**
@@ -520,6 +524,13 @@ function applyWorkflowRunEvent(
       return reducePhaseEntered(run, payload);
     case "run-launched":
       return reduceRunLaunched(run, payload);
+
+    /**
+     * run-stalled：driver 的 RunStallClock 观察（规则与解除在同族 workflow-runs-stall.ts）。
+     * 只搬**在场**这一态，且只对活着的 run——终态 run 没有还在等的读者。
+     */
+    case "run-stalled":
+      return run.status === "pending" || run.status === "running" ? { ...run, stalled: true } : run;
 
     case "run-settled": {
       const status = payload.status;

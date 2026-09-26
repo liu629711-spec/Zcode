@@ -1575,6 +1575,14 @@ body {
 .wf-station-open:hover .wf-lamp[data-lamp="failed"] {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-destructive) 18%, transparent);
 }
+/*
+ * run 级停滞（run-stalled）：整条时间线一圈警示色细环。停滞是 **run** 的属性——
+ * 单个子代理在等槽位/退避是正常排队，不构成停滞，所以不染任何一枚药丸或站灯；
+ * driver 的 RunStallClock（阈值内无一次成功模型请求）说了算，停滞色只属于整条时间线。
+ */
+.wf-timeline[data-stalled="true"] {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-warning) 55%, transparent);
+}
 .wf-ink {
   transition:
     stroke var(--wf-t-ink) var(--wf-ease),

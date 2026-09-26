@@ -384,6 +384,14 @@ export const workflowRunSchema = z.object({
    * 状态键追加字段，旧 CLI 不发它时少一个键是退化，不是整帧被丢。
    */
   resumable: z.literal(true).optional(),
+  /**
+   * run 级停滞（driver 的 RunStallClock 观察，随 `run-stalled` 事件到达）：整个 run
+   * 连续一段阈值没有一次**成功的模型请求**、且本段至少排定过一次重试。**为真才在场**，
+   * 任何运动证据（节点推进、阶段进入、新 run 出生）或终态都会把它摘掉——协议只有
+   * 「键在场 / 键缺席」两态。它是 **run** 的属性：单个 actor 在等槽位/退避是正常排队，
+   * 不构成停滞，UI 不得拿它给个别子代理染色。
+   */
+  stalled: z.literal(true).optional(),
   resultPreview: z.string().max(WORKFLOW_RUNS_LIMITS.maxResultPreviewLength).optional(),
   actors: z.array(workflowRunActorSchema).max(WORKFLOW_RUNS_LIMITS.maxActors),
   nodes: z.array(workflowRunNodeSchema).max(WORKFLOW_RUNS_LIMITS.maxNodes),

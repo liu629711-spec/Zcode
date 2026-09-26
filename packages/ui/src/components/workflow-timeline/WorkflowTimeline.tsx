@@ -285,8 +285,14 @@ export const WorkflowTimeline = memo(function WorkflowTimeline({
   return (
     <div
       className={cn("wf-motion wf-timeline min-w-0", className)}
+      data-stalled={model.stalled === true ? "true" : undefined}
       data-testid="workflow-timeline"
       onKeyDown={onKeyDown}
+      title={
+        model.stalled === true
+          ? format({ id: "chat.toolCall.workflow.timeline.runStalled" })
+          : undefined
+      }
     >
       {/* 檐与滚动条叠在滚动层之上，以它（而不是带 padding 的外框）为基准定位。 */}
       <div className="relative">
