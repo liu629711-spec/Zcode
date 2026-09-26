@@ -599,7 +599,7 @@ export class DispatchDeskRepo {
             last_dispatch_error = NULL,
             updated_at = @now
         WHERE workspace_key = @workspace_key AND task_id = @task_id
-          AND dispatch_state = 'failed_to_dispatch'`,
+          AND dispatch_state = 'failed_to_dispatch' AND deleted = 0`,
       )
       .run({
         now: params.now,

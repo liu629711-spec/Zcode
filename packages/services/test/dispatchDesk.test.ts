@@ -506,11 +506,18 @@ test("manualRequeue: only failed_to_dispatch is requeueable; fields reset to a f
         last_dispatch_error='boom' WHERE task_id='m-failed'`,
       )
       .run();
+    // 软删的 failed 票不再可接手：人工通道与看板（软删票不投影）对齐。
+    seedTicket(ctx.raw, { workspacePath: "/blocked", taskId: "m-deleted", acceptanceCriteria: "done" });
+    ctx.raw
+      .prepare(
+        `UPDATE tasks SET dispatch_state='failed_to_dispatch', deleted=1 WHERE task_id='m-deleted'`,
+      )
+      .run();
     const repo = new DispatchDeskRepo(ctx.dbPath);
     await repo.ensureReady();
 
-    // idle/claimed/dispatched/pending_review 都不是人工接手对象：null 且状态原样。
-    for (const taskId of ["m-idle", "m-claimed", "m-dispatched", "m-pending"]) {
+    // idle/claimed/dispatched/pending_review/软删 都不是人工接手对象：null 且状态原样。
+    for (const taskId of ["m-idle", "m-claimed", "m-dispatched", "m-pending", "m-deleted"]) {
       assert.equal(await repo.manualRequeue({ ...BLOCKED, taskId }, { now: 1000 }), null, taskId);
     }
     assert.equal(rawTicket(ctx.raw, "m-claimed").dispatch_state, "claimed");
