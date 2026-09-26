@@ -16,10 +16,11 @@ import type { WorkflowRunState } from "./workflow-runs.js";
  * 脚本或某个 ask 往前走了，停滞观察即告结束。
  *
  * `node-waiting` 刻意**不在**其中：等槽位、等退避正是停滞的常态形态，它不证明任何人在动。
- * `run-started`（新的一世出生）与 `run-settled`（终态没有还在等的读者）也摘键——
+ * `run-started` / `run-launched`（新的一世出生）与 `run-settled`（终态没有还在等的读者）也摘键——
  * 停滞观察只属于活着的 run。
  */
-const STALL_ENDING_EVENT_TYPES: ReadonlySet<string> = new Set([
+// 导出只为让成员表的测试逐成员遍历（新成员不进测试就过不了「别漏」那格）。
+export const STALL_ENDING_EVENT_TYPES: ReadonlySet<string> = new Set([
   "node-queued",
   "node-dispatched",
   "node-executing",
@@ -31,6 +32,9 @@ const STALL_ENDING_EVENT_TYPES: ReadonlySet<string> = new Set([
   "artifact-published",
   "usage-updated",
   "run-started",
+  // 新一世出生=运动证据，与 run-started 同理；顺带消灭「run-started 必须先于
+  // run-launched 落账」这条跨文件顺序依赖——该纪律没有测试兜底。
+  "run-launched",
   "run-settled",
 ]);
 
