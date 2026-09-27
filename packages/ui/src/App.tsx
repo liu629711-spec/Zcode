@@ -851,6 +851,11 @@ export function App({
     preserveNextSettingsExit();
     setWorkspaceMainView("plugin-store");
   }, [preserveNextSettingsExit]);
+  // 素材库没有深链目标，不进 taskNavHistory（automations/plugin-store 那套
+  // 接线是给历史回放用的）；顶栏后退走默认 taskNavBack 即可离开素材库。
+  const handleNavigateToAssetLibraryMain = useCallback(() => {
+    setWorkspaceMainView("asset-library");
+  }, []);
   const handleOpenAutomationConsumed = useCallback(() => {
     setOpenAutomationId(null);
     setOpenAutomationTab(null);
@@ -1133,6 +1138,7 @@ export function App({
         onOpenAutomationConsumed={handleOpenAutomationConsumed}
         handleOpenAutomations={handleOpenAutomations}
         handleOpenPluginStore={handleOpenPluginStoreForScope}
+        handleOpenAssetLibrary={handleNavigateToAssetLibraryMain}
         handleManageInstalledPlugins={handleManageInstalledPlugins}
         onConnectRemote={onConnectRemote}
         onSelectRemoteProject={onSelectRemoteProject}

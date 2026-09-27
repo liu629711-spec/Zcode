@@ -45,6 +45,7 @@ import type {
   SavedWorkflowsOpenRunParams,
 } from "@/settings/saved-workflows/SavedWorkflowsSection.js";
 import { AutomationsMainBreadcrumbFrame } from "@/settings/AutomationsMainBreadcrumbFrame.js";
+import { AssetLibrarySection } from "@/asset-library/AssetLibrarySection.js";
 import { PluginStorePage } from "@/settings/PluginStorePage.js";
 import { DispatchDeskKanbanBoard } from "@/workspace-grouped-tasks/kanban-board.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
@@ -200,6 +201,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   onOpenAutomationConsumed,
   handleOpenAutomations,
   handleOpenPluginStore,
+  handleOpenAssetLibrary,
   handleManageInstalledPlugins,
   onConnectRemote,
   onSelectRemoteProject,
@@ -1516,7 +1518,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   const shouldRenderMainViewHeader =
     workspaceMainView !== "automations" &&
     workspaceMainView !== "plugin-store" &&
-    workspaceMainView !== "dispatch-desk";
+    workspaceMainView !== "dispatch-desk" &&
+    workspaceMainView !== "asset-library";
   const shouldRenderWorkspaceHeader =
     shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
   // ErrorBoundary resetKeys 的数组如果每次 render 都重新创建，
@@ -1624,6 +1627,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     automationsActive={workspaceMainView === "automations"}
                     onOpenPluginStore={handleOpenPluginStore}
                     pluginStoreActive={workspaceMainView === "plugin-store"}
+                    onOpenAssetLibrary={handleOpenAssetLibrary}
+                    assetLibraryActive={workspaceMainView === "asset-library"}
                     onFileTreeOpenChange={setIsSidebarFileTreeOpen}
                   />
                 </WorkflowRunOpenProvider>
@@ -1845,6 +1850,31 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                             </div>
                           </AutomationsMainBreadcrumbFrame>
                         </main>
+                      ) : workspaceMainView === "asset-library" ? (
+                        <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
+                          <AutomationsMainBreadcrumbFrame
+                            isDesktop={Boolean(isDesktop)}
+                            sectionLabel={intl.formatMessage({
+                              id: "assetLibrary.title",
+                            })}
+                            ariaLabel={intl.formatMessage({
+                              id: "assetLibrary.breadcrumbLabel",
+                            })}
+                          >
+                            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+                              <ScopedErrorBoundary
+                                scope="asset-library-main"
+                                resetKeys={workspaceOnlyResetKeys}
+                                variant="panel"
+                                className="min-h-full"
+                              >
+                                <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-6">
+                                  <AssetLibrarySection />
+                                </div>
+                              </ScopedErrorBoundary>
+                            </div>
+                          </AutomationsMainBreadcrumbFrame>
+                        </main>
                       ) : workspaceMainView === "dispatch-desk" ? (
                         <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
                           <AutomationsMainBreadcrumbFrame
@@ -1950,7 +1980,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                 </ResizablePanel>
                 {workspaceMainView !== "automations" &&
                 workspaceMainView !== "plugin-store" &&
-                workspaceMainView !== "dispatch-desk" ? (
+                workspaceMainView !== "dispatch-desk" &&
+                workspaceMainView !== "asset-library" ? (
                   <AnimatedTerminalPanel
                     frameClassName={cn(
                       isSidePaneVisible

@@ -27,6 +27,7 @@ import {
   Minimize2,
   Plus,
   Search,
+  Shapes,
   X,
 } from "lucide-react";
 import {
@@ -284,8 +285,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter,
   onOpenAutomations,
   onOpenPluginStore,
+  onOpenAssetLibrary,
   automationsActive = false,
   pluginStoreActive = false,
+  assetLibraryActive = false,
   onFileTreeOpenChange,
 }: {
   workspacePath: string;
@@ -336,8 +339,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter: () => void;
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
+  onOpenAssetLibrary?: () => void;
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
+  assetLibraryActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
@@ -895,6 +900,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const handleOpenAutomationsMain = useCallback(() => {
     onOpenAutomations?.();
   }, [onOpenAutomations]);
+  const handleOpenAssetLibraryMain = useCallback(() => {
+    onOpenAssetLibrary?.();
+  }, [onOpenAssetLibrary]);
   const handleOpenCodingPlanUpgrade = useCallback(
     (
       providerId: string,
@@ -1486,6 +1494,23 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               <Blocks className="size-4" />
               {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
             </Button>
+            <ControlHintTooltip title={intl.formatMessage({ id: "assetLibrary.sidebar.tooltip" })}>
+              <Button
+                variant="ghost"
+                onClick={handleOpenAssetLibraryMain}
+                data-icon="inline-start"
+                data-testid="asset-library-sidebar-open"
+                size="lg"
+                aria-pressed={assetLibraryActive}
+                className={cn(
+                  "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
+                  assetLibraryActive && "bg-selected text-foreground",
+                )}
+              >
+                <Shapes className="size-4" />
+                {intl.formatMessage({ id: "workspace.openAssetLibrary" })}
+              </Button>
+            </ControlHintTooltip>
           </div>
 
           <div className="relative flex min-h-0 flex-1 flex-col">
