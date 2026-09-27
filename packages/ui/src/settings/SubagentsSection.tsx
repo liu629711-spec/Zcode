@@ -1020,6 +1020,7 @@ function SubagentForm({
       disallowedTools: initial?.disallowedTools,
       skills: initial?.skills,
       permissionMode: initial?.permissionMode,
+      memory: initial?.memory,
       ...(initial?.maxTurns ? { maxTurns: initial.maxTurns } : {}),
       ...(initial?.background !== undefined ? { background: initial.background } : {}),
       mcpServers: initial?.mcpServers,

@@ -215,6 +215,12 @@ export const TID_PROJECT_SECTION = "project-section";
 export const TID_CONVERSATION_NEW_TASK = "conversation-new-task";
 /** 项目分区添加菜单按钮 */
 export const TID_PROJECT_ADD = "project-add";
+/** 项目分区添加菜单里的新建智能体入口 */
+export const TID_PROJECT_AGENT_CREATE = "project-agent-create";
+/** 项目分区新建智能体对话框 */
+export const TID_PROJECT_AGENT_CREATE_DIALOG = "project-agent-create-dialog";
+/** 项目分区智能体分组行（动态后缀为 agentName） */
+export const TID_PROJECT_AGENT_ROW = "project-agent-row";
 /** Composer workspace 选择触发器 */
 export const TID_COMPOSER_WORKSPACE_TRIGGER = "composer-workspace-trigger";
 /** Composer workspace 菜单的远程连接入口 */

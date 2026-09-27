@@ -5,6 +5,7 @@ import {
   formatSubagentMarkdownModel,
   type AgentColor,
   type AgentDiagnostic,
+  type AgentMemoryScope,
   type AgentPermissionMode,
   type AgentScope,
   type AgentSummary,
@@ -23,6 +24,8 @@ const VALID_COLORS = new Set<AgentColor>([
 ]);
 
 const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["auto", "plan"]);
+
+const VALID_MEMORY_SCOPES = new Set<AgentMemoryScope>(["user", "project", "local"]);
 
 interface ParseSubagentMarkdownInput {
   content: string;
@@ -66,6 +69,7 @@ export function parseSubagentMarkdown(
   const modelSelection = parseSubagentMarkdownSelection(frontmatter);
   const color = normalizeEnum(frontmatter.color, VALID_COLORS);
   const permissionMode = normalizeEnum(frontmatter.permissionMode, VALID_PERMISSION_MODES);
+  const memory = normalizeEnum(frontmatter.memory, VALID_MEMORY_SCOPES);
   const maxTurns = normalizePositiveInteger(frontmatter.maxTurns);
   const tools = parseToolSpecList(frontmatter.tools);
   const disallowedTools = parseToolSpecList(frontmatter.disallowedTools);
@@ -86,6 +90,7 @@ export function parseSubagentMarkdown(
       ...(disallowedTools ? { disallowedTools } : {}),
       ...(skills ? { skills } : {}),
       ...(permissionMode ? { permissionMode } : {}),
+      ...(memory ? { memory } : {}),
       ...(maxTurns ? { maxTurns } : {}),
       ...(background !== undefined ? { background } : {}),
       ...(injectAgentsMd !== undefined ? { injectAgentsMd } : {}),
@@ -116,6 +121,7 @@ export function serializeSubagentMarkdown(config: SubAgentConfig): string {
   appendList(frontmatterLines, "disallowedTools", config.disallowedTools);
   appendList(frontmatterLines, "skills", config.skills);
   appendScalar(frontmatterLines, "permissionMode", config.permissionMode);
+  appendScalar(frontmatterLines, "memory", config.memory);
   if (config.maxTurns !== undefined) {
     frontmatterLines.push(`maxTurns: ${config.maxTurns}`);
   }

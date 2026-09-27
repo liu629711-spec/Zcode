@@ -14,6 +14,7 @@ import {
 import {
   Archive,
   Blocks,
+  Bot,
   CalendarClock,
   Clock3,
   Cloud,
@@ -53,6 +54,7 @@ import {
   TID_CONVERSATION_SECTION,
   TID_AUTOMATIONS_OPEN,
   TID_PROJECT_ADD,
+  TID_PROJECT_AGENT_CREATE,
   TID_PROJECT_SECTION,
   TID_SIDEBAR,
   TID_WORKSPACE_LIST,
@@ -128,6 +130,11 @@ import {
   type SidebarTaskGroupTogglePresentation,
 } from "@/WorkspaceSidebar/taskGroupTogglePresentation.js";
 import { WorkspacePurposeSection } from "@/WorkspaceSidebar/WorkspacePurposeSection.js";
+import {
+  useWorkspaceProjectAgents,
+  WorkspaceProjectAgentCreateDialog,
+  WorkspaceProjectAgentsGroup,
+} from "@/WorkspaceSidebar/ProjectAgents.js";
 import { cn } from "@/components/lib/utils.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import {
@@ -398,6 +405,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   );
   const [purposeSectionPreferences, setPurposeSectionPreferences] = useState(
     readSidebarPurposeSectionPreferences,
+  );
+  const [projectAgentCreateOpen, setProjectAgentCreateOpen] = useState(false);
+  // 驻场智能体只在项目分区展开时拉取；远程 workspace 在 rpc ready 前保持空列表。
+  const projectAgents = useWorkspaceProjectAgents(
+    workspacePath,
+    workspaceIdentity,
+    workspaceRemoteSessionId,
+    purposeSectionPreferences.projectsExpanded,
   );
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological">
@@ -1483,11 +1498,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                         })}
                                       </DropdownMenuItem>
                                     ) : null}
+                                    <DropdownMenuItem
+                                      onSelect={() => setProjectAgentCreateOpen(true)}
+                                      data-testid={TID_PROJECT_AGENT_CREATE}
+                                    >
+                                      <Bot className="size-4" />
+                                      {intl.formatMessage({
+                                        id: "workspaceSidebar.createProjectAgent",
+                                      })}
+                                    </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               }
                             >
-                              {projectWorkspaceTabs.length === 0 ? (
+                              <>
+                                {projectWorkspaceTabs.length === 0 ? (
                                 <div className="px-3 py-2 text-ui-base text-foreground-subtle">
                                   {intl.formatMessage({
                                     id: "workspaceSidebar.noProjects",
@@ -1575,7 +1600,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                         document.body,
                                       )}
                                 </DndContext>
-                              )}
+                                )}
+                                {/* 驻场智能体只读分组：排在项目任务列表之后，点击交互由后续分片承接。 */}
+                                <WorkspaceProjectAgentsGroup agents={projectAgents.agents} />
+                              </>
                             </WorkspacePurposeSection>
                           ) : (
                             <WorkspacePurposeSection
@@ -1641,6 +1669,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               </div>
             </div>
           </div>
+
+          <WorkspaceProjectAgentCreateDialog
+            open={projectAgentCreateOpen}
+            onOpenChange={setProjectAgentCreateOpen}
+            creating={projectAgents.creating}
+            onCreate={projectAgents.createAgent}
+          />
 
           <WorkspaceSidebarFooter
             className="pr-3"

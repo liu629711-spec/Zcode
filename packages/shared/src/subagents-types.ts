@@ -28,6 +28,8 @@ export function parsePluginSubagentModelSelectionOverrides(
 
 export type AgentPermissionMode = "auto" | "plan";
 
+export type AgentMemoryScope = "user" | "project" | "local";
+
 export type AgentColor =
   | "red"
   | "blue"
@@ -54,6 +56,7 @@ export interface AgentSummary {
   injectAgentsMd?: boolean;
   skills?: string[];
   permissionMode?: AgentPermissionMode;
+  memory?: AgentMemoryScope;
   maxTurns?: number;
   background?: boolean;
   mcpServers?: unknown[];
@@ -99,6 +102,7 @@ export interface SubAgentConfig {
   injectAgentsMd?: boolean;
   skills?: string[];
   permissionMode?: AgentPermissionMode;
+  memory?: AgentMemoryScope;
   maxTurns?: number;
   background?: boolean;
   mcpServers?: unknown[];
