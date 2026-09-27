@@ -14,7 +14,6 @@ import {
 import {
   Archive,
   Blocks,
-  Bot,
   CalendarClock,
   Clock3,
   Cloud,
@@ -60,7 +59,6 @@ import {
   TID_CONVERSATION_SECTION,
   TID_AUTOMATIONS_OPEN,
   TID_PROJECT_ADD,
-  TID_PROJECT_AGENT_CREATE,
   TID_PROJECT_SECTION,
   TID_SIDEBAR,
   TID_WORKSPACE_LIST,
@@ -141,6 +139,7 @@ import {
   useWorkspaceProjectAgents,
   WorkspaceProjectAgentCreateDialog,
   WorkspaceProjectAgentsGroup,
+  type ProjectAgentTarget,
 } from "@/WorkspaceSidebar/ProjectAgents.js";
 import { cn } from "@/components/lib/utils.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
@@ -186,6 +185,8 @@ interface SidebarFileTreeTarget {
 // 流式 task 事件会让 sidebar 父级频繁刷新；缺任务分组时如果传新的 []
 // 会让 memo 的 workspace 行误判 taskItems 变化，穿透到 TaskList/TaskListItem 重渲染。
 const EMPTY_WORKSPACE_TASK_ITEMS: ZCodeTaskMeta[] = [];
+// 同理：没有驻场智能体的 workspace 复用同一个空数组，避免打穿行级 memo。
+const EMPTY_PROJECT_AGENTS: AgentSummary[] = [];
 // WorkspaceSidebar 是 memo 组件，默认参数里的 {} 每次调用都会创建新引用；
 // 缺省远程重连日志时必须复用同一个对象，避免浅比较被默认值打穿。
 const EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY: Record<
@@ -413,32 +414,77 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const [purposeSectionPreferences, setPurposeSectionPreferences] = useState(
     readSidebarPurposeSectionPreferences,
   );
-  const [projectAgentCreateOpen, setProjectAgentCreateOpen] = useState(false);
-  // 驻场智能体只在项目分区展开时拉取；远程 workspace 在 rpc ready 前保持空列表。
-  const projectAgents = useWorkspaceProjectAgents(
-    workspacePath,
-    workspaceIdentity,
-    workspaceRemoteSessionId,
-    purposeSectionPreferences.projectsExpanded,
+  // 驻场智能体跟随工作区：每个项目块内列出该工作区自己的智能体，创建入口在工作区层级。
+  // 取数仍绑侧栏活动工作区解析；bound 本地时一次服务可并行列出所有本地工作区。
+  const projectAgentTabs = useMemo(
+    () =>
+      projectWorkspaceTabs.map((tab) => ({
+        workspacePath: tab.workspacePath,
+        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
+        ...(tab.remoteSessionId ? { workspaceRemoteSessionId: tab.remoteSessionId } : {}),
+      })),
+    [projectWorkspaceTabs],
   );
+  const projectAgents = useWorkspaceProjectAgents({
+    tabs: projectAgentTabs,
+    boundWorkspacePath: workspacePath,
+    boundWorkspaceIdentity: workspaceIdentity,
+    boundWorkspaceRemoteSessionId: workspaceRemoteSessionId,
+    enabled: purposeSectionPreferences.projectsExpanded,
+  });
+  const [projectAgentCreateTarget, setProjectAgentCreateTarget] =
+    useState<ProjectAgentTarget | null>(null);
   // 点开智能体：建 persona 会话后走侧栏任务行同一条导航（handleSelectTaskInChat）。
   const { openAgentChat: openProjectAgentChat } = useOpenProjectAgentChat({
     workspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
     onSessionCreated: useCallback(
-      (sessionId: string) => {
-        onSelectTask(workspacePath, sessionId, workspaceIdentity, workspaceRemoteSessionId);
+      (sessionId: string, target: ProjectAgentTarget) => {
+        // 驻场智能体建的会话都在目标工作区本地，targetRemoteSessionId 不传。
+        onSelectTask(target.workspacePath, sessionId, target.workspaceIdentity);
       },
-      [onSelectTask, workspaceIdentity, workspacePath, workspaceRemoteSessionId],
+      [onSelectTask],
     ),
   });
   const handleOpenProjectAgentChat = useCallback(
-    (agent: AgentSummary) => {
-      void openProjectAgentChat(agent);
+    (agent: AgentSummary, target: ProjectAgentTarget) => {
+      void openProjectAgentChat(agent, target);
     },
     [openProjectAgentChat],
   );
+  // 每个工作区的智能体小节按 key 收口，流式刷新时元素引用保持稳定，不打穿行级 memo。
+  const agentsSectionByWorkspaceKey = useMemo(() => {
+    const sections = new Map<string, ReactNode>();
+    for (const tab of projectWorkspaceTabs) {
+      // 创建与打开都走 bound 连接：只有与 bound 同通道的工作区可达（同为本地，或同一
+      // 远程会话）——不可达的远程 tab 不渲染小节，防止经本机服务把目录建到错误的机器上。
+      const reachable = workspaceRemoteSessionId
+        ? tab.workspacePath === workspacePath
+        : !tab.remoteSessionId;
+      if (!reachable) continue;
+      const workspaceKey = buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity);
+      const target: ProjectAgentTarget = {
+        workspacePath: tab.workspacePath,
+        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
+      };
+      sections.set(
+        workspaceKey,
+        <WorkspaceProjectAgentsGroup
+          agents={projectAgents.agentsByWorkspaceKey.get(workspaceKey) ?? EMPTY_PROJECT_AGENTS}
+          onCreateClick={() => setProjectAgentCreateTarget(target)}
+          onOpenAgent={(agent) => handleOpenProjectAgentChat(agent, target)}
+        />,
+      );
+    }
+    return sections;
+  }, [
+    handleOpenProjectAgentChat,
+    projectAgents.agentsByWorkspaceKey,
+    projectWorkspaceTabs,
+    workspacePath,
+    workspaceRemoteSessionId,
+  ]);
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological">
   >(() => {
@@ -1523,15 +1569,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                         })}
                                       </DropdownMenuItem>
                                     ) : null}
-                                    <DropdownMenuItem
-                                      onSelect={() => setProjectAgentCreateOpen(true)}
-                                      data-testid={TID_PROJECT_AGENT_CREATE}
-                                    >
-                                      <Bot className="size-4" />
-                                      {intl.formatMessage({
-                                        id: "workspaceSidebar.createProjectAgent",
-                                      })}
-                                    </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               }
@@ -1606,6 +1643,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                             }
                                             onReconnectRemoteWorkspace={onReconnectRemoteWorkspace}
                                             onOpenFileTree={handleOpenWorkspaceFileTree}
+                                            agentsSection={agentsSectionByWorkspaceKey.get(
+                                              workspaceKey,
+                                            )}
                                           />
                                         );
                                       })}
@@ -1626,11 +1666,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                       )}
                                 </DndContext>
                                 )}
-                                {/* 驻场智能体分组：点行以该智能体身份开一段对话。 */}
-                                <WorkspaceProjectAgentsGroup
-                                  agents={projectAgents.agents}
-                                  onOpenAgent={handleOpenProjectAgentChat}
-                                />
                               </>
                             </WorkspacePurposeSection>
                           ) : (
@@ -1699,10 +1734,20 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           </div>
 
           <WorkspaceProjectAgentCreateDialog
-            open={projectAgentCreateOpen}
-            onOpenChange={setProjectAgentCreateOpen}
+            open={projectAgentCreateTarget !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setProjectAgentCreateTarget(null);
+              }
+            }}
             creating={projectAgents.creating}
-            onCreate={projectAgents.createAgent}
+            onCreate={async (draft) => {
+              const target = projectAgentCreateTarget;
+              if (!target) {
+                return false;
+              }
+              return projectAgents.createAgent(target, draft);
+            }}
           />
 
           <WorkspaceSidebarFooter

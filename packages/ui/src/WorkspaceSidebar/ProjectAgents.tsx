@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Bot } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Bot, Plus } from "lucide-react";
 import {
+  TID_PROJECT_AGENT_CREATE,
   TID_PROJECT_AGENT_CREATE_DIALOG,
   TID_PROJECT_AGENT_ROW,
   ZCODE_AGENT_PROVIDER,
@@ -13,13 +14,14 @@ import { Input } from "@/components/ui/input.js";
 import { Textarea } from "@/components/ui/textarea.js";
 import { toast } from "@/components/ui/toast.js";
 import { logger } from "@/logger.js";
+import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import { acquireWorkspaceConnection } from "@/v4/workspaceConnectionRegistry.js";
 import { launchWorkspaceId } from "@/settings/saved-workflows/useSavedWorkflowLauncher.js";
 import {
-  selectProjectAgents,
+  selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
   toProjectAgentPersona,
   validateProjectAgentDraft,
@@ -27,54 +29,101 @@ import {
   type ProjectAgentDraftError,
 } from "./projectAgentsModel.js";
 
-// 列表与创建共用一份服务解析：分组和创建弹窗分别挂载，状态由 WorkspaceSidebar 持有。
-export function useWorkspaceProjectAgents(
-  workspacePath: string,
-  workspaceIdentity: string | undefined,
-  workspaceRemoteSessionId: string | undefined,
-  enabled: boolean,
-) {
+/** 驻场智能体操作的目标工作区坐标：创建和开会话都按它定向（照 useSavedWorkflowLauncher 先例）。 */
+export interface ProjectAgentTarget {
+  workspacePath: string;
+  workspaceIdentity?: string;
+}
+
+/** 侧栏待取数的工作区条目：remoteSessionId 只用于区分本地/远程取数路径。 */
+export interface ProjectAgentWorkspaceTab extends ProjectAgentTarget {
+  workspaceRemoteSessionId?: string;
+}
+
+// 列表与创建共用一份服务解析（绑侧栏活动工作区）；分组按工作区各自挂载，状态由 WorkspaceSidebar 持有。
+export function useWorkspaceProjectAgents(params: {
+  tabs: readonly ProjectAgentWorkspaceTab[];
+  boundWorkspacePath: string;
+  boundWorkspaceIdentity?: string;
+  boundWorkspaceRemoteSessionId?: string;
+  enabled: boolean;
+}) {
+  const {
+    tabs,
+    boundWorkspacePath,
+    boundWorkspaceIdentity,
+    boundWorkspaceRemoteSessionId,
+    enabled,
+  } = params;
   const resolution = useWorkspaceServicesResolution(
-    workspacePath,
-    workspaceRemoteSessionId,
-    workspaceIdentity,
+    boundWorkspacePath,
+    boundWorkspaceRemoteSessionId,
+    boundWorkspaceIdentity,
   );
   const subagentsService = resolution.services.subagentsService;
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [agentsByWorkspaceKey, setAgentsByWorkspaceKey] = useState<Map<string, AgentSummary[]>>(
+    () => new Map(),
+  );
   const [creating, setCreating] = useState(false);
+
+  // 取数集合：bound 本地 → 一次解析并行列所有本地工作区；bound 远程 → 只列与 bound 同路径的 tab（现行为）。
+  const fetchTargets = useMemo(() => {
+    if (boundWorkspaceRemoteSessionId) {
+      return tabs.filter((tab) => tab.workspacePath === boundWorkspacePath);
+    }
+    return tabs.filter((tab) => !tab.workspaceRemoteSessionId);
+  }, [boundWorkspacePath, boundWorkspaceRemoteSessionId, tabs]);
+  // effect 依赖用稳定签名（workspaceKey join），避免 tabs 数组每次渲染换引用导致反复拉列表。
+  const fetchSignature = useMemo(
+    () =>
+      fetchTargets
+        .map((tab) => buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity))
+        .join("\n"),
+    [fetchTargets],
+  );
+  const fetchTargetsRef = useRef(fetchTargets);
+  fetchTargetsRef.current = fetchTargets;
 
   const reload = useCallback(async () => {
     if (!enabled || !resolution.rpcReady) {
       return;
     }
     try {
-      const result = await subagentsService.list({
-        workspacePath,
-        workspaceIdentity,
-        provider: ZCODE_AGENT_PROVIDER,
-      });
-      setAgents(selectProjectAgents(result.agents));
+      const entries = await Promise.all(
+        fetchTargetsRef.current.map(async (tab) => {
+          const result = await subagentsService.list({
+            workspacePath: tab.workspacePath,
+            workspaceIdentity: tab.workspaceIdentity,
+            provider: ZCODE_AGENT_PROVIDER,
+          });
+          return [
+            buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
+            selectProjectAgentsForWorkspace(result.agents, tab.workspacePath),
+          ] as const;
+        }),
+      );
+      setAgentsByWorkspaceKey(new Map(entries));
     } catch (error) {
-      // 远程断连等场景下分组直接隐藏，不阻塞侧栏其余内容。
-      setAgents([]);
+      // 远程断连等场景下分组退化为仅剩创建入口，不阻塞侧栏其余内容。
+      setAgentsByWorkspaceKey(new Map());
       logger.warn("[projectAgents] 列表加载失败", error);
     }
-  }, [enabled, resolution.rpcReady, subagentsService, workspaceIdentity, workspacePath]);
+  }, [enabled, fetchSignature, resolution.rpcReady, subagentsService]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
   const createAgent = useCallback(
-    async (draft: ProjectAgentDraft): Promise<boolean> => {
+    async (target: ProjectAgentTarget, draft: ProjectAgentDraft): Promise<boolean> => {
       setCreating(true);
       try {
         await subagentsService.createAgent({
           config: toProjectAgentCreateConfig(draft),
           provider: ZCODE_AGENT_PROVIDER,
           scope: "workspace",
-          workspacePath,
-          workspaceIdentity,
+          workspacePath: target.workspacePath,
+          workspaceIdentity: target.workspaceIdentity,
         });
         await reload();
         return true;
@@ -85,21 +134,23 @@ export function useWorkspaceProjectAgents(
         setCreating(false);
       }
     },
-    [reload, subagentsService, workspaceIdentity, workspacePath],
+    [reload, subagentsService],
   );
 
-  return { agents, creating, createAgent };
+  return { agentsByWorkspaceKey, creating, createAgent };
 }
 
 /**
  * 点开驻场智能体 = 以它的身份开一段对话：v4 createSession 携 persona（无 firstInput，
  * 空草稿不进侧栏），accepted 后交给调用方导航到新会话。失败 toast，不静默。
+ * 服务解析与 transport 绑定侧栏活动工作区三件套；会话目标按 openAgentChat 传入的
+ * target 定向（照 useSavedWorkflowLauncher 先例：一条连接、按调用传目标工作区）。
  */
 export function useOpenProjectAgentChat(params: {
   workspacePath: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
-  onSessionCreated: (sessionId: string) => void;
+  onSessionCreated: (sessionId: string, target: ProjectAgentTarget) => void;
 }) {
   const { workspacePath, workspaceIdentity, workspaceRemoteSessionId, onSessionCreated } = params;
   const resolution = useWorkspaceServicesResolution(
@@ -112,16 +163,17 @@ export function useOpenProjectAgentChat(params: {
   const openingRef = useRef(false);
 
   const openAgentChat = useCallback(
-    async (agent: AgentSummary) => {
+    async (agent: AgentSummary, target: ProjectAgentTarget) => {
       if (openingRef.current || !resolution.rpcReady) {
         return;
       }
       openingRef.current = true;
       setOpening(true);
+      // 连接端点仍取 bound 三件套的 remoteSessionId；scope 用目标工作区。
       const lease = acquireWorkspaceConnection(
         {
-          workspacePath,
-          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+          workspacePath: target.workspacePath,
+          ...(target.workspaceIdentity ? { workspaceIdentity: target.workspaceIdentity } : {}),
           ...(workspaceRemoteSessionId ? { remoteSessionId: workspaceRemoteSessionId } : {}),
         },
         resolution.services.zcodeAgentService,
@@ -132,9 +184,8 @@ export function useOpenProjectAgentChat(params: {
             type: "createSession",
             payload: {
               workspaceId: launchWorkspaceId({
-                workspacePath,
-                workspaceIdentity,
-                remoteSessionId: workspaceRemoteSessionId,
+                workspacePath: target.workspacePath,
+                workspaceIdentity: target.workspaceIdentity,
               }),
               persona: toProjectAgentPersona(agent),
             },
@@ -149,7 +200,7 @@ export function useOpenProjectAgentChat(params: {
           );
           return;
         }
-        onSessionCreated(ack.result.sessionId);
+        onSessionCreated(ack.result.sessionId, target);
       } catch (error) {
         logger.warn("[projectAgents] 打开智能体会话失败", error);
         toast(intl.formatMessage({ id: "workspaceSidebar.projectAgentOpenFailed" }));
@@ -164,8 +215,6 @@ export function useOpenProjectAgentChat(params: {
       onSessionCreated,
       resolution.rpcReady,
       resolution.services.zcodeAgentService,
-      workspaceIdentity,
-      workspacePath,
       workspaceRemoteSessionId,
     ],
   );
@@ -173,22 +222,35 @@ export function useOpenProjectAgentChat(params: {
   return { openAgentChat, opening };
 }
 
+// 工作区级分组：每个项目块的任务列表之下各自渲染，头行常驻（空列表时它就是该工作区的创建入口）。
 export function WorkspaceProjectAgentsGroup({
   agents,
+  onCreateClick,
   onOpenAgent,
 }: {
   agents: AgentSummary[];
+  onCreateClick: () => void;
   onOpenAgent: (agent: AgentSummary) => void;
 }) {
   const { intl } = useZCodeIntl();
-  if (agents.length === 0) {
-    return null;
-  }
   return (
     <div className="pb-4">
       <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-ui-base font-medium text-foreground-subtlest">
         <Bot aria-hidden="true" className="size-3.5" />
-        {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
+        <span className="min-w-0 flex-1">
+          {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 text-foreground-subtlest hover:text-foreground"
+          data-testid={TID_PROJECT_AGENT_CREATE}
+          aria-label={intl.formatMessage({ id: "workspaceSidebar.createProjectAgent" })}
+          onClick={onCreateClick}
+        >
+          <Plus className="size-3.5" />
+        </Button>
       </div>
       <ul className="space-y-0.5">
         {agents.map((agent) => (

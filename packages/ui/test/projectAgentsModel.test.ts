@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentSummary } from "@zcode/shared";
 import {
-  selectProjectAgents,
+  selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
   toProjectAgentPersona,
   validateProjectAgentDraft,
@@ -43,14 +43,41 @@ test("validateProjectAgentDraft：名称长度与字符集、必填项", () => {
   );
 });
 
-test("selectProjectAgents：只保留 workspace 作用域", () => {
+test("selectProjectAgentsForWorkspace：先按 scope 过滤，非 workspace 一律排除", () => {
   const agents = [
-    { id: "1", scope: "built-in" },
-    { id: "2", scope: "user" },
-    { id: "3", scope: "workspace" },
-  ] as Pick<AgentSummary, "id" | "scope">[];
+    { id: "1", scope: "built-in", path: "D:/repo/.zcode/agents/builtin.md" },
+    { id: "2", scope: "user", path: "D:/repo/.zcode/agents/user.md" },
+  ] as Pick<AgentSummary, "id" | "scope" | "path">[];
   assert.deepEqual(
-    selectProjectAgents(agents).map((agent) => agent.id),
+    selectProjectAgentsForWorkspace(agents, "D:/repo").map((agent) => agent.id),
+    [],
+  );
+});
+
+test("selectProjectAgentsForWorkspace：path 前缀匹配，正反斜杠与盘符大小写容错", () => {
+  const agents = [
+    { id: "1", scope: "workspace", path: "D:\\repo\\.zcode\\agents\\reviewer.md" },
+    { id: "2", scope: "workspace", path: "D:/repo/.zcode/agents/planner.md" },
+    { id: "3", scope: "workspace", path: "d:/repo/.zcode/agents/casing.md" },
+  ] as Pick<AgentSummary, "id" | "scope" | "path">[];
+  assert.deepEqual(
+    selectProjectAgentsForWorkspace(agents, "D:/repo").map((agent) => agent.id),
+    ["1", "2", "3"],
+  );
+  assert.deepEqual(
+    selectProjectAgentsForWorkspace(agents, "D:\\repo").map((agent) => agent.id),
+    ["1", "2", "3"],
+  );
+});
+
+test("selectProjectAgentsForWorkspace：他工作区的 agent 不归本工作区", () => {
+  const agents = [
+    { id: "1", scope: "workspace", path: "D:/other/.zcode/agents/foreign.md" },
+    { id: "2", scope: "workspace", path: "D:/repo-evil/.zcode/agents/prefix-trap.md" },
+    { id: "3", scope: "workspace", path: "D:/repo/.zcode/agents/own.md" },
+  ] as Pick<AgentSummary, "id" | "scope" | "path">[];
+  assert.deepEqual(
+    selectProjectAgentsForWorkspace(agents, "D:/repo").map((agent) => agent.id),
     ["3"],
   );
 });

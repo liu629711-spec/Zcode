@@ -31,10 +31,21 @@ export function validateProjectAgentDraft(draft: ProjectAgentDraft): ProjectAgen
 }
 
 // 侧栏只展示驻场（workspace 作用域）智能体；顺序沿用 service 已按名称排好的列表。
-export function selectProjectAgents<T extends Pick<AgentSummary, "scope">>(
+// agent.path = `<workspacePath>/.zcode/agents/<name>.md` 全路径，一次服务解析可列任意本地工作区，
+// 所以按路径前缀把 agent 归到具体工作区（斜杠/盘符大小写容错的简单前缀匹配即可，不引 path 库）。
+export function selectProjectAgentsForWorkspace<T extends Pick<AgentSummary, "scope" | "path">>(
   agents: readonly T[],
+  workspacePath: string,
 ): T[] {
-  return agents.filter((agent) => agent.scope === "workspace");
+  const normalize = (value: string): string =>
+    value
+      .replace(/\\/g, "/")
+      .replace(/^[A-Za-z]:/, (drive) => drive.toLowerCase())
+      .replace(/\/+$/, "");
+  const prefix = `${normalize(workspacePath)}/.zcode/agents/`;
+  return agents.filter(
+    (agent) => agent.scope === "workspace" && normalize(agent.path).startsWith(prefix),
+  );
 }
 
 export function toProjectAgentCreateConfig(draft: ProjectAgentDraft): SubAgentConfig {

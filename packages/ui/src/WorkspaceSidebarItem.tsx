@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent,
+  type ReactNode,
 } from "react";
 import {
   CheckIcon,
@@ -147,6 +148,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   reconnectingRemoteWorkspaceLogsByWorkspaceKey,
   onReconnectRemoteWorkspace,
   onOpenFileTree,
+  agentsSection,
   itemRef,
   itemStyle,
   sortableBindings,
@@ -181,6 +183,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     workspaceIdentity?: string;
     workspaceRemoteSessionId?: string;
   }) => void;
+  /** 该工作区的驻场智能体小节：插在任务列表之后、同一 CollapsibleContent 内（随工作区折叠）。 */
+  agentsSection?: ReactNode;
   itemRef?: (node: HTMLLIElement | null) => void;
   itemStyle?: CSSProperties;
   sortableBindings?: SortableBindings;
@@ -1134,6 +1138,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
             onSetTaskUnread={handleSetTaskUnread}
             readOnlyReason={readOnlyReason}
           />
+          {agentsSection}
         </CollapsibleContent>
       </Collapsible>
       <RemoteSyncDialogs
