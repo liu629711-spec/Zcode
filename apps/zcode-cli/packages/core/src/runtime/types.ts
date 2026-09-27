@@ -20,7 +20,7 @@ import type {
   WorkspaceHookBundleSnapshot,
   WorkspaceId,
 } from "@zcode/contracts";
-import type { ZCodeProviderAccountAccess } from "@zcode/shared";
+import type { AgentColor, ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
@@ -218,8 +218,17 @@ export interface AgentRuntimeConfig {
    * 驻场智能体主会话 persona（bootstrap 随 session 创建注入）。systemPrompt 在场时
    * 走上面的 customSystemPrompt 通道整段替换稳定段；memory 指明项目记忆注入 scope
    * （context 初始化时读一次 MEMORY.md 拼进 systemPrompt，见 methods/context.ts）。
+   * color 无运行时语义，仅随 persona 快照落盘（G1 回灌/fork 继承与侧栏徽章取色）。
+   * tools/disallowedTools 是档案工具面的原始档案值（快照回灌用）；会话级生效面走
+   * toolAllowlist/toolDisallowlist 通道，记忆写入端（Write/Edit）追加在 runtime 装配处现算。
    */
-  projectAgentPersona?: { name: string; memory?: AgentMemoryScope };
+  projectAgentPersona?: {
+    name: string;
+    memory?: AgentMemoryScope;
+    color?: AgentColor;
+    tools?: readonly string[];
+    disallowedTools?: readonly string[];
+  };
   /**
    * 动态工作流子代理的身份输入：在场即让
    * context builder 走「基座 + 工作流子代理契约 + persona 叠加」路径，而不是把 persona 当

@@ -8,7 +8,11 @@ import { resolveEffectiveBashShellSelection } from "@zcode/adapters/exec";
 import { inputIntentMetadata } from "../zcode-protocol-v4/commands/input-intent.js";
 import { createModelExecutionContext } from "./model-execution.js";
 import type { SendInputOptions } from "../app/types.js";
-import { repairPersistedRemoteSessionPaths, type TurnAttachment } from "@zcode/core";
+import {
+  mapPersonaToRuntimeConfig,
+  repairPersistedRemoteSessionPaths,
+  type TurnAttachment,
+} from "@zcode/core";
 import {
   CoreErrorType,
   SESSION_ENTRY_TARGET_COMPLETION_VERIFICATION,
@@ -3343,19 +3347,28 @@ async function createRecord(
   // 驻场智能体会话：persona 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
   // 标题二次生成关闭，保证 ensureSessionPersisted 写入的「智能体名 · 首条输入」不被覆盖。
   const persona = "persona" in params ? params.persona : undefined;
+  // G2 对话入口全档案生效：persona 携带的档案模型/工具落到既有 runtimeConfig 通道。
+  // 模型只在 create 路径落下（resume/fork 回灌不映射——模型只由 session selection entry
+  // 恢复）；工具面随身份回灌；显式 params（model/toolAllowlist/toolDenylist）始终优先。
+  const personaRuntimeConfig = persona
+    ? mapPersonaToRuntimeConfig(persona, { includeModelSelection: !resume })
+    : undefined;
   const app = await createWorkspaceZCodeApp(context, workspace, {
     env: context.deps.env,
     eventStore,
     resume,
     runtimeConfig: {
       mode: "mode" in params ? params.mode : undefined,
-      modelSelection: "model" in params ? toRuntimeModelSelection(initialModel) : undefined,
+      modelSelection:
+        "model" in params
+          ? toRuntimeModelSelection(initialModel)
+          : personaRuntimeConfig?.modelSelection,
       parentSessionId,
       taskType,
-      ...(persona
+      ...(personaRuntimeConfig
         ? {
-            systemPrompt: persona.systemPrompt,
-            projectAgentPersona: { name: persona.name, ...(persona.memoryScope ? { memory: persona.memoryScope } : {}) },
+            systemPrompt: personaRuntimeConfig.systemPrompt,
+            projectAgentPersona: personaRuntimeConfig.projectAgentPersona,
           }
         : {}),
       // 动态工作流灰度门：与 offPeakPort
@@ -3368,8 +3381,11 @@ async function createRecord(
         context.appRuntimePreferences.dynamicWorkflowEnabled === true,
       // 协议侧的工具允许/拒绝列表是 session 级安全边界，必须进入 runtimeConfig，
       // 不能只依赖 prompt 文本约束，否则内置工具和动态 MCP 工具仍可能越过调用面。
-      toolAllowlist: "toolAllowlist" in params ? params.toolAllowlist : undefined,
-      toolDisallowlist: "toolDenylist" in params ? params.toolDenylist : undefined,
+      // persona 会话（create 与 resume/fork 回灌）由档案工具面兜底；显式 params 优先。
+      toolAllowlist:
+        "toolAllowlist" in params ? params.toolAllowlist : personaRuntimeConfig?.toolAllowlist,
+      toolDisallowlist:
+        "toolDenylist" in params ? params.toolDenylist : personaRuntimeConfig?.toolDisallowlist,
       nativeSearchEnhancementsEnabled: startupPreferences.nativeSearchEnhancementsEnabled,
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
       // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时

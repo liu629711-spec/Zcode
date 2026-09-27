@@ -1,4 +1,4 @@
-import type { AgentSummary, SubAgentConfig } from "@zcode/shared";
+import type { AgentSummary, SubAgentConfig, ZCodeSessionPersona } from "@zcode/shared";
 
 export interface ProjectAgentDraft {
   name: string;
@@ -58,17 +58,23 @@ export function toProjectAgentCreateConfig(draft: ProjectAgentDraft): SubAgentCo
   };
 }
 
-/** createSession.persona 载荷：随会话创建一次性进入 runtime config。 */
-export interface ProjectAgentPersona {
-  name: string;
-  systemPrompt: string;
-  memoryScope?: "user" | "project" | "local";
-}
+/**
+ * createSession.persona 载荷：随会话创建一次性进入 runtime config。
+ * 即 shared 的 ZCodeSessionPersona（单一来源，防两处形状漂移）：
+ * G2 起除 name/systemPrompt/memoryScope 外还携带档案的模型/工具/颜色，
+ * 让驻场会话与档案同一副面孔；全部可选，缺席 = 跟随会话缺省。
+ */
+export type ProjectAgentPersona = ZCodeSessionPersona;
 
 export function toProjectAgentPersona(agent: AgentSummary): ProjectAgentPersona {
   return {
     name: agent.name,
     systemPrompt: agent.systemPrompt,
     ...(agent.memory ? { memoryScope: agent.memory } : {}),
+    ...(agent.modelSelection ? { modelSelection: agent.modelSelection } : {}),
+    // 空数组与缺席同义 = 继承全部工具（与子代理派遣的 allowedTools 语义一致）。
+    ...(agent.tools?.length ? { tools: [...agent.tools] } : {}),
+    ...(agent.disallowedTools?.length ? { disallowedTools: [...agent.disallowedTools] } : {}),
+    ...(agent.color ? { color: agent.color } : {}),
   };
 }

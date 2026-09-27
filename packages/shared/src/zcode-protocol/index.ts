@@ -1559,10 +1559,18 @@ export type ZCodeSessionSubagentsResult = z.infer<typeof zcodeSessionSubagentsRe
 // 驻场智能体会话 persona：v4 createSession 与 legacy session/create 共用一份定义。
 // systemPrompt 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
 // memoryScope 缺省时 core 不注入智能体记忆。
+// G2 对话入口全档案生效：模型/工具/颜色随档案走（消除「两副面孔」）。全部可选——
+// 缺席 = 跟随会话缺省（模型继承 workspace 默认、工具面不收紧、徽章无色兜底）。
+// 非 strict 对象：旧 CLI 收到新键时静默剥离（offPeakToolEnabled 同款 additive 纪律），
+// persona 形状从此只能加可选字段，不得改必填形状（落盘旧行要能继续解析）。
 export const zcodeSessionPersonaSchema = z.object({
   name: nonEmptyString,
   systemPrompt: nonEmptyString,
   memoryScope: z.enum(["user", "project", "local"]).optional(),
+  modelSelection: modelSelectionSchema.optional(),
+  tools: z.array(nonEmptyString).optional(),
+  disallowedTools: z.array(nonEmptyString).optional(),
+  color: z.enum(["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"]).optional(),
 });
 export type ZCodeSessionPersona = z.infer<typeof zcodeSessionPersonaSchema>;
 

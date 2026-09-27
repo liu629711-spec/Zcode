@@ -15,16 +15,19 @@ import {
 
 test("validateProjectAgentDraft：合法草稿无报错", () => {
   assert.deepEqual(
-    validateProjectAgentDraft({ name: "code-reviewer", description: "审查", systemPrompt: "prompt" }),
+    validateProjectAgentDraft({
+      name: "code-reviewer",
+      description: "审查",
+      systemPrompt: "prompt",
+    }),
     [],
   );
 });
 
 test("validateProjectAgentDraft：名称长度与字符集、必填项", () => {
-  assert.deepEqual(
-    validateProjectAgentDraft({ name: "ab", description: "d", systemPrompt: "p" }),
-    ["nameLength"],
-  );
+  assert.deepEqual(validateProjectAgentDraft({ name: "ab", description: "d", systemPrompt: "p" }), [
+    "nameLength",
+  ]);
   assert.deepEqual(
     validateProjectAgentDraft({ name: "a".repeat(51), description: "d", systemPrompt: "p" }),
     ["nameLength"],
@@ -106,8 +109,50 @@ test("toProjectAgentPersona：persona 载荷带名称/提示词/记忆 scope", (
     name: "code-reviewer",
     systemPrompt: "你是代码审查员",
   });
+  assert.deepEqual(toProjectAgentPersona({ ...base, memory: "project" } as AgentSummary), {
+    name: "code-reviewer",
+    systemPrompt: "你是代码审查员",
+    memoryScope: "project",
+  });
+});
+
+test("toProjectAgentPersona：档案的模型/工具/颜色随载荷走（G2 同一副面孔）", () => {
+  const base = {
+    id: "a1",
+    name: "code-reviewer",
+    systemPrompt: "你是代码审查员",
+    scope: "workspace",
+  } as Pick<AgentSummary, "id" | "name" | "systemPrompt" | "scope">;
   assert.deepEqual(
-    toProjectAgentPersona({ ...base, memory: "project" } as AgentSummary),
-    { name: "code-reviewer", systemPrompt: "你是代码审查员", memoryScope: "project" },
+    toProjectAgentPersona({
+      ...base,
+      modelSelection: { providerId: "openai", modelId: "gpt-5" },
+      tools: ["Read", "Grep"],
+      disallowedTools: ["Bash"],
+      color: "purple",
+    } as AgentSummary),
+    {
+      name: "code-reviewer",
+      systemPrompt: "你是代码审查员",
+      modelSelection: { providerId: "openai", modelId: "gpt-5" },
+      tools: ["Read", "Grep"],
+      disallowedTools: ["Bash"],
+      color: "purple",
+    },
   );
+});
+
+test("toProjectAgentPersona：空工具数组不进载荷（= 继承全部工具），无色档案不带 color 键", () => {
+  const base = {
+    id: "a1",
+    name: "code-reviewer",
+    systemPrompt: "你是代码审查员",
+    scope: "workspace",
+    tools: [],
+    disallowedTools: [],
+  } as Pick<AgentSummary, "id" | "name" | "systemPrompt" | "scope" | "tools" | "disallowedTools">;
+  assert.deepEqual(toProjectAgentPersona(base as AgentSummary), {
+    name: "code-reviewer",
+    systemPrompt: "你是代码审查员",
+  });
 });
