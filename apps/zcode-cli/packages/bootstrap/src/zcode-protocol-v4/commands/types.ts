@@ -239,6 +239,8 @@ export interface V4CommandCoreHost {
      * 缺省回落到进程级 workspace 结论，仍是 fail-closed。
      */
     dynamicWorkflowEnabled?: boolean;
+    /** 驻场智能体会话 persona；缺省 = 普通会话，runtime 行为不变。 */
+    persona?: CommandPayloadMap["createSession"]["persona"];
   }): Promise<{ sessionId: string }>;
   /** 从父会话稳定落盘边界创建隐藏 selection_side_chat child。 */
   createSelectionSideSession?(

@@ -17,6 +17,8 @@ import type {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { ensureMemoryDirectoryExists } from "../../memory/directory.js";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
+import { loadProjectAgentMemoryPrompt } from "../../subagent/persistent-memory.js";
+import { joinPersonaSystemPrompt } from "../../subagent/persona-session.js";
 import {
   createReadFileStateKey,
   normalizeReadFileStateMtimeMs,
@@ -65,6 +67,18 @@ export async function ensureContextInitialized(
   this.skillLoadOutcome = await this.discoverSkillsForContext(traceContext);
   this.memoryRoot = await this.loadProjectMemoryRoot(traceContext);
   this.memoryIndexContent = await loadProjectMemoryIndexContent(this, this.memoryRoot);
+  // 驻场智能体主会话记忆注入（新接的点）：persona 会话按子代理派生（methods/subagent.ts
+  // loadPersistentAgentMemory）同一读法，在 context 初始化时读一次项目记忆；
+  // 存到 runtime 实例上，后续 context 刷新重建 builder 时复用同一份。
+  this.personaMemoryPrompt = this.config.projectAgentPersona?.memory
+    ? await loadProjectAgentMemoryPrompt({
+        fileSystemPort: this.fileSystemPort,
+        agentName: this.config.projectAgentPersona.name,
+        logger: this.logger,
+        traceContext,
+        workspaceRoot: this.workspaceRoot,
+      })
+    : undefined;
   this.contextBuilder = this.createContextBuilderFromSnapshot(snapshot, this.memoryRoot, {
     memoryIndexContent: this.memoryIndexContent,
     model,
@@ -133,7 +147,12 @@ export function createContextBuilderFromSnapshot(
     agentProfiles: this.config.subagents?.profiles,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(this),
     skillMetadataBudget: this.config.skillMetadataBudget,
-    customSystemPrompt: this.config.systemPrompt,
+    // persona 会话：config.systemPrompt（persona 正文）+ 项目记忆 prompt 拼进既有
+    // customSystemPrompt 通道；普通会话两段皆空，customSystemPrompt 保持 undefined。
+    customSystemPrompt: joinPersonaSystemPrompt([
+      this.config.systemPrompt,
+      this.personaMemoryPrompt,
+    ]),
     workflowActor: this.config.workflowActor,
     language: this.config.language,
     outputStyle: this.config.outputStyle,

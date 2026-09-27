@@ -280,10 +280,12 @@ function createWorkflowChildRuntime(
     workflowKind: string;
   },
 ): AgentRuntime {
+  // projectAgentPersona 是父会话身份，不得漏给 workflow 子代理（同 script-workflow-child-runtime）。
+  const { projectAgentPersona: _parentPersona, ...childRuntimeConfig } = deps.runtimeConfig;
   return new AgentRuntime(
     options.childSessionId,
     {
-      ...deps.runtimeConfig,
+      ...childRuntimeConfig,
       agentName: options.workflowKind === "expert" ? "zcode-expert" : "zcode-workflow",
       mode: "yolo",
       modelSelection: deps.runtime.getSessionModelSelection(),

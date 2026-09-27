@@ -46,3 +46,18 @@ export function toProjectAgentCreateConfig(draft: ProjectAgentDraft): SubAgentCo
     memory: "project",
   };
 }
+
+/** createSession.persona 载荷：随会话创建一次性进入 runtime config。 */
+export interface ProjectAgentPersona {
+  name: string;
+  systemPrompt: string;
+  memoryScope?: "user" | "project" | "local";
+}
+
+export function toProjectAgentPersona(agent: AgentSummary): ProjectAgentPersona {
+  return {
+    name: agent.name,
+    systemPrompt: agent.systemPrompt,
+    ...(agent.memory ? { memoryScope: agent.memory } : {}),
+  };
+}

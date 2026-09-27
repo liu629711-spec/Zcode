@@ -1556,6 +1556,16 @@ export const zcodeSessionSubagentsResultSchema = z
   })
   .strict();
 export type ZCodeSessionSubagentsResult = z.infer<typeof zcodeSessionSubagentsResultSchema>;
+// 驻场智能体会话 persona：v4 createSession 与 legacy session/create 共用一份定义。
+// systemPrompt 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
+// memoryScope 缺省时 core 不注入智能体记忆。
+export const zcodeSessionPersonaSchema = z.object({
+  name: nonEmptyString,
+  systemPrompt: nonEmptyString,
+  memoryScope: z.enum(["user", "project", "local"]).optional(),
+});
+export type ZCodeSessionPersona = z.infer<typeof zcodeSessionPersonaSchema>;
+
 export const zcodeSessionCreateParamsSchema = z
   .object({
     sessionId: nonEmptyString.optional(),
@@ -1576,6 +1586,7 @@ export const zcodeSessionCreateParamsSchema = z
     // 动态工作流灰度：与 offPeakToolEnabled 同一
     // 模式——host 裁决后下发，缺省不下发 = 不注册工作流工具簇（fail-closed）。
     dynamicWorkflowEnabled: z.boolean().optional(),
+    persona: zcodeSessionPersonaSchema.optional(),
   })
   .strict();
 export type ZCodeSessionCreateParams = z.infer<typeof zcodeSessionCreateParamsSchema>;

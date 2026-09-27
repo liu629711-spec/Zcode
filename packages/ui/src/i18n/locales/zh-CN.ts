@@ -1509,7 +1509,7 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.addProject": "添加项目",
   "workspaceSidebar.createProjectAgent": "新建智能体",
   "workspaceSidebar.projectAgents": "智能体",
-  "workspaceSidebar.projectAgentsComingSoon": "跟智能体对话即将支持",
+  "workspaceSidebar.projectAgentOpenFailed": "无法打开与智能体的对话",
   "workspaceSidebar.projectAgentScopeHint": "该智能体只服务本项目",
   "workspaceSidebar.noConversations": "还没有任务",
   "workspaceSidebar.noProjects": "尚未打开项目",

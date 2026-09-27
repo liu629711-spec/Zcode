@@ -1625,7 +1625,7 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.addProject": "Add project",
   "workspaceSidebar.createProjectAgent": "New agent",
   "workspaceSidebar.projectAgents": "Agents",
-  "workspaceSidebar.projectAgentsComingSoon": "Chatting with agents is coming soon",
+  "workspaceSidebar.projectAgentOpenFailed": "Failed to open agent chat",
   "workspaceSidebar.projectAgentScopeHint": "This agent only serves the current project",
   "workspaceSidebar.noConversations": "No tasks yet",
   "workspaceSidebar.noProjects": "No open projects",

@@ -4,6 +4,7 @@ import type { AgentSummary } from "@zcode/shared";
 import {
   selectProjectAgents,
   toProjectAgentCreateConfig,
+  toProjectAgentPersona,
   validateProjectAgentDraft,
 } from "../src/WorkspaceSidebar/projectAgentsModel.js";
 
@@ -65,4 +66,21 @@ test("toProjectAgentCreateConfig：trim 字段并固定 memory=project", () => {
   assert.equal(config.systemPrompt, "prompt");
   // 驻场语义钉在这里：片 1 的 memory 序列化落地后即按此值写入 markdown。
   assert.equal((config as { memory?: string }).memory, "project");
+});
+
+test("toProjectAgentPersona：persona 载荷带名称/提示词/记忆 scope", () => {
+  const base = {
+    id: "a1",
+    name: "code-reviewer",
+    systemPrompt: "你是代码审查员",
+    scope: "workspace",
+  } as Pick<AgentSummary, "id" | "name" | "systemPrompt" | "scope">;
+  assert.deepEqual(toProjectAgentPersona(base as AgentSummary), {
+    name: "code-reviewer",
+    systemPrompt: "你是代码审查员",
+  });
+  assert.deepEqual(
+    toProjectAgentPersona({ ...base, memory: "project" } as AgentSummary),
+    { name: "code-reviewer", systemPrompt: "你是代码审查员", memoryScope: "project" },
+  );
 });

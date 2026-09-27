@@ -105,7 +105,7 @@ import type {
   ModelAnomalyGuardConfig,
   OutputStylePromptConfig,
 } from "./deps.js";
-import type { AgentProfile } from "../subagent/profile.js";
+import type { AgentProfile, AgentMemoryScope } from "../subagent/profile.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { BashTimeoutPolicy } from "../tool/bash-timeout-policy.js";
 import type { PresentationSurface } from "../context/types.js";
@@ -214,6 +214,12 @@ export interface AgentRuntimeConfig {
 
   // Context Builder config
   systemPrompt?: string;
+  /**
+   * 驻场智能体主会话 persona（bootstrap 随 session 创建注入）。systemPrompt 在场时
+   * 走上面的 customSystemPrompt 通道整段替换稳定段；memory 指明项目记忆注入 scope
+   * （context 初始化时读一次 MEMORY.md 拼进 systemPrompt，见 methods/context.ts）。
+   */
+  projectAgentPersona?: { name: string; memory?: AgentMemoryScope };
   /**
    * 动态工作流子代理的身份输入：在场即让
    * context builder 走「基座 + 工作流子代理契约 + persona 叠加」路径，而不是把 persona 当

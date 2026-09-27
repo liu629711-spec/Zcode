@@ -47,7 +47,13 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import type { Locale, RemoteTarget, UserInfo, ZCodeTaskMeta } from "@zcode/shared";
+import type {
+  AgentSummary,
+  Locale,
+  RemoteTarget,
+  UserInfo,
+  ZCodeTaskMeta,
+} from "@zcode/shared";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import {
   TID_CONVERSATION_NEW_TASK,
@@ -131,6 +137,7 @@ import {
 } from "@/WorkspaceSidebar/taskGroupTogglePresentation.js";
 import { WorkspacePurposeSection } from "@/WorkspaceSidebar/WorkspacePurposeSection.js";
 import {
+  useOpenProjectAgentChat,
   useWorkspaceProjectAgents,
   WorkspaceProjectAgentCreateDialog,
   WorkspaceProjectAgentsGroup,
@@ -413,6 +420,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     workspaceIdentity,
     workspaceRemoteSessionId,
     purposeSectionPreferences.projectsExpanded,
+  );
+  // 点开智能体：建 persona 会话后走侧栏任务行同一条导航（handleSelectTaskInChat）。
+  const { openAgentChat: openProjectAgentChat } = useOpenProjectAgentChat({
+    workspacePath,
+    workspaceIdentity,
+    workspaceRemoteSessionId,
+    onSessionCreated: useCallback(
+      (sessionId: string) => {
+        onSelectTask(workspacePath, sessionId, workspaceIdentity, workspaceRemoteSessionId);
+      },
+      [onSelectTask, workspaceIdentity, workspacePath, workspaceRemoteSessionId],
+    ),
+  });
+  const handleOpenProjectAgentChat = useCallback(
+    (agent: AgentSummary) => {
+      void openProjectAgentChat(agent);
+    },
+    [openProjectAgentChat],
   );
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological">
@@ -1601,8 +1626,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                       )}
                                 </DndContext>
                                 )}
-                                {/* 驻场智能体只读分组：排在项目任务列表之后，点击交互由后续分片承接。 */}
-                                <WorkspaceProjectAgentsGroup agents={projectAgents.agents} />
+                                {/* 驻场智能体分组：点行以该智能体身份开一段对话。 */}
+                                <WorkspaceProjectAgentsGroup
+                                  agents={projectAgents.agents}
+                                  onOpenAgent={handleOpenProjectAgentChat}
+                                />
                               </>
                             </WorkspacePurposeSection>
                           ) : (

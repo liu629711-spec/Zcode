@@ -108,3 +108,47 @@ export async function loadPersistentAgentMemory(input: {
     }),
   };
 }
+
+/**
+ * 驻场智能体「主会话」的项目记忆注入（新接的点）：子代理派生在 methods/subagent.ts
+ * 调 loadPersistentAgentMemory；主会话没有对应入口，这里按同一读法只支持 project scope
+ * （驻场智能体固定 project，见 projectAgentsModel.toProjectAgentCreateConfig），
+ * 在会话 context 初始化时读一次 MEMORY.md 拼进 persona system prompt。
+ */
+export async function loadProjectAgentMemoryPrompt(input: {
+  fileSystemPort: FileSystemPort | undefined;
+  agentName: string;
+  logger?: Logger;
+  traceContext?: TraceContext;
+  workspaceRoot: string;
+}): Promise<string | undefined> {
+  if (!input.fileSystemPort) return undefined;
+  const rootDir = resolvePersistentAgentMemoryRoot({
+    agentName: input.agentName,
+    scope: "project",
+    // 主会话读记忆不做 enabled 门控（与子代理不同：persona 会话由 Host 显式创建，
+    // 记忆目录就是它的持久状态）；storageRoot 仅 user scope 用得到，这里传占位值。
+    storageRoot: "",
+    workspaceRoot: input.workspaceRoot,
+  });
+  await ensureMemoryDirectoryExists(
+    input.fileSystemPort,
+    rootDir,
+    input.traceContext,
+    input.logger,
+  );
+
+  let indexContent = "";
+  try {
+    indexContent = (await input.fileSystemPort.readTextFile({ path: join(rootDir, "MEMORY.md") }))
+      .content;
+  } catch {
+    // 不存在或不可读的 MEMORY.md 都使用基线的 empty index 文案。
+  }
+
+  return buildPersistentAgentMemoryPrompt({
+    indexContent,
+    rootDir,
+    scope: "project",
+  });
+}

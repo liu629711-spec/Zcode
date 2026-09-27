@@ -94,8 +94,12 @@ export function createScriptWorkflowAgentRuntime(input: {
 }): AgentRuntime {
   // dwf actor 经 configOverrides.workflowActor 走 builder 的叠加路径，此时 systemPrompt 必须
   // 缺席（builder 对二者同在抛错）——父会话自带的 custom system prompt 不得漏给子代理，所以
-  // 从继承的配置里把它剥掉，而不是靠后面的覆盖。
-  const { systemPrompt: inheritedSystemPrompt, ...inheritedConfig } = input.deps.runtimeConfig;
+  // 从继承的配置里把它剥掉，而不是靠后面的覆盖。projectAgentPersona 同属父会话身份，一并剥掉。
+  const {
+    systemPrompt: inheritedSystemPrompt,
+    projectAgentPersona: _inheritedProjectAgentPersona,
+    ...inheritedConfig
+  } = input.deps.runtimeConfig;
   const systemPrompt =
     input.configOverrides?.workflowActor === undefined
       ? (input.request.opts?.systemPrompt ?? inheritedSystemPrompt)

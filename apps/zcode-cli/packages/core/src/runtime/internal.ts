@@ -92,6 +92,8 @@ export interface AgentRuntimeInternal
   latestContextBuildResult?: ContextBuildResult;
   memoryRoot?: string;
   memoryIndexContent?: string;
+  /** 驻场智能体会话在 context 初始化时读到的项目记忆 prompt（刷新重建 builder 时复用）。 */
+  personaMemoryPrompt?: string;
   memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   contextSourcePort?: ContextSourcePort;
   skillPort?: SkillPort;

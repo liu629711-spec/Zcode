@@ -3328,6 +3328,9 @@ async function createRecord(
   // automation-port 需要读取「本会话」的实时 model/mode/thought；record 在 app 之后才建。
   // 用可变持有者做惰性绑定：CronCreate 在 turn 中调用 create() 时 record 早已就绪。
   let ownSessionRecord: ZCodeProtocolSessionRecord | undefined;
+  // 驻场智能体会话：persona 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
+  // 标题二次生成关闭，保证 ensureSessionPersisted 写入的「智能体名 · 首条输入」不被覆盖。
+  const persona = "persona" in params ? params.persona : undefined;
   const app = await createWorkspaceZCodeApp(context, workspace, {
     env: context.deps.env,
     eventStore,
@@ -3337,6 +3340,12 @@ async function createRecord(
       modelSelection: "model" in params ? toRuntimeModelSelection(initialModel) : undefined,
       parentSessionId,
       taskType,
+      ...(persona
+        ? {
+            systemPrompt: persona.systemPrompt,
+            projectAgentPersona: { name: persona.name, ...(persona.memoryScope ? { memory: persona.memoryScope } : {}) },
+          }
+        : {}),
       // 动态工作流灰度门：与 offPeakPort
       // 同一套读法——本次 create/resume 参数优先，缺席时读 Host 同步到进程的 workspace 级
       // 结论；两者都没有就是 false（fail-closed）。这里**必须写出显式布尔**，不能省成
@@ -3365,7 +3374,11 @@ async function createRecord(
       // 永远命中，模型生成 title 的请求从不触发，侧边栏标题一直停在 first_input 的用户 query。
       // 这里补一份默认配置开启；具体是否生成仍由 runtime 按 parent/taskType/turnNumber 把关。
       // automation 执行会话显式关闭二次命名，避免回答内容覆盖原始用户 query 标题。
-      titleGeneration: params.titleGenerationEnabled === false ? { enabled: false } : {},
+      // 驻场智能体会话同样关闭：标题以「智能体名 · 首条输入」记账归属。
+      titleGeneration:
+        params.titleGenerationEnabled === false || persona !== undefined
+          ? { enabled: false }
+          : {},
       workingDirectory: workspace.workspacePath,
       // 身份隔离与路径执行分开：core 只把 identity 写入 session.workspace_id，
       // workingDirectory 仍是远端机器上的实际路径；本地 workspace 保持 undefined。

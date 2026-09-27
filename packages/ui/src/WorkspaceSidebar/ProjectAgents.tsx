@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Bot } from "lucide-react";
 import {
   TID_PROJECT_AGENT_CREATE_DIALOG,
@@ -15,9 +15,13 @@ import { toast } from "@/components/ui/toast.js";
 import { logger } from "@/logger.js";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { createCommandEnvelope } from "@/v4/commandFactory.js";
+import { acquireWorkspaceConnection } from "@/v4/workspaceConnectionRegistry.js";
+import { launchWorkspaceId } from "@/settings/saved-workflows/useSavedWorkflowLauncher.js";
 import {
   selectProjectAgents,
   toProjectAgentCreateConfig,
+  toProjectAgentPersona,
   validateProjectAgentDraft,
   type ProjectAgentDraft,
   type ProjectAgentDraftError,
@@ -87,7 +91,95 @@ export function useWorkspaceProjectAgents(
   return { agents, creating, createAgent };
 }
 
-export function WorkspaceProjectAgentsGroup({ agents }: { agents: AgentSummary[] }) {
+/**
+ * 点开驻场智能体 = 以它的身份开一段对话：v4 createSession 携 persona（无 firstInput，
+ * 空草稿不进侧栏），accepted 后交给调用方导航到新会话。失败 toast，不静默。
+ */
+export function useOpenProjectAgentChat(params: {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
+  onSessionCreated: (sessionId: string) => void;
+}) {
+  const { workspacePath, workspaceIdentity, workspaceRemoteSessionId, onSessionCreated } = params;
+  const resolution = useWorkspaceServicesResolution(
+    workspacePath,
+    workspaceRemoteSessionId,
+    workspaceIdentity,
+  );
+  const { intl } = useZCodeIntl();
+  const [opening, setOpening] = useState(false);
+  const openingRef = useRef(false);
+
+  const openAgentChat = useCallback(
+    async (agent: AgentSummary) => {
+      if (openingRef.current || !resolution.rpcReady) {
+        return;
+      }
+      openingRef.current = true;
+      setOpening(true);
+      const lease = acquireWorkspaceConnection(
+        {
+          workspacePath,
+          ...(workspaceIdentity ? { workspaceIdentity } : {}),
+          ...(workspaceRemoteSessionId ? { remoteSessionId: workspaceRemoteSessionId } : {}),
+        },
+        resolution.services.zcodeAgentService,
+      );
+      try {
+        const ack = await lease.transport.sendCommand(
+          createCommandEnvelope({
+            type: "createSession",
+            payload: {
+              workspaceId: launchWorkspaceId({
+                workspacePath,
+                workspaceIdentity,
+                remoteSessionId: workspaceRemoteSessionId,
+              }),
+              persona: toProjectAgentPersona(agent),
+            },
+            sessionId: null,
+          }),
+        );
+        if (ack.status !== "accepted" || ack.result?.type !== "createSession") {
+          toast(
+            `${intl.formatMessage({ id: "workspaceSidebar.projectAgentOpenFailed" })}${
+              ack.reasonCode ? ` (${ack.reasonCode})` : ""
+            }`,
+          );
+          return;
+        }
+        onSessionCreated(ack.result.sessionId);
+      } catch (error) {
+        logger.warn("[projectAgents] 打开智能体会话失败", error);
+        toast(intl.formatMessage({ id: "workspaceSidebar.projectAgentOpenFailed" }));
+      } finally {
+        lease.release();
+        openingRef.current = false;
+        setOpening(false);
+      }
+    },
+    [
+      intl,
+      onSessionCreated,
+      resolution.rpcReady,
+      resolution.services.zcodeAgentService,
+      workspaceIdentity,
+      workspacePath,
+      workspaceRemoteSessionId,
+    ],
+  );
+
+  return { openAgentChat, opening };
+}
+
+export function WorkspaceProjectAgentsGroup({
+  agents,
+  onOpenAgent,
+}: {
+  agents: AgentSummary[];
+  onOpenAgent: (agent: AgentSummary) => void;
+}) {
   const { intl } = useZCodeIntl();
   if (agents.length === 0) {
     return null;
@@ -105,10 +197,7 @@ export function WorkspaceProjectAgentsGroup({ agents }: { agents: AgentSummary[]
               type="button"
               data-testid={testId(TID_PROJECT_AGENT_ROW, agent.name)}
               className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/30"
-              // “点开智能体=跟它对话”由后续分片承接；此处只做占位提示，不硬做路由。
-              onClick={() =>
-                toast(intl.formatMessage({ id: "workspaceSidebar.projectAgentsComingSoon" }))
-              }
+              onClick={() => onOpenAgent(agent)}
             >
               <span className="truncate text-ui-base text-foreground">{agent.name}</span>
               {agent.description ? (

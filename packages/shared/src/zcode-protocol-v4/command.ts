@@ -23,6 +23,7 @@ import {
 import {
   zcodeBrowserAmbientContextSchema,
   zcodeProtocolMcpServerSchema,
+  zcodeSessionPersonaSchema,
 } from "../zcode-protocol/index.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
 export type { SharedContextRef } from "./shared-context-ref.js";
@@ -63,6 +64,9 @@ export const commandPayloadSchemas = {
     offPeakToolEnabled: z.boolean().optional(),
     // 动态工作流灰度 flag，与 offPeakToolEnabled 同一模式。
     dynamicWorkflowEnabled: z.boolean().optional(),
+    // 驻场智能体会话：persona 随 create 一次性进入 runtime config（systemPrompt 走既有
+    // customSystemPrompt 通道）。普通会话缺席该键，行为不变。
+    persona: zcodeSessionPersonaSchema.optional(),
   }),
   // 父会话由 envelope.sessionId 指定；服务端从父 record 派生完整运行配置。
   // firstInput 存在时，child 创建完成后立即启动首条普通输入；缺省则保持空副屏。

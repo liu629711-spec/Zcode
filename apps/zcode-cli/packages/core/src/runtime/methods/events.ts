@@ -20,6 +20,7 @@ import type {
   UserInputAutoResolutionUpdatedPayload,
 } from "../deps.js";
 import { titleFromInput, slugify, projectIdFromDirectory } from "../helpers/index.js";
+import { buildProjectAgentSessionTitle } from "../../subagent/persona-session.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { buildPersistedConversationInputIntent } from "./input-intent-persistence.js";
 import { recordToolUsageFromEvent } from "./usage-observability.js";
@@ -578,7 +579,14 @@ export async function ensureSessionPersisted(
     // session.path/directory，导致本地 workspacePath 的末尾 `/` 丢失。冷恢复随后按精确
     // workspaceKey 查 provider registry 时就会落到另一个身份。持久化必须保留协议入口路径。
     const persistedWorkspacePath = this.config.workspacePath ?? directory;
-    const title = titleFromInput(input);
+    // 驻场智能体会话：标题带智能体名（bootstrap 已随 persona 关闭标题二次生成，
+    // 该前缀不会被 generated title 覆盖）；普通会话标题不变。
+    const title = this.config.projectAgentPersona
+      ? buildProjectAgentSessionTitle(
+          this.config.projectAgentPersona.name,
+          titleFromInput(input),
+        )
+      : titleFromInput(input);
     const workspaceIdentity = this.config.memory?.workspaceIdentity?.trim();
     await this.sessionStore.createSession({
       id: this.sessionId,
