@@ -131,7 +131,9 @@ export function buildAgentMemoryDirectoryHint(
  * createSession.persona 载荷：随会话创建一次性进入 runtime config。
  * 即 shared 的 ZCodeSessionPersona（单一来源，防两处形状漂移）：
  * G2 起除 name/systemPrompt/memoryScope 外还携带档案的模型/工具/颜色，
- * 让驻场会话与档案同一副面孔；全部可选，缺席 = 跟随会话缺省。
+ * 让驻场会话与档案同一副面孔；模型/工具/颜色可选，缺席 = 跟随会话缺省；
+ * memoryScope 必带（档案缺 memory 字段时缺省 project）——core 以 persona.memory
+ * 在场为记忆注入/补记忆工具的门，载荷缺席会让面板承诺的记事本变成摆设。
  */
 export type ProjectAgentPersona = ZCodeSessionPersona;
 
@@ -139,7 +141,9 @@ export function toProjectAgentPersona(agent: AgentSummary): ProjectAgentPersona 
   return {
     name: agent.name,
     systemPrompt: agent.systemPrompt,
-    ...(agent.memory ? { memoryScope: agent.memory } : {}),
+    // 记忆范围缺省 project（与建档/三框更新同约定）：面板与删除提示都按
+    // `agent.memory ?? "project"` 展示记事本路径，载荷缺省必须同一口径。
+    memoryScope: agent.memory ?? "project",
     ...(agent.modelSelection ? { modelSelection: agent.modelSelection } : {}),
     // 空数组与缺席同义 = 继承全部工具（与子代理派遣的 allowedTools 语义一致）。
     ...(agent.tools?.length ? { tools: [...agent.tools] } : {}),

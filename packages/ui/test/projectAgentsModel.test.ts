@@ -106,21 +106,29 @@ test("toProjectAgentCreateConfig：trim 字段并固定 memory=project", () => {
   assert.equal((config as { memory?: string }).memory, "project");
 });
 
-test("toProjectAgentPersona：persona 载荷带名称/提示词/记忆 scope", () => {
+test("toProjectAgentPersona：persona 载荷带名称/提示词/记忆 scope，档案缺 memory 缺省 project", () => {
   const base = {
     id: "a1",
     name: "code-reviewer",
     systemPrompt: "你是代码审查员",
     scope: "workspace",
   } as Pick<AgentSummary, "id" | "name" | "systemPrompt" | "scope">;
+  // 设置页三框建档等路径的档案可能没有 memory 字段：载荷必须缺省 project。
+  // core 以 persona.memory 在场为记忆注入/补工具的门，缺席 = 记事本成摆设。
   assert.deepEqual(toProjectAgentPersona(base as AgentSummary), {
     name: "code-reviewer",
     systemPrompt: "你是代码审查员",
+    memoryScope: "project",
   });
   assert.deepEqual(toProjectAgentPersona({ ...base, memory: "project" } as AgentSummary), {
     name: "code-reviewer",
     systemPrompt: "你是代码审查员",
     memoryScope: "project",
+  });
+  assert.deepEqual(toProjectAgentPersona({ ...base, memory: "local" } as AgentSummary), {
+    name: "code-reviewer",
+    systemPrompt: "你是代码审查员",
+    memoryScope: "local",
   });
 });
 
@@ -142,6 +150,7 @@ test("toProjectAgentPersona：档案的模型/工具/颜色随载荷走（G2 同
     {
       name: "code-reviewer",
       systemPrompt: "你是代码审查员",
+      memoryScope: "project",
       modelSelection: { providerId: "openai", modelId: "gpt-5" },
       tools: ["Read", "Grep"],
       disallowedTools: ["Bash"],
@@ -162,6 +171,7 @@ test("toProjectAgentPersona：空工具数组不进载荷（= 继承全部工具
   assert.deepEqual(toProjectAgentPersona(base as AgentSummary), {
     name: "code-reviewer",
     systemPrompt: "你是代码审查员",
+    memoryScope: "project",
   });
 });
 
@@ -332,6 +342,17 @@ test("漂移钉住：UI 记事本提示与 shared 目录推导（core/面板同�
       `${sharedRoot.replace(/\\/gu, "/")}/`,
     );
   }
+});
+
+test("漂移钉住：persona 记忆缺省与面板展示口径（memory ?? \"project\"）同一", () => {
+  // 面板/删除提示按 `memory ?? "project"` 展示记事本路径，persona 载荷的缺省必须同一口径——
+  // 否则会出现「面板有记事本、会话永远不读」的语义谎言（设置页三框建档即这条路径）。
+  const bareAgent = { id: "a1", name: "code-reviewer", systemPrompt: "p", scope: "workspace" } as AgentSummary;
+  assert.equal(toProjectAgentPersona(bareAgent).memoryScope, "project");
+  assert.equal(
+    buildAgentMemoryDirectoryHint(bareAgent, "D:/repo"),
+    "D:/repo/.zcode/agent-memory/code-reviewer/",
+  );
 });
 
 test("getPersonaChatBadge：读 agentPersona 内联标记，普通会话行无徽章", () => {
