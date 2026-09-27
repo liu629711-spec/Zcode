@@ -199,7 +199,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   onWorkspaceMainViewChange,
   onOpenAutomationConsumed,
   handleOpenAutomations,
-  handleOpenDispatchDesk,
   handleOpenPluginStore,
   handleManageInstalledPlugins,
   onConnectRemote,
@@ -1625,8 +1624,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     automationsActive={workspaceMainView === "automations"}
                     onOpenPluginStore={handleOpenPluginStore}
                     pluginStoreActive={workspaceMainView === "plugin-store"}
-                    onOpenDispatchDesk={handleOpenDispatchDesk}
-                    dispatchDeskActive={workspaceMainView === "dispatch-desk"}
                     onFileTreeOpenChange={setIsSidebarFileTreeOpen}
                   />
                 </WorkflowRunOpenProvider>

@@ -128,8 +128,6 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   onWorkspaceMainViewChange: (view: WorkspaceMainView) => void;
   onOpenAutomationConsumed: () => void;
   handleOpenAutomations: OpenAutomationsMain;
-  /** 侧栏派活台入口；WorkspaceShellLayout 转发给 WorkspaceSidebar。 */
-  handleOpenDispatchDesk?: () => void;
   handleOpenPluginStore: () => void;
   handleManageInstalledPlugins: () => void;
   workspaceShellZCodeState: WorkspaceShellZCodeState;

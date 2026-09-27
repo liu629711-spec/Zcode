@@ -27,7 +27,6 @@ import {
   Minimize2,
   Plus,
   Search,
-  SquareKanbanIcon,
   X,
 } from "lucide-react";
 import {
@@ -260,10 +259,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter,
   onOpenAutomations,
   onOpenPluginStore,
-  onOpenDispatchDesk,
   automationsActive = false,
   pluginStoreActive = false,
-  dispatchDeskActive = false,
   onFileTreeOpenChange,
 }: {
   workspacePath: string;
@@ -314,10 +311,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenCommandCenter: () => void;
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
-  onOpenDispatchDesk?: () => void;
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
-  dispatchDeskActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
@@ -1100,28 +1095,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {taskViewMode === "grouped" || taskViewMode === "workspace" ? (
-              <ControlHintTooltip
-                title={intl.formatMessage({ id: "dispatchDesk.title" })}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className={cn(
-                    "shrink-0",
-                    dispatchDeskActive
-                      ? "text-foreground"
-                      : "text-foreground-subtle hover:text-foreground",
-                  )}
-                  aria-label={intl.formatMessage({ id: "dispatchDesk.title" })}
-                  aria-pressed={dispatchDeskActive}
-                  onClick={onOpenDispatchDesk}
-                >
-                  <SquareKanbanIcon className="size-3.5" />
-                </Button>
-              </ControlHintTooltip>
-            ) : null}
             {taskViewMode === "grouped" ? (
               <ControlHintTooltip
                 title={workspaceReadOnlyReason ?? intl.formatMessage({ id: "taskGroup.newGroup" })}
@@ -1259,12 +1232,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       activePrimaryTaskMode,
       archivedTasksActionLabel,
       createGroupedTaskGroupAction,
-      dispatchDeskActive,
       handlePrimaryTaskModeChange,
       handleToggleAllTaskGroups,
       handleWorkspaceTaskViewChange,
       intl,
-      onOpenDispatchDesk,
       primaryTaskIndicatorStyle,
       showArchivedTasks,
       showTaskSortOptions,
