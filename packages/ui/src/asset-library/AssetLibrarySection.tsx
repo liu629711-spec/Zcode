@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
+import type { CreateTaskRequest } from "@/app-shell/types.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { ASSET_CATALOG } from "./catalog/index.js";
@@ -118,7 +119,21 @@ function AssetCard({
   );
 }
 
-export function AssetLibrarySection() {
+/** 递活接线（S4）：workspacePath/identity 供「发到当前会话」，onCreateTask 供「发到新会话」。 */
+interface AssetLibrarySectionProps {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  /** 当前 workspace 有活动会话视图（ShellLayout 按 activeTaskId 判定）；无则隐藏「发到当前会话」。 */
+  hasActiveChat: boolean;
+  onCreateTask?: (request?: CreateTaskRequest) => void;
+}
+
+export function AssetLibrarySection({
+  workspacePath,
+  workspaceIdentity,
+  hasActiveChat,
+  onCreateTask,
+}: AssetLibrarySectionProps) {
   const { intl, locale } = useZCodeIntl();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<AssetFilterCategory>("all");
@@ -235,7 +250,14 @@ export function AssetLibrarySection() {
         </div>
       )}
 
-      <AssetDetailDialog asset={detailAsset} onClose={() => setDetailAsset(null)} />
+      <AssetDetailDialog
+        asset={detailAsset}
+        onClose={() => setDetailAsset(null)}
+        workspacePath={workspacePath}
+        workspaceIdentity={workspaceIdentity}
+        hasActiveChat={hasActiveChat}
+        onCreateTask={onCreateTask}
+      />
     </div>
   );
 }

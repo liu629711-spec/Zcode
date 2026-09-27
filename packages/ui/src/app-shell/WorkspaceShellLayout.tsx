@@ -1869,7 +1869,12 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                 className="min-h-full"
                               >
                                 <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-6">
-                                  <AssetLibrarySection />
+                                  <AssetLibrarySection
+                                    workspacePath={workspaceAbsPath}
+                                    workspaceIdentity={workspaceIdentity}
+                                    hasActiveChat={activeTaskId !== null}
+                                    onCreateTask={handleCreateTaskInChat}
+                                  />
                                 </div>
                               </ScopedErrorBoundary>
                             </div>

@@ -6588,6 +6588,10 @@ const zhCN: Record<string, string> = {
   "assetLibrary.detail.copyAria": "复制当前文件内容",
   "assetLibrary.detail.copied": "已复制",
   "assetLibrary.detail.copyFailed": "复制失败：{error}。请手动选中代码复制。",
+  "assetLibrary.detail.sendToNewChat": "发到新会话",
+  "assetLibrary.detail.sendToNewChatAria": "把素材需求消息预填到新会话输入框，不自动发送",
+  "assetLibrary.detail.sendToCurrentChat": "发到当前会话",
+  "assetLibrary.detail.sendToCurrentChatAria": "把素材需求消息插入当前会话输入框，不自动发送",
 };
 
 export default zhCN;

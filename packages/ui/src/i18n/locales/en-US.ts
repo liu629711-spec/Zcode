@@ -6910,6 +6910,12 @@ const enUS: Record<string, string> = {
   "assetLibrary.detail.copyAria": "Copy current file content",
   "assetLibrary.detail.copied": "Copied",
   "assetLibrary.detail.copyFailed": "Copy failed: {error}. Please select and copy the code manually.",
+  "assetLibrary.detail.sendToNewChat": "Send to new chat",
+  "assetLibrary.detail.sendToNewChatAria":
+    "Prefill the asset request message into a new chat composer; nothing is sent automatically",
+  "assetLibrary.detail.sendToCurrentChat": "Send to current chat",
+  "assetLibrary.detail.sendToCurrentChatAria":
+    "Insert the asset request message into the current chat composer; nothing is sent automatically",
 };
 
 export default enUS;

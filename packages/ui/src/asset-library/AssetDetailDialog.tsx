@@ -1,12 +1,14 @@
 /**
- * 素材详情弹层（技术设计 §4）：真 iframe 预览 + 图纸 tab + 复制。
+ * 素材详情弹层（技术设计 §4）：真 iframe 预览 + 图纸 tab + 复制 + 递活按钮（S4）。
  *
  * iframe 现挂现卸——asset 为 null 即卸载整个 body，弹层一关沙箱就回收。
- * 「发到会话」按钮归 S4 递活片，本片不渲染。
+ * 「发到新会话」走 onCreateTask（照 PluginStorePage 试用链）；「发到当前会话」写
+ * requestComposerTextInsert，均只预填输入框、不自动发送；无活动会话时后者不渲染。
  * Radix Dialog 自带焦点圈/Esc 关闭/焦点归还；DialogContent 的关闭按钮沿用组件默认。
  */
 import { useEffect, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, MessageSquareTextIcon, SendIcon } from "lucide-react";
+import type { CreateTaskRequest } from "@/app-shell/types.js";
 import { Button } from "@/components/ui/button.js";
 import {
   Dialog,
@@ -18,8 +20,20 @@ import {
 import { toast } from "@/components/ui/toast.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { AssetPreviewFrame } from "./AssetPreviewFrame.js";
+import { buildAssetTryPrompt } from "./assetTryPrompt.js";
 import type { AssetFile, AssetManifest } from "./catalog/types.js";
+
+/** 递活动作接线（S4）：由 WorkspaceShellLayout 照 plugin-store 同链传下来。 */
+interface AssetDetailActions {
+  /** 发到当前会话的目标 workspace；identity 缺省时状态写 path 桶。 */
+  workspacePath: string;
+  workspaceIdentity?: string;
+  /** 当前 workspace 是否有活动会话视图；无则不渲染「发到当前会话」。 */
+  hasActiveChat: boolean;
+  onCreateTask?: (request?: CreateTaskRequest) => void;
+}
 
 /** 可复制的图纸正文：prompt 类货图纸为空，口令本身就是货。 */
 function resolveBlueprintFiles(asset: AssetManifest): AssetFile[] {
@@ -29,7 +43,15 @@ function resolveBlueprintFiles(asset: AssetManifest): AssetFile[] {
 }
 
 /** key={asset.id} 挂载：切货即重置 tab/复制态。 */
-function AssetDetailBody({ asset }: { asset: AssetManifest }) {
+function AssetDetailBody({
+  asset,
+  workspacePath,
+  workspaceIdentity,
+  hasActiveChat,
+  onCreateTask,
+}: {
+  asset: AssetManifest;
+} & AssetDetailActions) {
   const { intl } = useZCodeIntl();
   const blueprintFiles = resolveBlueprintFiles(asset);
   const [activeFileName, setActiveFileName] = useState(blueprintFiles[0]!.name);
@@ -43,6 +65,17 @@ function AssetDetailBody({ asset }: { asset: AssetManifest }) {
     const timer = window.setTimeout(() => setCopied(false), 2000);
     return () => window.clearTimeout(timer);
   }, [copied]);
+
+  // 递活消息三种动作共用同一组装（技术设计 §3）：只预填输入框，发送权在用户手里。
+  const tryPrompt = buildAssetTryPrompt(asset);
+  const handleSendToNewChat = () => {
+    onCreateTask?.({ initialPrompt: tryPrompt });
+  };
+  const handleSendToCurrentChat = () => {
+    useZCodeSessionStore
+      .getState()
+      .requestComposerTextInsert(workspacePath, tryPrompt, workspaceIdentity);
+  };
 
   const handleCopy = async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
@@ -142,6 +175,31 @@ function AssetDetailBody({ asset }: { asset: AssetManifest }) {
           </pre>
         )}
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          data-testid="asset-library-detail-send-new-chat"
+          aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToNewChatAria" })}
+          onClick={handleSendToNewChat}
+        >
+          <SendIcon className="size-3.5" aria-hidden="true" />
+          {intl.formatMessage({ id: "assetLibrary.detail.sendToNewChat" })}
+        </Button>
+        {hasActiveChat ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            data-testid="asset-library-detail-send-current-chat"
+            aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChatAria" })}
+            onClick={handleSendToCurrentChat}
+          >
+            <MessageSquareTextIcon className="size-3.5" aria-hidden="true" />
+            {intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChat" })}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -153,10 +211,14 @@ function AssetDetailBody({ asset }: { asset: AssetManifest }) {
 export function AssetDetailDialog({
   asset,
   onClose,
+  workspacePath,
+  workspaceIdentity,
+  hasActiveChat,
+  onCreateTask,
 }: {
   asset: AssetManifest | null;
   onClose: () => void;
-}) {
+} & AssetDetailActions) {
   return (
     <Dialog
       open={asset !== null}
@@ -167,7 +229,16 @@ export function AssetDetailDialog({
       }}
     >
       <DialogContent className="max-w-2xl" data-testid="asset-library-detail-dialog">
-        {asset ? <AssetDetailBody key={asset.id} asset={asset} /> : null}
+        {asset ? (
+          <AssetDetailBody
+            key={asset.id}
+            asset={asset}
+            workspacePath={workspacePath}
+            workspaceIdentity={workspaceIdentity}
+            hasActiveChat={hasActiveChat}
+            onCreateTask={onCreateTask}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
