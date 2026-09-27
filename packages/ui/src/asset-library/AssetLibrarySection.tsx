@@ -127,6 +127,8 @@ interface AssetLibrarySectionProps {
   hasActiveChat: boolean;
   /** 活动 workspace 只读时两个递活动作都不可用（与 onCreateTask 的只读守卫同待遇）。 */
   readOnly?: boolean;
+  /** 递活到当前会话后切回会话视图（展厅是独立主视图，插入要等 composer 挂载才兑现）。 */
+  onOpenChat?: () => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
 }
 
@@ -135,6 +137,7 @@ export function AssetLibrarySection({
   workspaceIdentity,
   hasActiveChat,
   readOnly = false,
+  onOpenChat,
   onCreateTask,
 }: AssetLibrarySectionProps) {
   const { intl, locale } = useZCodeIntl();
@@ -260,6 +263,7 @@ export function AssetLibrarySection({
         workspaceIdentity={workspaceIdentity}
         hasActiveChat={hasActiveChat}
         readOnly={readOnly}
+        onOpenChat={onOpenChat}
         onCreateTask={onCreateTask}
       />
     </div>

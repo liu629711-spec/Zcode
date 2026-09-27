@@ -1886,6 +1886,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                       workspaceIdentity={workspaceIdentity}
                                       hasActiveChat={activeTaskId !== null}
                                       readOnly={Boolean(workspaceReadOnlyReason)}
+                                      onOpenChat={showChatMainView}
                                       onCreateTask={handleCreateTaskInChat}
                                     />
                                   </Suspense>

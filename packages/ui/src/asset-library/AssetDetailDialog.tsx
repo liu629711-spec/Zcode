@@ -37,6 +37,8 @@ interface AssetDetailActions {
   hasActiveChat: boolean;
   /** 活动 workspace 只读时隐藏两个递活按钮（与 onCreateTask 的只读守卫同待遇）。 */
   readOnly?: boolean;
+  /** 递活到当前会话后切回会话视图；展厅是独立主视图，不切回去插入看不见反馈。 */
+  onOpenChat?: () => void;
   onCreateTask?: (request?: CreateTaskRequest) => void;
 }
 
@@ -54,6 +56,7 @@ function AssetDetailBody({
   workspaceIdentity,
   hasActiveChat,
   readOnly,
+  onOpenChat,
   onCreateTask,
 }: {
   asset: AssetManifest;
@@ -81,6 +84,8 @@ function AssetDetailBody({
     useZCodeSessionStore
       .getState()
       .requestComposerTextInsert(workspacePath, tryPrompt, workspaceIdentity);
+    // 展厅是独立主视图：不切回会话，插入要等 composer 挂载才兑现，用户会以为点了没反应。
+    onOpenChat?.();
   };
 
   const handleCopy = async () => {
@@ -225,6 +230,7 @@ export function AssetDetailDialog({
   workspaceIdentity,
   hasActiveChat,
   readOnly,
+  onOpenChat,
   onCreateTask,
 }: {
   asset: AssetManifest | null;
@@ -248,6 +254,7 @@ export function AssetDetailDialog({
             workspaceIdentity={workspaceIdentity}
             hasActiveChat={hasActiveChat}
             readOnly={readOnly}
+            onOpenChat={onOpenChat}
             onCreateTask={onCreateTask}
           />
         ) : null}
