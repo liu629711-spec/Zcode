@@ -1,34 +1,15 @@
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import type { FileSystemPort, Logger, TraceContext } from "@zcode/contracts";
+// 记事本目录推导的唯一实现（G3 面板同源）：core 注入与 services 面板都按它落盘/读盘。
+import { resolveAgentMemoryRoot } from "@zcode/shared/node";
 
 import { ensureMemoryDirectoryExists } from "../memory/directory.js";
 import type { AgentRuntimeConfig, MemoryRuntimeConfig } from "../runtime/types.js";
-import type { AgentProfile, AgentMemoryScope } from "./profile.js";
+import type { AgentProfile } from "./profile.js";
 import { buildPersistentAgentMemoryPrompt } from "./persistent-memory-prompt.js";
 
 const PERSISTENT_MEMORY_TOOLS = ["Write", "Edit"] as const;
-
-function sanitizePersistentAgentMemoryKey(agentName: string): string {
-  const key = agentName.replace(/[^a-zA-Z0-9_-]/g, "-");
-  return key === "" ? "unknown" : key;
-}
-
-function resolvePersistentAgentMemoryRoot(input: {
-  agentName: string;
-  scope: AgentMemoryScope;
-  storageRoot: string;
-  workspaceRoot: string;
-}): string {
-  const agentKey = sanitizePersistentAgentMemoryKey(input.agentName);
-  if (input.scope === "user") {
-    return join(input.storageRoot, "agent-memory", agentKey);
-  }
-  const workspace = resolve(input.workspaceRoot);
-  return input.scope === "project"
-    ? join(workspace, ".zcode", "agent-memory", agentKey)
-    : join(workspace, ".zcode", "agent-memory-local", agentKey);
-}
 
 function isPersistentAgentMemoryEnabled(
   memory: MemoryRuntimeConfig | undefined,
@@ -109,7 +90,7 @@ export async function loadPersistentAgentMemory(input: {
   if (!input.profile.memory || !input.fileSystemPort) return undefined;
   if (!isPersistentAgentMemoryEnabled(input.memory)) return undefined;
 
-  const rootDir = resolvePersistentAgentMemoryRoot({
+  const rootDir = resolveAgentMemoryRoot({
     agentName: input.profile.name,
     scope: input.profile.memory,
     storageRoot: input.memory.storageRoot,
@@ -154,7 +135,7 @@ export async function loadProjectAgentMemoryPrompt(input: {
   workspaceRoot: string;
 }): Promise<string | undefined> {
   if (!input.fileSystemPort) return undefined;
-  const rootDir = resolvePersistentAgentMemoryRoot({
+  const rootDir = resolveAgentMemoryRoot({
     agentName: input.agentName,
     scope: "project",
     // 主会话读记忆不做 enabled 门控（与子代理不同：persona 会话由 Host 显式创建，

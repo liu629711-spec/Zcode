@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentSummary } from "@zcode/shared";
+import { resolveAgentMemoryRoot } from "@zcode/shared/node";
 import {
   applyPersonaChatBadges,
   buildAgentMemoryDirectoryHint,
@@ -314,6 +315,23 @@ test("buildAgentMemoryDirectoryHint：project/local 给出项目内路径，user
     "D:/repo/.zcode/agent-memory-local/code-reviewer/",
   );
   assert.equal(buildAgentMemoryDirectoryHint(agent("user"), "D:/repo"), null);
+});
+
+test("漂移钉住：UI 记事本提示与 shared 目录推导（core/面板同源）输出一致", () => {
+  // UI 的提示是纯字符串拼接，不引 node 模块；这里与 @zcode/shared/node 的唯一实现
+  // 对同一输入对账，任何一侧改推导（目录名/key 清洗/分隔符）都会在这里爆。
+  for (const scope of ["project", "local"] as const) {
+    const sharedRoot = resolveAgentMemoryRoot({
+      agentName: "code-reviewer",
+      scope,
+      storageRoot: "",
+      workspaceRoot: "D:\\repo",
+    });
+    assert.equal(
+      buildAgentMemoryDirectoryHint({ name: "code-reviewer", memory: scope }, "D:/repo"),
+      `${sharedRoot.replace(/\\/gu, "/")}/`,
+    );
+  }
 });
 
 test("getPersonaChatBadge：读 agentPersona 内联标记，普通会话行无徽章", () => {

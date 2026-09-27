@@ -1,16 +1,23 @@
 import {
+  AGENT_MEMORY_INDEX_FILE_NAME,
+  type AgentMemoryCatalog,
+  type AgentMemoryFileSummary,
+  type AgentMemoryTargetParams,
   type IMemoryService,
   type ProjectMemoryFileSummary,
   type ProjectMemoryWorkspaceSummary,
 } from "./memory.js";
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { lstat, readdir, realpath, unlink } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
+import { resolveAgentMemoryRoot, atomicWritePrivateTextFile } from "@zcode/shared/node";
 import { readProjectMemoryFileFromStableHandle } from "#src/memory/projectMemoryStableRead.js";
 import { getZCodeDataRootDir } from "#src/paths.js";
 
 const PROJECT_MEMORY_INDEX_FILE_NAME = "MEMORY.md";
 const PROJECT_MEMORY_DIRECTORY_NAME = "memory";
 const PROJECT_KEY_SUFFIX_PATTERN = /^(.*)-[a-f0-9]{16}$/i;
+/** 面板单条记忆的读写上限（与只读预览同一档）：记忆文件不该长成书。 */
+const AGENT_MEMORY_MAX_BYTES = 5 * 1024 * 1024;
 
 function isNotFoundError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
@@ -107,6 +114,170 @@ function compareProjectMemoryFiles(
     return left.kind === "index" ? -1 : 1;
   }
   return left.name.localeCompare(right.name, "en");
+}
+
+// ============================================================================
+// 智能体记事本（G3 记忆面板）：目录推导与 core persistent-memory 同源
+// （@zcode/shared/node resolveAgentMemoryRoot），只收 .md 文件；安全防护照
+// 上方 Project Memory 的先例——普通目录、精确文件名、拒符号链接、realpath 越界检查。
+// ============================================================================
+
+function isAgentMemoryFileName(fileName: string): boolean {
+  return (
+    fileName === AGENT_MEMORY_INDEX_FILE_NAME ||
+    (fileName.endsWith(".md") && fileName !== AGENT_MEMORY_INDEX_FILE_NAME)
+  );
+}
+
+function requireAgentMemoryFileName(fileName: string): string {
+  if (!isValidPathSegment(fileName) || !isAgentMemoryFileName(fileName)) {
+    throw new Error(`Invalid agent memory file name: ${fileName}`);
+  }
+  return fileName;
+}
+
+/**
+ * 记事本根目录：project/local 落在 <workspacePath>/.zcode 下；user 档案跟着账号走。
+ * ponytail: user 根取 services 数据目录（缺省 ~/.zcode，与 CLI storage.dir 缺省一致）；
+ * CLI 显式改过 storage.dir 时这里会漂移——面板随 catalog.rootDir 说真话，
+ * 收口路径 = 有服务面回传 runtime memory.storageRoot 后替换这一行。
+ */
+function resolveAgentMemoryDirectory(params: AgentMemoryTargetParams): string {
+  if (params.scope === "user") {
+    return resolveAgentMemoryRoot({
+      agentName: params.agentName,
+      scope: "user",
+      storageRoot: getZCodeDataRootDir(),
+      workspaceRoot: "",
+    });
+  }
+  const workspacePath = params.workspacePath?.trim();
+  if (!workspacePath) {
+    throw new Error(`Agent memory scope ${params.scope} requires a workspace path`);
+  }
+  return resolveAgentMemoryRoot({
+    agentName: params.agentName,
+    scope: params.scope,
+    storageRoot: "",
+    workspaceRoot: workspacePath,
+  });
+}
+
+async function requireExactAgentMemoryFile(
+  memoryRoot: string,
+  fileName: string,
+): Promise<string> {
+  const memoryEntries = await readdir(memoryRoot, { withFileTypes: true });
+  const fileEntry = memoryEntries.find((entry) => entry.name === fileName);
+  const requestedFilePath = join(memoryRoot, fileName);
+  if (!fileEntry) {
+    // 文件确实不存在时继续透传原始 ENOENT；只有大小写别名能命中时才拒绝读取。
+    await lstat(requestedFilePath);
+    throw new Error(`Agent memory file name does not match exactly: ${fileName}`);
+  }
+  if (!fileEntry.isFile() || fileEntry.isSymbolicLink()) {
+    throw new Error(`Agent memory file is not a regular file: ${fileName}`);
+  }
+  return requestedFilePath;
+}
+
+async function listAgentMemoryCatalog(
+  params: AgentMemoryTargetParams,
+): Promise<AgentMemoryCatalog> {
+  const rootDir = resolveAgentMemoryDirectory(params);
+  let memoryEntries;
+  try {
+    // 只校验单个固定根，symlink 根目录直接拒绝（同 requirePlainDirectory 先例）。
+    await requirePlainDirectory(rootDir);
+    memoryEntries = await readdir(rootDir, { withFileTypes: true });
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      // 记事本还没建（智能体还没记过任何东西）= 空集，不是错误。
+      return { rootDir, scope: params.scope, files: [] };
+    }
+    throw error;
+  }
+
+  const files: AgentMemoryFileSummary[] = [];
+  for (const memoryEntry of memoryEntries) {
+    if (
+      !memoryEntry.isFile() ||
+      memoryEntry.isSymbolicLink() ||
+      !isAgentMemoryFileName(memoryEntry.name)
+    ) {
+      continue;
+    }
+    const filePath = join(rootDir, memoryEntry.name);
+    let fileMetadata;
+    try {
+      fileMetadata = await lstat(filePath);
+    } catch (error) {
+      // readdir 后事实文件可能被并发删除；它不再属于本次快照。
+      if (isNotFoundError(error)) {
+        continue;
+      }
+      throw error;
+    }
+    if (!fileMetadata.isFile() || fileMetadata.isSymbolicLink()) {
+      continue;
+    }
+    files.push({
+      name: memoryEntry.name,
+      path: filePath,
+      kind: memoryEntry.name === AGENT_MEMORY_INDEX_FILE_NAME ? "index" : "item",
+      size: fileMetadata.size,
+      updatedAt: fileMetadata.mtimeMs,
+    });
+  }
+
+  files.sort(compareProjectMemoryFiles);
+  return { rootDir, scope: params.scope, files };
+}
+
+async function readAgentMemoryFileEntry(
+  params: AgentMemoryTargetParams & { fileName: string },
+): Promise<{ content: string; updatedAt: number }> {
+  const fileName = requireAgentMemoryFileName(params.fileName);
+  const rootDir = resolveAgentMemoryDirectory(params);
+  await requirePlainDirectory(rootDir);
+  const filePath = await requireExactAgentMemoryFile(rootDir, fileName);
+  return readProjectMemoryFileFromStableHandle({
+    fileName,
+    filePath,
+    validatePath: async () => {
+      await requirePlainDirectory(rootDir);
+      await requireExactAgentMemoryFile(rootDir, fileName);
+      await assertContainedProjectMemoryPath(rootDir, filePath);
+    },
+  });
+}
+
+async function writeAgentMemoryFileEntry(
+  params: AgentMemoryTargetParams & { fileName: string; content: string },
+): Promise<{ updatedAt: number }> {
+  const fileName = requireAgentMemoryFileName(params.fileName);
+  if (Buffer.byteLength(params.content, "utf-8") > AGENT_MEMORY_MAX_BYTES) {
+    throw new Error(`Agent memory file exceeds the 5 MiB limit: ${fileName}`);
+  }
+  const rootDir = resolveAgentMemoryDirectory(params);
+  await requirePlainDirectory(rootDir);
+  const filePath = await requireExactAgentMemoryFile(rootDir, fileName);
+  await assertContainedProjectMemoryPath(rootDir, filePath);
+  // 临时文件 + rename 原子替换：写一半崩了也不会把记忆截断成空文件。
+  await atomicWritePrivateTextFile(filePath, params.content);
+  const finalStat = await lstat(filePath);
+  return { updatedAt: finalStat.mtimeMs };
+}
+
+async function deleteAgentMemoryFileEntry(
+  params: AgentMemoryTargetParams & { fileName: string },
+): Promise<void> {
+  const fileName = requireAgentMemoryFileName(params.fileName);
+  const rootDir = resolveAgentMemoryDirectory(params);
+  await requirePlainDirectory(rootDir);
+  const filePath = await requireExactAgentMemoryFile(rootDir, fileName);
+  await assertContainedProjectMemoryPath(rootDir, filePath);
+  await unlink(filePath);
 }
 
 export function createMemoryService(): IMemoryService {
@@ -234,5 +405,9 @@ export function createMemoryService(): IMemoryService {
   return {
     listProjectMemories,
     readProjectMemoryFile,
+    listAgentMemoryFiles: listAgentMemoryCatalog,
+    readAgentMemoryFile: readAgentMemoryFileEntry,
+    writeAgentMemoryFile: writeAgentMemoryFileEntry,
+    deleteAgentMemoryFile: deleteAgentMemoryFileEntry,
   };
 }

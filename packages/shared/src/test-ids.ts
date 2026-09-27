@@ -221,6 +221,16 @@ export const TID_PROJECT_AGENT_CREATE = "project-agent-create";
 export const TID_PROJECT_AGENT_CREATE_DIALOG = "project-agent-create-dialog";
 /** 项目分区智能体分组行（动态后缀为 agentName） */
 export const TID_PROJECT_AGENT_ROW = "project-agent-row";
+/** 项目分区智能体编辑对话框的记忆区（G3） */
+export const TID_PROJECT_AGENT_MEMORY_SECTION = "project-agent-memory-section";
+/** 记忆区文件行（动态后缀为 fileName） */
+export const TID_PROJECT_AGENT_MEMORY_FILE = "project-agent-memory-file";
+/** 记忆区文件行删除按钮（动态后缀为 fileName） */
+export const TID_PROJECT_AGENT_MEMORY_FILE_DELETE = "project-agent-memory-file-delete";
+/** 记忆区内容编辑器保存按钮 */
+export const TID_PROJECT_AGENT_MEMORY_EDITOR_SAVE = "project-agent-memory-editor-save";
+/** 记忆区空态 */
+export const TID_PROJECT_AGENT_MEMORY_EMPTY = "project-agent-memory-empty";
 /** Composer workspace 选择触发器 */
 export const TID_COMPOSER_WORKSPACE_TRIGGER = "composer-workspace-trigger";
 /** Composer workspace 菜单的远程连接入口 */

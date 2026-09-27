@@ -1823,6 +1823,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
 
           <WorkspaceProjectAgentCreateDialog
             open={projectAgentCreateTarget !== null || projectAgentEditTarget !== null}
+            // 记忆区（G3）按编辑目标工作区取数；服务解析沿用侧栏 bound 连接三件套。
+            workspacePath={(projectAgentEditTarget?.target ?? projectAgentCreateTarget)?.workspacePath}
+            workspaceIdentity={
+              (projectAgentEditTarget?.target ?? projectAgentCreateTarget)?.workspaceIdentity
+            }
+            workspaceRemoteSessionId={workspaceRemoteSessionId}
             onOpenChange={(open) => {
               if (!open) {
                 setProjectAgentCreateTarget(null);

@@ -20,6 +20,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import { acquireWorkspaceConnection } from "@/v4/workspaceConnectionRegistry.js";
 import { launchWorkspaceId } from "@/settings/saved-workflows/useSavedWorkflowLauncher.js";
+import { AgentMemorySection } from "@/WorkspaceSidebar/AgentMemorySection.js";
 import {
   selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
@@ -298,7 +299,7 @@ function formatDraftError(intl: ReturnType<typeof useZCodeIntl>["intl"], error: 
  * 上半是已有档案列表（点按直接开聊，空态/加载态各自成行），下半是建档表单（名字/介绍/人设三框，
  * 与设置页同一套校验文案）；建档成功由调用方负责自动开一段会话。
  * 编辑档案（G5/D4）复用同一套表单：传入 editingAgent 时隐藏选择器、三框预填，
- * 提交交给 onUpdate（不跳设置页）。
+ * 提交交给 onUpdate（不跳设置页）；G3 记忆区同屏挂在表单下方（数据源是磁盘记事本）。
  */
 export function WorkspaceProjectAgentCreateDialog({
   open,
@@ -310,6 +311,9 @@ export function WorkspaceProjectAgentCreateDialog({
   onOpenAgent,
   onCreate,
   onUpdate,
+  workspacePath,
+  workspaceIdentity,
+  workspaceRemoteSessionId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -320,6 +324,10 @@ export function WorkspaceProjectAgentCreateDialog({
   onOpenAgent: (agent: AgentSummary) => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
   onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
+  /** 记忆区按目标工作区取数（编辑态才需要）；user 档案记事本在用户数据里，服务面自己解析。 */
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
 }) {
   const { intl } = useZCodeIntl();
   const [draft, setDraft] = useState<ProjectAgentDraft>({
@@ -472,6 +480,14 @@ export function WorkspaceProjectAgentCreateDialog({
             </Button>
           </div>
         </form>
+        {isEditing && editingAgent && workspacePath ? (
+          <AgentMemorySection
+            agent={editingAgent}
+            workspacePath={workspacePath}
+            {...(workspaceIdentity ? { workspaceIdentity } : {})}
+            {...(workspaceRemoteSessionId ? { workspaceRemoteSessionId } : {})}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
