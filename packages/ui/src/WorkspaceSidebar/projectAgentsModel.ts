@@ -1,4 +1,10 @@
-import type { AgentColor, AgentSummary, SubAgentConfig, ZCodeSessionPersona } from "@zcode/shared";
+import type {
+  AgentColor,
+  AgentSummary,
+  SubAgentConfig,
+  ZCodeSessionPersona,
+  ZCodeTaskMeta,
+} from "@zcode/shared";
 
 export interface ProjectAgentDraft {
   name: string;
@@ -68,6 +74,57 @@ export function toProjectAgentCreateConfig(draft: ProjectAgentDraft): SubAgentCo
     systemPrompt: draft.systemPrompt.trim(),
     memory: "project",
   };
+}
+
+/** 任务行上的徽章标记读取（D2 内联标记）：徽章渲染与 G5 编辑/删除入口同源，避免第二处读法漂移。 */
+export function getPersonaChatBadge(task: ZCodeTaskMeta): PersonaChatBadge | undefined {
+  return (task as ZCodeTaskMeta & PersonaChatBadgeCarrier).agentPersona;
+}
+
+/**
+ * 侧栏三框编辑提交的完整配置（G5）：只让用户改 名字/介绍/人设，其余档案字段
+ * （模型/工具/颜色/记忆范围…）原样带回——updateAgent 是按 config 整文件重写
+ * （serializeSubagentMarkdown），漏带字段会把档案里设置页配好的模型/工具抹掉。
+ * 记忆范围缺省 project（与建档同约定）。
+ */
+export function toProjectAgentUpdateConfig(
+  agent: AgentSummary,
+  draft: ProjectAgentDraft,
+): SubAgentConfig {
+  return {
+    name: draft.name.trim(),
+    description: draft.description.trim(),
+    systemPrompt: draft.systemPrompt.trim(),
+    ...(agent.color ? { color: agent.color } : {}),
+    ...(agent.modelSelection ? { modelSelection: agent.modelSelection } : {}),
+    ...(agent.tools?.length ? { tools: [...agent.tools] } : {}),
+    ...(agent.disallowedTools?.length ? { disallowedTools: [...agent.disallowedTools] } : {}),
+    ...(agent.skills?.length ? { skills: [...agent.skills] } : {}),
+    ...(agent.permissionMode ? { permissionMode: agent.permissionMode } : {}),
+    memory: agent.memory ?? "project",
+    ...(agent.maxTurns !== undefined ? { maxTurns: agent.maxTurns } : {}),
+    ...(agent.background !== undefined ? { background: agent.background } : {}),
+    ...(agent.injectAgentsMd !== undefined ? { injectAgentsMd: agent.injectAgentsMd } : {}),
+    ...(agent.mcpServers?.length ? { mcpServers: agent.mcpServers } : {}),
+  };
+}
+
+/**
+ * 删除确认弹窗里的记事本路径（G5/D7：删档案≠删记忆，路径要说真话）。
+ * 与 core persistent-memory 的目录推导同源：project → <ws>/.zcode/agent-memory/<key>/，
+ * local → <ws>/.zcode/agent-memory-local/<key>/；key 对合法档案名（[a-zA-Z0-9-]）即原名。
+ * user 记事本在用户数据目录，UI 不知道绝对路径 → 返回 null，由调用方换用不带路径的文案。
+ */
+export function buildAgentMemoryDirectoryHint(
+  agent: Pick<AgentSummary, "name" | "memory">,
+  workspacePath: string,
+): string | null {
+  const scope = agent.memory ?? "project";
+  if (scope === "user") {
+    return null;
+  }
+  const dir = scope === "local" ? "agent-memory-local" : "agent-memory";
+  return `${workspacePath.replace(/\\/gu, "/")}/.zcode/${dir}/${agent.name}/`;
 }
 
 /**

@@ -141,11 +141,15 @@ import {
   type ProjectAgentTarget,
 } from "@/WorkspaceSidebar/ProjectAgents.js";
 import {
+  buildAgentMemoryDirectoryHint,
+  getPersonaChatBadge,
   resolveWorkspaceProjectAgentReachability,
   toProjectAgentPersona,
   toProjectAgentPersonaFromDraft,
   type ProjectAgentPersona,
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
+import { toast } from "@/components/ui/toast.js";
 import { usePersonaChatBadgeStore } from "@/store/personaChatBadgeStore.js";
 import { cn } from "@/components/lib/utils.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
@@ -436,10 +440,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     boundWorkspacePath: workspacePath,
     boundWorkspaceIdentity: workspaceIdentity,
     boundWorkspaceRemoteSessionId: workspaceRemoteSessionId,
-    enabled: purposeSectionPreferences.projectsExpanded,
   });
   const [projectAgentCreateTarget, setProjectAgentCreateTarget] =
     useState<ProjectAgentTarget | null>(null);
+  // 编辑档案目标（G5/D4）：任务行右键 → 编辑档案 → 同一套表单预填提交（updateAgent）。
+  const [projectAgentEditTarget, setProjectAgentEditTarget] = useState<{
+    target: ProjectAgentTarget;
+    agent: AgentSummary;
+  } | null>(null);
+  const confirmDialog = useConfirmDialog();
   const registerPersonaChatBadge = usePersonaChatBadgeStore(
     (state) => state.registerPersonaChatBadge,
   );
@@ -466,6 +475,70 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const handleOpenProjectAgentCreate = useCallback((target: ProjectAgentTarget) => {
     setProjectAgentCreateTarget(target);
   }, []);
+  // 任务行右键 → 编辑/删除智能体（G5/D4）：行上只有徽章名字，档案本体按
+  // 徽章名在侧栏已取的档案列表里对号。取不到（档案已删/已改名/远端不可达）就大白话说明，不静默。
+  const resolveProjectAgentForRow = useCallback(
+    (task: ZCodeTaskMeta) => {
+      const badge = getPersonaChatBadge(task);
+      const agents = projectAgents.agentsByWorkspaceKey.get(
+        buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity),
+      );
+      const agent = badge
+        ? agents?.find((candidate) => candidate.name === badge.name)
+        : undefined;
+      if (!badge || !agent) {
+        return null;
+      }
+      return {
+        target: {
+          workspacePath: task.workspacePath,
+          ...(task.workspaceIdentity?.trim() ? { workspaceIdentity: task.workspaceIdentity } : {}),
+        },
+        agent,
+      };
+    },
+    [projectAgents.agentsByWorkspaceKey],
+  );
+  const handleEditProjectAgent = useCallback(
+    (task: ZCodeTaskMeta) => {
+      const resolved = resolveProjectAgentForRow(task);
+      if (!resolved) {
+        toast(intl.formatMessage({ id: "workspaceSidebar.projectAgentMissing" }));
+        return;
+      }
+      setProjectAgentEditTarget(resolved);
+    },
+    [intl, resolveProjectAgentForRow],
+  );
+  const handleDeleteProjectAgent = useCallback(
+    async (task: ZCodeTaskMeta) => {
+      const resolved = resolveProjectAgentForRow(task);
+      if (!resolved) {
+        toast(intl.formatMessage({ id: "workspaceSidebar.projectAgentMissing" }));
+        return;
+      }
+      const { target, agent } = resolved;
+      // D7：删档案≠删记忆，默认保留。路径按档案真实的记忆范围说，user 记事本不在此项目里。
+      const memoryPath = buildAgentMemoryDirectoryHint(agent, target.workspacePath);
+      const confirmed = await confirmDialog({
+        title: intl.formatMessage({ id: "workspaceSidebar.projectAgentDeleteTitle" }),
+        description: intl.formatMessage(
+          {
+            id: memoryPath
+              ? "workspaceSidebar.projectAgentDeleteDescription"
+              : "workspaceSidebar.projectAgentDeleteDescriptionUserMemory",
+          },
+          { name: agent.name, path: memoryPath ?? "" },
+        ),
+        confirmLabel: intl.formatMessage({ id: "common.delete" }),
+      });
+      if (!confirmed) {
+        return;
+      }
+      await projectAgents.deleteAgent(target, agent);
+    },
+    [confirmDialog, intl, projectAgents.deleteAgent, resolveProjectAgentForRow],
+  );
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological">
   >(() => {
@@ -1634,6 +1707,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                               },
                                             )}
                                             onCreateProjectAgent={handleOpenProjectAgentCreate}
+                                            onEditProjectAgent={handleEditProjectAgent}
+                                            onDeleteProjectAgent={handleDeleteProjectAgent}
                                           />
                                         );
                                       })}
@@ -1722,13 +1797,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           </div>
 
           <WorkspaceProjectAgentCreateDialog
-            open={projectAgentCreateTarget !== null}
+            open={projectAgentCreateTarget !== null || projectAgentEditTarget !== null}
             onOpenChange={(open) => {
               if (!open) {
                 setProjectAgentCreateTarget(null);
+                setProjectAgentEditTarget(null);
               }
             }}
-            creating={projectAgents.creating}
+            saving={projectAgents.saving}
+            editingAgent={projectAgentEditTarget?.agent ?? null}
             loadingAgents={projectAgents.loadingAgents}
             agents={
               projectAgentCreateTarget
@@ -1761,6 +1838,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               // 孤儿档案闭环（D3 收口的前提）：建档成功即自动开一段该智能体的会话。
               void openProjectAgentChat(toProjectAgentPersonaFromDraft(draft), target);
               return true;
+            }}
+            onUpdate={async (agent, draft) => {
+              const entry = projectAgentEditTarget;
+              if (!entry || entry.agent.id !== agent.id) {
+                return false;
+              }
+              return projectAgents.updateAgent(entry.target, agent, draft);
             }}
           />
 

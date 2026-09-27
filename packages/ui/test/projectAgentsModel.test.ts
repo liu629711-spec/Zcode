@@ -3,11 +3,14 @@ import test from "node:test";
 import type { AgentSummary } from "@zcode/shared";
 import {
   applyPersonaChatBadges,
+  buildAgentMemoryDirectoryHint,
+  getPersonaChatBadge,
   resolveWorkspaceProjectAgentReachability,
   selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
   toProjectAgentPersona,
   toProjectAgentPersonaFromDraft,
+  toProjectAgentUpdateConfig,
   validateProjectAgentDraft,
   type PersonaChatBadge,
 } from "../src/WorkspaceSidebar/projectAgentsModel.js";
@@ -221,4 +224,105 @@ test("applyPersonaChatBadges：命中行挂徽章，未命中行保持原引用�
     applyPersonaChatBadges([a], new Map([["ghost", badge]])).map((item) => item.taskId),
     ["a"],
   );
+});
+
+test("toProjectAgentUpdateConfig：三框替换自草稿，其余档案字段原样带回（updateAgent 整文件重写）", () => {
+  const agent = {
+    id: "agent-1",
+    name: "old-name",
+    description: "old desc",
+    systemPrompt: "old prompt",
+    color: "purple",
+    modelSelection: { provider: "zcode", model: "glm-4.7" },
+    tools: ["Read", "Grep"],
+    disallowedTools: [],
+    skills: ["review"],
+    permissionMode: "plan",
+    memory: "project",
+    maxTurns: 20,
+    background: false,
+    injectAgentsMd: true,
+    path: "D:/repo/.zcode/agents/old-name.md",
+    scope: "workspace",
+    source: "user",
+    enabled: true,
+  } as AgentSummary;
+
+  assert.deepEqual(
+    toProjectAgentUpdateConfig(agent, {
+      name: " new-name ",
+      description: "新介绍",
+      systemPrompt: "新提示词",
+    }),
+    {
+      name: "new-name",
+      description: "新介绍",
+      systemPrompt: "新提示词",
+      color: "purple",
+      modelSelection: { provider: "zcode", model: "glm-4.7" },
+      tools: ["Read", "Grep"],
+      skills: ["review"],
+      permissionMode: "plan",
+      memory: "project",
+      maxTurns: 20,
+      background: false,
+      injectAgentsMd: true,
+    },
+  );
+});
+
+test("toProjectAgentUpdateConfig：空列表与缺席字段不落盘，记忆范围缺省 project", () => {
+  const agent = {
+    id: "agent-2",
+    name: "bare",
+    description: "d",
+    systemPrompt: "p",
+    path: "D:/repo/.zcode/agents/bare.md",
+    scope: "workspace",
+    source: "user",
+    enabled: true,
+  } as AgentSummary;
+
+  const config = toProjectAgentUpdateConfig(agent, {
+    name: "bare",
+    description: "d",
+    systemPrompt: "p",
+  });
+  assert.deepEqual(config, { name: "bare", description: "d", systemPrompt: "p", memory: "project" });
+  assert.equal("tools" in config, false);
+  assert.equal("disallowedTools" in config, false);
+  assert.equal("mcpServers" in config, false);
+});
+
+test("buildAgentMemoryDirectoryHint：project/local 给出项目内路径，user 返回 null，反斜杠归一", () => {
+  const agent = (memory?: string) =>
+    ({ name: "code-reviewer", ...(memory ? { memory } : {}) }) as Pick<
+      AgentSummary,
+      "name" | "memory"
+    >;
+
+  assert.equal(
+    buildAgentMemoryDirectoryHint(agent(), "D:/repo"),
+    "D:/repo/.zcode/agent-memory/code-reviewer/",
+  );
+  assert.equal(
+    buildAgentMemoryDirectoryHint(agent("project"), "D:\\repo"),
+    "D:/repo/.zcode/agent-memory/code-reviewer/",
+  );
+  assert.equal(
+    buildAgentMemoryDirectoryHint(agent("local"), "D:/repo"),
+    "D:/repo/.zcode/agent-memory-local/code-reviewer/",
+  );
+  assert.equal(buildAgentMemoryDirectoryHint(agent("user"), "D:/repo"), null);
+});
+
+test("getPersonaChatBadge：读 agentPersona 内联标记，普通会话行无徽章", () => {
+  const plain = { taskId: "t1" } as Parameters<typeof getPersonaChatBadge>[0];
+  assert.equal(getPersonaChatBadge(plain), undefined);
+
+  const badged = {
+    taskId: "t2",
+    agentPersona: { name: "code-reviewer" },
+  } as Parameters<typeof getPersonaChatBadge>[0];
+  assert.deepEqual(getPersonaChatBadge(badged), { name: "code-reviewer" });
 });

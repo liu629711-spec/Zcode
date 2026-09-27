@@ -34,6 +34,8 @@ export const SortableWorkspaceSidebarItem = memo(function SortableWorkspaceSideb
   onOpenFileTree,
   canCreateProjectAgent,
   onCreateProjectAgent,
+  onEditProjectAgent,
+  onDeleteProjectAgent,
 }: {
   tab: WorkspaceTabState;
   isActiveWorkspace: boolean;
@@ -70,6 +72,9 @@ export const SortableWorkspaceSidebarItem = memo(function SortableWorkspaceSideb
     workspacePath: string;
     workspaceIdentity?: string;
   }) => void;
+  /** 驻场智能体行的档案操作（G5/D4），透传给任务列表右键菜单。 */
+  onEditProjectAgent?: (task: ZCodeTaskMeta) => void;
+  onDeleteProjectAgent?: (task: ZCodeTaskMeta) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
@@ -135,6 +140,8 @@ export const SortableWorkspaceSidebarItem = memo(function SortableWorkspaceSideb
       onOpenFileTree={onOpenFileTree}
       canCreateProjectAgent={canCreateProjectAgent}
       onCreateProjectAgent={onCreateProjectAgent}
+      onEditProjectAgent={onEditProjectAgent}
+      onDeleteProjectAgent={onDeleteProjectAgent}
       itemRef={setNodeRef}
       itemStyle={style}
       sortableBindings={sortableBindings}

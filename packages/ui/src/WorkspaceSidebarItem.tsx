@@ -158,6 +158,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   onOpenFileTree,
   canCreateProjectAgent = false,
   onCreateProjectAgent,
+  onEditProjectAgent,
+  onDeleteProjectAgent,
   itemRef,
   itemStyle,
   sortableBindings,
@@ -198,6 +200,9 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     workspacePath: string;
     workspaceIdentity?: string;
   }) => void;
+  /** 驻场智能体行的档案操作（G5/D4），透传给任务列表右键菜单。 */
+  onEditProjectAgent?: (task: ZCodeTaskMeta) => void;
+  onDeleteProjectAgent?: (task: ZCodeTaskMeta) => void;
   itemRef?: (node: HTMLLIElement | null) => void;
   itemStyle?: CSSProperties;
   sortableBindings?: SortableBindings;
@@ -1189,6 +1194,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
             onSetTaskPinned={handleSetTaskPinned}
             onArchiveTask={handleArchiveTask}
             onSetTaskUnread={handleSetTaskUnread}
+            onEditProjectAgent={onEditProjectAgent}
+            onDeleteProjectAgent={onDeleteProjectAgent}
             readOnlyReason={readOnlyReason}
           />
         </CollapsibleContent>

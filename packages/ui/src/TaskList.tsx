@@ -46,6 +46,8 @@ export const TaskList = memo(function TaskList({
   onSetTaskPinned,
   onArchiveTask,
   onSetTaskUnread,
+  onEditProjectAgent,
+  onDeleteProjectAgent,
   readOnlyReason,
 }: {
   workspacePath: string;
@@ -67,6 +69,9 @@ export const TaskList = memo(function TaskList({
   onSetTaskPinned: (taskId: string, pinned: boolean) => Promise<ZCodeTaskMeta | null>;
   onArchiveTask: (taskId: string) => Promise<ZCodeTaskMeta | null>;
   onSetTaskUnread: (taskId: string, unread: boolean) => Promise<ZCodeTaskMeta | null>;
+  /** 驻场智能体行的档案操作（G5/D4）：只对带徽章的行出现，缺席时菜单不渲染对应项。 */
+  onEditProjectAgent?: (task: ZCodeTaskMeta) => void;
+  onDeleteProjectAgent?: (task: ZCodeTaskMeta) => void;
   readOnlyReason?: string;
 }) {
   const { intl } = useZCodeIntl();
@@ -460,6 +465,8 @@ export const TaskList = memo(function TaskList({
                   onStartRenameTask={handleStartRenameTask}
                   onArchiveTask={handleArchiveTask}
                   onMarkTaskAsUnread={handleMarkTaskAsUnread}
+                  onEditProjectAgent={onEditProjectAgent}
+                  onDeleteProjectAgent={onDeleteProjectAgent}
                   disableTaskActions={Boolean(readOnlyReason)}
                   disabledReason={readOnlyReason}
                 />

@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
-import type { PersonaChatBadgeCarrier } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { getPersonaChatBadge } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { formatTaskTitleWithChanges, getTaskChangeSummary } from "@/lib/taskChangeSummary.js";
 import {
@@ -85,11 +85,6 @@ function areJsonFieldsEqual(left: unknown, right: unknown) {
 
 function getTaskAutomationIdentity(task: ZCodeTaskMeta): string | undefined {
   return task.cronAutomationId ?? (task as ZCodeTaskMeta & { automationId?: string }).automationId;
-}
-
-/** 驻场智能体会话的行级徽章标记（D2）：持久化 producer 落地前由打开会话的入口登记在 UI 内联标记里。 */
-function getPersonaChatBadge(task: ZCodeTaskMeta) {
-  return (task as ZCodeTaskMeta & PersonaChatBadgeCarrier).agentPersona;
 }
 
 function areTaskListItemTaskFieldsEqual(left: ZCodeTaskMeta, right: ZCodeTaskMeta) {
@@ -869,6 +864,8 @@ export function TaskListItemContextMenuContent({
   onStartRenameTask,
   onArchiveTask,
   onMarkTaskAsUnread,
+  onEditProjectAgent,
+  onDeleteProjectAgent,
   disableTaskActions = false,
   disabledReason,
 }: {
@@ -881,9 +878,22 @@ export function TaskListItemContextMenuContent({
   onStartRenameTask: (taskId: string, currentTitle: string) => void;
   onArchiveTask: (taskId: string) => void;
   onMarkTaskAsUnread: (taskId: string) => void;
+  /** 驻场智能体行的档案操作（G5/D4）：只对带徽章的行出现，处理器由侧栏提供。 */
+  onEditProjectAgent?: (task: ZCodeTaskMeta) => void;
+  onDeleteProjectAgent?: (task: ZCodeTaskMeta) => void;
   disableTaskActions?: boolean;
   disabledReason?: string;
 }) {
+  // 档案操作只对驻场智能体会话行出现；处理器缺席（未接线）时同样不渲染。
+  const personaAgentBadge = getPersonaChatBadge(task);
+  const personaAgentMenu = {
+    ...(onEditProjectAgent && personaAgentBadge
+      ? { onEditProjectAgent: () => onEditProjectAgent(task) }
+      : {}),
+    ...(onDeleteProjectAgent && personaAgentBadge
+      ? { onDeleteProjectAgent: () => onDeleteProjectAgent(task) }
+      : {}),
+  };
   const workspaceActionsDisabled = useOptionalTabStore(
     (state) =>
       disableTaskActions || isWorkspaceReadOnly(state, task.workspacePath, task.workspaceIdentity),
@@ -1030,6 +1040,7 @@ export function TaskListItemContextMenuContent({
           title: taskTitle,
         });
       }}
+      {...personaAgentMenu}
     />
   );
 }

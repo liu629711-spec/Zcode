@@ -1,3 +1,5 @@
+/* eslint-disable max-lines -- 取数/开会话/建档/编辑/删除同属驻场智能体这一块状态面（G5 编辑复用建档表单后越限），
+   拆文件会把同一套表单的服务与状态链打散，先按 TaskListItem 的先例整file托管。 */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   TID_PROJECT_AGENT_CREATE_DIALOG,
@@ -21,6 +23,7 @@ import { launchWorkspaceId } from "@/settings/saved-workflows/useSavedWorkflowLa
 import {
   selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
+  toProjectAgentUpdateConfig,
   validateProjectAgentDraft,
   type ProjectAgentDraft,
   type ProjectAgentDraftError,
@@ -39,20 +42,16 @@ export interface ProjectAgentWorkspaceTab extends ProjectAgentTarget {
 }
 
 // 列表与创建共用一份服务解析（绑侧栏活动工作区）；分组按工作区各自挂载，状态由 WorkspaceSidebar 持有。
+// 取数不再挂"项目小节展开"闸门：建档选择器和任务行右键的编辑/删除入口都在小节之外，
+// 小节折叠时列表若是空的，两处消费方都会把"还没取数"误判成"没有档案"。
 export function useWorkspaceProjectAgents(params: {
   tabs: readonly ProjectAgentWorkspaceTab[];
   boundWorkspacePath: string;
   boundWorkspaceIdentity?: string;
   boundWorkspaceRemoteSessionId?: string;
-  enabled: boolean;
 }) {
-  const {
-    tabs,
-    boundWorkspacePath,
-    boundWorkspaceIdentity,
-    boundWorkspaceRemoteSessionId,
-    enabled,
-  } = params;
+  const { tabs, boundWorkspacePath, boundWorkspaceIdentity, boundWorkspaceRemoteSessionId } =
+    params;
   const resolution = useWorkspaceServicesResolution(
     boundWorkspacePath,
     boundWorkspaceRemoteSessionId,
@@ -62,7 +61,7 @@ export function useWorkspaceProjectAgents(params: {
   const [agentsByWorkspaceKey, setAgentsByWorkspaceKey] = useState<Map<string, AgentSummary[]>>(
     () => new Map(),
   );
-  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
   // 列表首拉/重载进行中：对话框的选择器要区分"还没有智能体"和"正在取数"。
   const [loadingAgents, setLoadingAgents] = useState(false);
 
@@ -85,7 +84,7 @@ export function useWorkspaceProjectAgents(params: {
   fetchTargetsRef.current = fetchTargets;
 
   const reload = useCallback(async () => {
-    if (!enabled || !resolution.rpcReady) {
+    if (!resolution.rpcReady) {
       return;
     }
     setLoadingAgents(true);
@@ -111,7 +110,7 @@ export function useWorkspaceProjectAgents(params: {
     } finally {
       setLoadingAgents(false);
     }
-  }, [enabled, fetchSignature, resolution.rpcReady, subagentsService]);
+  }, [fetchSignature, resolution.rpcReady, subagentsService]);
 
   useEffect(() => {
     void reload();
@@ -119,7 +118,7 @@ export function useWorkspaceProjectAgents(params: {
 
   const createAgent = useCallback(
     async (target: ProjectAgentTarget, draft: ProjectAgentDraft): Promise<boolean> => {
-      setCreating(true);
+      setSaving(true);
       try {
         await subagentsService.createAgent({
           config: toProjectAgentCreateConfig(draft),
@@ -134,13 +133,65 @@ export function useWorkspaceProjectAgents(params: {
         toast(error instanceof Error ? error.message : String(error));
         return false;
       } finally {
-        setCreating(false);
+        setSaving(false);
       }
     },
     [reload, subagentsService],
   );
 
-  return { agentsByWorkspaceKey, creating, loadingAgents, createAgent };
+  // 编辑档案（G5/D4）：侧栏只露 名字/介绍/人设 三框，其余字段由 toProjectAgentUpdateConfig
+  // 原样带回（updateAgent 整文件重写）；oldFilePath 让改名场景能删旧文件。
+  const updateAgent = useCallback(
+    async (target: ProjectAgentTarget, agent: AgentSummary, draft: ProjectAgentDraft) => {
+      setSaving(true);
+      try {
+        await subagentsService.updateAgent({
+          agentId: agent.id,
+          config: toProjectAgentUpdateConfig(agent, draft),
+          oldFilePath: agent.path,
+          provider: ZCODE_AGENT_PROVIDER,
+          scope: "workspace",
+          workspacePath: target.workspacePath,
+          workspaceIdentity: target.workspaceIdentity,
+        });
+        await reload();
+        return true;
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [reload, subagentsService],
+  );
+
+  // 删除档案（G5/D7）：服务端只删 profile 文件，记事本目录本来就不在删除范围里。
+  const deleteAgent = useCallback(
+    async (target: ProjectAgentTarget, agent: AgentSummary): Promise<boolean> => {
+      try {
+        await subagentsService.deleteAgent({
+          agentId: agent.id,
+          filePath: agent.path,
+        });
+        await reload();
+        return true;
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+        return false;
+      }
+    },
+    [reload, subagentsService],
+  );
+
+  return {
+    agentsByWorkspaceKey,
+    saving,
+    loadingAgents,
+    createAgent,
+    updateAgent,
+    deleteAgent,
+  };
 }
 
 /**
@@ -246,23 +297,29 @@ function formatDraftError(intl: ReturnType<typeof useZCodeIntl>["intl"], error: 
  * 工作区新建智能体对话框，兼做已有档案选择器（D3 收口后智能体从这里开聊）：
  * 上半是已有档案列表（点按直接开聊，空态/加载态各自成行），下半是建档表单（名字/介绍/人设三框，
  * 与设置页同一套校验文案）；建档成功由调用方负责自动开一段会话。
+ * 编辑档案（G5/D4）复用同一套表单：传入 editingAgent 时隐藏选择器、三框预填，
+ * 提交交给 onUpdate（不跳设置页）。
  */
 export function WorkspaceProjectAgentCreateDialog({
   open,
   onOpenChange,
-  creating,
+  saving,
   loadingAgents,
   agents,
+  editingAgent = null,
   onOpenAgent,
   onCreate,
+  onUpdate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  creating: boolean;
+  saving: boolean;
   loadingAgents: boolean;
   agents: AgentSummary[];
+  editingAgent?: AgentSummary | null;
   onOpenAgent: (agent: AgentSummary) => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
+  onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
 }) {
   const { intl } = useZCodeIntl();
   const [draft, setDraft] = useState<ProjectAgentDraft>({
@@ -271,13 +328,22 @@ export function WorkspaceProjectAgentCreateDialog({
     systemPrompt: "",
   });
   const [errors, setErrors] = useState<ProjectAgentDraftError[]>([]);
+  const isEditing = editingAgent !== null;
 
   useEffect(() => {
     if (open) {
-      setDraft({ name: "", description: "", systemPrompt: "" });
+      setDraft(
+        editingAgent
+          ? {
+              name: editingAgent.name,
+              description: editingAgent.description,
+              systemPrompt: editingAgent.systemPrompt,
+            }
+          : { name: "", description: "", systemPrompt: "" },
+      );
       setErrors([]);
     }
-  }, [open]);
+  }, [open, editingAgent]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -286,7 +352,12 @@ export function WorkspaceProjectAgentCreateDialog({
       setErrors(nextErrors);
       return;
     }
-    if (await onCreate(draft)) {
+    const submitted = isEditing
+      ? editingAgent && onUpdate
+        ? await onUpdate(editingAgent, draft)
+        : false
+      : await onCreate(draft);
+    if (submitted) {
       onOpenChange(false);
     }
   };
@@ -300,43 +371,52 @@ export function WorkspaceProjectAgentCreateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[min(520px,calc(100vw-2rem))] max-w-none" data-testid={TID_PROJECT_AGENT_CREATE_DIALOG}>
         <DialogTitle className="text-ui-lg font-medium text-foreground">
-          {intl.formatMessage({ id: "workspaceSidebar.createProjectAgent" })}
+          {intl.formatMessage({
+            id: isEditing
+              ? "workspaceSidebar.projectAgentEditTitle"
+              : "workspaceSidebar.createProjectAgent",
+          })}
         </DialogTitle>
-        <div className="space-y-1.5">
-          <p className="text-ui-base font-medium text-foreground-subtle">
-            {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
-          </p>
-          {loadingAgents ? (
-            <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
-              {intl.formatMessage({ id: "workspaceSidebar.projectAgentsLoading" })}
+        {isEditing ? null : (
+          <div className="space-y-1.5">
+            <p className="text-ui-base font-medium text-foreground-subtle">
+              {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
             </p>
-          ) : agents.length === 0 ? (
-            <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
-              {intl.formatMessage({ id: "workspaceSidebar.projectAgentsEmpty" })}
-            </p>
-          ) : (
-            <ul className="max-h-40 space-y-0.5 overflow-y-auto">
-              {agents.map((agent) => (
-                <li key={agent.id}>
-                  <button
-                    type="button"
-                    data-testid={testId(TID_PROJECT_AGENT_ROW, agent.name)}
-                    className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/30"
-                    onClick={() => onOpenAgent(agent)}
-                  >
-                    <span className="truncate text-ui-base text-foreground">{agent.name}</span>
-                    {agent.description ? (
-                      <span className="truncate text-ui-sm text-foreground-subtle">
-                        {agent.description}
-                      </span>
-                    ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <form className="space-y-3 border-t pt-3" onSubmit={handleSubmit}>
+            {loadingAgents ? (
+              <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
+                {intl.formatMessage({ id: "workspaceSidebar.projectAgentsLoading" })}
+              </p>
+            ) : agents.length === 0 ? (
+              <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
+                {intl.formatMessage({ id: "workspaceSidebar.projectAgentsEmpty" })}
+              </p>
+            ) : (
+              <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+                {agents.map((agent) => (
+                  <li key={agent.id}>
+                    <button
+                      type="button"
+                      data-testid={testId(TID_PROJECT_AGENT_ROW, agent.name)}
+                      className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/30"
+                      onClick={() => onOpenAgent(agent)}
+                    >
+                      <span className="truncate text-ui-base text-foreground">{agent.name}</span>
+                      {agent.description ? (
+                        <span className="truncate text-ui-sm text-foreground-subtle">
+                          {agent.description}
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        <form
+          className={isEditing ? "space-y-3" : "space-y-3 border-t pt-3"}
+          onSubmit={handleSubmit}
+        >
           <div className="space-y-1.5">
             <label className="block text-ui-base font-medium text-foreground-subtle">
               {intl.formatMessage({ id: "settings.subagents.form.name.label" })}
@@ -378,14 +458,16 @@ export function WorkspaceProjectAgentCreateDialog({
             />
             {fieldError("promptRequired")}
           </div>
-          <p className="text-ui-sm text-foreground-subtle">
-            {intl.formatMessage({ id: "workspaceSidebar.projectAgentScopeHint" })}
-          </p>
+          {isEditing ? null : (
+            <p className="text-ui-sm text-foreground-subtle">
+              {intl.formatMessage({ id: "workspaceSidebar.projectAgentScopeHint" })}
+            </p>
+          )}
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {intl.formatMessage({ id: "common.cancel" })}
             </Button>
-            <Button type="submit" disabled={creating}>
+            <Button type="submit" disabled={saving}>
               {intl.formatMessage({ id: "common.save" })}
             </Button>
           </div>

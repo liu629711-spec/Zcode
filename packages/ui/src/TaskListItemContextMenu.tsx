@@ -25,6 +25,8 @@ export function TaskListItemContextMenu({
   onCopyTaskLogPath,
   onCopySessionId,
   onViewModelTrajectory,
+  onEditProjectAgent,
+  onDeleteProjectAgent,
   disableTaskActions = false,
   disabledReason,
 }: {
@@ -55,6 +57,9 @@ export function TaskListItemContextMenu({
   onCopyTaskLogPath: () => void;
   onCopySessionId?: () => void;
   onViewModelTrajectory?: () => void;
+  /** 驻场智能体行的档案操作（G5/D4）：由调用方按徽章判定后传入，缺席不渲染。 */
+  onEditProjectAgent?: () => void;
+  onDeleteProjectAgent?: () => void;
   disableTaskActions?: boolean;
   disabledReason?: string;
 }) {
@@ -85,6 +90,21 @@ export function TaskListItemContextMenu({
         disableTaskActions={disableTaskActions}
         disabledReason={disabledReason}
       />
+      {onEditProjectAgent || onDeleteProjectAgent ? (
+        <>
+          <ContextMenuSeparator />
+          {onEditProjectAgent ? (
+            <ContextMenuItem onSelect={onEditProjectAgent}>
+              {intl.formatMessage({ id: "workspaceSidebar.projectAgentEditMenu" })}
+            </ContextMenuItem>
+          ) : null}
+          {onDeleteProjectAgent ? (
+            <ContextMenuItem onSelect={onDeleteProjectAgent}>
+              {intl.formatMessage({ id: "workspaceSidebar.projectAgentDeleteMenu" })}
+            </ContextMenuItem>
+          ) : null}
+        </>
+      ) : null}
     </ContextMenuContent>
   );
 }
