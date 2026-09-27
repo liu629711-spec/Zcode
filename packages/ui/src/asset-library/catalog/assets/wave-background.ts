@@ -3,12 +3,14 @@ import type { AssetManifest } from "../types.js";
 /**
  * 流动波浪（自制原创）：canvas 三层不同振幅/相位的正弦波透叠起伏。
  * 图纸分 html+js 两件可拿走；preview 是同款内联版。
+ * V2-3 交互：「波速」滑杆（0.2x~2.5x），缩放时间步进即时生效。
  */
 
 const JS = `var canvas = document.getElementById("sea");
 var ctx = canvas.getContext("2d");
 var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 var w = 0, h = 0, t = 0;
+var speed = 1; // V2-3 交互：波速滑杆缩放时间步进
 var layers = [
   { amp: 24, len: 0.010, speed: 0.9, base: 0.58, color: "rgba(56, 189, 248, 0.30)" },
   { amp: 18, len: 0.014, speed: 1.4, base: 0.68, color: "rgba(129, 140, 248, 0.28)" },
@@ -35,7 +37,33 @@ function paint() {
   }
 }
 if (reduce) paint();
-else requestAnimationFrame(function loop() { t += 0.016; paint(); requestAnimationFrame(loop); });`;
+else requestAnimationFrame(function loop() { t += 0.016 * speed; paint(); requestAnimationFrame(loop); });
+var spd = document.getElementById("wspeed");
+spd.addEventListener("input", function () {
+  speed = Number(spd.value);
+  document.getElementById("wspeed-out").textContent = speed.toFixed(1) + "x";
+});`;
+
+const PANEL_CSS = `
+  .panel {
+    position: fixed; left: 14px; bottom: 14px; z-index: 10;
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 12px;
+    background: rgb(6 11 22 / 0.6); border: 1px solid rgb(255 255 255 / 0.14);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font: 12px/1 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; color: #9fb0c9;
+  }
+  .panel label { display: flex; align-items: center; gap: 8px; user-select: none; }
+  .panel input[type="range"] { width: 110px; accent-color: #38bdf8; }
+  .panel output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: #e6edf7; }
+`;
+
+const PANEL_HTML = `
+  <div class="panel" role="group" aria-label="预览参数">
+    <label>波速 <input type="range" id="wspeed" min="0.2" max="2.5" step="0.1" value="1"></label>
+    <output id="wspeed-out">1.0x</output>
+  </div>
+`;
 
 const PREVIEW_HTML = `<!doctype html>
 <html lang="zh-CN">
@@ -47,10 +75,12 @@ const PREVIEW_HTML = `<!doctype html>
   html, body { margin: 0; height: 100%; overflow: hidden; }
   body { background: #060b16; }
   canvas { display: block; width: 100%; height: 100%; }
+  ${PANEL_CSS}
 </style>
 </head>
 <body>
   <canvas id="sea"></canvas>
+  ${PANEL_HTML}
   <script>${JS}</script>
 </body>
 </html>`;
@@ -77,10 +107,12 @@ export const waveBackgroundAsset: AssetManifest = {
   html, body { margin: 0; height: 100%; overflow: hidden; }
   body { background: #060b16; }
   canvas { display: block; width: 100%; height: 100%; }
+  ${PANEL_CSS}
 </style>
 </head>
 <body>
   <canvas id="sea"></canvas>
+  ${PANEL_HTML}
   <script src="wave-background.js"></script>
 </body>
 </html>`,

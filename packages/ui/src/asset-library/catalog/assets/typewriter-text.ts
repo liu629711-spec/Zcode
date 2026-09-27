@@ -31,22 +31,38 @@ const HTML = `<!doctype html>
   @media (prefers-reduced-motion: reduce) {
     .type::after { animation: none; }
   }
+  .type[contenteditable] { outline: none; cursor: text; caret-color: #7dd3fc; }
+  .hint {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    margin: 0; font-size: 12px; letter-spacing: 0.08em; color: #4c5872; user-select: none;
+  }
 </style>
 </head>
 <body>
-  <p class="stage"><span class="type" id="type" aria-label="你好，这里是交互素材库。"></span></p>
+  <p class="stage"><span class="type" id="type" contenteditable="true" spellcheck="false" aria-label="你好，这里是交互素材库。"></span></p>
+  <p class="hint">点文字可直接编辑，失焦后按新文案重新打字</p>
   <script>
-    const text = "你好，这里是交互素材库。";
     const el = document.getElementById("type");
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      el.textContent = text; // 降级：直接呈现全文，只留静态光标
-    } else {
+    let gen = 0; // 代次令牌：重播时让旧打字链自废
+    function type(text) {
+      const my = ++gen;
+      el.setAttribute("aria-label", text);
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        el.textContent = text; // 降级：直接呈现全文，只留静态光标
+        return;
+      }
       let i = 0;
       (function tick() {
+        if (my !== gen) return;
         el.textContent = text.slice(0, ++i);
         if (i < text.length) setTimeout(tick, 140);
       })();
     }
+    type("你好，这里是交互素材库。");
+    el.addEventListener("blur", () => type(el.textContent.replace(/\\n/g, "")));
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); el.blur(); } // 单行：回车收起
+    });
   </script>
 </body>
 </html>`;

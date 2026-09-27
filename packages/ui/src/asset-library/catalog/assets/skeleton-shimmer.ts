@@ -3,6 +3,7 @@ import type { AssetManifest } from "../types.js";
 /**
  * 骨架屏 shimmer（自制原创）：加载占位卡片，高光自左向右扫过。
  * 图纸单文件自包含，内容与 preview 同一份。
+ * V2-3 交互：按钮在「加载中骨架 ↔ 已加载内容」间切换，对照两种状态。
  */
 
 const HTML = `<!doctype html>
@@ -35,14 +36,51 @@ const HTML = `<!doctype html>
   @media (prefers-reduced-motion: reduce) {
     .bone { animation: none; background: #22304a; }
   }
+  /* V2-3 交互：骨架 ↔ 真实内容两态切换 */
+  .real { display: flex; align-items: center; gap: 14px; grid-column: 1 / -1; }
+  .real .face {
+    width: 44px; height: 44px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; font-size: 17px; font-weight: 700; color: #062018;
+    background: linear-gradient(135deg, #34d399, #38bdf8);
+  }
+  .real b { display: block; font-size: 14px; color: #e6edf7; }
+  .real span { font-size: 12px; color: #7c8db0; }
+  .card.loaded .real { animation: rise 0.4s ease-out; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .card.loaded .bone { display: none; }
+  .toggle {
+    margin-top: 22px; padding: 9px 22px; border: 1px solid #2a3550; border-radius: 9px;
+    cursor: pointer; font-size: 13px; color: #cdd8ea; background: #141b28;
+  }
+  .toggle:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
 </style>
 </head>
 <body>
-  <div class="card" role="status" aria-label="内容加载中">
-    <div class="bone avatar"></div>
-    <div class="bone line"></div>
-    <div class="bone line short"></div>
+  <div style="display: grid; place-items: center;">
+    <div class="card" role="status" aria-label="内容加载中">
+      <div class="bone avatar"></div>
+      <div class="bone line"></div>
+      <div class="bone line short"></div>
+      <div class="real" hidden>
+        <span class="face" aria-hidden="true">雨</span>
+        <div><b>小雨</b><span>刚更新了一条动态 · 2 分钟前</span></div>
+      </div>
+    </div>
+    <button class="toggle" type="button" id="toggle">模拟加载完成</button>
   </div>
+  <script>
+    var card = document.querySelector(".card");
+    var real = card.querySelector(".real");
+    var btn = document.getElementById("toggle");
+    var loaded = false;
+    btn.addEventListener("click", function () {
+      loaded = !loaded;
+      card.classList.toggle("loaded", loaded);
+      real.hidden = !loaded;
+      card.setAttribute("aria-label", loaded ? "内容已加载" : "内容加载中");
+      btn.textContent = loaded ? "回到加载骨架" : "模拟加载完成";
+    });
+  </script>
 </body>
 </html>`;
 

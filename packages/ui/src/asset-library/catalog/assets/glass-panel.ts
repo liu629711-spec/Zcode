@@ -3,6 +3,7 @@ import type { AssetManifest } from "../types.js";
 /**
  * 玻璃拟态数据面板（自制原创）：backdrop-filter 毛玻璃卡衬彩色光斑，
  * 三列指标展示。图纸单文件自包含，内容与 preview 同一份。
+ * V2-3 交互：三个指标数字 contenteditable，点数字直接改。
  */
 
 const HTML = `<!doctype html>
@@ -40,7 +41,13 @@ const HTML = `<!doctype html>
   .stats > div { flex: 1; padding: 2px 14px; }
   .stats > div + div { border-left: 1px solid rgb(255 255 255 / 0.12); }
   .stats b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .stats b[contenteditable] { outline: none; cursor: text; border-radius: 4px; }
+  .stats b[contenteditable]:focus { background: rgb(125 211 252 / 0.12); }
   .stats span { font-size: 12px; color: #9fb0c9; }
+  .hint {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    margin: 0; font-size: 12px; letter-spacing: 0.08em; color: #4c5872; user-select: none;
+  }
   @media (prefers-reduced-motion: no-preference) {
     .glass { animation: rise 0.6s ease-out; }
     @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
@@ -54,11 +61,12 @@ const HTML = `<!doctype html>
   <section class="glass" aria-label="本周概览">
     <header><h2>本周概览</h2><span class="badge">LIVE</span></header>
     <div class="stats">
-      <div><b>2,847</b><span>访问</span></div>
-      <div><b>96.4%</b><span>留存</span></div>
-      <div><b>+18%</b><span>转化</span></div>
+      <div><b contenteditable="true" spellcheck="false">2,847</b><span>访问</span></div>
+      <div><b contenteditable="true" spellcheck="false">96.4%</b><span>留存</span></div>
+      <div><b contenteditable="true" spellcheck="false">+18%</b><span>转化</span></div>
     </div>
   </section>
+  <p class="hint">点数字可直接编辑</p>
 </body>
 </html>`;
 

@@ -3,6 +3,7 @@ import type { AssetManifest } from "../types.js";
 /**
  * 故障风文字（自制原创）：主体文字不动，两个伪元素副本分别染青/品红，
  * clip-path 切片错位 + steps() 跳动，大部分时间静止、偶发抖动。
+ * V2-3 交互：主体文字 contenteditable，input 时同步 data-text 让副本跟随。
  */
 
 const HTML = `<!doctype html>
@@ -41,10 +42,25 @@ const HTML = `<!doctype html>
   @media (prefers-reduced-motion: reduce) {
     .glitch::before, .glitch::after { animation: none; opacity: 0; }
   }
+  .glitch[contenteditable] { outline: none; cursor: text; caret-color: #22d3ee; }
+  .hint {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    margin: 0; font-size: 12px; letter-spacing: 0.08em; color: #4c5872; user-select: none;
+  }
 </style>
 </head>
 <body>
-  <h1 class="glitch" data-text="SYSTEM ONLINE">SYSTEM ONLINE</h1>
+  <h1 class="glitch" contenteditable="true" spellcheck="false" data-text="SYSTEM ONLINE">SYSTEM ONLINE</h1>
+  <p class="hint">点文字可直接编辑，故障副本实时跟随</p>
+  <script>
+    var g = document.querySelector(".glitch");
+    g.addEventListener("input", function () {
+      g.dataset.text = g.textContent; // 伪元素副本用 attr(data-text) 取字，编辑时同步
+    });
+    g.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); g.blur(); } // 单行：回车收起
+    });
+  </script>
 </body>
 </html>`;
 

@@ -3,6 +3,7 @@ import type { AssetManifest } from "../types.js";
 /**
  * 流星背景（自制原创）：canvas 星野 + 斜划流星，requestAnimationFrame 驱动。
  * 图纸分 html+js 两件可拿走；preview 是同款内联版。
+ * V2-3 交互：页面内「流星频率」滑杆（0.4x~3x），改 spawn 间隔即时生效。
  */
 
 const JS = `const canvas = document.getElementById("sky");
@@ -22,7 +23,20 @@ const meteors = [];
 function spawn() {
   meteors.push({ x: w * (0.3 + Math.random() * 0.7), y: -30, len: 90 + Math.random() * 120, sp: 5 + Math.random() * 4 });
 }
-if (!reduceMotion) setInterval(() => { if (meteors.length < 4) spawn(); }, 1100);
+// V2-3 交互：频率滑杆驱动 spawn 间隔，改完即时重排定时器
+let period = 1100;
+let spawner = null;
+function scheduleSpawner() {
+  clearInterval(spawner);
+  if (!reduceMotion) spawner = setInterval(() => { if (meteors.length < 4) spawn(); }, period);
+}
+scheduleSpawner();
+const rate = document.getElementById("rate");
+rate.addEventListener("input", () => {
+  period = Math.round(1100 / Number(rate.value));
+  document.getElementById("rate-out").textContent = Number(rate.value).toFixed(1) + "x";
+  scheduleSpawner();
+});
 function paint(t) {
   const sky = ctx.createLinearGradient(0, 0, 0, h);
   sky.addColorStop(0, "#05070f"); sky.addColorStop(0.6, "#0b1224"); sky.addColorStop(1, "#101a33");
@@ -46,6 +60,27 @@ function paint(t) {
 if (reduceMotion) paint(0);
 else requestAnimationFrame(function loop(t) { paint(t); requestAnimationFrame(loop); });`;
 
+const PANEL_CSS = `
+  .panel {
+    position: fixed; left: 14px; bottom: 14px; z-index: 10; margin: 0;
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 12px;
+    background: rgb(8 12 22 / 0.55); border: 1px solid rgb(255 255 255 / 0.14);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font: 12px/1 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; color: #9fb0c9;
+  }
+  .panel label { display: flex; align-items: center; gap: 8px; user-select: none; }
+  .panel input[type="range"] { width: 110px; accent-color: #7dd3fc; }
+  .panel output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: #e6edf7; }
+`;
+
+const PANEL_HTML = `
+  <div class="panel" role="group" aria-label="预览参数">
+    <label>流星频率 <input type="range" id="rate" min="0.4" max="3" step="0.1" value="1"></label>
+    <output id="rate-out">1.0x</output>
+  </div>
+`;
+
 const PREVIEW_HTML = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -55,10 +90,12 @@ const PREVIEW_HTML = `<!doctype html>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; }
   canvas { display: block; width: 100%; height: 100%; }
+  ${PANEL_CSS}
 </style>
 </head>
 <body>
   <canvas id="sky"></canvas>
+  ${PANEL_HTML}
   <script>${JS}</script>
 </body>
 </html>`;
@@ -82,10 +119,12 @@ export const meteorBackgroundAsset: AssetManifest = {
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; }
   canvas { display: block; width: 100%; height: 100%; }
+  ${PANEL_CSS}
 </style>
 </head>
 <body>
   <canvas id="sky"></canvas>
+  ${PANEL_HTML}
   <script src="meteor-background.js"></script>
 </body>
 </html>`,

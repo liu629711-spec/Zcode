@@ -56,6 +56,14 @@ export function validateCatalog(manifests: readonly AssetManifest[]): string[] {
     if (manifest.category !== "prompt" && manifest.files.length === 0) {
       errors.push(`${label}: 非 prompt 类货 files 不能为空（图纸是递活的实体）`);
     }
+    // V2-4 台账：标了出处的货，site/url/license 三字段必须全填，缺一即坏货
+    if (manifest.source) {
+      for (const field of ["site", "url", "license"] as const) {
+        if (manifest.source[field].trim() === "") {
+          errors.push(`${label}: source.${field} 为空（台账三字段必填）`);
+        }
+      }
+    }
     if (EXTERNAL_SRC.test(manifest.previewHtml)) {
       errors.push(`${label}: previewHtml 含外链（src="http…"），沙箱内禁一切外链`);
     }

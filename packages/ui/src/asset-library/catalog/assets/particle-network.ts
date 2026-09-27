@@ -3,6 +3,7 @@ import type { AssetManifest } from "../types.js";
 /**
  * 粒子连线（自制原创）：canvas 微粒漂移，近距粒子间连出透明度随距离衰减的细线。
  * 图纸分 html+js 两件可拿走；preview 是同款内联版。
+ * V2-3 交互：「粒子密度」滑杆（20~140 颗），拖动即重建粒子群。
  */
 
 const JS = `// ponytail: 粒子上限 90，O(n²) 配对连线在这个量级（~4000 对/帧）足够流畅；
@@ -12,9 +13,9 @@ var ctx = canvas.getContext("2d");
 var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 var w = 0, h = 0, pts = [];
 var LINK = 120;
-function resize() {
-  w = canvas.width = innerWidth; h = canvas.height = innerHeight;
-  var n = Math.min(90, Math.floor((w * h) / 16000));
+var density = 0; // 0 = 未手动设置，按面积自适应；滑杆设值后以滑杆为准
+function build() {
+  var n = density || Math.min(90, Math.floor((w * h) / 16000));
   pts = [];
   for (var i = 0; i < n; i++) {
     pts.push({
@@ -22,6 +23,10 @@ function resize() {
       vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
     });
   }
+}
+function resize() {
+  w = canvas.width = innerWidth; h = canvas.height = innerHeight;
+  build();
 }
 addEventListener("resize", resize);
 resize();
@@ -47,7 +52,34 @@ function paint() {
   }
 }
 if (reduce) paint();
-else requestAnimationFrame(function loop() { paint(); requestAnimationFrame(loop); });`;
+else requestAnimationFrame(function loop() { paint(); requestAnimationFrame(loop); });
+var dens = document.getElementById("density");
+dens.addEventListener("input", function () {
+  density = Number(dens.value);
+  document.getElementById("density-out").textContent = density + " 颗";
+  build();
+});`
+
+const PANEL_CSS = `
+  .panel {
+    position: fixed; left: 14px; bottom: 14px; z-index: 10;
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 12px;
+    background: rgb(8 12 22 / 0.55); border: 1px solid rgb(255 255 255 / 0.14);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font: 12px/1 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; color: #9fb0c9;
+  }
+  .panel label { display: flex; align-items: center; gap: 8px; user-select: none; }
+  .panel input[type="range"] { width: 110px; accent-color: #93c5fd; }
+  .panel output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: #e6edf7; }
+`;
+
+const PANEL_HTML = `
+  <div class="panel" role="group" aria-label="预览参数">
+    <label>粒子密度 <input type="range" id="density" min="20" max="140" step="10" value="60"></label>
+    <output id="density-out">自适应</output>
+  </div>
+`;
 
 const PREVIEW_HTML = `<!doctype html>
 <html lang="zh-CN">
@@ -59,10 +91,12 @@ const PREVIEW_HTML = `<!doctype html>
   html, body { margin: 0; height: 100%; overflow: hidden; }
   body { background: radial-gradient(120% 120% at 50% 0%, #0b1226 0%, #070b18 60%, #05070f 100%); }
   canvas { display: block; width: 100%; height: 100%; }
+  ${PANEL_CSS}
 </style>
 </head>
 <body>
   <canvas id="net"></canvas>
+  ${PANEL_HTML}
   <script>${JS}</script>
 </body>
 </html>`;
@@ -89,10 +123,12 @@ export const particleNetworkAsset: AssetManifest = {
   html, body { margin: 0; height: 100%; overflow: hidden; }
   body { background: radial-gradient(120% 120% at 50% 0%, #0b1226 0%, #070b18 60%, #05070f 100%); }
   canvas { display: block; width: 100%; height: 100%; }
+  ${PANEL_CSS}
 </style>
 </head>
 <body>
   <canvas id="net"></canvas>
+  ${PANEL_HTML}
   <script src="particle-network.js"></script>
 </body>
 </html>`,

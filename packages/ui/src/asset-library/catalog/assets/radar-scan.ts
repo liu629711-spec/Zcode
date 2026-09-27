@@ -3,6 +3,7 @@ import type { AssetManifest } from "../types.js";
 /**
  * 雷达扫描（自制原创）：同心圆环 + 十字轴 + conic-gradient 旋转扇叶，
  * 两个光点按节拍闪灭模拟回波。纯 CSS，图纸单文件自包含。
+ * V2-3 交互：「扫描速度」滑杆改 --spin 变量，扇叶与回波光点共用同一周期。
  */
 
 const HTML = `<!doctype html>
@@ -31,11 +32,11 @@ const HTML = `<!doctype html>
   .sweep {
     position: absolute; inset: 0; border-radius: 50%;
     background: conic-gradient(from 0deg, rgb(52 211 153 / 0.45), rgb(52 211 153 / 0.08) 60deg, transparent 90deg);
-    animation: sweep 4s linear infinite;
+    animation: sweep var(--spin, 4s) linear infinite;
   }
   .blip {
     position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #4ade80;
-    box-shadow: 0 0 10px rgb(74 222 128 / 0.9); animation: blip 4s ease-out infinite;
+    box-shadow: 0 0 10px rgb(74 222 128 / 0.9); animation: blip var(--spin, 4s) ease-out infinite;
   }
   .one { left: 32%; top: 38%; }
   .two { left: 64%; top: 60%; animation-delay: 2s; }
@@ -45,6 +46,17 @@ const HTML = `<!doctype html>
     .sweep { animation: none; }
     .blip { animation: none; opacity: 0.9; }
   }
+  .panel {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 10;
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 12px;
+    background: rgb(8 14 12 / 0.6); border: 1px solid rgb(255 255 255 / 0.14);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    font: 12px/1 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; color: #9fb8ac;
+  }
+  .panel label { display: flex; align-items: center; gap: 8px; user-select: none; }
+  .panel input[type="range"] { width: 110px; accent-color: #4ade80; }
+  .panel output { min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; color: #e6f5ec; }
 </style>
 </head>
 <body>
@@ -54,6 +66,18 @@ const HTML = `<!doctype html>
     <div class="sweep"></div>
     <div class="blip one"></div><div class="blip two"></div>
   </div>
+  <div class="panel" role="group" aria-label="预览参数">
+    <label>扫描速度 <input type="range" id="spin" min="0.3" max="3" step="0.1" value="1"></label>
+    <output id="spin-out">1.0x</output>
+  </div>
+  <script>
+    var slider = document.getElementById("spin");
+    var radar = document.querySelector(".radar");
+    slider.addEventListener("input", function () {
+      radar.style.setProperty("--spin", (4 / Number(slider.value)) + "s");
+      document.getElementById("spin-out").textContent = Number(slider.value).toFixed(1) + "x";
+    });
+  </script>
 </body>
 </html>`;
 

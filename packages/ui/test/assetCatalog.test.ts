@@ -58,6 +58,12 @@ test("坏货逐项体检：每类坏法都报出对应错误", () => {
     broken({ previewHtml: "<script>localStorage.setItem('k','v');</script>" }),
   ]);
   assert.ok(persistent.some((m) => m.includes("localStorage")), persistent.join("；"));
+
+  // source 台账：有 source 时三字段缺一报错
+  const noLicense = validateCatalog([
+    broken({ source: { site: "React Bits", url: "https://reactbits.dev", license: " " } }),
+  ]);
+  assert.ok(noLicense.some((m) => m.includes("source.license")), noLicense.join("；"));
 });
 
 test("files 规则按类别分流：prompt 类允许空图纸，control 类不允许", () => {
@@ -95,4 +101,32 @@ test("30 件货架：五类都有货且 id 唯一", () => {
   }
   const ids = ASSET_CATALOG.map((manifest) => manifest.id);
   assert.equal(new Set(ids).size, ids.length, "种子货 id 必须全局唯一");
+});
+
+// ============================================================
+// V2-4 四站首批的台账钉子（技术设计 §10）：逐件必须有完整 source
+// ============================================================
+const SOURCED_BATCH = [
+  // React Bits 6
+  "split-text", "blur-text", "count-up", "silk-background", "click-spark", "ribbons-background",
+  // Beautiful UI 6
+  "ai-loading-dots", "ai-thinking-trace", "ai-tool-call-row", "ai-approval-card", "ai-task-row", "ai-streamed-text",
+  // RareUI 4
+  "animated-tooltip", "spotlight-card", "flip-card", "animated-list",
+  // UIverse 4
+  "day-night-toggle", "orbit-loader", "checkmark-checkbox", "glow-focus-input",
+] as const;
+
+test("V2-4 四站首批 20 件：逐件 source 三字段齐全（许可台账）", () => {
+  for (const id of SOURCED_BATCH) {
+    const manifest = pick(id);
+    assert.ok(manifest.source, `${id}: 缺 source（台账必填）`);
+    for (const field of ["site", "url", "license"] as const) {
+      assert.ok(
+        manifest.source[field].trim() !== "",
+        `${id}: source.${field} 为空`,
+      );
+    }
+    assert.match(manifest.source.url, /^https:\/\//, `${id}: source.url 应为 https`);
+  }
 });

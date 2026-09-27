@@ -1,14 +1,29 @@
 import type { AssetManifest } from "./types.js";
+import { aiApprovalCardAsset } from "./assets/ai-approval-card.js";
+import { aiLoadingDotsAsset } from "./assets/ai-loading-dots.js";
+import { aiStreamedTextAsset } from "./assets/ai-streamed-text.js";
+import { aiTaskRowAsset } from "./assets/ai-task-row.js";
+import { aiThinkingTraceAsset } from "./assets/ai-thinking-trace.js";
+import { aiToolCallRowAsset } from "./assets/ai-tool-call-row.js";
+import { animatedListAsset } from "./assets/animated-list.js";
+import { animatedTooltipAsset } from "./assets/animated-tooltip.js";
 import { auroraBackgroundAsset } from "./assets/aurora-background.js";
+import { blurTextAsset } from "./assets/blur-text.js";
 import { breathingButtonAsset } from "./assets/breathing-button.js";
+import { checkmarkCheckboxAsset } from "./assets/checkmark-checkbox.js";
+import { clickSparkAsset } from "./assets/click-spark.js";
 import { commandPaletteAsset } from "./assets/command-palette-prompt.js";
+import { countUpAsset } from "./assets/count-up.js";
 import { dashboardKpiAsset } from "./assets/dashboard-kpi-prompt.js";
+import { dayNightToggleAsset } from "./assets/day-night-toggle.js";
 import { emptyStateAsset } from "./assets/empty-state-prompt.js";
+import { flipCardAsset } from "./assets/flip-card.js";
 import { flipClockAsset } from "./assets/flip-clock.js";
 import { frostedGlassLoginAsset } from "./assets/frosted-glass-login-prompt.js";
 import { glassPanelAsset } from "./assets/glass-panel.js";
 import { glitchTextAsset } from "./assets/glitch-text.js";
 import { glowBorderCardAsset } from "./assets/glow-border-card.js";
+import { glowFocusInputAsset } from "./assets/glow-focus-input.js";
 import { gradientFlowTextAsset } from "./assets/gradient-flow-text.js";
 import { hamburgerMorphAsset } from "./assets/hamburger-morph.js";
 import { jellyToggleAsset } from "./assets/jelly-toggle.js";
@@ -18,12 +33,17 @@ import { magneticButtonAsset } from "./assets/magnetic-button.js";
 import { meteorBackgroundAsset } from "./assets/meteor-background.js";
 import { neonButtonAsset } from "./assets/neon-button.js";
 import { numberRollAsset } from "./assets/number-roll.js";
+import { orbitLoaderAsset } from "./assets/orbit-loader.js";
 import { particleNetworkAsset } from "./assets/particle-network.js";
 import { pricingTableAsset } from "./assets/pricing-table-prompt.js";
 import { radarScanAsset } from "./assets/radar-scan.js";
+import { ribbonsBackgroundAsset } from "./assets/ribbons-background.js";
 import { rippleButtonAsset } from "./assets/ripple-button.js";
 import { segmentedControlAsset } from "./assets/segmented-control.js";
+import { silkBackgroundAsset } from "./assets/silk-background.js";
 import { skeletonShimmerAsset } from "./assets/skeleton-shimmer.js";
+import { splitTextAsset } from "./assets/split-text.js";
+import { spotlightCardAsset } from "./assets/spotlight-card.js";
 import { stepProgressAsset } from "./assets/step-progress.js";
 import { textScrambleAsset } from "./assets/text-scramble.js";
 import { toastNotificationAsset } from "./assets/toast-notification.js";
@@ -84,4 +104,29 @@ export const ASSET_CATALOG: AssetManifest[] = [
   dashboardKpiAsset,
   emptyStateAsset,
   pricingTableAsset,
+  // —— V2-4 四站首批（20 件，效果自实现 + source 逐件标注，技术设计 §10）——
+  // React Bits（MIT + Commons Clause，仅灵感参考）
+  splitTextAsset,
+  blurTextAsset,
+  countUpAsset,
+  silkBackgroundAsset,
+  clickSparkAsset,
+  ribbonsBackgroundAsset,
+  // Beautiful UI（MIT，AI 界面零件）
+  aiLoadingDotsAsset,
+  aiThinkingTraceAsset,
+  aiToolCallRowAsset,
+  aiApprovalCardAsset,
+  aiTaskRowAsset,
+  aiStreamedTextAsset,
+  // RareUI（MIT，shadcn 风动效）
+  animatedTooltipAsset,
+  spotlightCardAsset,
+  flipCardAsset,
+  animatedListAsset,
+  // UIverse（CC BY 4.0，小控件）
+  dayNightToggleAsset,
+  orbitLoaderAsset,
+  checkmarkCheckboxAsset,
+  glowFocusInputAsset,
 ];

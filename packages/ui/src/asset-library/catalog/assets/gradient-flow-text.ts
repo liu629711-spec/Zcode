@@ -3,6 +3,7 @@ import type { AssetManifest } from "../types.js";
 /**
  * 渐变流字（自制原创）：background-clip:text + background-position 线性循环，
  * 渐变首尾同色保证无缝流动。图纸单文件自包含，内容与 preview 同一份。
+ * V2-3 交互：主体文字 contenteditable，点文字直接改。
  */
 
 const HTML = `<!doctype html>
@@ -28,10 +29,16 @@ const HTML = `<!doctype html>
   @media (prefers-reduced-motion: reduce) {
     .flow { animation: none; background-position: 20% 0; }
   }
+  .flow[contenteditable] { outline: none; caret-color: #a5b4fc; cursor: text; }
+  .hint {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    margin: 0; font-size: 12px; letter-spacing: 0.08em; color: #5b6b8c; user-select: none;
+  }
 </style>
 </head>
 <body>
-  <h1 class="flow">让文字自己发光</h1>
+  <h1 class="flow" contenteditable="true" spellcheck="false">让文字自己发光</h1>
+  <p class="hint">点文字可直接编辑</p>
 </body>
 </html>`;
 
