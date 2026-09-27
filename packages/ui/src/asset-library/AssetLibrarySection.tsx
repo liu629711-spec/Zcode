@@ -125,6 +125,8 @@ interface AssetLibrarySectionProps {
   workspaceIdentity?: string;
   /** 当前 workspace 有活动会话视图（ShellLayout 按 activeTaskId 判定）；无则隐藏「发到当前会话」。 */
   hasActiveChat: boolean;
+  /** 活动 workspace 只读时两个递活动作都不可用（与 onCreateTask 的只读守卫同待遇）。 */
+  readOnly?: boolean;
   onCreateTask?: (request?: CreateTaskRequest) => void;
 }
 
@@ -132,6 +134,7 @@ export function AssetLibrarySection({
   workspacePath,
   workspaceIdentity,
   hasActiveChat,
+  readOnly = false,
   onCreateTask,
 }: AssetLibrarySectionProps) {
   const { intl, locale } = useZCodeIntl();
@@ -256,6 +259,7 @@ export function AssetLibrarySection({
         workspacePath={workspacePath}
         workspaceIdentity={workspaceIdentity}
         hasActiveChat={hasActiveChat}
+        readOnly={readOnly}
         onCreateTask={onCreateTask}
       />
     </div>

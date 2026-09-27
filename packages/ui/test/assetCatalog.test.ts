@@ -81,8 +81,8 @@ test("assertSandboxSafe：恒等 allow-scripts 通过，混入其它 token 一�
 });
 
 test("30 件货架：五类都有货且 id 唯一", () => {
-  // S5 备货批次定编 30（8 件种子 + 22 件自制原创，配比见任务书素材库 S5 卡）
-  assert.equal(ASSET_CATALOG.length, 30);
+  // 图纸口径是 30~50（技术设计 §8）：这里只钉"至少 30"，后续备货片加货不该炸。
+  assert.ok(ASSET_CATALOG.length >= 30, `货架应至少 30 件，实际 ${ASSET_CATALOG.length}`);
   const byCategory = new Map<AssetCategory, number>();
   for (const manifest of ASSET_CATALOG) {
     byCategory.set(manifest.category, (byCategory.get(manifest.category) ?? 0) + 1);

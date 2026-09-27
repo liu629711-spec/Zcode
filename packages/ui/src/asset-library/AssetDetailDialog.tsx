@@ -2,8 +2,11 @@
  * 素材详情弹层（技术设计 §4）：真 iframe 预览 + 图纸 tab + 复制 + 递活按钮（S4）。
  *
  * iframe 现挂现卸——asset 为 null 即卸载整个 body，弹层一关沙箱就回收。
- * 「发到新会话」走 onCreateTask（照 PluginStorePage 试用链）；「发到当前会话」写
- * requestComposerTextInsert，均只预填输入框、不自动发送；无活动会话时后者不渲染。
+ * 两个递活按钮都只预填输入框、不自动发送：
+ * - 「发到新会话」走 onCreateTask（照 PluginStorePage 试用链，落到新草稿）。
+ * - 「发到当前会话」写 requestComposerTextInsert；该槽是 workspace 级单槽，草稿与
+ *   真会话的 focused composer 都能消费（S4 修：原仅草稿消费=真会话点了静默无效）。
+ *   无活动会话视图（hasActiveChat）或只读（readOnly）时不渲染，与 onCreateTask 守卫同待遇。
  * Radix Dialog 自带焦点圈/Esc 关闭/焦点归还；DialogContent 的关闭按钮沿用组件默认。
  */
 import { useEffect, useState } from "react";
@@ -32,6 +35,8 @@ interface AssetDetailActions {
   workspaceIdentity?: string;
   /** 当前 workspace 是否有活动会话视图；无则不渲染「发到当前会话」。 */
   hasActiveChat: boolean;
+  /** 活动 workspace 只读时隐藏两个递活按钮（与 onCreateTask 的只读守卫同待遇）。 */
+  readOnly?: boolean;
   onCreateTask?: (request?: CreateTaskRequest) => void;
 }
 
@@ -48,6 +53,7 @@ function AssetDetailBody({
   workspacePath,
   workspaceIdentity,
   hasActiveChat,
+  readOnly,
   onCreateTask,
 }: {
   asset: AssetManifest;
@@ -176,29 +182,33 @@ function AssetDetailBody({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          data-testid="asset-library-detail-send-new-chat"
-          aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToNewChatAria" })}
-          onClick={handleSendToNewChat}
-        >
-          <SendIcon className="size-3.5" aria-hidden="true" />
-          {intl.formatMessage({ id: "assetLibrary.detail.sendToNewChat" })}
-        </Button>
-        {hasActiveChat ? (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            data-testid="asset-library-detail-send-current-chat"
-            aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChatAria" })}
-            onClick={handleSendToCurrentChat}
-          >
-            <MessageSquareTextIcon className="size-3.5" aria-hidden="true" />
-            {intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChat" })}
-          </Button>
-        ) : null}
+        {readOnly ? null : (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              data-testid="asset-library-detail-send-new-chat"
+              aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToNewChatAria" })}
+              onClick={handleSendToNewChat}
+            >
+              <SendIcon className="size-3.5" aria-hidden="true" />
+              {intl.formatMessage({ id: "assetLibrary.detail.sendToNewChat" })}
+            </Button>
+            {hasActiveChat ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                data-testid="asset-library-detail-send-current-chat"
+                aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChatAria" })}
+                onClick={handleSendToCurrentChat}
+              >
+                <MessageSquareTextIcon className="size-3.5" aria-hidden="true" />
+                {intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChat" })}
+              </Button>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );
@@ -214,6 +224,7 @@ export function AssetDetailDialog({
   workspacePath,
   workspaceIdentity,
   hasActiveChat,
+  readOnly,
   onCreateTask,
 }: {
   asset: AssetManifest | null;
@@ -236,6 +247,7 @@ export function AssetDetailDialog({
             workspacePath={workspacePath}
             workspaceIdentity={workspaceIdentity}
             hasActiveChat={hasActiveChat}
+            readOnly={readOnly}
             onCreateTask={onCreateTask}
           />
         ) : null}

@@ -6565,6 +6565,7 @@ const zhCN: Record<string, string> = {
   "assetLibrary.breadcrumbLabel": "交互素材库路径",
   "assetLibrary.description":
     "内置交互素材精选：在线预览、复制图纸，或把口令发到会话让智能体装进项目。",
+  "assetLibrary.loading": "正在打开展厅…",
   "assetLibrary.search.placeholder": "搜索名称、标签或描述",
   "assetLibrary.search.label": "搜索素材",
   "assetLibrary.count": "共 {count} 件素材",

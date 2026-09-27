@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- workspace shell 当前集中编排 sidebar、chat、terminal 和 browser pane 的布局联动，先保持单文件收口，避免为满足行数限制打散关键布局状态。*/
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -45,7 +45,6 @@ import type {
   SavedWorkflowsOpenRunParams,
 } from "@/settings/saved-workflows/SavedWorkflowsSection.js";
 import { AutomationsMainBreadcrumbFrame } from "@/settings/AutomationsMainBreadcrumbFrame.js";
-import { AssetLibrarySection } from "@/asset-library/AssetLibrarySection.js";
 import { PluginStorePage } from "@/settings/PluginStorePage.js";
 import { DispatchDeskKanbanBoard } from "@/workspace-grouped-tasks/kanban-board.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
@@ -109,6 +108,12 @@ const WORKSPACE_SIDEBAR_RESIZE_KEYBOARD_STEP_PX = 16;
 const WORKSPACE_SIDEBAR_PANEL_WIDTH_CSS_VAR = "--workspace-sidebar-panel-width";
 const WORKSPACE_SIDEBAR_WIDTH_CSS_VAR = "--workspace-sidebar-width";
 const CONVERSATION_AUTO_COLLAPSE_SIDE_PANE_WIDTH_PX = 480;
+// 素材库带约 600KB 预编译预览产物（preview-html.ts），懒加载把它从主 bundle 移出：
+// 只有真正打开展厅的用户才付这份体积（照 previewPaneOffice 系列先例）。
+const LazyAssetLibrarySection = lazy(async () => {
+  const module = await import("@/asset-library/AssetLibrarySection.js");
+  return { default: module.AssetLibrarySection };
+});
 // WorkspaceShellLayout 是 memo 组件，默认 []/{} 会在缺省调用时每次创建新引用；
 // 入口缺省这些集合时复用常量，避免浅比较误判 props 变化。
 const EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY: NonNullable<
@@ -1869,12 +1874,21 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                 className="min-h-full"
                               >
                                 <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-6">
-                                  <AssetLibrarySection
-                                    workspacePath={workspaceAbsPath}
-                                    workspaceIdentity={workspaceIdentity}
-                                    hasActiveChat={activeTaskId !== null}
-                                    onCreateTask={handleCreateTaskInChat}
-                                  />
+                                  <Suspense
+                                    fallback={
+                                      <div className="py-12 text-center text-ui-sm text-foreground-subtle">
+                                        {intl.formatMessage({ id: "assetLibrary.loading" })}
+                                      </div>
+                                    }
+                                  >
+                                    <LazyAssetLibrarySection
+                                      workspacePath={workspaceAbsPath}
+                                      workspaceIdentity={workspaceIdentity}
+                                      hasActiveChat={activeTaskId !== null}
+                                      readOnly={Boolean(workspaceReadOnlyReason)}
+                                      onCreateTask={handleCreateTaskInChat}
+                                    />
+                                  </Suspense>
                                 </div>
                               </ScopedErrorBoundary>
                             </div>

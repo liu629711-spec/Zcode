@@ -6887,6 +6887,7 @@ const enUS: Record<string, string> = {
   "assetLibrary.breadcrumbLabel": "Interactive asset library path",
   "assetLibrary.description":
     "A curated set of built-in interactive assets: preview live, copy blueprints, or send a prompt to a session and let the agent install it.",
+  "assetLibrary.loading": "Opening the gallery…",
   "assetLibrary.search.placeholder": "Search by name, tag, or description",
   "assetLibrary.search.label": "Search assets",
   "assetLibrary.count": "{count, plural, one {# asset} other {# assets}}",
