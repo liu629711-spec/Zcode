@@ -1,9 +1,21 @@
-import type { AgentSummary, SubAgentConfig, ZCodeSessionPersona } from "@zcode/shared";
+import type { AgentColor, AgentSummary, SubAgentConfig, ZCodeSessionPersona } from "@zcode/shared";
 
 export interface ProjectAgentDraft {
   name: string;
   description: string;
   systemPrompt: string;
+}
+
+/** 任务列表行的驻场智能体徽章（D2）：名字给悬停大白话，颜色缺省 = 只画图标。 */
+export interface PersonaChatBadge {
+  name: string;
+  color?: AgentColor;
+}
+
+/** 行级徽章的挂载键（UI 内联标记；持久化 producer 落地前由打开会话的入口登记）。 */
+export interface PersonaChatBadgeCarrier {
+  /** 徽章标记挂在 task meta 上的字段名与持久化方案（tasks-index meta_json）预留同名，producer 落地后零改消费端。 */
+  agentPersona?: PersonaChatBadge;
 }
 
 export type ProjectAgentDraftError =
@@ -77,4 +89,52 @@ export function toProjectAgentPersona(agent: AgentSummary): ProjectAgentPersona 
     ...(agent.disallowedTools?.length ? { disallowedTools: [...agent.disallowedTools] } : {}),
     ...(agent.color ? { color: agent.color } : {}),
   };
+}
+
+/**
+ * 侧栏建档（三框简表）产出的 persona：记忆范围固定 project（与 toProjectAgentCreateConfig 同一约定），
+ * 模型/工具/颜色缺省 = 跟随会话缺省。建档成功即按它直接开会话（孤儿档案闭环）。
+ */
+export function toProjectAgentPersonaFromDraft(draft: ProjectAgentDraft): ProjectAgentPersona {
+  return {
+    name: draft.name.trim(),
+    systemPrompt: draft.systemPrompt.trim(),
+    memoryScope: "project",
+  };
+}
+
+/**
+ * 工作区新建智能体入口的可达性闸（原 agentsSection 渲染闸，随入口搬迁，语义不变）：
+ * 创建与开会话都走侧栏 bound 连接，只有与 bound 同通道的工作区可达（同为本地，或同一远程会话）。
+ * 不可达的远程 tab 不给入口，防止经本机服务把目录建到错误的机器上。
+ */
+export function resolveWorkspaceProjectAgentReachability(params: {
+  boundWorkspacePath: string;
+  boundWorkspaceRemoteSessionId?: string;
+  tabWorkspacePath: string;
+  tabRemoteSessionId?: string;
+}): boolean {
+  const { boundWorkspacePath, boundWorkspaceRemoteSessionId, tabWorkspacePath, tabRemoteSessionId } =
+    params;
+  return boundWorkspaceRemoteSessionId
+    ? tabWorkspacePath === boundWorkspacePath
+    : !tabRemoteSessionId;
+}
+
+/**
+ * 把徽章登记合并进任务行：命中的行挂 agentPersona 标记，未命中的行保持原引用——
+ * 侧栏流式刷新按引用判等打穿 memo，这里不能给无关行换新引用。
+ * 徽章登记为空时原样返回同一数组。
+ */
+export function applyPersonaChatBadges<T extends { taskId: string }>(
+  items: readonly T[],
+  badgeByTaskId: ReadonlyMap<string, PersonaChatBadge>,
+): (T & PersonaChatBadgeCarrier)[] {
+  if (badgeByTaskId.size === 0) {
+    return [...items];
+  }
+  return items.map((item) => {
+    const badge = badgeByTaskId.get(item.taskId);
+    return badge ? { ...item, agentPersona: badge } : item;
+  });
 }

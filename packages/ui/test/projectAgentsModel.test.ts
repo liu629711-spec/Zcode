@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentSummary } from "@zcode/shared";
 import {
+  applyPersonaChatBadges,
+  resolveWorkspaceProjectAgentReachability,
   selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
   toProjectAgentPersona,
+  toProjectAgentPersonaFromDraft,
   validateProjectAgentDraft,
+  type PersonaChatBadge,
 } from "../src/WorkspaceSidebar/projectAgentsModel.js";
 
 // ============================================================
@@ -155,4 +159,66 @@ test("toProjectAgentPersona：空工具数组不进载荷（= 继承全部工具
     name: "code-reviewer",
     systemPrompt: "你是代码审查员",
   });
+});
+
+test("toProjectAgentPersonaFromDraft：trim、固定 project scope，不带模型/工具/颜色键", () => {
+  assert.deepEqual(
+    toProjectAgentPersonaFromDraft({
+      name: "  reviewer  ",
+      description: "desc",
+      systemPrompt: " 你是代码审查员 ",
+    }),
+    { name: "reviewer", systemPrompt: "你是代码审查员", memoryScope: "project" },
+  );
+});
+
+test("resolveWorkspaceProjectAgentReachability：bound 本地只开本地 tab，bound 远程只开同路径 tab", () => {
+  const base = {
+    boundWorkspacePath: "D:/repo",
+    tabWorkspacePath: "D:/repo",
+  };
+  // bound 本地：本地 tab 可达，远程 tab 不可达（防止经本机服务把目录建到错误的机器上）。
+  assert.equal(resolveWorkspaceProjectAgentReachability({ ...base }), true);
+  assert.equal(
+    resolveWorkspaceProjectAgentReachability({ ...base, tabRemoteSessionId: "remote-1" }),
+    false,
+  );
+  // bound 远程：只有与 bound 同路径的 tab 可达，其它（含本地）一律不可达。
+  const remoteBound = { ...base, boundWorkspaceRemoteSessionId: "remote-1" };
+  assert.equal(resolveWorkspaceProjectAgentReachability(remoteBound), true);
+  assert.equal(
+    resolveWorkspaceProjectAgentReachability({
+      ...remoteBound,
+      tabWorkspacePath: "D:/other",
+    }),
+    false,
+  );
+  assert.equal(
+    resolveWorkspaceProjectAgentReachability({ ...remoteBound, tabRemoteSessionId: undefined }),
+    true,
+  );
+});
+
+test("applyPersonaChatBadges：命中行挂徽章，未命中行保持原引用，空登记不换引用", () => {
+  const row = (taskId: string) => ({ taskId, title: `t-${taskId}` });
+  const a = row("a");
+  const b = row("b");
+  const badge: PersonaChatBadge = { name: "code-reviewer", color: "purple" };
+
+  const badged = applyPersonaChatBadges([a, b], new Map([["a", badge]]));
+  assert.notEqual(badged[0], b);
+  assert.deepEqual((badged[0] as { agentPersona?: PersonaChatBadge }).agentPersona, badge);
+  assert.equal(badged[1], b, "未命中行必须保持原引用（行级 memo 靠引用判等）");
+  assert.equal((badged[1] as { agentPersona?: PersonaChatBadge }).agentPersona, undefined);
+
+  // 空登记：数组内容等价（applyPersonaChatBadges 允许返回同内容新数组，由调用方 useMemo 兜引用稳定）。
+  const untouched = applyPersonaChatBadges([a, b], new Map());
+  assert.deepEqual(untouched, [a, b]);
+  assert.equal(untouched[0], a);
+
+  // 登记里有列表外的 taskId：忽略，不炸。
+  assert.deepEqual(
+    applyPersonaChatBadges([a], new Map([["ghost", badge]])).map((item) => item.taskId),
+    ["a"],
+  );
 });

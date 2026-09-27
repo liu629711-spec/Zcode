@@ -1625,6 +1625,8 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.addProject": "Add project",
   "workspaceSidebar.createProjectAgent": "New agent",
   "workspaceSidebar.projectAgents": "Agents",
+  "workspaceSidebar.projectAgentsLoading": "Loading agents…",
+  "workspaceSidebar.projectAgentsEmpty": "No agents in this project yet",
   "workspaceSidebar.projectAgentOpenFailed": "Failed to open agent chat",
   "workspaceSidebar.projectAgentScopeHint": "This agent only serves the current project",
   "workspaceSidebar.noConversations": "No tasks yet",
@@ -6383,6 +6385,7 @@ const enUS: Record<string, string> = {
   // ---- Scheduled tasks / Automations ----
   "taskList.cronTaskLabel": "Scheduled task",
   "taskList.offPeakTaskLabel": "Idle-time task",
+  "taskList.personaChatBadge": "Resident agent · {name}",
   "taskList.workflowRun.ariaLabel": "Workflow run {name}: {status}",
   "taskList.workflowRun.moreRuns": "+{count} more",
   "taskList.workflowRun.moreStations": "+{count}",

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Bot, Plus } from "lucide-react";
 import {
-  TID_PROJECT_AGENT_CREATE,
   TID_PROJECT_AGENT_CREATE_DIALOG,
   TID_PROJECT_AGENT_ROW,
   ZCODE_AGENT_PROVIDER,
@@ -23,10 +21,10 @@ import { launchWorkspaceId } from "@/settings/saved-workflows/useSavedWorkflowLa
 import {
   selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
-  toProjectAgentPersona,
   validateProjectAgentDraft,
   type ProjectAgentDraft,
   type ProjectAgentDraftError,
+  type ProjectAgentPersona,
 } from "./projectAgentsModel.js";
 
 /** 驻场智能体操作的目标工作区坐标：创建和开会话都按它定向（照 useSavedWorkflowLauncher 先例）。 */
@@ -65,6 +63,8 @@ export function useWorkspaceProjectAgents(params: {
     () => new Map(),
   );
   const [creating, setCreating] = useState(false);
+  // 列表首拉/重载进行中：对话框的选择器要区分"还没有智能体"和"正在取数"。
+  const [loadingAgents, setLoadingAgents] = useState(false);
 
   // 取数集合：bound 本地 → 一次解析并行列所有本地工作区；bound 远程 → 只列与 bound 同路径的 tab（现行为）。
   const fetchTargets = useMemo(() => {
@@ -88,6 +88,7 @@ export function useWorkspaceProjectAgents(params: {
     if (!enabled || !resolution.rpcReady) {
       return;
     }
+    setLoadingAgents(true);
     try {
       const entries = await Promise.all(
         fetchTargetsRef.current.map(async (tab) => {
@@ -104,9 +105,11 @@ export function useWorkspaceProjectAgents(params: {
       );
       setAgentsByWorkspaceKey(new Map(entries));
     } catch (error) {
-      // 远程断连等场景下分组退化为仅剩创建入口，不阻塞侧栏其余内容。
+      // 远程断连等场景下列表取数退化为空集，不阻塞侧栏其余内容。
       setAgentsByWorkspaceKey(new Map());
       logger.warn("[projectAgents] 列表加载失败", error);
+    } finally {
+      setLoadingAgents(false);
     }
   }, [enabled, fetchSignature, resolution.rpcReady, subagentsService]);
 
@@ -137,7 +140,7 @@ export function useWorkspaceProjectAgents(params: {
     [reload, subagentsService],
   );
 
-  return { agentsByWorkspaceKey, creating, createAgent };
+  return { agentsByWorkspaceKey, creating, loadingAgents, createAgent };
 }
 
 /**
@@ -145,12 +148,13 @@ export function useWorkspaceProjectAgents(params: {
  * 空草稿不进侧栏），accepted 后交给调用方导航到新会话。失败 toast，不静默。
  * 服务解析与 transport 绑定侧栏活动工作区三件套；会话目标按 openAgentChat 传入的
  * target 定向（照 useSavedWorkflowLauncher 先例：一条连接、按调用传目标工作区）。
+ * persona 由调用方构造（既有档案走 toProjectAgentPersona，新建走 toProjectAgentPersonaFromDraft）。
  */
 export function useOpenProjectAgentChat(params: {
   workspacePath: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
-  onSessionCreated: (sessionId: string, target: ProjectAgentTarget) => void;
+  onSessionCreated: (sessionId: string, target: ProjectAgentTarget, persona: ProjectAgentPersona) => void;
 }) {
   const { workspacePath, workspaceIdentity, workspaceRemoteSessionId, onSessionCreated } = params;
   const resolution = useWorkspaceServicesResolution(
@@ -163,7 +167,7 @@ export function useOpenProjectAgentChat(params: {
   const openingRef = useRef(false);
 
   const openAgentChat = useCallback(
-    async (agent: AgentSummary, target: ProjectAgentTarget) => {
+    async (persona: ProjectAgentPersona, target: ProjectAgentTarget) => {
       if (openingRef.current || !resolution.rpcReady) {
         return;
       }
@@ -187,7 +191,7 @@ export function useOpenProjectAgentChat(params: {
                 workspacePath: target.workspacePath,
                 workspaceIdentity: target.workspaceIdentity,
               }),
-              persona: toProjectAgentPersona(agent),
+              persona,
             },
             sessionId: null,
           }),
@@ -200,7 +204,7 @@ export function useOpenProjectAgentChat(params: {
           );
           return;
         }
-        onSessionCreated(ack.result.sessionId, target);
+        onSessionCreated(ack.result.sessionId, target, persona);
       } catch (error) {
         logger.warn("[projectAgents] 打开智能体会话失败", error);
         toast(intl.formatMessage({ id: "workspaceSidebar.projectAgentOpenFailed" }));
@@ -222,59 +226,6 @@ export function useOpenProjectAgentChat(params: {
   return { openAgentChat, opening };
 }
 
-// 工作区级分组：每个项目块的任务列表之下各自渲染，头行常驻（空列表时它就是该工作区的创建入口）。
-export function WorkspaceProjectAgentsGroup({
-  agents,
-  onCreateClick,
-  onOpenAgent,
-}: {
-  agents: AgentSummary[];
-  onCreateClick: () => void;
-  onOpenAgent: (agent: AgentSummary) => void;
-}) {
-  const { intl } = useZCodeIntl();
-  return (
-    <div className="pb-4">
-      <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-ui-base font-medium text-foreground-subtlest">
-        <Bot aria-hidden="true" className="size-3.5" />
-        <span className="min-w-0 flex-1">
-          {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0 text-foreground-subtlest hover:text-foreground"
-          data-testid={TID_PROJECT_AGENT_CREATE}
-          aria-label={intl.formatMessage({ id: "workspaceSidebar.createProjectAgent" })}
-          onClick={onCreateClick}
-        >
-          <Plus className="size-3.5" />
-        </Button>
-      </div>
-      <ul className="space-y-0.5">
-        {agents.map((agent) => (
-          <li key={agent.id}>
-            <button
-              type="button"
-              data-testid={testId(TID_PROJECT_AGENT_ROW, agent.name)}
-              className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/30"
-              onClick={() => onOpenAgent(agent)}
-            >
-              <span className="truncate text-ui-base text-foreground">{agent.name}</span>
-              {agent.description ? (
-                <span className="truncate text-ui-sm text-foreground-subtle">
-                  {agent.description}
-                </span>
-              ) : null}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function formatDraftError(intl: ReturnType<typeof useZCodeIntl>["intl"], error: ProjectAgentDraftError): string {
   switch (error) {
     case "nameLength":
@@ -291,15 +242,26 @@ function formatDraftError(intl: ReturnType<typeof useZCodeIntl>["intl"], error: 
   }
 }
 
+/**
+ * 工作区新建智能体对话框，兼做已有档案选择器（D3 收口后智能体从这里开聊）：
+ * 上半是已有档案列表（点按直接开聊，空态/加载态各自成行），下半是建档表单（名字/介绍/人设三框，
+ * 与设置页同一套校验文案）；建档成功由调用方负责自动开一段会话。
+ */
 export function WorkspaceProjectAgentCreateDialog({
   open,
   onOpenChange,
   creating,
+  loadingAgents,
+  agents,
+  onOpenAgent,
   onCreate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   creating: boolean;
+  loadingAgents: boolean;
+  agents: AgentSummary[];
+  onOpenAgent: (agent: AgentSummary) => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
 }) {
   const { intl } = useZCodeIntl();
@@ -340,7 +302,41 @@ export function WorkspaceProjectAgentCreateDialog({
         <DialogTitle className="text-ui-lg font-medium text-foreground">
           {intl.formatMessage({ id: "workspaceSidebar.createProjectAgent" })}
         </DialogTitle>
-        <form className="space-y-3" onSubmit={handleSubmit}>
+        <div className="space-y-1.5">
+          <p className="text-ui-base font-medium text-foreground-subtle">
+            {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
+          </p>
+          {loadingAgents ? (
+            <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
+              {intl.formatMessage({ id: "workspaceSidebar.projectAgentsLoading" })}
+            </p>
+          ) : agents.length === 0 ? (
+            <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
+              {intl.formatMessage({ id: "workspaceSidebar.projectAgentsEmpty" })}
+            </p>
+          ) : (
+            <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+              {agents.map((agent) => (
+                <li key={agent.id}>
+                  <button
+                    type="button"
+                    data-testid={testId(TID_PROJECT_AGENT_ROW, agent.name)}
+                    className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/30"
+                    onClick={() => onOpenAgent(agent)}
+                  >
+                    <span className="truncate text-ui-base text-foreground">{agent.name}</span>
+                    {agent.description ? (
+                      <span className="truncate text-ui-sm text-foreground-subtle">
+                        {agent.description}
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <form className="space-y-3 border-t pt-3" onSubmit={handleSubmit}>
           <div className="space-y-1.5">
             <label className="block text-ui-base font-medium text-foreground-subtle">
               {intl.formatMessage({ id: "settings.subagents.form.name.label" })}

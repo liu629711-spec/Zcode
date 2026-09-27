@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useMemo, type CSSProperties } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { WorkspaceSidebarItem, type SortableBindings } from "./WorkspaceSidebarItem.js";
@@ -32,7 +32,8 @@ export const SortableWorkspaceSidebarItem = memo(function SortableWorkspaceSideb
   reconnectingRemoteWorkspaceLogsByWorkspaceKey,
   onReconnectRemoteWorkspace,
   onOpenFileTree,
-  agentsSection,
+  canCreateProjectAgent,
+  onCreateProjectAgent,
 }: {
   tab: WorkspaceTabState;
   isActiveWorkspace: boolean;
@@ -63,8 +64,12 @@ export const SortableWorkspaceSidebarItem = memo(function SortableWorkspaceSideb
     workspaceIdentity?: string;
     workspaceRemoteSessionId?: string;
   }) => void;
-  /** 该工作区的驻场智能体小节；随工作区块折叠渲染，缺省零渲染。 */
-  agentsSection?: ReactNode;
+  /** 该工作区是否可经 bound 连接创建驻场智能体（不可达的远程 tab 不给入口）。 */
+  canCreateProjectAgent?: boolean;
+  onCreateProjectAgent?: (target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
@@ -128,7 +133,8 @@ export const SortableWorkspaceSidebarItem = memo(function SortableWorkspaceSideb
       reconnectingRemoteWorkspaceLogsByWorkspaceKey={reconnectingRemoteWorkspaceLogsByWorkspaceKey}
       onReconnectRemoteWorkspace={onReconnectRemoteWorkspace}
       onOpenFileTree={onOpenFileTree}
-      agentsSection={agentsSection}
+      canCreateProjectAgent={canCreateProjectAgent}
+      onCreateProjectAgent={onCreateProjectAgent}
       itemRef={setNodeRef}
       itemStyle={style}
       sortableBindings={sortableBindings}

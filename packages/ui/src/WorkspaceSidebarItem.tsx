@@ -3,13 +3,14 @@ import {
   memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type MouseEvent,
-  type ReactNode,
 } from "react";
 import {
+  Bot,
   CheckIcon,
   CircleAlert,
   Cloud,
@@ -59,6 +60,7 @@ import type { RemoteConnectionLogEntry } from "@/hooks/useRemoteConnectionLogs.j
 import { ReconnectingRemoteWorkspaceLogTooltip } from "@/WorkspaceSidebar/ReconnectingRemoteWorkspaceLogTooltip.js";
 import { cn } from "@/components/lib/utils.js";
 import {
+  TID_PROJECT_AGENT_CREATE,
   TID_WORKSPACE_CLOSE,
   TID_WORKSPACE_FILE_TREE_BUTTON,
   TID_WORKSPACE_ITEM,
@@ -80,6 +82,12 @@ import {
 } from "@/settings/RemoteSyncActions.js";
 import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSkillInvalidation.js";
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
+import { applyPersonaChatBadges } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import {
+  selectPersonaChatBadgesForWorkspace,
+  usePersonaChatBadgeStore,
+} from "@/store/personaChatBadgeStore.js";
+import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { refreshWorkspacePluginCapabilitiesAfterRemoteSync } from "@/lib/remotePluginSyncRefresh.js";
 import { useMcpStore } from "@/store/mcpStore.js";
 import { TaskRowActionButton } from "@/workspace-grouped-tasks/task-row-action-button.js";
@@ -148,7 +156,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   reconnectingRemoteWorkspaceLogsByWorkspaceKey,
   onReconnectRemoteWorkspace,
   onOpenFileTree,
-  agentsSection,
+  canCreateProjectAgent = false,
+  onCreateProjectAgent,
   itemRef,
   itemStyle,
   sortableBindings,
@@ -183,8 +192,12 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     workspaceIdentity?: string;
     workspaceRemoteSessionId?: string;
   }) => void;
-  /** 该工作区的驻场智能体小节：插在任务列表之后、同一 CollapsibleContent 内（随工作区折叠）。 */
-  agentsSection?: ReactNode;
+  /** 该工作区是否可经 bound 连接创建驻场智能体（不可达的远程 tab 不给入口，防止把目录建到错误的机器上）。 */
+  canCreateProjectAgent?: boolean;
+  onCreateProjectAgent?: (target: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+  }) => void;
   itemRef?: (node: HTMLLIElement | null) => void;
   itemStyle?: CSSProperties;
   sortableBindings?: SortableBindings;
@@ -214,6 +227,18 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   const zcodeTaskService = services.zcodeTaskService;
   const taskItemsRef = useRef(taskItems);
   taskItemsRef.current = taskItems;
+  // 驻场智能体徽章登记（D2）：只订阅本工作区的登记，登记不变时 Map 引用稳定。
+  const personaChatBadges = usePersonaChatBadgeStore((state) =>
+    selectPersonaChatBadgesForWorkspace(
+      state,
+      buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
+    ),
+  );
+  // 带徽章行换新引用、其余行保持原引用，避免打穿 TaskListItem 的行级 memo。
+  const badgedTaskItems = useMemo(
+    () => applyPersonaChatBadges(taskItems, personaChatBadges),
+    [taskItems, personaChatBadges],
+  );
   const workspaceZCodeStateRef = useRef(workspaceZCodeState);
   workspaceZCodeStateRef.current = workspaceZCodeState;
   const findCurrentTaskItem = useCallback((taskId: string) => {
@@ -337,18 +362,6 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
     // 当成“打开 workspace”重新 addTab，表现为删不掉。菜单层统一截断 click，保留菜单选择与键盘语义。
     event.stopPropagation();
   }, []);
-
-  const handleCreateThreadClick = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (readOnlyReason) {
-        return;
-      }
-      onStartDraftInWorkspace(tab.workspacePath, tab.workspaceIdentity);
-    },
-    [onStartDraftInWorkspace, readOnlyReason, tab.workspaceIdentity, tab.workspacePath],
-  );
 
   const handleRemoveWorkspace = useCallback(async () => {
     const workspaceKey = tab.workspaceIdentity?.trim() || tab.workspacePath;
@@ -1092,24 +1105,64 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
                         </ControlHintTooltip>
                       )
                     ) : shouldMountWorkspaceRowActions ? (
-                      <ControlHintTooltip
-                        title={readOnlyReason ?? intl.formatMessage({ id: "taskList.newThread" })}
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="shrink-0 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
-                          onMouseDown={handleActionMouseDown}
-                          onClick={handleCreateThreadClick}
-                          disabled={Boolean(readOnlyReason)}
-                          aria-label={intl.formatMessage({
-                            id: "taskList.newThread",
-                          })}
+                      // D3 收口：工作区"+"从直开新会话改成两项菜单（新建任务 / 新建智能体）。
+                      <DropdownMenu>
+                        <ControlHintTooltip
+                          title={readOnlyReason ?? intl.formatMessage({ id: "taskList.newThread" })}
                         >
-                          <MessageCirclePlus className="h-3.5 w-3.5" />
-                        </Button>
-                      </ControlHintTooltip>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              className="shrink-0 text-foreground-subtle hover:bg-surface-hover hover:text-foreground data-[state=open]:text-foreground"
+                              onMouseDown={handleActionMouseDown}
+                              disabled={Boolean(readOnlyReason)}
+                              aria-label={intl.formatMessage({
+                                id: "taskList.newThread",
+                              })}
+                            >
+                              <MessageCirclePlus className="h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                        </ControlHintTooltip>
+                        <DropdownMenuContent align="end" onClick={handleActionMenuClick}>
+                          <DropdownMenuItem
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              onStartDraftInWorkspace(tab.workspacePath, tab.workspaceIdentity);
+                            }}
+                          >
+                            <MessageCirclePlus className="size-4" />
+                            {intl.formatMessage({ id: "taskList.newThread" })}
+                          </DropdownMenuItem>
+                          {canCreateProjectAgent && onCreateProjectAgent ? (
+                            <DropdownMenuItem
+                              data-testid={TID_PROJECT_AGENT_CREATE}
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }}
+                              onSelect={(event) => {
+                                event.preventDefault();
+                                onCreateProjectAgent({
+                                  workspacePath: tab.workspacePath,
+                                  ...(tab.workspaceIdentity
+                                    ? { workspaceIdentity: tab.workspaceIdentity }
+                                    : {}),
+                                });
+                              }}
+                            >
+                              <Bot className="size-4" />
+                              {intl.formatMessage({ id: "workspaceSidebar.createProjectAgent" })}
+                            </DropdownMenuItem>
+                          ) : null}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     ) : null}
                   </div>
                 </div>
@@ -1123,7 +1176,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
             workspacePath={tab.workspacePath}
             remoteSessionId={tab.remoteSessionId}
             workspaceIdentity={tab.workspaceIdentity}
-            tasks={taskItems}
+            tasks={badgedTaskItems}
             pinnedTasks={EMPTY_PINNED_TASKS}
             activeTaskId={isActiveWorkspace ? activeTaskId : null}
             onSelectTask={handleSelectTask}
@@ -1138,7 +1191,6 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
             onSetTaskUnread={handleSetTaskUnread}
             readOnlyReason={readOnlyReason}
           />
-          {agentsSection}
         </CollapsibleContent>
       </Collapsible>
       <RemoteSyncDialogs

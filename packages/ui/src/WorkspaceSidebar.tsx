@@ -138,9 +138,15 @@ import {
   useOpenProjectAgentChat,
   useWorkspaceProjectAgents,
   WorkspaceProjectAgentCreateDialog,
-  WorkspaceProjectAgentsGroup,
   type ProjectAgentTarget,
 } from "@/WorkspaceSidebar/ProjectAgents.js";
+import {
+  resolveWorkspaceProjectAgentReachability,
+  toProjectAgentPersona,
+  toProjectAgentPersonaFromDraft,
+  type ProjectAgentPersona,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { usePersonaChatBadgeStore } from "@/store/personaChatBadgeStore.js";
 import { cn } from "@/components/lib/utils.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import {
@@ -414,7 +420,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const [purposeSectionPreferences, setPurposeSectionPreferences] = useState(
     readSidebarPurposeSectionPreferences,
   );
-  // 驻场智能体跟随工作区：每个项目块内列出该工作区自己的智能体，创建入口在工作区层级。
+  // 驻场智能体：独立小节已收口（D3），档案选择与建档都并入工作区新建入口的对话框。
   // 取数仍绑侧栏活动工作区解析；bound 本地时一次服务可并行列出所有本地工作区。
   const projectAgentTabs = useMemo(
     () =>
@@ -434,57 +440,32 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   });
   const [projectAgentCreateTarget, setProjectAgentCreateTarget] =
     useState<ProjectAgentTarget | null>(null);
-  // 点开智能体：建 persona 会话后走侧栏任务行同一条导航（handleSelectTaskInChat）。
+  const registerPersonaChatBadge = usePersonaChatBadgeStore(
+    (state) => state.registerPersonaChatBadge,
+  );
+  // 点开/建档驻场智能体：建 persona 会话后走侧栏任务行同一条导航（handleSelectTaskInChat），
+  // 并登记行级徽章（D2）——此刻 UI 手里确有档案；持久化 producer 落地前徽章不跨重启，见 badge store 注释。
   const { openAgentChat: openProjectAgentChat } = useOpenProjectAgentChat({
     workspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
     onSessionCreated: useCallback(
-      (sessionId: string, target: ProjectAgentTarget) => {
+      (sessionId: string, target: ProjectAgentTarget, persona: ProjectAgentPersona) => {
+        registerPersonaChatBadge({
+          workspacePath: target.workspacePath,
+          workspaceIdentity: target.workspaceIdentity,
+          taskId: sessionId,
+          badge: { name: persona.name, ...(persona.color ? { color: persona.color } : {}) },
+        });
         // 驻场智能体建的会话都在目标工作区本地，targetRemoteSessionId 不传。
         onSelectTask(target.workspacePath, sessionId, target.workspaceIdentity);
       },
-      [onSelectTask],
+      [onSelectTask, registerPersonaChatBadge],
     ),
   });
-  const handleOpenProjectAgentChat = useCallback(
-    (agent: AgentSummary, target: ProjectAgentTarget) => {
-      void openProjectAgentChat(agent, target);
-    },
-    [openProjectAgentChat],
-  );
-  // 每个工作区的智能体小节按 key 收口，流式刷新时元素引用保持稳定，不打穿行级 memo。
-  const agentsSectionByWorkspaceKey = useMemo(() => {
-    const sections = new Map<string, ReactNode>();
-    for (const tab of projectWorkspaceTabs) {
-      // 创建与打开都走 bound 连接：只有与 bound 同通道的工作区可达（同为本地，或同一
-      // 远程会话）——不可达的远程 tab 不渲染小节，防止经本机服务把目录建到错误的机器上。
-      const reachable = workspaceRemoteSessionId
-        ? tab.workspacePath === workspacePath
-        : !tab.remoteSessionId;
-      if (!reachable) continue;
-      const workspaceKey = buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity);
-      const target: ProjectAgentTarget = {
-        workspacePath: tab.workspacePath,
-        ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
-      };
-      sections.set(
-        workspaceKey,
-        <WorkspaceProjectAgentsGroup
-          agents={projectAgents.agentsByWorkspaceKey.get(workspaceKey) ?? EMPTY_PROJECT_AGENTS}
-          onCreateClick={() => setProjectAgentCreateTarget(target)}
-          onOpenAgent={(agent) => handleOpenProjectAgentChat(agent, target)}
-        />,
-      );
-    }
-    return sections;
-  }, [
-    handleOpenProjectAgentChat,
-    projectAgents.agentsByWorkspaceKey,
-    projectWorkspaceTabs,
-    workspacePath,
-    workspaceRemoteSessionId,
-  ]);
+  const handleOpenProjectAgentCreate = useCallback((target: ProjectAgentTarget) => {
+    setProjectAgentCreateTarget(target);
+  }, []);
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological">
   >(() => {
@@ -1643,9 +1624,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                             }
                                             onReconnectRemoteWorkspace={onReconnectRemoteWorkspace}
                                             onOpenFileTree={handleOpenWorkspaceFileTree}
-                                            agentsSection={agentsSectionByWorkspaceKey.get(
-                                              workspaceKey,
+                                            canCreateProjectAgent={resolveWorkspaceProjectAgentReachability(
+                                              {
+                                                boundWorkspacePath: workspacePath,
+                                                boundWorkspaceRemoteSessionId:
+                                                  workspaceRemoteSessionId,
+                                                tabWorkspacePath: tab.workspacePath,
+                                                tabRemoteSessionId: tab.remoteSessionId,
+                                              },
                                             )}
+                                            onCreateProjectAgent={handleOpenProjectAgentCreate}
                                           />
                                         );
                                       })}
@@ -1741,12 +1729,38 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               }
             }}
             creating={projectAgents.creating}
+            loadingAgents={projectAgents.loadingAgents}
+            agents={
+              projectAgentCreateTarget
+                ? (projectAgents.agentsByWorkspaceKey.get(
+                    buildTaskWorkspaceKey(
+                      projectAgentCreateTarget.workspacePath,
+                      projectAgentCreateTarget.workspaceIdentity,
+                    ),
+                  ) ?? EMPTY_PROJECT_AGENTS)
+                : EMPTY_PROJECT_AGENTS
+            }
+            onOpenAgent={(agent) => {
+              const target = projectAgentCreateTarget;
+              if (!target) {
+                return;
+              }
+              // 选择既有档案 = 直接开聊；对话框立即收起，失败由 openAgentChat toast。
+              setProjectAgentCreateTarget(null);
+              void openProjectAgentChat(toProjectAgentPersona(agent), target);
+            }}
             onCreate={async (draft) => {
               const target = projectAgentCreateTarget;
               if (!target) {
                 return false;
               }
-              return projectAgents.createAgent(target, draft);
+              const created = await projectAgents.createAgent(target, draft);
+              if (!created) {
+                return false;
+              }
+              // 孤儿档案闭环（D3 收口的前提）：建档成功即自动开一段该智能体的会话。
+              void openProjectAgentChat(toProjectAgentPersonaFromDraft(draft), target);
+              return true;
             }}
           />
 

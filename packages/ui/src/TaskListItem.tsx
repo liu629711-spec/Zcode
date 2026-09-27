@@ -2,6 +2,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
+  Bot,
   Clock,
   CloudUpload,
   ListTree,
@@ -16,6 +17,8 @@ import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
+import { SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import type { PersonaChatBadgeCarrier } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { formatTaskTitleWithChanges, getTaskChangeSummary } from "@/lib/taskChangeSummary.js";
 import {
@@ -84,6 +87,11 @@ function getTaskAutomationIdentity(task: ZCodeTaskMeta): string | undefined {
   return task.cronAutomationId ?? (task as ZCodeTaskMeta & { automationId?: string }).automationId;
 }
 
+/** 驻场智能体会话的行级徽章标记（D2）：持久化 producer 落地前由打开会话的入口登记在 UI 内联标记里。 */
+function getPersonaChatBadge(task: ZCodeTaskMeta) {
+  return (task as ZCodeTaskMeta & PersonaChatBadgeCarrier).agentPersona;
+}
+
 function areTaskListItemTaskFieldsEqual(left: ZCodeTaskMeta, right: ZCodeTaskMeta) {
   if (left === right) {
     return true;
@@ -99,6 +107,8 @@ function areTaskListItemTaskFieldsEqual(left: ZCodeTaskMeta, right: ZCodeTaskMet
     left.updatedAt === right.updatedAt &&
     left.unreadAt === right.unreadAt &&
     getTaskAutomationIdentity(left) === getTaskAutomationIdentity(right) &&
+    // 徽章标记：store 登记对象引用稳定，按身份比较即可让带徽章行在登记后完成一次重渲染。
+    getPersonaChatBadge(left) === getPersonaChatBadge(right) &&
     left.status === right.status &&
     areJsonFieldsEqual(left.pendingInteraction, right.pendingInteraction) &&
     areJsonFieldsEqual(getTaskListRowActivity(left), getTaskListRowActivity(right)) &&
@@ -366,6 +376,7 @@ export const MemoTaskItem = memo(function TaskListItem({
   // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
   // 会话溯源，且让每一行多背一个全局 store 订阅。
   const isTaskOffPeak = isOffPeakTask(task);
+  const personaChatBadge = getPersonaChatBadge(task);
   const showTimelineIdleIndicator =
     variant === "timeline" && leadingIndicator === "none" && !isPinned;
   // 手机远控标记和置顶状态共用左侧 leading 槽。
@@ -660,6 +671,39 @@ export const MemoTaskItem = memo(function TaskListItem({
                       ·
                     </span>
                   ) : null}
+                  {personaChatBadge ? (
+                    // 驻场智能体徽章（D2）：不占左侧状态槽（未读/运行中/置顶 hover 会接管那里），
+                    // 与定时/闲时图标同列在时间元信息里；无色档案兜底只画图标，悬停有大白话说明。
+                    <ControlHintTooltip
+                      title={intl.formatMessage(
+                        { id: "taskList.personaChatBadge" },
+                        { name: personaChatBadge.name },
+                      )}
+                      side="top"
+                      align="end"
+                    >
+                      <span
+                        data-persona-chat-badge="true"
+                        role="img"
+                        aria-label={intl.formatMessage(
+                          { id: "taskList.personaChatBadge" },
+                          { name: personaChatBadge.name },
+                        )}
+                        className="flex shrink-0 items-center gap-1"
+                      >
+                        <Bot className="size-3.5 shrink-0" />
+                        {personaChatBadge.color ? (
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              "size-1.5 shrink-0 rounded-full",
+                              SUBAGENT_COLOR_CLASS[personaChatBadge.color],
+                            )}
+                          />
+                        ) : null}
+                      </span>
+                    </ControlHintTooltip>
+                  ) : null}
                   {isTaskCron ? (
                     // 定时任务 icon 不能占用左侧状态槽；未读、运行中、置顶 hover 都会接管那里。
                     // 放在时间前面，和 grouped task row 的元信息位置一致，状态变化时也不会丢。
@@ -752,6 +796,38 @@ export const MemoTaskItem = memo(function TaskListItem({
                   isArchiveConfirming || shouldSuppressWorkspaceTaskMetadata ? "hidden" : undefined,
                 )}
               >
+                {personaChatBadge ? (
+                  // 同 timeline 行：驻场智能体徽章归属时间元信息，不占左侧状态槽。
+                  <ControlHintTooltip
+                    title={intl.formatMessage(
+                      { id: "taskList.personaChatBadge" },
+                      { name: personaChatBadge.name },
+                    )}
+                    side="top"
+                    align="end"
+                  >
+                    <span
+                      data-persona-chat-badge="true"
+                      role="img"
+                      aria-label={intl.formatMessage(
+                        { id: "taskList.personaChatBadge" },
+                        { name: personaChatBadge.name },
+                      )}
+                      className="flex shrink-0 items-center gap-1"
+                    >
+                      <Bot className="size-3.5 shrink-0" />
+                      {personaChatBadge.color ? (
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "size-1.5 shrink-0 rounded-full",
+                            SUBAGENT_COLOR_CLASS[personaChatBadge.color],
+                          )}
+                        />
+                      ) : null}
+                    </span>
+                  </ControlHintTooltip>
+                ) : null}
                 {isTaskCron ? (
                   // 定时任务 icon 归属时间元信息，而不是左侧状态位；否则 unread/loading 会把 icon 顶掉。
                   <Clock
