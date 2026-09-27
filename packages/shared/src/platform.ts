@@ -267,6 +267,20 @@ export interface SaveFileResult {
   success: boolean;
 }
 
+/** 素材库 V2-2：把素材图纸静默写入 workspace 的 `.zcode/asset-library/<id>/`。 */
+export interface AssetLibraryWriteFilesRequest {
+  /** 目标 workspace 绝对路径；不存在时 main 侧拒绝。 */
+  workspacePath: string;
+  /** 只允许 `.zcode/asset-library/<kebab-id>`；main 侧白名单校验防路径逃逸。 */
+  relativeDir: string;
+  files: { name: string; content: string }[];
+}
+
+export interface AssetLibraryWriteFilesResult {
+  /** 相对 workspace 的路径（`./.zcode/asset-library/<id>/<name>` 形态），顺序与 files 一致。 */
+  writtenPaths: string[];
+}
+
 export interface PrintPageToPdfResult {
   success: boolean;
   /** PDF 字节；success 时存在 */
@@ -541,6 +555,12 @@ export interface IPlatformService {
 
   /** 使用宿主原生另存为对话框写入文件；普通 Web 端不实现 */
   saveFile?(payload: SaveFileRequest): Promise<SaveFileResult>;
+
+  /**
+   * 把素材库图纸文件静默写入 workspace `.zcode/asset-library/<id>/`（V2-2 递活引用化）；
+   * 失败或不支持时抛错/缺省，UI 退回全量文本。普通 Web 端不实现。
+   */
+  assetLibraryWriteFiles?(payload: AssetLibraryWriteFilesRequest): Promise<AssetLibraryWriteFilesResult>;
 
   /**
    * 用 Chromium 打印引擎把当前 webContents 的 print 媒体版面输出为 PDF（矢量文本）。

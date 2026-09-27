@@ -53,6 +53,7 @@ import {
 } from "./mcpUserDirectory/index.js";
 import { createTempTextAttachment } from "./tempTextAttachment.js";
 import { registerDesktopSaveFileIpcHandler } from "./desktopSaveFile.js";
+import { registerDesktopAssetLibraryWriteFilesIpcHandler } from "./desktopAssetLibraryWriteFiles.js";
 import { registerDesktopPrintToPdfIpcHandler } from "./desktopPrintToPdf.js";
 import { registerCuaPipActiveSessionIpc } from "./desktopCuaPipIpc.js";
 
@@ -132,6 +133,7 @@ export function registerPlatformIpcHandlers(options: {
   });
 
   registerDesktopSaveFileIpcHandler(options.logger);
+  registerDesktopAssetLibraryWriteFilesIpcHandler(options.logger);
   registerDesktopPrintToPdfIpcHandler(options.logger);
 
   ipcMain.handle(

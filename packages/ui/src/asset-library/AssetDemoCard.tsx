@@ -8,17 +8,21 @@
  * CodeBlockCopyButton；多文件用其自带 selector 切换）；prompt 类货（files 空）
  * 展开显示口令全文+「复制口令」。
  *
- * 递活逻辑原样从 AssetDetailDialog（已删）上移：
- * - 「发到新会话」走 onCreateTask({ initialPrompt: buildAssetTryPrompt(asset) })。
- * - 「发到当前会话」写 requestComposerTextInsert（workspace 级单槽，草稿与真会话的
- *   focused composer 都能消费）并 onOpenChat 切回会话视图；无活动会话（hasActiveChat）
- *   或只读（readOnly）时不渲染。
+ * 递活逻辑（技术设计 §10 V2-2 引用化）：
+ * - 普通货先经 platform 把图纸静默落盘到 `<workspace>/.zcode/asset-library/<id>/`，
+ *   消息 = 口令 + 逐文件引用链接（buildAssetReferenceMessage），智能体自己读文件；
+ *   落盘失败（异常/不支持）toast 提示并退回 buildAssetTryPrompt 全量文本（原行为）。
+ * - prompt 类货（files 空）不落盘，仍走 buildAssetTryPrompt（本就是口令语义）。
+ * - 「发到新会话」走 onCreateTask({ initialPrompt })；「发到当前会话」写
+ *   requestComposerTextInsert（workspace 级单槽）并 onOpenChat 切回会话视图；
+ *   无活动会话（hasActiveChat）或只读（readOnly）时不渲染。递活期间按钮 disabled+转圈防双击。
  */
 import { useEffect, useState } from "react";
 import {
   CheckIcon,
   CodeXmlIcon,
   CopyIcon,
+  LoaderIcon,
   MessageSquareTextIcon,
   SendIcon,
 } from "lucide-react";
@@ -34,10 +38,12 @@ import {
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
+import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import type { AssetFile, AssetManifest } from "./catalog/types.js";
 import { buildAssetTryPrompt } from "./assetTryPrompt.js";
+import { buildAssetReferenceMessage } from "./assetReferenceMessage.js";
 import { AssetPreviewFrame } from "./AssetPreviewFrame.js";
 import { useInView } from "./useInView.js";
 
@@ -84,10 +90,12 @@ export function AssetDemoCard({
   locale: string;
 } & AssetCardActions) {
   const { intl } = useZCodeIntl();
+  const platform = usePlatform();
   const { ref, inView } = useInView<HTMLDivElement>();
   const blueprintFiles = resolveBlueprintFiles(manifest);
   const isPromptAsset = manifest.files.length === 0;
   const [codeOpen, setCodeOpen] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [activeFileName, setActiveFileName] = useState(blueprintFiles[0]!.name);
   const [copied, setCopied] = useState(false);
   const activeFile = blueprintFiles.find((file) => file.name === activeFileName) ?? blueprintFiles[0]!;
@@ -100,17 +108,44 @@ export function AssetDemoCard({
     return () => window.clearTimeout(timer);
   }, [copied]);
 
-  // 递活消息三种动作共用同一组装（技术设计 §3）：只预填输入框，发送权在用户手里。
+  // 递活消息组装（技术设计 §10 V2-2）：普通货先落盘引用化，失败兜底全量文本；
+  // 两个按钮共用 deliver（预填输入框，发送权在用户手里）。isSending 防双击重发。
   const tryPrompt = buildAssetTryPrompt(manifest);
+  const sendToChat = async (deliver: (message: string) => void) => {
+    if (isSending) return;
+    setIsSending(true);
+    let message = tryPrompt;
+    if (!isPromptAsset) {
+      try {
+        if (!platform.assetLibraryWriteFiles) {
+          throw new Error("asset_library_write_not_supported");
+        }
+        const { writtenPaths } = await platform.assetLibraryWriteFiles({
+          workspacePath,
+          relativeDir: `.zcode/asset-library/${manifest.id}`,
+          files: manifest.files.map((file) => ({ name: file.name, content: file.content })),
+        });
+        message = buildAssetReferenceMessage(manifest, writtenPaths);
+      } catch {
+        toast(intl.formatMessage({ id: "assetLibrary.detail.writeFailedFallback" }));
+      }
+    }
+    deliver(message);
+    setIsSending(false);
+  };
   const handleSendToNewChat = () => {
-    onCreateTask?.({ initialPrompt: tryPrompt });
+    void sendToChat((message) => {
+      onCreateTask?.({ initialPrompt: message });
+    });
   };
   const handleSendToCurrentChat = () => {
-    useZCodeSessionStore
-      .getState()
-      .requestComposerTextInsert(workspacePath, tryPrompt, workspaceIdentity);
-    // 展厅是独立主视图：不切回会话，插入要等 composer 挂载才兑现，用户会以为点了没反应。
-    onOpenChat?.();
+    void sendToChat((message) => {
+      useZCodeSessionStore
+        .getState()
+        .requestComposerTextInsert(workspacePath, message, workspaceIdentity);
+      // 展厅是独立主视图：不切回会话，插入要等 composer 挂载才兑现，用户会以为点了没反应。
+      onOpenChat?.();
+    });
   };
 
   // 复制当前展开文件内容（prompt 货即口令全文）；成功 toast，失败 toast 指引手动复制。
@@ -225,9 +260,15 @@ export function AssetDemoCard({
                 size="sm"
                 data-testid="asset-library-send-new-chat"
                 aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToNewChatAria" })}
+                disabled={isSending}
+                aria-busy={isSending}
                 onClick={handleSendToNewChat}
               >
-                <SendIcon className="size-3" aria-hidden="true" data-icon="inline-start" />
+                {isSending ? (
+                  <LoaderIcon className="size-3 animate-spin" aria-hidden="true" data-icon="inline-start" />
+                ) : (
+                  <SendIcon className="size-3" aria-hidden="true" data-icon="inline-start" />
+                )}
                 {intl.formatMessage({ id: "assetLibrary.detail.sendToNewChat" })}
               </Button>
               {hasActiveChat ? (
@@ -237,9 +278,15 @@ export function AssetDemoCard({
                   size="sm"
                   data-testid="asset-library-send-current-chat"
                   aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChatAria" })}
+                  disabled={isSending}
+                  aria-busy={isSending}
                   onClick={handleSendToCurrentChat}
                 >
-                  <MessageSquareTextIcon className="size-3" aria-hidden="true" data-icon="inline-start" />
+                  {isSending ? (
+                    <LoaderIcon className="size-3 animate-spin" aria-hidden="true" data-icon="inline-start" />
+                  ) : (
+                    <MessageSquareTextIcon className="size-3" aria-hidden="true" data-icon="inline-start" />
+                  )}
                   {intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChat" })}
                 </Button>
               ) : null}

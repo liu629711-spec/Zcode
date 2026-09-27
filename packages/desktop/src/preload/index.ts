@@ -68,6 +68,8 @@ import type {
   SaveCliMcpToUserDirectoryRequest,
   SaveFileRequest,
   SaveFileResult,
+  AssetLibraryWriteFilesRequest,
+  AssetLibraryWriteFilesResult,
   PrintPageToPdfResult,
   SSHConfigAliasOption,
   RemoteConnectionRuntimeLog,
@@ -295,6 +297,9 @@ contextBridge.exposeInMainWorld("zcode", {
   /** 通过 main process 的原生另存为对话框明确落盘 */
   saveFile: (payload: SaveFileRequest): Promise<SaveFileResult> =>
     ipcRenderer.invoke(PlatformChannels.SaveFile, payload),
+  /** 素材库 V2-2：把图纸文件静默写入 workspace 的 `.zcode/asset-library/<id>/` */
+  assetLibraryWriteFiles: (payload: AssetLibraryWriteFilesRequest): Promise<AssetLibraryWriteFilesResult> =>
+    ipcRenderer.invoke(PlatformChannels.AssetLibraryWriteFiles, payload),
   /** 将当前页面的 print 媒体版面导出为 PDF（Chromium 打印引擎，矢量文本） */
   printPageToPdf: (): Promise<PrintPageToPdfResult> =>
     ipcRenderer.invoke(PlatformChannels.PrintToPdf),

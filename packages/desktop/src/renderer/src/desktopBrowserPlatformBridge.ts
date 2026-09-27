@@ -21,6 +21,7 @@ type DesktopBrowserPlatformBridge = Pick<
   | "clearEmbeddedBrowserData"
   | "getPathForFile"
   | "saveFile"
+  | "assetLibraryWriteFiles"
   | "printPageToPdf"
 >;
 
@@ -30,6 +31,10 @@ export const desktopBrowserPlatformBridge = {
   getPathForFile: (file) => window.zcode.getPathForFile?.(file) ?? null,
   saveFile: (payload) =>
     window.zcode.saveFile?.(payload) ?? Promise.resolve({ success: false, error: "not_supported" }),
+  // 旧 preload 缺 bridge 时拒绝：UI 捕获后退回全量文本，静默成功会发出引用空目录的消息。
+  assetLibraryWriteFiles: (payload) =>
+    window.zcode.assetLibraryWriteFiles?.(payload) ??
+    Promise.reject(new Error("asset_library_write_not_supported")),
   // 条件定义而非兜底返回失败：UI 靠方法是否存在做能力检测，旧 preload 下必须保持 undefined
   printPageToPdf: window.zcode.printPageToPdf ? () => window.zcode.printPageToPdf!() : undefined,
   onBrowserViewReady: (handler) => window.zcode.onBrowserViewReady?.(handler) ?? (() => {}),

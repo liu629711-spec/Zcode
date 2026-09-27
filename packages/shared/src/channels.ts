@@ -46,6 +46,8 @@ import type {
   CreateTempTextAttachmentResult,
   SaveFileRequest,
   SaveFileResult,
+  AssetLibraryWriteFilesRequest,
+  AssetLibraryWriteFilesResult,
   PrintPageToPdfResult,
   OpenInEditorOptions,
   PostUpdateReleaseNotesPayload,
@@ -169,6 +171,8 @@ export const PlatformChannels = {
   CreateTempTextAttachment: "zcode:create-temp-text-attachment",
   /** Renderer → Main：通过原生另存为对话框保存文件 */
   SaveFile: "zcode:save-file",
+  /** Renderer → Main：素材库 V2-2 把图纸文件静默写入 workspace `.zcode/asset-library/<id>/` */
+  AssetLibraryWriteFiles: "zcode:asset-library-write-files",
   /** Renderer → Main：用 Chromium 打印引擎把当前页面 print 媒体版面导出为 PDF */
   PrintToPdf: "zcode:print-to-pdf",
   /** Main → Renderer：转发远程连接过程日志 */
@@ -687,6 +691,10 @@ export interface PlatformChannelMap {
   [PlatformChannels.SaveFile]: {
     request: SaveFileRequest;
     response: SaveFileResult;
+  };
+  [PlatformChannels.AssetLibraryWriteFiles]: {
+    request: AssetLibraryWriteFilesRequest;
+    response: AssetLibraryWriteFilesResult;
   };
   [PlatformChannels.PrintToPdf]: {
     request: void;

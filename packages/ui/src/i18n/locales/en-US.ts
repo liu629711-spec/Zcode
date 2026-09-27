@@ -6925,6 +6925,8 @@ const enUS: Record<string, string> = {
   "assetLibrary.detail.sendToCurrentChat": "Send to current chat",
   "assetLibrary.detail.sendToCurrentChatAria":
     "Insert the asset request message into the current chat composer; nothing is sent automatically",
+  "assetLibrary.detail.writeFailedFallback":
+    "Failed to write the blueprint files; fell back to attaching the full code.",
 };
 
 export default enUS;

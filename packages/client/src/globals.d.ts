@@ -95,6 +95,10 @@ declare global {
       saveFile?(
         payload: import("@zcode/shared").SaveFileRequest,
       ): Promise<import("@zcode/shared").SaveFileResult>;
+      /** 素材库 V2-2：把图纸文件静默写入 workspace 的 `.zcode/asset-library/<id>/` */
+      assetLibraryWriteFiles?(
+        payload: import("@zcode/shared").AssetLibraryWriteFilesRequest,
+      ): Promise<import("@zcode/shared").AssetLibraryWriteFilesResult>;
       /** 将当前页面的 print 媒体版面导出为 PDF（Chromium 打印引擎，矢量文本） */
       printPageToPdf?(): Promise<import("@zcode/shared").PrintPageToPdfResult>;
       /** 从系统拖拽/文件输入得到的 Web File 解析真实本地路径 */
