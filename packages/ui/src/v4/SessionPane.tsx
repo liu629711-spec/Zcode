@@ -4385,7 +4385,7 @@ export function SessionPane({
       listenAddToChatEvents={focused}
       // 单槽是 workspace 级的：草稿与真会话都由 focused 的 composer 消费（草稿走草稿
       // 持久化、真会话走该会话作用域），消费后即清；readOnly 时 composerNode 为 null，
-      // 故调用方须自行保证不往只读会话递活（见 AssetDetailDialog 的 readOnly prop）。
+      // 故调用方须自行保证不往只读会话递活（见 AssetDemoCard 的 readOnly prop）。
       externalTextInsertRequest={focused ? composerTextInsertRequest : null}
       onExternalTextInsertApplied={handleExternalTextInsertApplied}
       autoFocusEnabled={focused}
