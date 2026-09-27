@@ -80,8 +80,8 @@ test("assertSandboxSafe：恒等 allow-scripts 通过，混入其它 token 一�
   }
 });
 
-test("6 件种子货：五类都有货且 id 唯一", () => {
-  assert.equal(ASSET_CATALOG.length, 6);
+test("8 件种子货：五类都有货且 id 唯一", () => {
+  assert.equal(ASSET_CATALOG.length, 8);
   const byCategory = new Map<AssetCategory, number>();
   for (const manifest of ASSET_CATALOG) {
     byCategory.set(manifest.category, (byCategory.get(manifest.category) ?? 0) + 1);
