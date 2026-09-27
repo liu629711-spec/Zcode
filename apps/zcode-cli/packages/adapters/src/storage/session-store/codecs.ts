@@ -23,6 +23,7 @@ import {
   type SessionTaskType,
 } from "@zcode/contracts";
 import { decodeJson } from "./json.js";
+import { decodeSessionPersonaJson } from "./persona-json.js";
 import type { MessageRow, PartRow, SessionEntryRow, SessionRow, TodoRow } from "./rows.js";
 
 export function isCollaborationMode(value: unknown): value is CollaborationMode {
@@ -69,6 +70,7 @@ export function decodeSessionRow(row: SessionRow): SessionInfo {
     summaryDiffs: decodeJson<FileDiff[]>(row.summary_diffs),
     revert: decodeJson<SessionRevert>(row.revert),
     permission: decodeJson<PermissionRuleset>(row.permission),
+    persona: decodeSessionPersonaJson(row.persona_json),
     time: {
       created: row.time_created,
       updated: row.time_updated,

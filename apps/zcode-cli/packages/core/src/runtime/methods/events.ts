@@ -20,7 +20,10 @@ import type {
   UserInputAutoResolutionUpdatedPayload,
 } from "../deps.js";
 import { titleFromInput, slugify, projectIdFromDirectory } from "../helpers/index.js";
-import { buildProjectAgentSessionTitle } from "../../subagent/persona-session.js";
+import {
+  buildProjectAgentPersonaSnapshot,
+  buildProjectAgentSessionTitle,
+} from "../../subagent/persona-session.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { buildPersistedConversationInputIntent } from "./input-intent-persistence.js";
 import { recordToolUsageFromEvent } from "./usage-observability.js";
@@ -588,6 +591,13 @@ export async function ensureSessionPersisted(
         )
       : titleFromInput(input);
     const workspaceIdentity = this.config.memory?.workspaceIdentity?.trim();
+    // G1 冷重启保身份：persona 快照与 title/taskType 同点落盘，冷恢复时由
+    // bootstrap 从这条记录回灌身份；普通会话（无 persona）此处为 undefined，
+    // 行值 NULL，存储字节面不变。模型不属于快照——resume 只回身份，不回灌模型。
+    const persona = buildProjectAgentPersonaSnapshot(
+      this.config.projectAgentPersona,
+      this.config.systemPrompt,
+    );
     await this.sessionStore.createSession({
       id: this.sessionId,
       projectID: projectIdFromDirectory(directory),
@@ -606,6 +616,7 @@ export async function ensureSessionPersisted(
       permission: {
         mode: this.config.mode ?? "build",
       },
+      ...(persona ? { persona } : {}),
     });
     // 初始模型过去只写进首条 user message，没有写稳定的 session selection。
     // 冷恢复从末尾 assistant 反推时只能得到 provider/model，必选 reasoning 会丢失，

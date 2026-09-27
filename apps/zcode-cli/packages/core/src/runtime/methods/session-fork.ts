@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolveExecutionState, type ExecutionState } from "@zcode/shared";
 import { buildExecutionStateEntry, readRuntimeExecutionState } from "../execution-state.js";
+import { buildProjectAgentPersonaSnapshot } from "../../subagent/persona-session.js";
 import {
   createModelId,
   createModelProviderId,
@@ -151,6 +152,13 @@ function buildForkedSessionInput(
   kind: "fork" | "selection_side_chat" = "fork",
 ): CreateSessionInput {
   const now = Date.now();
+  // G11 fork 保身份：子会话 store 行继承父 persona 快照。父 runtime 是 persona 会话时
+  // （fork 与 selection_side_chat 两个入口共用本函数），子行带上快照，宿主 registerForkedSession
+  // 据此把身份灌进子 runtime；否则 fork 出来的子会话又变「两副面孔」。普通会话为 undefined。
+  const persona = buildProjectAgentPersonaSnapshot(
+    runtime.config.projectAgentPersona,
+    runtime.config.systemPrompt,
+  );
   return {
     id: forkedSessionId,
     projectID: parentSession.projectID,
@@ -166,6 +174,7 @@ function buildForkedSessionInput(
     titleSource: "generated",
     version: parentSession.version,
     permission: parentSession.permission,
+    ...(persona ? { persona } : {}),
     time: {
       created: now,
       updated: now,

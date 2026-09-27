@@ -30,6 +30,9 @@ import type { SessionGoal, GoalStatus } from "../tools/target.js";
 import type { PermissionRuleset } from "./permission.port.js";
 import type { CollaborationMode } from "./session.port.js";
 import type { EnvInfo } from "./context-source.port.js";
+// persona 快照形状与 shared 的 zcodeSessionPersonaSchema 单一来源锁定；
+// 只允许追加可选字段，不得改必填形状（旧行要能继续解析）。
+import type { ZCodeSessionPersona } from "@zcode/shared";
 
 export const SESSION_TASK_TYPES = [
   "interactive",
@@ -162,6 +165,12 @@ export interface SessionInfo {
   summaryDiffs?: FileDiff[];
   revert?: SessionRevert;
   permission?: PermissionRuleset;
+  /**
+   * 驻场智能体会话的 persona 快照（创建时随会话落盘）。普通会话缺席；
+   * 冷恢复/fork 由服务端从本快照回灌身份（systemPrompt/记忆 scope），模型不回灌。
+   * 这是「这个会话属于哪个智能体」的结构化标记，供徽章等下游查询。
+   */
+  persona?: ZCodeSessionPersona;
   time: {
     created: number;
     updated: number;
@@ -187,6 +196,8 @@ export interface CreateSessionInput {
   version: string;
   shareURL?: string;
   permission?: PermissionRuleset;
+  /** persona 快照写点：与 title/taskType 同点落盘；缺席即普通会话，行值 NULL。 */
+  persona?: ZCodeSessionPersona;
   time?: {
     created?: number;
     updated?: number;

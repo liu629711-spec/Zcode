@@ -137,6 +137,10 @@ type ZCodeSessionRecordParams = (
       // 自动化会话会在创建期关闭标题二次生成，而 create/resume
       // 共用 record 初始化函数；resume 兼容分支也必须声明该策略字段。
       titleGenerationEnabled?: ZCodeSessionCreateParams["titleGenerationEnabled"];
+      // persona 回灌是服务端内部通道：只从落盘快照读（activateSessionForResume /
+      // registerForkedSession），不进 zcodeSessionResumeParamsSchema——调用方传陈旧
+      // persona 的通道不开放。模型同样只由 entry 恢复，不随快照回灌。
+      persona?: ZCodeSessionCreateParams["persona"];
     })
 ) & { taskType?: SessionTaskType };
 
@@ -1475,6 +1479,10 @@ export async function activateSessionForResume(
       // desktop 任务列表长出「workflow actor actor#N@k」假任务，任务索引同步器还会
       // 反复对它们发 session/resume。fork 路径一直带着 taskType，这里必须同样带。
       taskType: session.taskType,
+      // G1 冷重启保身份：persona 只从落盘快照回灌（服务端读 store，不扩 resume
+      // 协议参数——避免调用方传陈旧 persona 的新通道）。修复批之前建的 persona
+      // 会话行上没有快照，按普通会话恢复，UI/文档明示「重启后失忆」。
+      ...(session.persona ? { persona: session.persona } : {}),
       workspace,
     },
     params.sessionId as SessionId,
@@ -2284,6 +2292,10 @@ export async function registerForkedSession(
       model: optionalModelSelectionFromString(parentModel),
       ...(fork.parentSessionId ? { parentSessionId: fork.parentSessionId } : {}),
       taskType: forkedSession.taskType,
+      // G11 fork 保身份（宿主半边）：core 已把父 persona 快照写进子会话 store 行，
+      // 这里照 taskType 同款读快照回灌，子 runtime 才有 systemPrompt/记忆注入；
+      // 只修 core 一层会让 fork 子会话恢复后变「两副面孔」。
+      ...(forkedSession.persona ? { persona: forkedSession.persona } : {}),
       workspace: record.workspace,
     },
     fork.forkedSessionId as SessionId,

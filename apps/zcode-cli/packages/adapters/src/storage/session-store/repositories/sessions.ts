@@ -15,6 +15,7 @@ import {
 } from "@zcode/contracts";
 import { decodeSessionRow } from "../codecs.js";
 import { encodeJson } from "../json.js";
+import { encodeSessionPersonaJson } from "../persona-json.js";
 import type { SessionRow } from "../rows.js";
 
 export function createSession(
@@ -33,8 +34,8 @@ export function createSession(
         title, title_source, title_message_id, version,
         share_url, summary_additions, summary_deletions, summary_files, summary_diffs,
         revert, permission, time_created, time_updated, time_title_updated,
-        time_compacting, time_archived
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, null, ?, ?, ?, ?, null, null)
+        time_compacting, time_archived, persona_json
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, null, ?, ?, ?, ?, null, null, ?)
       on conflict(id) do update set
         project_id = excluded.project_id,
         workspace_id = excluded.workspace_id,
@@ -50,6 +51,8 @@ export function createSession(
         version = excluded.version,
         share_url = excluded.share_url,
         permission = coalesce(excluded.permission, session.permission),
+        -- persona 是创建期一次性快照：首写为准，重放/并发重建不得清掉或漂移。
+        persona_json = coalesce(session.persona_json, excluded.persona_json),
         time_title_updated = excluded.time_title_updated,
         time_updated = excluded.time_updated
       `,
@@ -73,6 +76,7 @@ export function createSession(
       timeCreated,
       timeUpdated,
       input.titleSource || input.titleMessageID ? timeUpdated : null,
+      encodeSessionPersonaJson(input.persona),
     );
 
   return mustGetSession(db, input.id);

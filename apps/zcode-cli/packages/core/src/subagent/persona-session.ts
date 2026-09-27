@@ -1,6 +1,8 @@
 // 驻场智能体主会话（persona session）的纯拼装规则。
 // 注入通道是 runtime 既有 config.systemPrompt（builder customSystemPrompt）；
-// 这里只收口「多段拼接」与「标题记账」两个纯规则，I/O 见 persistent-memory.ts。
+// 这里只收口「多段拼接」「标题记账」「persona 快照」三个纯规则，I/O 见 persistent-memory.ts。
+
+import type { AgentMemoryScope, ZCodeSessionPersona } from "@zcode/shared";
 
 /**
  * persona system prompt 拼装：跳过空段，`\n\n` 连接——与子代理派生
@@ -19,3 +21,22 @@ export function joinPersonaSystemPrompt(
 export function buildProjectAgentSessionTitle(personaName: string, baseTitle: string): string {
   return `${personaName} · ${baseTitle}`;
 }
+
+/**
+ * persona 落盘快照（G1 冷重启保身份）：runtime config → 会话记录的结构化标记。
+ * name/systemPrompt 任一缺席即返回 undefined——宁可整份不落盘（恢复后按普通会话
+ * 处理），也不落半截快照让回灌端拼出残缺身份。memoryScope 缺席时快照不带该键，
+ * 恢复端同样不注入记忆。
+ */
+export function buildProjectAgentPersonaSnapshot(
+  persona: { name: string; memory?: AgentMemoryScope } | undefined,
+  systemPrompt: string | undefined,
+): ZCodeSessionPersona | undefined {
+  if (!persona?.name || !systemPrompt) return undefined;
+  return {
+    name: persona.name,
+    systemPrompt,
+    ...(persona.memory ? { memoryScope: persona.memory } : {}),
+  };
+}
+
