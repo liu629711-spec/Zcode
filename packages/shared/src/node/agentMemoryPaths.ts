@@ -38,3 +38,63 @@ export function resolveAgentMemoryRoot(input: {
     ? join(workspace, ".zcode", "agent-memory", agentKey)
     : join(workspace, ".zcode", "agent-memory-local", agentKey);
 }
+
+export interface AgentMemoryDirectoryRenamePlan {
+  fromDir: string;
+  toDir: string;
+}
+
+/**
+ * 档案改名迁移（G6）：改名后记事本目录跟着走，返回从旧目录到新目录的搬家对。
+ * 触发条件是 sanitize 后的记忆 key 变化，不是档案文件路径变化——档案文件名存盘时
+ * 小写化（`<name>.md`）而记忆 key 保大小写，『Alpha』改『alpha』文件路径不变、
+ * key 变了，照文件路径触发会漏掉纯大小写改名。
+ * 只做同 scope 同根的目录搬家；scope 变化（跨根迁移）是另一档语义，返回 undefined 不动。
+ * 落点无法定位（user 档缺 userMemoryRoot、workspace/local 档缺 workspacePath）时同样
+ * 返回 undefined——调用侧没有明确落点就不动目录。
+ */
+export function planAgentMemoryDirectoryRename(input: {
+  previousAgentName: string;
+  nextAgentName: string;
+  memoryScope: AgentMemoryPathScope;
+  userMemoryRoot?: string;
+  workspacePath?: string;
+}): AgentMemoryDirectoryRenamePlan | undefined {
+  const previousKey = sanitizeAgentMemoryKey(input.previousAgentName);
+  const nextKey = sanitizeAgentMemoryKey(input.nextAgentName);
+  if (previousKey === nextKey) return undefined;
+  if (input.memoryScope === "user") {
+    const userMemoryRoot = input.userMemoryRoot?.trim();
+    if (!userMemoryRoot) return undefined;
+    return {
+      fromDir: resolveAgentMemoryRoot({
+        agentName: previousKey,
+        scope: "user",
+        storageRoot: userMemoryRoot,
+        workspaceRoot: "",
+      }),
+      toDir: resolveAgentMemoryRoot({
+        agentName: nextKey,
+        scope: "user",
+        storageRoot: userMemoryRoot,
+        workspaceRoot: "",
+      }),
+    };
+  }
+  const workspacePath = input.workspacePath?.trim();
+  if (!workspacePath) return undefined;
+  return {
+    fromDir: resolveAgentMemoryRoot({
+      agentName: previousKey,
+      scope: input.memoryScope,
+      storageRoot: "",
+      workspaceRoot: workspacePath,
+    }),
+    toDir: resolveAgentMemoryRoot({
+      agentName: nextKey,
+      scope: input.memoryScope,
+      storageRoot: "",
+      workspaceRoot: workspacePath,
+    }),
+  };
+}

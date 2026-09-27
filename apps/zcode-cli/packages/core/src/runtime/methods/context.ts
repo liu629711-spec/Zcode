@@ -68,17 +68,21 @@ export async function ensureContextInitialized(
   this.memoryRoot = await this.loadProjectMemoryRoot(traceContext);
   this.memoryIndexContent = await loadProjectMemoryIndexContent(this, this.memoryRoot);
   // 驻场智能体主会话记忆注入（新接的点）：persona 会话按子代理派生（methods/subagent.ts
-  // loadPersistentAgentMemory）同一读法，在 context 初始化时读一次项目记忆；
+  // loadPersistentAgentMemory）同一读法，在 context 初始化时读一次记忆；
+  // scope 按 persona 携带的 memoryScope、门控按记忆总开关走（G7 口径统一），
   // 存到 runtime 实例上，后续 context 刷新重建 builder 时复用同一份。
-  this.personaMemoryPrompt = this.config.projectAgentPersona?.memory
-    ? await loadProjectAgentMemoryPrompt({
-        fileSystemPort: this.fileSystemPort,
-        agentName: this.config.projectAgentPersona.name,
-        logger: this.logger,
-        traceContext,
-        workspaceRoot: this.workspaceRoot,
-      })
-    : undefined;
+  this.personaMemoryPrompt =
+    this.config.projectAgentPersona?.memory !== undefined
+      ? await loadProjectAgentMemoryPrompt({
+          fileSystemPort: this.fileSystemPort,
+          agentName: this.config.projectAgentPersona.name,
+          memory: this.config.memory,
+          memoryScope: this.config.projectAgentPersona.memory,
+          logger: this.logger,
+          traceContext,
+          workspaceRoot: this.workspaceRoot,
+        })
+      : undefined;
   this.contextBuilder = this.createContextBuilderFromSnapshot(snapshot, this.memoryRoot, {
     memoryIndexContent: this.memoryIndexContent,
     model,

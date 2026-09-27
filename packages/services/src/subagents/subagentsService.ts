@@ -1,5 +1,5 @@
 /* eslint-disable max-lines */
-import { access, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   createAgentStateId,
@@ -39,9 +39,12 @@ import { atomicWriteText } from "#src/fs/atomicFileUtils.js";
 import {
   migrateUserSubagentMarkdown,
   migrateSubagentStateFile,
+  planAgentMemoryDirectoryRename,
   scanOfficialPluginCacheRoots,
+  type AgentMemoryDirectoryRenamePlan,
 } from "@zcode/shared/node";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
+import { getZCodeDataRootDir } from "#src/paths.js";
 
 const subagentLogger = createServiceLogger("subagents");
 
@@ -741,6 +744,13 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       const content = serializeSubagentMarkdown(normalizeConfig(params.config));
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
       // 更新时同样先 parse 再覆盖旧文件，避免失败保存破坏已有用户 agent。
+      // G6 改名迁移：记事本目录在档案覆盖前先搬家——旧 key 取自旧档案 frontmatter
+      // 的 name（文件名小写化恢复不出原始大小写）；rename 是同卷原子操作，失败即
+      // 整单中止，此时档案还没写、记事本原地不动，两边数据都完好。
+      const memoryRenamePlan = await resolveAgentMemoryRenamePlan(params, scope);
+      if (memoryRenamePlan) {
+        await applyAgentMemoryDirectoryRename(memoryRenamePlan);
+      }
       await writeFile(filePath, content, "utf-8");
       // enabled 状态按 agent id 存储；重命名会生成新 id，必须迁移旧禁用记录，
       // 否则用户禁用的 agent 改名后会被 runtime 当成新启用 profile 重新加载。
@@ -810,6 +820,61 @@ async function migrateDisabledAgentId(
     },
     options,
   );
+}
+
+/**
+ * G6 改名迁移计划：从被覆盖前的旧档案读出旧名与旧记忆 scope，交给
+ * planAgentMemoryDirectoryRename（与 core 注入/记忆面板同源的纯推导）算出记事本
+ * 目录搬家对。旧档案读不出来（不存在/坏 frontmatter）就放弃迁移——宁可不动也不猜。
+ */
+async function resolveAgentMemoryRenamePlan(
+  params: AgentUpdateParams,
+  scope: "user" | "workspace",
+): Promise<AgentMemoryDirectoryRenamePlan | undefined> {
+  const previousFilePath = params.oldFilePath;
+  if (!previousFilePath) return undefined;
+  let previousContent: string;
+  try {
+    previousContent = await readFile(previousFilePath, "utf-8");
+  } catch {
+    // 旧档案不存在（新建流程误走 update）或不可读：没有旧 key 可迁。
+    return undefined;
+  }
+  const previous = parseSubagentMarkdown({ content: previousContent, path: previousFilePath, scope });
+  if (!previous.agent?.name) return undefined;
+  const memoryScope = previous.agent.memory ?? "project";
+  return planAgentMemoryDirectoryRename({
+    previousAgentName: previous.agent.name,
+    nextAgentName: params.config.name.trim(),
+    memoryScope,
+    workspacePath: params.workspacePath,
+    // user 记事本根与记忆面板同源（services 数据目录）；CLI 显式改过 storage.dir
+    // 时会漂移——同 memoryService.resolveAgentMemoryDirectory 的既有注记。
+    userMemoryRoot: getZCodeDataRootDir(),
+  });
+}
+
+/**
+ * G6 目录搬家：源目录不存在（智能体还没记过东西）无事可做；目标已存在时不覆盖
+ * 不合并（保住两边数据，旧目录原地留在 <旧key>/ 下）；大小写不敏感文件系统上
+ * 纯大小写改名的目标路径命中的就是源目录本身，不能当「目标已存在」跳过。
+ * rename 失败向上抛，updateAgent 整单中止。
+ */
+async function applyAgentMemoryDirectoryRename(plan: AgentMemoryDirectoryRenamePlan): Promise<void> {
+  try {
+    await access(plan.fromDir);
+  } catch {
+    return;
+  }
+  const caseOnlyRename = plan.fromDir.toLowerCase() === plan.toDir.toLowerCase();
+  if (!caseOnlyRename && (await exists(plan.toDir))) {
+    subagentLogger.warn(
+      undefined,
+      `agent memory directory rename skipped, target already exists: ${plan.toDir}`,
+    );
+    return;
+  }
+  await rename(plan.fromDir, plan.toDir);
 }
 
 function normalizeConfig(config: SubAgentConfig): SubAgentConfig {

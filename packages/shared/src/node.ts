@@ -5,8 +5,10 @@
  */
 export { acquireFileLock } from "./node/atomicFileLock.js";
 export {
+  planAgentMemoryDirectoryRename,
   resolveAgentMemoryRoot,
   sanitizeAgentMemoryKey,
+  type AgentMemoryDirectoryRenamePlan,
   type AgentMemoryPathScope,
 } from "./node/agentMemoryPaths.js";
 export { scanOfficialPluginCacheRoots } from "./node/officialPluginCache.js";

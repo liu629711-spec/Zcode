@@ -1,5 +1,5 @@
 // ============================================================
-// persistent-memory 工具面投影的可运行检查（tsx --test，persistent-memory.ts
+// persistent-memory 的可运行检查（tsx --test，persistent-memory.ts
 // 内部 import 用 .js 描述符，Node 原生剥离类型不重写，须经 tsx 加载）
 // ============================================================
 // projectPersistentAgentMemoryTools 的两侧投影：
@@ -7,13 +7,20 @@
 // - 驻场主会话（G2/D8）：persona 会话把档案 tools 白名单落到会话级 toolAllowlist 时，
 //   记忆写入端 Write/Edit 必须随身份在场，且只受同一记忆总开关门控。
 // 普通（无 persona）会话两侧都不动——行为字节级不变。
+// loadProjectAgentMemoryPrompt（G7 口径统一）：scope 按 persona 携带值读（不写死
+// project，user 走 storageRoot 分支），门控镜像同一记忆总开关。
 //
 // 运行：./node_modules/.bin/tsx --test apps/zcode-cli/packages/core/src/subagent/persistent-memory.test.ts
 
 import assert from "node:assert/strict";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
+import type { FileSystemPort } from "@zcode/contracts";
 import type { AgentRuntimeConfig } from "../runtime/types.js";
-import { projectPersistentAgentMemoryTools } from "./persistent-memory.ts";
+import {
+  loadProjectAgentMemoryPrompt,
+  projectPersistentAgentMemoryTools,
+} from "./persistent-memory.ts";
 
 const MEMORY_ON = { enabled: true, use: true, storageRoot: "<dataRoot>/memory" } as const;
 
@@ -100,4 +107,105 @@ test("子代理派遣投影保持既有语义，且与主会话补齐互不干�
   assert.deepEqual(projected.subagents?.profiles?.[0]?.tools, ["Read", "Write", "Edit"]);
   // 无 memory 的 profile 不追加（withPersistentAgentMemoryTools 既有语义）。
   assert.equal(projected.subagents?.profiles?.[1]?.tools, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// loadProjectAgentMemoryPrompt（G7）：注入按 persona 携带的 scope 读、门控镜像
+// 记忆总开关。假 FileSystemPort 记录每次读盘/建目录，落点期望值用 shared 的
+// resolveAgentMemoryRoot 同源推导——注入与面板/子代理派生漂移即测试失败。
+// ---------------------------------------------------------------------------
+
+const WORKSPACE_ROOT = resolve("/tmp/zcode-ws");
+
+function createMemoryFileSystem(files: ReadonlyMap<string, string>): {
+  port: FileSystemPort;
+  readPaths: string[];
+  createdDirectories: string[];
+} {
+  const readPaths: string[] = [];
+  const createdDirectories: string[] = [];
+  const port = {
+    async createDirectory({ path }: { path: string }): Promise<void> {
+      createdDirectories.push(path);
+    },
+    async readTextFile({ path }: { path: string }): Promise<{ content: string }> {
+      readPaths.push(path);
+      const content = files.get(path);
+      if (content === undefined) throw new Error(`ENOENT: ${path}`);
+      return { content };
+    },
+  } as unknown as FileSystemPort;
+  return { port, readPaths, createdDirectories };
+}
+
+function loadPrompt(input: {
+  port: FileSystemPort;
+  memory?: { enabled?: boolean; use?: boolean; storageRoot?: string };
+  memoryScope: "user" | "project" | "local";
+  agentName?: string;
+}): Promise<string | undefined> {
+  return loadProjectAgentMemoryPrompt({
+    fileSystemPort: input.port,
+    agentName: input.agentName ?? "code-reviewer",
+    memory: input.memory,
+    memoryScope: input.memoryScope,
+    workspaceRoot: WORKSPACE_ROOT,
+  });
+}
+
+test("驻场记忆注入：总开关关闭（enabled=false/use=false/无配置）不注入也不建目录", async () => {
+  for (const memory of [
+    undefined,
+    { enabled: false, use: true, storageRoot: "<root>" },
+    { enabled: true, use: false, storageRoot: "<root>" },
+    { enabled: true, use: true, storageRoot: "" },
+  ]) {
+    const { port, readPaths, createdDirectories } = createMemoryFileSystem(new Map());
+    const prompt = await loadPrompt({ port, memory, memoryScope: "project" });
+    assert.equal(prompt, undefined, JSON.stringify(memory));
+    assert.deepEqual(readPaths, [], JSON.stringify(memory));
+    assert.deepEqual(createdDirectories, [], JSON.stringify(memory));
+  }
+});
+
+test("驻场记忆注入：project scope 读 <ws>/.zcode/agent-memory/<key>/MEMORY.md", async () => {
+  const indexDir = join(WORKSPACE_ROOT, ".zcode", "agent-memory", "code-reviewer");
+  const files = new Map([[join(indexDir, "MEMORY.md"), "- [old work](old.md) — context"]]);
+  const { port, readPaths, createdDirectories } = createMemoryFileSystem(files);
+  const prompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: "project" });
+  assert.ok(prompt);
+  assert.deepEqual(readPaths, [join(indexDir, "MEMORY.md")]);
+  assert.deepEqual(createdDirectories, [indexDir]);
+  assert.ok(prompt.includes(join(indexDir, "\\")), "prompt 应带上记忆根目录");
+  assert.ok(prompt.includes("project-scope"), "prompt 应按 project scope 给指引");
+  assert.ok(prompt.includes("- [old work](old.md) — context"));
+});
+
+test("驻场记忆注入：user scope 走 storageRoot 分支，不再被写死到工作区", async () => {
+  const indexDir = join(MEMORY_ON.storageRoot, "agent-memory", "code-reviewer");
+  const files = new Map([[join(indexDir, "MEMORY.md"), "- [taste](taste.md) — likes"]]);
+  const { port, readPaths } = createMemoryFileSystem(files);
+  const prompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: "user" });
+  assert.ok(prompt);
+  assert.deepEqual(readPaths, [join(indexDir, "MEMORY.md")]);
+  assert.ok(prompt.includes("user-scope"), "prompt 应按 user scope 给指引");
+});
+
+test("驻场记忆注入：local scope 读 <ws>/.zcode/agent-memory-local/<key>/", async () => {
+  const indexDir = join(WORKSPACE_ROOT, ".zcode", "agent-memory-local", "code-reviewer");
+  const { port, readPaths } = createMemoryFileSystem(
+    new Map([[join(indexDir, "MEMORY.md"), "- [machine](m.md) — local only"]]),
+  );
+  const prompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: "local" });
+  assert.ok(prompt);
+  assert.deepEqual(readPaths, [join(indexDir, "MEMORY.md")]);
+  assert.ok(prompt.includes("local-scope"));
+});
+
+test("驻场记忆注入：MEMORY.md 缺失不炸，返回空索引基线 prompt", async () => {
+  const { port, readPaths } = createMemoryFileSystem(new Map());
+  const prompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: "project" });
+  assert.ok(prompt);
+  assert.equal(readPaths.length, 1);
+  assert.ok(prompt.includes("Your MEMORY.md is currently empty"));
 });
