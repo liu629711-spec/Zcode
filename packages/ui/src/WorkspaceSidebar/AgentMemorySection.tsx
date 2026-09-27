@@ -66,6 +66,9 @@ export function AgentMemorySection({
   // 编辑器一次只开一条：内容按 fileName 惰性读取，写回即落盘（磁盘是唯一事实）。
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
+  // 装载态：内容回填前整条编辑器只读——远程工作区读取可达数秒，空框期间点保存
+  // 会把整条记忆以空内容原子覆盖（旧内容无备份，静默丢数据）。
+  const [editingLoading, setEditingLoading] = useState(false);
   const [editingBusy, setEditingBusy] = useState(false);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -118,6 +121,7 @@ export function AgentMemorySection({
       editorRequestRef.current = requestId;
       setEditingFile(fileName);
       setEditingContent("");
+      setEditingLoading(true);
       try {
         const content = await memoryService.readAgentMemoryFile({
           agentName: agent.name,
@@ -126,15 +130,18 @@ export function AgentMemorySection({
           fileName,
         });
         // 请求期间用户可能已切到另一条，内容不回填错行。
+        // 两处 setEditingLoading(false) 都在请求号门内：过期请求不得解开新请求的装载态。
         if (editorRequestRef.current !== requestId) {
           return;
         }
         setEditingContent(content.content);
+        setEditingLoading(false);
       } catch (caught) {
         if (editorRequestRef.current !== requestId) {
           return;
         }
         setEditingFile(null);
+        setEditingLoading(false);
         toast(getErrorMessage(caught));
       }
     },
@@ -142,7 +149,8 @@ export function AgentMemorySection({
   );
 
   const saveEditor = useCallback(async () => {
-    if (!editingFile || editingBusy) {
+    // 装载未完成不许写回：拿空内容写盘 = 静默清空整条记忆。
+    if (!editingFile || editingBusy || editingLoading) {
       return;
     }
     setEditingBusy(true);
@@ -162,7 +170,7 @@ export function AgentMemorySection({
     } finally {
       setEditingBusy(false);
     }
-  }, [agent.name, editingBusy, editingContent, editingFile, memoryService, refreshCatalog, scope, workspacePath]);
+  }, [agent.name, editingBusy, editingContent, editingFile, editingLoading, memoryService, refreshCatalog, scope, workspacePath]);
 
   const deleteMemoryFile = useCallback(
     async (fileName: string) => {
@@ -254,7 +262,13 @@ export function AgentMemorySection({
                     value={editingContent}
                     onChange={(event) => setEditingContent(event.target.value)}
                     aria-label={file.name}
-                    disabled={editingBusy}
+                    // 装载中整框只读：既防装载窗口内的输入被回填覆盖，也让「空框」不会被误读成原文为空。
+                    disabled={editingBusy || editingLoading}
+                    placeholder={
+                      editingLoading
+                        ? intl.formatMessage({ id: "workspaceSidebar.agentMemory.loading" })
+                        : undefined
+                    }
                   />
                   <div className="flex justify-end gap-2">
                     <Button
@@ -272,7 +286,7 @@ export function AgentMemorySection({
                     <Button
                       type="button"
                       size="sm"
-                      disabled={editingBusy}
+                      disabled={editingBusy || editingLoading}
                       data-testid={TID_PROJECT_AGENT_MEMORY_EDITOR_SAVE}
                       onClick={() => void saveEditor()}
                     >
