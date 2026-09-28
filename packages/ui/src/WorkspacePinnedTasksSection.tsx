@@ -14,6 +14,7 @@ import { compareZCodeTaskListItems } from "@/lib/taskListOrdering.js";
 import { resolveTaskFileTreeTargetFromTabs } from "@/lib/taskFileTreeTarget.js";
 import { MemoTaskItem, TaskListItemContextMenuContent } from "@/TaskListItem.js";
 import { TaskRenameDialog } from "@/TaskRenameDialog.js";
+import { restorePersonaTitlePrefix } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { applyTaskQueryCacheMutation } from "@/store/taskQueryCacheStore.js";
@@ -508,7 +509,7 @@ export function WorkspacePinnedTasksSection({
                 taskId: item.taskId,
                 workspacePath: item.workspacePath,
                 ...(item.workspaceIdentity ? { workspaceIdentity: item.workspaceIdentity } : {}),
-                title: renameDraft.trim(),
+                title: restorePersonaTitlePrefix(item.title, renameDraft.trim()),
               })
               .then((meta) => {
                 upsertOptimisticTaskListItem(item.workspacePath, meta, item.workspaceIdentity);

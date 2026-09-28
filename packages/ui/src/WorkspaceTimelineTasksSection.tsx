@@ -8,6 +8,7 @@ import { cn } from "@/components/lib/utils.js";
 import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import {
   groupPersonaBadgedTaskItems,
+  restorePersonaTitlePrefix,
   type PersonaChatBadge,
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu.js";
@@ -662,7 +663,10 @@ export function WorkspaceTimelineTasksSection({
               handleCancelRenameTask();
               return;
             }
-            const normalizedTitle = renameDraft.trim();
+            const normalizedTitle = restorePersonaTitlePrefix(
+              item.title,
+              renameDraft.trim(),
+            );
             if (normalizedTitle === item.title.trim()) {
               handleCancelRenameTask();
               return;

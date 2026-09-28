@@ -18,7 +18,11 @@ import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
-import { getPersonaChatBadge, stripPersonaTitlePrefix } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import {
+  getPersonaChatBadge,
+  personaChatRenameDraft,
+  stripPersonaTitlePrefix,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { formatTaskTitleWithChanges, getTaskChangeSummary } from "@/lib/taskChangeSummary.js";
 import {
@@ -992,7 +996,9 @@ export function TaskListItemContextMenuContent({
         onTogglePinTask(task.taskId, !isPinned);
       }}
       onStartRenameTask={() => {
-        onStartRenameTask(task.taskId, task.title);
+        // 员工会话行：重命名弹窗只编辑正文（与行上显示一致，D4），「员工名 · 」前缀
+        // 由提交方按原标题拼回（存储前缀是冷重启工牌反推的依赖，不能让弹窗把它抹掉）。
+        onStartRenameTask(task.taskId, personaChatRenameDraft(task.title, personaAgentBadge));
       }}
       onArchiveTask={() => {
         onArchiveTask(task.taskId);

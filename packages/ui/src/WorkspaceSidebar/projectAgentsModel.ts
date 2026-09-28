@@ -285,6 +285,45 @@ export function stripPersonaTitlePrefix(title: string, agentName: string): strin
 }
 
 /**
+ * 重命名弹窗的编辑初值（D4 配套）：弹窗既然只让人改正文，初值就该与行上显示的一致
+ * （去掉「员工名 · 」）。判据与显示层同一处（stripPersonaTitlePrefix），避免行里去了
+ * 前缀、弹窗还挂着前缀的第二次漂移。无徽章 = 普通会话，原样编辑。
+ */
+export function personaChatRenameDraft(
+  title: string,
+  badge: PersonaChatBadge | undefined,
+): string {
+  return badge ? stripPersonaTitlePrefix(title, badge.name) : title;
+}
+
+/**
+ * 重命名弹窗的回写（D4 配套）：弹窗里用户只看到正文，存回时必须把「员工名 · 」拼回
+ * 存储标题——冷重启的工牌反推（applyDerivedPersonaChatBadges）只认这份前缀，弹窗图省事
+ * 存正文就会重演「工牌丢了」那次事故。名字段以**盘上原标题**为准（不取徽章名）：
+ * 徽章可能因登记/档案名与旧标题不同名而指向新名，原标题的前缀才是这段历史真正的主人，
+ * 改名跟走另有链路（buildRenamedPersonaTitle）负责换牌，这里不越权。
+ * 正文里用户自己打的「 · 」不再当名字边界（写什么就是什么）；已带同前缀的正文不重复拼。
+ */
+export function restorePersonaTitlePrefix(previousTitle: string, draft: string): string {
+  // 空正文不拼（否则落库成「员工名 · 」这种悬挂前缀，行上看着像标题丢了）。
+  if (!draft.trim()) {
+    return draft;
+  }
+  const separator = previousTitle.indexOf(" · ");
+  if (separator <= 0) {
+    return draft;
+  }
+  const head = previousTitle.slice(0, separator);
+  // 与显示层同一判据：只有形似员工名（档案名字符集 [a-zA-Z0-9-]{3,50}）才算前缀，
+  // 用户自起的「装修 · 二期」这类中文标题原样交回，不被我们当成身份牌改写。
+  if (!/^[a-zA-Z0-9-]{3,50}$/u.test(head)) {
+    return draft;
+  }
+  const prefix = `${head} · `;
+  return draft.startsWith(prefix) ? draft : `${prefix}${draft}`;
+}
+
+/**
  * 员工最近一段已归号会话（D3 续接）：行集合按三路对号找名字命中的行，
  * 取 updatedAt 最新的一条——打开员工时跳回它，历史与记忆原样续上；
  * 没有才新开一段（首见）。行集合是侧栏已加载分页，够用且零额外取数。

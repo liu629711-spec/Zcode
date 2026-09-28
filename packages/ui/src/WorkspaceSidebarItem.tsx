@@ -82,7 +82,10 @@ import {
 } from "@/settings/RemoteSyncActions.js";
 import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSkillInvalidation.js";
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
-import { applyPersonaChatBadges } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import {
+  applyPersonaChatBadges,
+  restorePersonaTitlePrefix,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
 import {
   selectPersonaChatBadgesForWorkspace,
   usePersonaChatBadgeStore,
@@ -501,19 +504,25 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
         return null;
       }
       const previousTask = findCurrentTaskItem(taskId);
+      // 员工会话的标题前缀回拼（D4 显示层配套）：弹窗交回的是去掉「员工名 · 」的正文，
+      // 落库前按盘上原标题把前缀拼回去；拼完与原标题相同 = 用户没改，直接跳过写库。
+      const nextTitle = restorePersonaTitlePrefix(previousTask?.title ?? "", title);
+      if (previousTask && nextTitle === previousTask.title) {
+        return previousTask;
+      }
       logger.info("[WorkspaceSidebarItem] rename service call start", {
         taskId,
         workspacePath: tab.workspacePath,
         workspaceIdentity: tab.workspaceIdentity,
         previousTitleLength: previousTask?.title.length,
-        nextTitleLength: title.length,
+        nextTitleLength: nextTitle.length,
       });
       let meta: ZCodeTaskMeta;
       try {
         meta = await zcodeTaskService.renameTask({
           taskId,
           workspacePath: tab.workspacePath,
-          title,
+          title: nextTitle,
           ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
         });
       } catch (error) {

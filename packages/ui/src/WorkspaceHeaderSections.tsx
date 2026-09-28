@@ -54,7 +54,12 @@ import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSk
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
 import { refreshWorkspacePluginCapabilitiesAfterRemoteSync } from "@/lib/remotePluginSyncRefresh.js";
 import { useMcpStore } from "@/store/mcpStore.js";
-import { resolvePersonaChatBadgeForTask, stripPersonaTitlePrefix } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import {
+  personaChatRenameDraft,
+  resolvePersonaChatBadgeForTask,
+  restorePersonaTitlePrefix,
+  stripPersonaTitlePrefix,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import { usePersonaChatBadgeStore } from "@/store/personaChatBadgeStore.js";
@@ -294,7 +299,8 @@ export function WorkspaceHeaderTitleSection({
       return;
     }
     setRenamingTaskId(resolvedTaskActionTaskId);
-    setRenameDraft(activeTaskMeta?.title ?? activeTaskTitle ?? "");
+    // 员工会话：弹窗只编辑正文，「员工名 · 」由下面的提交按原标题拼回（D4 显示层配套）。
+    setRenameDraft(personaChatRenameDraft(activeTaskMeta?.title ?? activeTaskTitle ?? "", personaChatBadge));
   };
 
   const handleCancelRenameTask = () => {
@@ -325,8 +331,8 @@ export function WorkspaceHeaderTitleSection({
       return;
     }
 
-    const normalizedTitle = renameDraft.trim();
     const currentTitle = activeTaskMeta?.title ?? activeTaskTitle ?? "";
+    const normalizedTitle = restorePersonaTitlePrefix(currentTitle, renameDraft.trim());
     if (normalizedTitle === currentTitle.trim()) {
       handleCancelRenameTask();
       return;

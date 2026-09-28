@@ -12,8 +12,10 @@ import {
   findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
   groupPersonaBadgedTaskItems,
+  personaChatRenameDraft,
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
+  restorePersonaTitlePrefix,
   selectProjectAgentsForWorkspace,
   stripPersonaTitlePrefix,
   toProjectAgentCreateConfig,
@@ -535,4 +537,52 @@ test("groupPersonaBadgedTaskItems：员工各一栏（首次出现序），未�
     "未归号会话进普通组",
   );
   assert.equal(groups[2].badge, undefined);
+});
+
+// ============================================================
+// 重命名弹窗的去前缀/回拼（D4 显示层配套）
+// 红线：存储标题的「员工名 · 」是冷重启工牌反推的唯一线索，弹窗藏起来可以，
+// 存回去少了前缀就重演「工牌丢了」。往返必须恒等。
+// ============================================================
+
+test("restorePersonaTitlePrefix：员工会话正文回拼原标题的名字前缀", () => {
+  assert.equal(restorePersonaTitlePrefix("code-test · 你好", "改成这样"), "code-test · 改成这样");
+  assert.equal(
+    restorePersonaTitlePrefix("code-test · 你好", "code-test · 你好"),
+    "code-test · 你好",
+    "正文已带同前缀不重复拼（弹窗初值没动就确认的往返）",
+  );
+  assert.equal(
+    restorePersonaTitlePrefix("code-test · 甲 · 乙", "正文"),
+    "code-test · 正文",
+    "首个分隔符即名字段边界；正文里用户自己打的「 · 」不再当边界",
+  );
+});
+
+test("restorePersonaTitlePrefix：非员工标题原样交回", () => {
+  assert.equal(restorePersonaTitlePrefix("普通任务", "改名"), "改名");
+  assert.equal(restorePersonaTitlePrefix("装修 · 二期", "改名"), "改名", "中文名字段不是员工名");
+  assert.equal(restorePersonaTitlePrefix("ab · x", "y"), "y", "短于档案名最小长度（3）不算前缀");
+  assert.equal(restorePersonaTitlePrefix("code-test · 你好", "  "), "  ", "空正文不造悬挂前缀");
+});
+
+test("personaChatRenameDraft 与 restorePersonaTitlePrefix 往返恒等", () => {
+  const badge = { name: "code-test" };
+  for (const stored of ["code-test · 你好", "old-name · 历史标题", "你好", "装修 · 二期"]) {
+    assert.equal(
+      restorePersonaTitlePrefix(stored, personaChatRenameDraft(stored, badge)),
+      stored,
+      `存储标题不被显示层改写：${stored}`,
+    );
+  }
+});
+
+test("personaChatRenameDraft：无徽章行不改初值", () => {
+  assert.equal(personaChatRenameDraft("code-test · 你好", undefined), "code-test · 你好");
+  assert.equal(personaChatRenameDraft("code-test · 你好", { name: "code-test" }), "你好");
+  assert.equal(
+    personaChatRenameDraft("old-name · 你好", { name: "new-name" }),
+    "你好",
+    "陈旧旧名前缀同样剥掉，与行上显示层（stripPersonaTitlePrefix）同一判据",
+  );
 });

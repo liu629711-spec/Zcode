@@ -24,6 +24,11 @@ import { createPortal } from "react-dom";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { TaskRenameDialog } from "@/TaskRenameDialog.js";
+import {
+  getPersonaChatBadge,
+  personaChatRenameDraft,
+  restorePersonaTitlePrefix,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { TaskSpecDialog } from "@/TaskSpecDialog.js";
 import { shouldHideGroupedTaskContent, useGroupedTaskView } from "@/hooks/useGroupedTaskView.js";
 import { usePersonaBadgedTaskItems } from "@/hooks/usePersonaBadgedTaskItems.js";
@@ -950,7 +955,8 @@ export function WorkspaceGroupedTasksSection({
 
   const handleStartRenameTask = useCallback((task: ZCodeTaskMeta) => {
     setRenamingTaskKey(taskKey(task));
-    setRenameDraft(task.title ?? "");
+    // 员工行初值 = 去掉「员工名 · 」的正文（与行上显示一致，D4），提交方按原标题拼回。
+    setRenameDraft(personaChatRenameDraft(task.title ?? "", getPersonaChatBadge(task)));
   }, []);
 
   // 上票入口（作者通道）：预填既有 criteria，允许台主在任意阶段补改 spec。
@@ -1038,7 +1044,7 @@ export function WorkspaceGroupedTasksSection({
       return;
     }
 
-    const normalizedTitle = renameDraft.trim();
+    const normalizedTitle = restorePersonaTitlePrefix(task.title ?? "", renameDraft.trim());
     if (normalizedTitle === (task.title ?? "").trim()) {
       handleCancelRenameTask();
       return;
