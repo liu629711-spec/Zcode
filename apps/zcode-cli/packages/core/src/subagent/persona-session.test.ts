@@ -1,12 +1,14 @@
 // ============================================================
-// persona-session 的可运行检查（node --test，Node 24 原生剥离类型直跑）
+// persona-session 的可运行检查
 // ============================================================
 // 驻场智能体主会话的四条纯拼装规则：system prompt 多段拼接、标题记账、
 // persona 落盘快照（G1：name/systemPrompt 任一缺席 → 不落盘）、
 // persona → runtime config 映射（G2：模型只随 create、工具面随身份、color 随行）。
 //
-// 运行：node --test apps/zcode-cli/packages/core/src/subagent/persona-session.test.ts
-// （core 的 tsconfig 已排除 **/*.test.ts，tsc 构建不受影响。）
+// 运行：npx tsx --test apps/zcode-cli/packages/core/src/subagent/persona-session.test.ts
+// （D26 起本模块按值引用 @zcode/shared 的 normalizeAgentId 校验工号，node 原生
+//  --test 直跑会在 shared 的 .js→.ts 解析上报 ERR_MODULE_NOT_FOUND，改走 tsx；
+//  persistent-memory.test.ts 早先已是同样情况。core 的 tsconfig 已排除 **/*.test.ts。）
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
