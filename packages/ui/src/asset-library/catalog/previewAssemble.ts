@@ -51,9 +51,13 @@ export function assembleOpenSourcePreview(id: string): string {
     entry.css,
     "</style>",
     '<style id="__zcode-asset-stage">',
-    // 演示舞台：预览区是 240px 高的卡墙格子，组件按 body 撑满居中；
+    // 演示舞台：预览区是卡片里的缩放舞台，组件按 body 撑满居中；
     // 上游各组件自带的 body 样式已在上面的 tailwind base 里，这里只补舞台与滚动收敛。
     "html, body { height: 100%; }",
+    // 舞台底色：RareUI/Beautiful UI 均为浅色主题设计（dark:false），组件大量使用
+    // 浅色系配色——透明底会让深色 UI 透上来，深色组件"隐形"（真机反馈：预览空白）。
+    // 非暗色 entry 一律白底装裱；将来收暗色设计货时给 entry 加 dark=true 走黑底。
+    entry.dark ? "body { background: #0d1117; }" : "body { background: #ffffff; }",
     "body { margin: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }",
     entry.stage === "top" ? "body { align-items: flex-start; padding: 16px; overflow: auto; }" : "",
     "</style>",

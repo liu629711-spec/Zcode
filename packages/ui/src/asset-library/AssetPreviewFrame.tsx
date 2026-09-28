@@ -29,9 +29,10 @@ import { ASSET_SANDBOX } from "./catalog/catalogCheck.js";
 /** iframe sandbox 的唯一合法值；定义与恒等校验在 catalogCheck（此处再导出）。 */
 export { ASSET_SANDBOX };
 
-/** 设计视口：所有 demo 的"画布尺寸"。卡片舞台的纵横比必须与它一致。 */
-export const PREVIEW_DESIGN_WIDTH = 880;
-export const PREVIEW_DESIGN_HEIGHT = 550;
+/** 设计视口：所有 demo 的"画布尺寸"。卡片舞台的纵横比必须与它一致。
+ *  800×500：比 880×550 空白更少、内容占比更大（真机反馈"大片空底"）；仍是 16:10。 */
+export const PREVIEW_DESIGN_WIDTH = 800;
+export const PREVIEW_DESIGN_HEIGHT = 500;
 
 /** 兜底样式：预览里永远不许出现滚动条（收录规范违反时的最后一道防线）。 */
 export const NO_SCROLL_PREVIEW_STYLE =

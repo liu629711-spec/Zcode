@@ -145,8 +145,14 @@ export function AssetDemoCard({
         const chipMessage = buildAssetReferenceChipMessage(manifest, writtenPaths, locale);
         message = chipMessage.text;
         mention = chipMessage.mention;
-      } catch {
-        toast(intl.formatMessage({ id: "assetLibrary.detail.writeFailedFallback" }));
+      } catch (error) {
+        // 带上真实原因（not_supported=应用主进程是旧版需重启 / invalid_payload / write_failed），
+        // 否则用户只看到"没反应/失败"没法定位是哪层断了。
+        const reason = error instanceof Error ? error.message : String(error);
+        console.warn("[asset-library] 图纸落盘失败:", reason);
+        toast(
+          intl.formatMessage({ id: "assetLibrary.detail.writeFailedReason" }, { error: reason }),
+        );
       }
     }
     deliver(message, mention);

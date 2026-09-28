@@ -6928,6 +6928,8 @@ const enUS: Record<string, string> = {
     "Insert the asset request message into the current chat composer; nothing is sent automatically",
   "assetLibrary.detail.writeFailedFallback":
     "Failed to write the blueprint files; fell back to attaching the full code.",
+  "assetLibrary.detail.writeFailedReason":
+    "Failed to write blueprints ({error}). If it says not_supported, fully restart the app; full code attached this time.",
   "assetLibrary.backToTop": "Back to top",
 };
 
