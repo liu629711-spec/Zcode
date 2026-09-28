@@ -3,7 +3,6 @@ import type {
   AgentSummary,
   SubAgentConfig,
   ZCodeSessionPersona,
-  ZCodeTaskMeta,
 } from "@zcode/shared";
 
 export interface ProjectAgentDraft {
@@ -76,9 +75,12 @@ export function toProjectAgentCreateConfig(draft: ProjectAgentDraft): SubAgentCo
   };
 }
 
-/** 任务行上的徽章标记读取（D2 内联标记）：徽章渲染与 G5 编辑/删除入口同源，避免第二处读法漂移。 */
-export function getPersonaChatBadge(task: ZCodeTaskMeta): PersonaChatBadge | undefined {
-  return (task as ZCodeTaskMeta & PersonaChatBadgeCarrier).agentPersona;
+/**
+ * 任务行上的徽章标记读取（D2 内联标记）：徽章渲染与 G5 编辑/删除入口同源，避免第二处读法漂移。
+ * 形参放宽为 object：ZCodeTaskMeta 不带该可选字段的声明，弱类型判定会拒绝直传（调用方都是 meta 实值）。
+ */
+export function getPersonaChatBadge(task: object): PersonaChatBadge | undefined {
+  return (task as PersonaChatBadgeCarrier).agentPersona;
 }
 
 /**
@@ -202,15 +204,38 @@ export function applyDerivedPersonaChatBadges<
     if ((item as T & PersonaChatBadgeCarrier).agentPersona) {
       return item;
     }
-    const matched = agents.find((agent) => item.title.startsWith(`${agent.name} · `));
-    if (!matched) {
-      return item;
-    }
-    return {
-      ...item,
-      agentPersona: { name: matched.name, ...(matched.color ? { color: matched.color } : {}) },
-    };
+    const badge = derivePersonaChatBadge(item, agents);
+    return badge ? { ...item, agentPersona: badge } : item;
   });
+}
+
+/** 徽章的标题反推单行版（D2）：标题「名字 · 」前缀 × 现役档案名单对号，前缀陷阱不误标。 */
+export function derivePersonaChatBadge<T extends { title: string }>(
+  row: T,
+  agents: readonly Pick<AgentSummary, "name" | "color">[],
+): PersonaChatBadge | undefined {
+  const matched = agents.find((agent) => row.title.startsWith(`${agent.name} · `));
+  if (!matched) {
+    return undefined;
+  }
+  return { name: matched.name, ...(matched.color ? { color: matched.color } : {}) };
+}
+
+/**
+ * 单行徽章三路解析（D2，与侧栏多行合并同一优先级）：行内标记 → 持久登记 → 标题反推。
+ * Header「···」菜单等只拿到裸 task meta 的消费方用它复现侧栏行上同样的对号结果，
+ * 避免"侧栏有徽章、Header 没菜单"的第二处漂移。
+ */
+export function resolvePersonaChatBadgeForTask(
+  task: { taskId: string; title: string } & PersonaChatBadgeCarrier,
+  registeredByTaskId: ReadonlyMap<string, PersonaChatBadge> | undefined,
+  agents: readonly Pick<AgentSummary, "name" | "color">[] | undefined,
+): PersonaChatBadge | undefined {
+  return (
+    getPersonaChatBadge(task) ??
+    registeredByTaskId?.get(task.taskId) ??
+    derivePersonaChatBadge(task, agents ?? [])
+  );
 }
 
 /**
@@ -225,6 +250,19 @@ export function buildRetitledPersonaTitle(title: string, newName: string): strin
     return null;
   }
   return `${newName} · ${title.slice(separator + 3)}`;
+}
+
+/**
+ * 改名跟走的最终标题（D2 治愈版）：有「 · 」前缀照换；无分隔符（用户手动删过前缀，
+ * 或历史行只剩余下正文）自动补回「新名 · 」前缀——否则这类行卡在旧标题，
+ * 无论后续怎么改名都不再更新（真机验收抓到的卡死行）。空标题返回 null 由调用方跳过。
+ */
+export function buildRenamedPersonaTitle(title: string, newName: string): string | null {
+  const replaced = buildRetitledPersonaTitle(title, newName);
+  if (replaced) {
+    return replaced;
+  }
+  return title.trim().length > 0 ? `${newName} · ${title}` : null;
 }
 
 /**

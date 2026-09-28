@@ -144,8 +144,9 @@ import {
 } from "@/WorkspaceSidebar/ProjectAgents.js";
 import {
   buildAgentMemoryDirectoryHint,
-  buildRetitledPersonaTitle,
+  buildRenamedPersonaTitle,
   getPersonaChatBadge,
+  resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   applyDerivedPersonaChatBadges,
   toProjectAgentPersona,
@@ -159,6 +160,8 @@ import {
   selectPersonaChatBadgesForWorkspace,
   usePersonaChatBadgeStore,
 } from "@/store/personaChatBadgeStore.js";
+import { useProjectAgentDirectoryStore } from "@/store/projectAgentDirectoryStore.js";
+import { useProjectAgentProfileActionStore } from "@/store/projectAgentProfileActionStore.js";
 import { cn } from "@/components/lib/utils.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import {
@@ -470,6 +473,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const removePersonaChatBadgesByNames = usePersonaChatBadgeStore(
     (state) => state.removePersonaChatBadgesByNames,
   );
+  const publishProjectAgentDirectory = useProjectAgentDirectoryStore(
+    (state) => state.publishAgentsByWorkspaceKey,
+  );
+  const setProjectAgentProfileActionHandlers = useProjectAgentProfileActionStore(
+    (state) => state.setHandlers,
+  );
+  // 档案目录下发（D2 跨视图）：Header 菜单判员工行、时间线徽章反推都吃这份名字+颜色快照。
+  useEffect(() => {
+    publishProjectAgentDirectory(projectAgents.agentsByWorkspaceKey);
+  }, [projectAgents.agentsByWorkspaceKey, publishProjectAgentDirectory]);
   // 点开/建档驻场智能体：建 persona 会话后走侧栏任务行同一条导航（handleSelectTaskInChat），
   // 并登记行级徽章（D2）——此刻 UI 手里确有档案；持久化 producer 落地前徽章不跨重启，见 badge store 注释。
   const { openAgentChat: openProjectAgentChat } = useOpenProjectAgentChat({
@@ -495,15 +508,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   }, []);
   // 任务行右键 → 编辑/删除智能体（G5/D4）：行上只有徽章名字，档案本体按
   // 徽章名在侧栏已取的档案列表里对号。取不到（档案已删/已改名/远端不可达）就大白话说明，不静默。
+  // 徽章三路对号（行内 → 持久登记 → 标题反推）：Header 菜单递来的裸 task meta 没有行内标记，
+  // 靠后两路复现行上同样的对号结果（与徽章渲染/反推同一优先级）。
   const resolveProjectAgentForRow = useCallback(
     (task: ZCodeTaskMeta) => {
-      const badge = getPersonaChatBadge(task);
-      const agents = projectAgents.agentsByWorkspaceKey.get(
-        buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity),
+      const workspaceKey = buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity);
+      const agents = projectAgents.agentsByWorkspaceKey.get(workspaceKey);
+      const badge = resolvePersonaChatBadgeForTask(
+        task,
+        usePersonaChatBadgeStore.getState().badgeByWorkspaceKey[workspaceKey],
+        agents,
       );
-      const agent = badge
-        ? agents?.find((candidate) => candidate.name === badge.name)
-        : undefined;
+      const agent = badge ? agents?.find((candidate) => candidate.name === badge.name) : undefined;
       if (!badge || !agent) {
         return null;
       }
@@ -572,6 +588,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       resolveProjectAgentForRow,
     ],
   );
+  // Header「···」菜单的档案操作借用侧栏链路（D4 一致性）：编辑对话框/删除确认/列表刷新
+  // 都住在这里，Header 只发请求；侧栏未挂载（处理器缺席）时 Header 菜单项不渲染。
+  useEffect(() => {
+    setProjectAgentProfileActionHandlers({
+      edit: handleEditProjectAgent,
+      remove: (task) => {
+        void handleDeleteProjectAgent(task);
+      },
+    });
+    return () => setProjectAgentProfileActionHandlers(null);
+  }, [
+    handleDeleteProjectAgent,
+    handleEditProjectAgent,
+    setProjectAgentProfileActionHandlers,
+  ]);
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological">
   >(() => {
@@ -842,7 +873,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
    * 行归属按三路对号取并集——登记徽章（跨改名时代的持久链接）、反推徽章、
    * 旧名标题前缀。命中行走既有 renameTask 全链路换新名前缀（tasks-index +
    * 打开会话头部实时更新 + titleOverridden 防快照回冲），再登记新名徽章兜底；
-   * 用户手改过的自定义标题（无「 · 」分隔符）只补登记不改写。
+   * 标题无「 · 」前缀（用户手动删过/历史残留）自动补回「新名 · 」，治愈卡死行。
    * 已知边界：仅扫侧栏已加载的分页行；单行失败不阻塞其余行（登记兜底）。
    */
   const relinkRenamedAgentChats = useCallback(
@@ -873,7 +904,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         if (!linked) {
           continue;
         }
-        const retitled = buildRetitledPersonaTitle(row.title, newName);
+        const retitled = buildRenamedPersonaTitle(row.title, newName);
         if (taskService && retitled) {
           try {
             await taskService.renameTask({

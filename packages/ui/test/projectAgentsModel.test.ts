@@ -6,9 +6,11 @@ import {
   applyDerivedPersonaChatBadges,
   applyPersonaChatBadges,
   buildAgentMemoryDirectoryHint,
+  buildRenamedPersonaTitle,
   buildRetitledPersonaTitle,
   findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
+  resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   selectProjectAgentsForWorkspace,
   toProjectAgentCreateConfig,
@@ -444,4 +446,35 @@ test("buildRetitledPersonaTitle：换新名前缀保历史首条输入；自定�
   assert.equal(buildRetitledPersonaTitle("我的装修讨论", "UI-plus"), null);
   // 名字段为空（分隔符在开头）：视为非 persona 标题，不改写。
   assert.equal(buildRetitledPersonaTitle(" · 开头就是分隔符", "UI-plus"), null);
+});
+
+test("buildRenamedPersonaTitle：有前缀换名；无前缀补回「新名 · 」（治愈卡死行）", () => {
+  assert.equal(buildRenamedPersonaTitle("ui-test · 你好", "UI-plus"), "UI-plus · 你好");
+  // 图四场景：用户把前缀删成只剩正文，改名必须把前缀补回来而不是永远卡住。
+  assert.equal(buildRenamedPersonaTitle("你好", "UI-plus"), "UI-plus · 你好");
+  assert.equal(buildRenamedPersonaTitle("  你好  ", "UI-plus"), "UI-plus ·   你好  ");
+  assert.equal(buildRenamedPersonaTitle("   ", "UI-plus"), null);
+});
+
+test("resolvePersonaChatBadgeForTask：行内 → 持久登记 → 标题反推 三路优先级", () => {
+  const task = { taskId: "s1", title: "code-test · 你好" };
+  const registered = new Map([["s1", { name: "登记名" }]]);
+  // 行内标记最优先（侧栏行已带对号结果）。
+  assert.deepEqual(
+    resolvePersonaChatBadgeForTask({ ...task, agentPersona: { name: "行内名" } }, registered, [
+      { name: "档案名" },
+    ]),
+    { name: "行内名" },
+  );
+  // 登记其次（Header 拿裸 meta 时的主路径）。
+  assert.deepEqual(resolvePersonaChatBadgeForTask(task, registered, [{ name: "档案名" }]), {
+    name: "登记名",
+  });
+  // 反推兜底（冷重启后登记丢失、标题前缀仍在）。
+  assert.deepEqual(
+    resolvePersonaChatBadgeForTask(task, undefined, [{ name: "code-test", color: "purple" }]),
+    { name: "code-test", color: "purple" },
+  );
+  // 三路都无 → undefined（普通会话行不吃员工菜单）。
+  assert.equal(resolvePersonaChatBadgeForTask(task, undefined, []), undefined);
 });

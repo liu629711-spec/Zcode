@@ -54,6 +54,14 @@ import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSk
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
 import { refreshWorkspacePluginCapabilitiesAfterRemoteSync } from "@/lib/remotePluginSyncRefresh.js";
 import { useMcpStore } from "@/store/mcpStore.js";
+import { resolvePersonaChatBadgeForTask } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
+import { usePersonaChatBadgeStore } from "@/store/personaChatBadgeStore.js";
+import { useProjectAgentDirectoryStore } from "@/store/projectAgentDirectoryStore.js";
+import {
+  requestProjectAgentProfileAction,
+  useProjectAgentProfileActionStore,
+} from "@/store/projectAgentProfileActionStore.js";
 
 export type { WorkspaceHeaderState, WorkspaceHeaderTitleSectionProps };
 export {
@@ -150,6 +158,29 @@ export function WorkspaceHeaderTitleSection({
   });
   const pinnedTasks = headerPinnedTaskList.items;
   const activeTaskMeta = resolvedActiveTaskMeta ?? null;
+  // 驻场智能体判定（D4 一致性）：与侧栏行同一套三路对号（行内 → 持久登记 → 标题反推），
+  // 让 Header「···」菜单长出与侧栏右键相同的「编辑档案/删除智能体」，消灭两处不一致。
+  const personaBadgeByWorkspaceKey = usePersonaChatBadgeStore((state) => state.badgeByWorkspaceKey);
+  const projectAgentDirectoryByWorkspaceKey = useProjectAgentDirectoryStore(
+    (state) => state.agentsByWorkspaceKey,
+  );
+  const projectAgentProfileActionsReady = useProjectAgentProfileActionStore(
+    (state) => state.handlers !== null,
+  );
+  const personaChatBadge = useMemo(() => {
+    if (!activeTaskMeta) {
+      return undefined;
+    }
+    const workspaceKey = buildTaskWorkspaceKey(
+      activeTaskMeta.workspacePath,
+      activeTaskMeta.workspaceIdentity,
+    );
+    return resolvePersonaChatBadgeForTask(
+      activeTaskMeta,
+      personaBadgeByWorkspaceKey[workspaceKey],
+      projectAgentDirectoryByWorkspaceKey[workspaceKey],
+    );
+  }, [activeTaskMeta, personaBadgeByWorkspaceKey, projectAgentDirectoryByWorkspaceKey]);
   const isPinned = Boolean(
     activeTaskId && pinnedTasks.some((task) => task.taskId === activeTaskId),
   );
@@ -711,6 +742,30 @@ export function WorkspaceHeaderTitleSection({
                     : undefined
                 }
               />
+              {personaChatBadge && projectAgentProfileActionsReady ? (
+                <>
+                  {/* 驻场智能体行的档案操作（D4）：与侧栏右键菜单同两件，走侧栏同一处理器。 */}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      if (activeTaskMeta) {
+                        requestProjectAgentProfileAction("edit", activeTaskMeta);
+                      }
+                    }}
+                  >
+                    {intl.formatMessage({ id: "workspaceSidebar.projectAgentEditMenu" })}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      if (activeTaskMeta) {
+                        requestProjectAgentProfileAction("remove", activeTaskMeta);
+                      }
+                    }}
+                  >
+                    {intl.formatMessage({ id: "workspaceSidebar.projectAgentDeleteMenu" })}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
