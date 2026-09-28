@@ -246,3 +246,15 @@ test("拼装块序：motion 件的 react 块必须先于 motion 块注册（真�
   assert.ok(reactPos >= 0 && motionPos >= 0, "react/motion 块都应内联进拼装产物");
   assert.ok(reactPos < motionPos, `${sampleId}: 产物里 react 块须在 motion 块之前`);
 });
+
+test("React 货产物不许夹带 V3 滚动条补丁的 min-height:100% 指纹（挤顶回归钉）", () => {
+  // V3 为 240px iframe 把 demo css 的 min-height:100vh 批量改成 100%，V4 固定舞台后
+  // 已全部恢复 100vh；生成产物（REACT_PREVIEW_HTML）若不同步刷新就会把旧伤带回来
+  // （html 无显式高度时百分比 min-height=0，居中失效→内容挤顶，真机四轮反馈之三）。
+  for (const [id, html] of Object.entries(REACT_PREVIEW_HTML)) {
+    assert.ok(
+      !html.includes("min-height: 100%"),
+      `${id}: 产物含 min-height:100% 指纹（应为 100vh）`,
+    );
+  }
+});
