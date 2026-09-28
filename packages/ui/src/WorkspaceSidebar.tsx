@@ -143,6 +143,7 @@ import {
 } from "@/WorkspaceSidebar/ProjectAgents.js";
 import {
   buildAgentMemoryDirectoryHint,
+  findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
   resolveWorkspaceProjectAgentReachability,
   applyDerivedPersonaChatBadges,
@@ -458,6 +459,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const registerPersonaChatBadge = usePersonaChatBadgeStore(
     (state) => state.registerPersonaChatBadge,
   );
+  const relabelPersonaChatBadges = usePersonaChatBadgeStore(
+    (state) => state.relabelPersonaChatBadges,
+  );
+  const removePersonaChatBadgesByNames = usePersonaChatBadgeStore(
+    (state) => state.removePersonaChatBadgesByNames,
+  );
   // 点开/建档驻场智能体：建 persona 会话后走侧栏任务行同一条导航（handleSelectTaskInChat），
   // 并登记行级徽章（D2）——此刻 UI 手里确有档案；持久化 producer 落地前徽章不跨重启，见 badge store 注释。
   const { openAgentChat: openProjectAgentChat } = useOpenProjectAgentChat({
@@ -541,9 +548,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       if (!confirmed) {
         return;
       }
-      await projectAgents.deleteAgent(target, agent);
+      const deleted = await projectAgents.deleteAgent(target, agent);
+      if (deleted) {
+        // 摘牌（D2）：档案没了，保留登记工牌会让行永远挂着"点了就报找不到"的死入口；
+        // 摘掉与标题反推在档案消失后的行为一致。
+        removePersonaChatBadgesByNames({
+          workspacePath: target.workspacePath,
+          workspaceIdentity: target.workspaceIdentity,
+          names: [agent.name],
+        });
+      }
     },
-    [confirmDialog, intl, projectAgents.deleteAgent, resolveProjectAgentForRow],
+    [
+      confirmDialog,
+      intl,
+      projectAgents.deleteAgent,
+      removePersonaChatBadgesByNames,
+      resolveProjectAgentForRow,
+    ],
   );
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological">
@@ -1888,7 +1910,40 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               if (!entry || entry.agent.id !== agent.id) {
                 return false;
               }
-              return projectAgents.updateAgent(entry.target, agent, draft);
+              const updated = await projectAgents.updateAgent(entry.target, agent, draft);
+              if (updated && draft.name.trim() !== agent.name) {
+                // 改名补链（D2）：标题带旧名前缀的历史行，标题反推对新名永远失效——
+                // 旧登记整体换新名，标题旧行逐行补挂新名登记（落 localStorage，跨重启成立）。
+                const newBadge = {
+                  name: draft.name.trim(),
+                  ...(agent.color ? { color: agent.color } : {}),
+                };
+                relabelPersonaChatBadges({
+                  workspacePath: entry.target.workspacePath,
+                  workspaceIdentity: entry.target.workspaceIdentity,
+                  fromName: agent.name,
+                  toBadge: newBadge,
+                });
+                const workspaceKey = buildTaskWorkspaceKey(
+                  entry.target.workspacePath,
+                  entry.target.workspaceIdentity,
+                );
+                const rows =
+                  workspaceTaskLists.groups.find(
+                    (group) =>
+                      buildTaskWorkspaceKey(group.workspacePath, group.workspaceIdentity) ===
+                      workspaceKey,
+                  )?.items ?? [];
+                for (const taskId of findPersonaRowIdsByTitlePrefix(rows, agent.name)) {
+                  registerPersonaChatBadge({
+                    workspacePath: entry.target.workspacePath,
+                    workspaceIdentity: entry.target.workspaceIdentity,
+                    taskId,
+                    badge: newBadge,
+                  });
+                }
+              }
+              return updated;
             }}
           />
 

@@ -214,6 +214,18 @@ export function applyDerivedPersonaChatBadges<
 }
 
 /**
+ * 档案改名补链的行扫描（D2）：标题前缀=旧名+「 · 」的 persona 历史行 id 列表。
+ * 调用方（侧栏改名成功钩子）按这些行逐个 register 新名徽章——标题反推对新名
+ * 永远命中不了旧行，登记是它们唯一的持久工牌来源。
+ */
+export function findPersonaRowIdsByTitlePrefix<
+  T extends { taskId: string; title: string },
+>(items: readonly T[], agentName: string): string[] {
+  const prefix = `${agentName} · `;
+  return items.filter((item) => item.title.startsWith(prefix)).map((item) => item.taskId);
+}
+
+/**
  * 把徽章登记合并进任务行：命中的行挂 agentPersona 标记，未命中的行保持原引用——
  * 侧栏流式刷新按引用判等打穿 memo，这里不能给无关行换新引用。
  * 徽章登记为空时原样返回同一数组。

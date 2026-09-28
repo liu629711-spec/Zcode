@@ -6,6 +6,7 @@ import {
   applyDerivedPersonaChatBadges,
   applyPersonaChatBadges,
   buildAgentMemoryDirectoryHint,
+  findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
   resolveWorkspaceProjectAgentReachability,
   selectProjectAgentsForWorkspace,
@@ -416,4 +417,17 @@ test("applyDerivedPersonaChatBadges：空名单退化为等价副本，改名后
   // 这是 meta_json 落盘（第二落点）落地前的已知上限，测试钉住语义防止误以为已跟走。
   const renamed = applyDerivedPersonaChatBadges(rows, [{ name: "大龙" }]);
   assert.equal(getPersonaChatBadge(renamed[0] as never), undefined);
+});
+
+test("findPersonaRowIdsByTitlePrefix：只收旧名前缀行，改名补链的扫描边界", () => {
+  const rows = [
+    { taskId: "s1", title: "ui-pro · 你好" },
+    { taskId: "s2", title: "ui-pro-team · 我是独立员工" },
+    { taskId: "s3", title: "修复登录超时" },
+    { taskId: "s4", title: "ui-pro-planner · 排计划" },
+  ];
+  assert.deepEqual(findPersonaRowIdsByTitlePrefix(rows, "ui-pro"), ["s1"]);
+  // 分隔符带空格：ui-pro-team / ui-pro-planner 都不吃 ui-pro 的链。
+  assert.deepEqual(findPersonaRowIdsByTitlePrefix(rows, "ui-pro-team"), ["s2"]);
+  assert.deepEqual(findPersonaRowIdsByTitlePrefix(rows, "不存在"), []);
 });
