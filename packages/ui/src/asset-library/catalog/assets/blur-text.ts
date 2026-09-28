@@ -15,7 +15,7 @@ const HTML = `<!doctype html>
 <title>模糊渐显文字</title>
 <style>
   body {
-    min-height: 100vh; margin: 0; display: grid; place-items: center;
+    min-height: 100%; margin: 0; display: grid; place-items: center;
     background: radial-gradient(120% 130% at 50% 10%, #131024 0%, #0b0a18 60%, #070610 100%);
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   }

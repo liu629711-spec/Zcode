@@ -6602,6 +6602,7 @@ const zhCN: Record<string, string> = {
   "assetLibrary.detail.sendToCurrentChat": "发到当前会话",
   "assetLibrary.detail.sendToCurrentChatAria": "把素材需求消息插入当前会话输入框，不自动发送",
   "assetLibrary.detail.writeFailedFallback": "图纸落盘失败，已改为附带完整代码。",
+  "assetLibrary.backToTop": "回到顶部",
 };
 
 export default zhCN;

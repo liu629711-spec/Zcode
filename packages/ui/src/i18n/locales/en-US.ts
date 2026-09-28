@@ -6927,6 +6927,7 @@ const enUS: Record<string, string> = {
     "Insert the asset request message into the current chat composer; nothing is sent automatically",
   "assetLibrary.detail.writeFailedFallback":
     "Failed to write the blueprint files; fell back to attaching the full code.",
+  "assetLibrary.backToTop": "Back to top",
 };
 
 export default enUS;

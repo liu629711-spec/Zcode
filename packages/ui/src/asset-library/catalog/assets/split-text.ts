@@ -15,7 +15,7 @@ const HTML = `<!doctype html>
 <title>分行入场文字</title>
 <style>
   body {
-    min-height: 100vh; margin: 0; display: grid; place-items: center;
+    min-height: 100%; margin: 0; display: grid; place-items: center;
     background: radial-gradient(120% 130% at 50% 0%, #101526 0%, #0a0e1a 60%, #070a12 100%);
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   }

@@ -14,7 +14,7 @@ const HTML = `<!doctype html>
 <title>骨架屏 shimmer</title>
 <style>
   body {
-    min-height: 100vh; display: grid; place-items: center;
+    min-height: 100%; display: grid; place-items: center;
     background: #0c111b;
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   }

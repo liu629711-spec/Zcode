@@ -2,8 +2,12 @@
  * 素材大演示卡（技术设计 §10 V2-1，beautifului.dev 式画廊的单件载体）。
  *
  * 序号+分类徽标+标题+一句话+右上角常显悬浮操作组（代码/复制/递活，ghost hover 提亮）；
- * 演示区 h-[380px] 内嵌真 AssetPreviewFrame，由 useInView 现挂现卸（出视口回落骨架），
- * 保证任何时刻同屏沙箱数 = 视口内卡片数（±200px rootMargin），不许 30 个同挂。
+ * 演示区 h-[240px] 内嵌真 AssetPreviewFrame。
+ *
+ * iframe 挂载策略（V3-1 真机反馈）：首次进视口（useInView，±150px）才挂载，
+ * **挂载后永久保留 DOM**——出视口只把容器 display:none，绝不卸载。真机上反复
+ * 挂卸 192KB iframe 是滚动抖动的根源；挂一次不卸后滚动零重挂载开销，50 件
+ * 同挂的内存代价可控（字符串级 srcDoc）。骨架态只存在于首次进视口前。
  * 点 `</>` 在卡片下方内联展开代码面板（ai-elements CodeBlock/shiki 渲染+自带
  * CodeBlockCopyButton；多文件用其自带 selector 切换）；prompt 类货（files 空）
  * 展开显示口令全文+「复制口令」。
@@ -41,9 +45,10 @@ import type { CreateTaskRequest } from "@/app-shell/types.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
+import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
 import type { AssetFile, AssetManifest } from "./catalog/types.js";
 import { buildAssetTryPrompt } from "./assetTryPrompt.js";
-import { buildAssetReferenceMessage } from "./assetReferenceMessage.js";
+import { buildAssetReferenceChipMessage } from "./assetReferenceMessage.js";
 import { AssetPreviewFrame } from "./AssetPreviewFrame.js";
 import { useInView } from "./useInView.js";
 
@@ -92,6 +97,11 @@ export function AssetDemoCard({
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const { ref, inView } = useInView<HTMLDivElement>();
+  // 首挂后不卸（V3-1）：inView 只管「第一次」挂载和之后的显示/隐藏。
+  const [hasBeenInView, setHasBeenInView] = useState(false);
+  useEffect(() => {
+    if (inView) setHasBeenInView(true);
+  }, [inView]);
   const blueprintFiles = resolveBlueprintFiles(manifest);
   const isPromptAsset = manifest.files.length === 0;
   const [codeOpen, setCodeOpen] = useState(false);
@@ -108,13 +118,16 @@ export function AssetDemoCard({
     return () => window.clearTimeout(timer);
   }, [copied]);
 
-  // 递活消息组装（技术设计 §10 V2-2）：普通货先落盘引用化，失败兜底全量文本；
-  // 两个按钮共用 deliver（预填输入框，发送权在用户手里）。isSending 防双击重发。
+  // 递活消息组装（技术设计 §10 V2-2 + V3-2 chip 化）：普通货先落盘，消息 = 引用 chip +
+  // 口令 + 落盘指引（不再铺代码）；失败兜底全量文本。两个按钮共用 deliver（预填不发送）。
   const tryPrompt = buildAssetTryPrompt(manifest);
-  const sendToChat = async (deliver: (message: string) => void) => {
+  const sendToChat = async (
+    deliver: (message: string, mention?: ComposerMentionPrefill) => void,
+  ) => {
     if (isSending) return;
     setIsSending(true);
     let message = tryPrompt;
+    let mention: ComposerMentionPrefill | undefined;
     if (!isPromptAsset) {
       try {
         if (!platform.assetLibraryWriteFiles) {
@@ -125,26 +138,30 @@ export function AssetDemoCard({
           relativeDir: `.zcode/asset-library/${manifest.id}`,
           files: manifest.files.map((file) => ({ name: file.name, content: file.content })),
         });
-        message = buildAssetReferenceMessage(manifest, writtenPaths);
+        const chipMessage = buildAssetReferenceChipMessage(manifest, writtenPaths, locale);
+        message = chipMessage.text;
+        mention = chipMessage.mention;
       } catch {
         toast(intl.formatMessage({ id: "assetLibrary.detail.writeFailedFallback" }));
       }
     }
-    deliver(message);
+    deliver(message, mention);
     setIsSending(false);
   };
   const handleSendToNewChat = () => {
-    void sendToChat((message) => {
-      onCreateTask?.({ initialPrompt: message });
+    void sendToChat((message, mention) => {
+      // chip 需要 initialPromptMention 才在编辑器里呈现为结构化节点（插件商店同范式）。
+      onCreateTask?.({ initialPrompt: message, ...(mention ? { initialPromptMention: mention } : {}) });
     });
   };
   const handleSendToCurrentChat = () => {
-    void sendToChat((message) => {
+    void sendToChat((message, mention) => {
+      // 先切回会话视图：composer 挂载后才消费单槽（展厅是独立主视图，不切回等于无人消费）。
+      onOpenChat?.();
+      // 预填写进 workspace 单槽；mention 结构让 composer 渲染成 chip 而不是代码/路径原文。
       useZCodeSessionStore
         .getState()
-        .requestComposerTextInsert(workspacePath, message, workspaceIdentity);
-      // 展厅是独立主视图：不切回会话，插入要等 composer 挂载才兑现，用户会以为点了没反应。
-      onOpenChat?.();
+        .requestComposerTextInsert(workspacePath, message, workspaceIdentity, mention);
     });
   };
 
@@ -295,15 +312,19 @@ export function AssetDemoCard({
         </div>
       </header>
 
-      {/* 演示区：进视口挂真沙箱、出视口卸载回落骨架；overflow-hidden 圆角边框钉住预览溢出。 */}
+      {/* 演示区：首次进视口挂真沙箱，之后永久保留 DOM——出视口 display:none 藏起来，
+          回视口零重挂载（滚动抖动根治）。骨架态只在首次进视口前出现；
+          overflow-hidden 圆角边框钉住预览溢出。 */}
       <div
         ref={ref}
         data-testid="asset-library-preview"
         aria-label={intl.formatMessage({ id: "assetLibrary.detail.previewLabel" })}
-        className="h-[380px] shrink-0 overflow-hidden rounded-xl border border-border bg-background"
+        className="h-[240px] shrink-0 overflow-hidden rounded-xl border border-border bg-background"
       >
-        {inView ? (
-          <AssetPreviewFrame previewHtml={manifest.previewHtml} title={manifest.title} />
+        {hasBeenInView ? (
+          <div className="h-full w-full" style={{ display: inView ? undefined : "none" }}>
+            <AssetPreviewFrame previewHtml={manifest.previewHtml} title={manifest.title} />
+          </div>
         ) : (
           <div aria-hidden="true" className="flex h-full w-full flex-col gap-2 p-3">
             <span className="motion-safe:animate-pulse h-1/2 rounded-md bg-surface" />

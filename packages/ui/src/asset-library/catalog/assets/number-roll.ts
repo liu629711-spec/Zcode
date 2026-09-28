@@ -16,7 +16,7 @@ const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 const CSS = [
   "* { box-sizing: border-box; margin: 0; }",
-  "body { min-height: 100vh; display: grid; place-items: center; background: #0b101a; font-family: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif; }",
+  "body { min-height: 100%; display: grid; place-items: center; background: #0b101a; font-family: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif; }",
   ".nr-stage { display: flex; flex-direction: column; align-items: center; gap: 18px; color: #e6edf7; }",
   ".nr-counter { display: flex; gap: 6px; padding: 18px 22px; border-radius: 16px; background: #141c2b; box-shadow: inset 0 2px 10px rgb(0 0 0 / 0.5); }",
   ".nr-window { display: inline-block; height: 64px; overflow: hidden; border-radius: 8px; background: #0d1420; }",

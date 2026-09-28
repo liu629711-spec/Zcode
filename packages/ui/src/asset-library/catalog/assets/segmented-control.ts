@@ -7,7 +7,7 @@ import type { AssetManifest } from "../types.js";
 
 const CSS = `* { box-sizing: border-box; margin: 0; }
 body {
-  min-height: 100vh; display: grid; place-items: center;
+  min-height: 100%; display: grid; place-items: center;
   background: radial-gradient(110% 110% at 50% 0%, #101827 0%, #0a0f18 65%, #070b12 100%);
   font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
 }

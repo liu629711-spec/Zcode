@@ -14,7 +14,7 @@ const DEMO_TSX = `import { useEffect, useState } from "react";
 // 每位数字一张翻牌：值变化时 key 重挂载，rotateX 翻落进场；等宽数字防跳动。
 const CSS = [
   "* { box-sizing: border-box; margin: 0; }",
-  "body { min-height: 100vh; display: grid; place-items: center; background: #0b0f17; font-family: ui-monospace, Consolas, 'PingFang SC', monospace; }",
+  "body { min-height: 100%; display: grid; place-items: center; background: #0b0f17; font-family: ui-monospace, Consolas, 'PingFang SC', monospace; }",
   ".fc-stage { display: flex; flex-direction: column; align-items: center; gap: 16px; }",
   ".fc-clock { display: flex; gap: 8px; perspective: 640px; }",
   ".fc-digit { width: 46px; height: 68px; border-radius: 10px; display: grid; place-items: center; font-size: 38px; font-variant-numeric: tabular-nums; color: #e8eefb; background: linear-gradient(180deg, #1a2333, #111827); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 6px 14px rgb(0 0 0 / 0.45); }",

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAssetReferenceMessage } from "../src/asset-library/assetReferenceMessage.js";
+import {
+  buildAssetReferenceChipMessage,
+  buildAssetReferenceMessage,
+} from "../src/asset-library/assetReferenceMessage.js";
 import { buildAssetTryPrompt } from "../src/asset-library/assetTryPrompt.js";
 import type { AssetManifest } from "../src/asset-library/catalog/types.js";
 
@@ -68,4 +71,57 @@ test("prompt 类货：不落盘不引用，buildAssetTryPrompt 保持原语义�
   const out = buildAssetTryPrompt(promptAsset);
   assert.equal(out, "给登录页加一条流星雨背景\n\n请照上面的口令直接干活，不需要另附代码。");
   assert.ok(!out.includes(".zcode/asset-library"), "prompt 类货没有任何引用链接");
+});
+
+// ============================================================
+// V3-2 chip 化组装的可运行检查（用户反馈：要"引用 chip"不要代码/路径原文）
+// ============================================================
+// 钉的是：正文以 chip 的 canonical markdown 开头（composer 用 startsWith 判定结构化节点）、
+// chip 指向入口文件（index.html 优先）、label 是素材名而非文件名、正文不含文件路径列表
+// （路径由 chip 承载），且文本与 mention 一致成对返回。
+
+test("chip 化：正文以引用 markdown 开头，mention 指向入口文件 index.html", () => {
+  const asset = manifest({
+    id: "chip-asset",
+    title: "毛玻璃登录页",
+    files: [
+      { name: "style.css", language: "css", content: "body{}" },
+      { name: "index.html", language: "html", content: "<p>x</p>" },
+    ],
+  });
+  const paths = [
+    "./.zcode/asset-library/chip-asset/style.css",
+    "./.zcode/asset-library/chip-asset/index.html",
+  ];
+  const { text, mention } = buildAssetReferenceChipMessage(asset, paths, "zh-CN");
+  assert.ok(mention, "应产出结构化 mention");
+  assert.equal(mention!.category, "files");
+  assert.equal(mention!.label, "毛玻璃登录页", "chip label 用素材名");
+  assert.equal(mention!.value, "./.zcode/asset-library/chip-asset/index.html", "chip 指向入口文件");
+  assert.ok(text.startsWith(mention!.markdown), "正文必须以 chip canonical markdown 开头");
+  assert.ok(!text.includes("style.css"), "正文不含文件路径列表（路径由 chip 承载）");
+  assert.ok(text.includes("把测试货装进项目"), "正文含口令");
+});
+
+test("chip 化：无入口文件时取首个文件；路径列表为空则退回纯文本（不静默）", () => {
+  const asset = manifest({
+    id: "single",
+    files: [{ name: "One.tsx", language: "tsx", content: "export {}" }],
+  });
+  const { mention } = buildAssetReferenceChipMessage(asset, ["./.zcode/asset-library/single/One.tsx"]);
+  assert.equal(mention?.value, "./.zcode/asset-library/single/One.tsx");
+
+  const fallback = buildAssetReferenceChipMessage(asset, []);
+  assert.equal(fallback.mention, undefined);
+  assert.ok(fallback.text.includes("One.tsx"), "空落盘退回逐文件引用文本");
+});
+
+test("chip 化：英文 locale 用 titleEn 作 label", () => {
+  const asset = manifest({ title: "中文名", titleEn: "English Name" });
+  const { mention } = buildAssetReferenceChipMessage(
+    asset,
+    ["./.zcode/asset-library/test-asset/Test.tsx"],
+    "en-US",
+  );
+  assert.equal(mention?.label, "English Name");
 });

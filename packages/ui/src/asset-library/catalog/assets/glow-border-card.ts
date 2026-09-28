@@ -13,7 +13,7 @@ const DEMO_TSX = `// @property 注册角度变量后 conic-gradient 才能被动
 const CSS = [
   "@property --gb-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }",
   "* { box-sizing: border-box; margin: 0; }",
-  "body { min-height: 100vh; display: grid; place-items: center; background: #0b101a; font-family: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif; }",
+  "body { min-height: 100%; display: grid; place-items: center; background: #0b101a; font-family: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif; }",
   ".gb-card { position: relative; width: 320px; padding: 1.5px; border-radius: 18px; background: conic-gradient(from var(--gb-angle), #38bdf8, #a855f7, #f472b6, #facc15, #38bdf8); animation: gb-flow 5s linear infinite; }",
   ".gb-body { border-radius: 16.5px; background: #0d1420; padding: 26px 24px; color: #e6edf7; }",
   ".gb-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; background: rgb(168 85 247 / 0.16); color: #c4b5fd; font-size: 12px; letter-spacing: 0.08em; }",

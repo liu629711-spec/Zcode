@@ -14,7 +14,7 @@ const HTML = `<!doctype html>
 <title>故障风文字</title>
 <style>
   body {
-    min-height: 100vh; display: grid; place-items: center;
+    min-height: 100%; display: grid; place-items: center;
     background: #0a0c12;
     font-family: ui-monospace, "Cascadia Code", Consolas, "PingFang SC", monospace;
   }

@@ -59,10 +59,14 @@ export function AssetPreviewFrame({ previewHtml, title }: AssetPreviewFrameProps
 
   return (
     <div className="relative h-full w-full">
+      {/* scrolling="no" + 内层 overflow 兜底：预览区里永远不出现滚动条（V3-1 真机反馈）。
+          序号 demo 曾写 min-height:100vh 致溢出，已批量改 100%；这层是第二道保险——
+          货架里任何一件将来溢出，也只是被裁掉，不会长出丑陋的滑动框。 */}
       <iframe
         key={attempt}
         className="block h-full w-full rounded-lg border-0"
         sandbox={ASSET_SANDBOX}
+        scrolling="no"
         srcDoc={previewHtml}
         title={title}
         onLoad={() => setLoaded(true)}

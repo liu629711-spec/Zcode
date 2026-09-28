@@ -16,7 +16,7 @@ const HTML = `<!doctype html>
 <style>
   * { box-sizing: border-box; margin: 0; }
   body {
-    min-height: 100vh; display: grid; place-items: center;
+    min-height: 100%; display: grid; place-items: center;
     background: radial-gradient(120% 130% at 50% 0%, #0d1526 0%, #0a0e1a 60%, #070a12 100%);
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   }
@@ -26,6 +26,9 @@ const HTML = `<!doctype html>
   }
   .flip:focus-visible { outline: 2px solid #60a5fa; outline-offset: 4px; border-radius: 20px; }
   .inner {
+    /* display:block 必须有：span 默认 inline，width/height:100% 不生效，
+       全部子面 absolute 后自身塌成 0×0，正反面被挤到 0 宽 → CJK 一字一行竖排。 */
+    display: block;
     position: relative; width: 100%; height: 100%;
     transform-style: preserve-3d; transition: transform 0.65s cubic-bezier(0.3, 0.9, 0.3, 1);
   }
