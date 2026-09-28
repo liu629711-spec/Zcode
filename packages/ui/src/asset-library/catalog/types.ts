@@ -8,7 +8,14 @@
  * scene 数据用的，改用它会把 §1 的 string 契约改掉，S2~S4 还没消费方，不做。
  */
 
-export type AssetCategory = "text-animation" | "background" | "control" | "block" | "prompt";
+export type AssetCategory =
+  | "text-animation"
+  | "background"
+  | "control"
+  | "block"
+  | "prompt"
+  /** V3-3 设计风格库：整套设计规范说明书（open-design 收录），不是组件。 */
+  | "design-style";
 
 /** 图纸文件：用户复制/发走的就是 content 原文。 */
 export interface AssetFile {
@@ -35,6 +42,8 @@ export interface AssetManifest {
   /**
    * 自包含预览 HTML，运行时直接进 srcdoc。铁律见 AssetPreviewFrame.tsx：
    * 禁一切外链（`src="http…"`）、禁 localStorage（沙箱无源环境会抛）。
+   * V3-3 逐字收录的 React 货由 catalog/index.ts 用 previewAssemble 惰性接线
+   * （首次读取时才把运行时块 + CSS + 组件体拼成 HTML，模块级缓存）。
    */
   previewHtml: string;
   /** 图纸；prompt 类货允许为空（口令本身即货） */
@@ -43,4 +52,23 @@ export interface AssetManifest {
   prompt: string;
   /** 出处+许可；自制货可省 */
   source?: { site: string; url: string; license: string };
+  /**
+   * V3-3 逐字收录（React+Tailwind 货）：构建期预览配置，只在
+   * scripts/build-asset-previews.mjs 里消费，运行时不用（不是给用户看的字段）。
+   *
+   * files 是逐字交付的图纸原文；预览另有一份副本，因为沙箱禁外链（patches 把上游
+   * 硬编码的远程图片换成内联 data URI），也因为多数组件要 props 才有画面（demo）。
+   */
+  preview?: {
+    /** 预览主题 = 上游仓库 app/globals.css 抽出的 token（scripts/asset-preview-themes/）。 */
+    theme: "beautifului" | "rareui";
+    /** 演示 harness（tsx）：给组件喂 props，让预览有画面。 */
+    demo: string;
+    /** 预览副本的离线化改写；每条必须在源码里命中，否则构建期报错。 */
+    patches?: { from: string; to: string; note: string }[];
+    /** html 根节点是否挂 .dark（上游 dark 变体是祖先类）。 */
+    dark?: boolean;
+    /** 预览定位：center（默认居中）/ top（宽组件贴顶）。 */
+    stage?: "center" | "top";
+  };
 }

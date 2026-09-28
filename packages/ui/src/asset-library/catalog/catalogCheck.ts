@@ -20,6 +20,7 @@ const ASSET_CATEGORIES: readonly AssetCategory[] = [
   "control",
   "block",
   "prompt",
+  "design-style",
 ];
 
 /** 外链检测：src 指向 http(s)（双引号/单引号都算）。相对引用与 data: 不拦。 */

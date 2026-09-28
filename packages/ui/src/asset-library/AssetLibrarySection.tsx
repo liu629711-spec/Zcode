@@ -29,6 +29,7 @@ const CATEGORY_ORDER: readonly AssetCategory[] = [
   "control",
   "block",
   "prompt",
+  "design-style",
 ];
 
 /** 递活接线（S4）：workspacePath/identity 供「发到当前会话」，onCreateTask 供「发到新会话」。 */

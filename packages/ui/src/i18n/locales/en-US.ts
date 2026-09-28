@@ -6898,6 +6898,7 @@ const enUS: Record<string, string> = {
   "assetLibrary.category.control": "Controls",
   "assetLibrary.category.block": "Blocks",
   "assetLibrary.category.prompt": "Prompts",
+  "assetLibrary.category.design-style": "Design styles",
   "assetLibrary.empty.title": "No matching assets",
   "assetLibrary.empty.description": "Try a different keyword, or clear the filters.",
   "assetLibrary.empty.clearSearch": "Clear search",

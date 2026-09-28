@@ -6576,6 +6576,7 @@ const zhCN: Record<string, string> = {
   "assetLibrary.category.control": "控件",
   "assetLibrary.category.block": "区块",
   "assetLibrary.category.prompt": "提示词",
+  "assetLibrary.category.design-style": "设计风格",
   "assetLibrary.empty.title": "没有匹配的素材",
   "assetLibrary.empty.description": "换个关键词，或清除筛选条件再试试。",
   "assetLibrary.empty.clearSearch": "清除搜索",

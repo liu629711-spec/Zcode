@@ -193,12 +193,14 @@ import { toastNotificationAsset } from "./assets/toast-notification.js";
 import { typewriterAsset } from "./assets/typewriter-text.js";
 import { waveBackgroundAsset } from "./assets/wave-background.js";
 import { REACT_PREVIEW_HTML } from "./preview-html.js";
+import { OPEN_SOURCE_ASSETS } from "./openSourceAssets.js";
 
 /**
  * react 货的 previewHtml 从构建期产物接线（scripts/build-asset-previews.mjs 生成）。
  * 产物缺失时置空串——validateCatalog 会报"必填字段 previewHtml 为空"让测试炸掉，
  * 而不是静默白屏（重新生成：仓库根 node scripts/build-asset-previews.mjs）。
  */
+
 const reactAssets: AssetManifest[] = [flipClockAsset, glowBorderCardAsset, numberRollAsset].map(
   (asset) => ({
     ...asset,
@@ -272,6 +274,8 @@ export const ASSET_CATALOG: AssetManifest[] = [
   orbitLoaderAsset,
   checkmarkCheckboxAsset,
   glowFocusInputAsset,
+  // —— V3-3 三站逐字收录（Beautiful UI 19 / RareUI 26 / UIverse 15，共 60 件）——
+  ...OPEN_SOURCE_ASSETS,
   // —— V3-3 设计风格库（open-design，Apache-2.0/MIT，逐字收录 DESIGN.md）——
   agenticDesignAsset,
   airbnbDesignAsset,

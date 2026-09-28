@@ -1,0 +1,35 @@
+import type { AssetManifest } from "../types.js";
+
+/**
+ * 「筛选表」逐字收录（V3-3 素材库）。
+ *
+ * 来源：Beautiful UI · github.com/TurboKach/ai-native-react-components · components/filter-table.tsx
+ * 作者：Turbo（beautifului.dev）
+ * 许可：MIT（Copyright (c) 2026 Turbo）——图纸为上游源码逐字收录，原注释保留。
+ * 预览由构建期编译（tailwind v4 + 运行时块），见 scripts/build-asset-previews.mjs。
+ */
+
+export const BeautifulUiFilterTableAsset: AssetManifest = {
+  id: "beautifului-filter-table",
+  title: "筛选表",
+  titleEn: "Filter Table",
+  description: "任务表：顶部状态筛选 chips（带计数与颜色点），点选即时过滤。",
+  descriptionEn: "Task table with status filter chips that filter rows live.",
+  category: "block",
+  tags: ["ai-chat","表格","筛选","beautifului","任务"],
+  // 预览由 catalog/index.ts 从 previewAssemble 接线（构建期产物，此处占位空串）
+  previewHtml: "",
+  files: [
+    {
+      "name": "filter-table.tsx",
+      "language": "tsx",
+      "content": "/*!\n * 筛选表 · filter-table.tsx\n *\n * 来源：github.com/TurboKach/ai-native-react-components · components/filter-table.tsx\n * 原址：https://github.com/TurboKach/ai-native-react-components/blob/main/components/filter-table.tsx\n * 作者：Turbo（beautifului.dev）\n * 版权：Copyright (c) 2026 Turbo\n * 许可：MIT License\n *\n * 以下为上游源码逐字收录（原文未改动；本声明块为收录时新增）。\n */\n\"use client\";\r\n\r\nimport { useState } from \"react\";\r\n\r\n/* ─────────────────────────────────────────────────────────\r\n * FILTER TABLE\r\n * Status chips directly filter the task table.\r\n * ───────────────────────────────────────────────────────── */\r\n\r\ntype Status = \"todo\" | \"progress\" | \"done\";\r\n\r\nconst FILTERS: { key: \"all\" | Status; label: string; dot?: string; count: number }[] = [\r\n  { key: \"all\", label: \"All\", count: 5 },\r\n  { key: \"todo\", label: \"To do\", dot: \"#f09a2f\", count: 2 },\r\n  { key: \"progress\", label: \"In Progress\", dot: \"#16a6c7\", count: 2 },\r\n  { key: \"done\", label: \"Completed\", dot: \"#25a878\", count: 1 },\r\n];\r\n\r\nconst ROWS: { task: string; date: string; status: Status; owner: string }[] = [\r\n  { task: \"Restock mango sorbet\", date: \"Dec 03\", status: \"todo\", owner: \"Mango Moon Gelato\" },\r\n  { task: \"Churn black sesame\", date: \"Sep 22\", status: \"progress\", owner: \"Kumo Creamery\" },\r\n  { task: \"Print summer menu\", date: \"Jan 02\", status: \"todo\", owner: \"Coral Coast Sorbet\" },\r\n  { task: \"Taste-test batch 42\", date: \"Nov 08\", status: \"progress\", owner: \"Maple Orbit\" },\r\n  { task: \"Order waffle cones\", date: \"Apr 14\", status: \"done\", owner: \"Aurora Scoops\" },\r\n];\r\n\r\nconst PILLS: Record<Status, { label: string; cls: string }> = {\r\n  todo: { label: \"To do\", cls: \"filter-status-todo\" },\r\n  progress: { label: \"In Progress\", cls: \"filter-status-progress\" },\r\n  done: { label: \"Completed\", cls: \"filter-status-done\" },\r\n};\r\n\r\nexport default function FilterTable() {\r\n  const [filter, setFilter] = useState<\"all\" | Status>(\"all\");\r\n\r\n  return (\r\n    <div className=\"w-full max-w-105\">\r\n      {/* filter chips */}\r\n      <div\r\n        className=\"-mx-1 mb-1 flex items-center gap-1 overflow-x-auto px-1 py-1\"\r\n        style={{ scrollbarWidth: \"none\" }}\r\n      >\r\n        {FILTERS.map((f) => {\r\n          const active = filter === f.key;\r\n          return (\r\n            <button\r\n              key={f.key}\r\n              type=\"button\"\r\n              aria-pressed={active}\r\n              onClick={() => setFilter(f.key)}\r\n              className={`flex h-6.5 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12px]\r\n                font-medium transition-[background-color,box-shadow,color] duration-200\r\n                ${active ? \"bg-surface text-ink shadow-btn\" : \"text-ink-2 hover:bg-hover\"}`}\r\n            >\r\n              {f.dot && <span className=\"size-1.5 rounded-full\" style={{ background: f.dot }} />}\r\n              {f.label}\r\n              <span\r\n                className={`rounded-[4px] px-1 text-[10.5px] tabular-nums\r\n                  ${active ? \"bg-field text-ink-2\" : \"text-ink-3\"}`}\r\n              >\r\n                {f.count}\r\n              </span>\r\n            </button>\r\n          );\r\n        })}\r\n      </div>\r\n\r\n      {/* table */}\r\n      <div\r\n        aria-label=\"Scrollable task table\"\r\n        className=\"overflow-x-auto rounded-card bg-surface shadow-card\"\r\n        role=\"region\"\r\n        tabIndex={0}\r\n        style={{ scrollbarWidth: \"none\" }}\r\n      >\r\n        <div className=\"min-w-[420px]\">\r\n          <div className=\"grid grid-cols-[1.3fr_0.6fr_0.95fr_0.9fr] border-b border-line px-3 py-2 text-[11.5px] font-medium text-ink-3\">\r\n            <span>Task name</span>\r\n            <span>Date</span>\r\n            <span>Status</span>\r\n            <span>Advisor</span>\r\n          </div>\r\n          {ROWS.map((row) => {\r\n            const shown = filter === \"all\" || row.status === filter;\r\n            const pill = PILLS[row.status];\r\n            return (\r\n              <div\r\n                key={row.task}\r\n                className=\"grid transition-[grid-template-rows,opacity] duration-300\"\r\n                style={{\r\n                  gridTemplateRows: shown ? \"1fr\" : \"0fr\",\r\n                  opacity: shown ? 1 : 0,\r\n                  transitionTimingFunction: \"cubic-bezier(0.23, 1, 0.32, 1)\",\r\n                }}\r\n              >\r\n                <div className=\"overflow-hidden\">\r\n                  <div\r\n                    className=\"grid grid-cols-[1.3fr_0.6fr_0.95fr_0.9fr] items-center border-b\r\n                      border-line px-3 py-2 text-[12px] transition-colors duration-100\r\n                      last:border-0 hover:bg-hover\"\r\n                  >\r\n                    <span className=\"truncate font-medium text-ink\">{row.task}</span>\r\n                    <span className=\"text-ink-2 tabular-nums\">{row.date}</span>\r\n                    <span>\r\n                      <span\r\n                        className={`inline-flex h-5 items-center rounded-[5px] px-1.5\r\n                          text-[11px] font-medium ${pill.cls}`}\r\n                      >\r\n                        {pill.label}\r\n                      </span>\r\n                    </span>\r\n                    <span className=\"truncate text-ink-2\">{row.owner}</span>\r\n                  </div>\r\n                </div>\r\n              </div>\r\n            );\r\n          })}\r\n        </div>\r\n      </div>\r\n    </div>\r\n  );\r\n}\r\n"
+    }
+  ],
+  prompt: "请把「筛选表」装进我的项目：任务列表+筛选——顶部一排筛选 chip（All / To do / In Progress / Completed，各带计数与状态色点，选中项实底反色），横向可滚动且隐藏滚动条；下方表格逐行：任务名、日期、状态（彩色点+文案）、负责人；点 chip 即时过滤行并保序；空结果时给一行温和提示。先看现有的列表/筛选组件，融入而不是覆盖。",
+  source: { site: "Beautiful UI", url: "https://github.com/TurboKach/ai-native-react-components", license: "MIT" },
+  preview: {
+    theme: "beautifului",
+    demo: "import Comp from \"./filter-table.tsx\";\nexport default function Demo() { return <Comp />; }",
+  },
+};
