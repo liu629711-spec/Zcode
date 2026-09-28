@@ -12,7 +12,7 @@ import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
-import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon } from "lucide-react";
+import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon, Bot } from "lucide-react";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
 import { useBaseWorkspaceServices, useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
@@ -54,8 +54,9 @@ import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSk
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
 import { refreshWorkspacePluginCapabilitiesAfterRemoteSync } from "@/lib/remotePluginSyncRefresh.js";
 import { useMcpStore } from "@/store/mcpStore.js";
-import { resolvePersonaChatBadgeForTask } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { resolvePersonaChatBadgeForTask, stripPersonaTitlePrefix } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
+import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import { usePersonaChatBadgeStore } from "@/store/personaChatBadgeStore.js";
 import { useProjectAgentDirectoryStore } from "@/store/projectAgentDirectoryStore.js";
 import {
@@ -181,6 +182,11 @@ export function WorkspaceHeaderTitleSection({
       projectAgentDirectoryByWorkspaceKey[workspaceKey],
     );
   }, [activeTaskMeta, personaBadgeByWorkspaceKey, projectAgentDirectoryByWorkspaceKey]);
+  // 显示层去前缀（D4）：工牌在旁承担身份表达，标题不再重复「员工名 · 」；
+  // 存储标题原样保留（冷重启的标题反推徽章仍靠前缀）。
+  const personaDisplayTitle = personaChatBadge
+    ? stripPersonaTitlePrefix(activeTaskTitle, personaChatBadge.name)
+    : activeTaskTitle;
   const isPinned = Boolean(
     activeTaskId && pinnedTasks.some((task) => task.taskId === activeTaskId),
   );
@@ -503,9 +509,9 @@ export function WorkspaceHeaderTitleSection({
           simplifyForNarrowRemote && "max-md:max-w-[42vw]",
           compact ? "text-[0.92rem]" : "text-ui-base",
         )}
-        title={activeTaskTitle}
+        title={personaDisplayTitle}
       >
-        <span className="min-w-0 truncate">{activeTaskTitle}</span>
+        <span className="min-w-0 truncate">{personaDisplayTitle}</span>
         {/* {activeTaskChangeSummary ? (
           <>
             {activeTaskChangeSummary.added > 0 ? (
@@ -521,6 +527,22 @@ export function WorkspaceHeaderTitleSection({
           </>
         ) : null} */}
       </h1>
+      {personaChatBadge ? (
+        // 会话顶部工牌（D4 用户要求：逐看到会话行有标识、顶部也该有）：
+        // 与侧栏行同一"彩色名字牌"约定（档案色，无色按名字哈希）。
+        <span
+          data-persona-chat-badge="true"
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-ui-sm font-medium leading-none",
+            SUBAGENT_COLOR_CLASS[
+              personaChatBadge.color ?? resolveSubagentColorFromName(personaChatBadge.name)
+            ],
+          )}
+        >
+          <Bot className="size-3 shrink-0" />
+          {personaChatBadge.name}
+        </span>
+      ) : null}
       <div className="flex min-w-0 shrink-0 items-center gap-1">
         {!isDraftNewTask ? (
           <DropdownMenu open={taskMenuOpen} onOpenChange={setTaskMenuOpen}>

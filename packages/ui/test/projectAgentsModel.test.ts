@@ -15,6 +15,7 @@ import {
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   selectProjectAgentsForWorkspace,
+  stripPersonaTitlePrefix,
   toProjectAgentCreateConfig,
   toProjectAgentPersona,
   toProjectAgentPersonaFromDraft,
@@ -479,6 +480,16 @@ test("resolvePersonaChatBadgeForTask：行内 → 持久登记 → 标题反推 
   );
   // 三路都无 → undefined（普通会话行不吃员工菜单）。
   assert.equal(resolvePersonaChatBadgeForTask(task, undefined, []), undefined);
+});
+
+test("stripPersonaTitlePrefix：工牌在旁时标题不重复员工名；中文自由标题不动", () => {
+  assert.equal(stripPersonaTitlePrefix("code-test · 你好", "code-test"), "你好");
+  // 陈旧旧名前缀也剥（工牌已是新名）——段形似员工名即可。
+  assert.equal(stripPersonaTitlePrefix("UI-pro · 你好", "code-test"), "你好");
+  // 无前缀 / 中文自由标题（不形似员工名）原样保留。
+  assert.equal(stripPersonaTitlePrefix("你好", "code-test"), "你好");
+  assert.equal(stripPersonaTitlePrefix("装修 · 二期", "code-test"), "装修 · 二期");
+  assert.equal(stripPersonaTitlePrefix(" · 分隔符在开头", "code-test"), " · 分隔符在开头");
 });
 
 test("findLatestPersonaChatRow：三路对号找员工最近一段会话，取 updatedAt 最新", () => {

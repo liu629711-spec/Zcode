@@ -266,6 +266,25 @@ export function buildRenamedPersonaTitle(title: string, newName: string): string
 }
 
 /**
+ * 标题显示去前缀（D4 展示层）：工牌已承担身份表达，行/头部标题里的「员工名 · 」
+ * 不再重复——但只影响显示，存储标题原样保留：冷重启的标题反推徽章
+ * （applyDerivedPersonaChatBadges）依赖这个前缀，剥存储会引发"工牌丢了"。
+ * 只剥形似员工名的段（合法字符集 [a-zA-Z0-9-]{3,50}，与工牌名一致或陈旧旧名皆可）；
+ * 用户自起的「装修 · 二期」这类中文自由标题不动。
+ */
+export function stripPersonaTitlePrefix(title: string, agentName: string): string {
+  const separator = title.indexOf(" · ");
+  if (separator <= 0) {
+    return title;
+  }
+  const head = title.slice(0, separator);
+  if (head !== agentName && !/^[a-zA-Z0-9-]{3,50}$/u.test(head)) {
+    return title;
+  }
+  return title.slice(separator + 3);
+}
+
+/**
  * 员工最近一段已归号会话（D3 续接）：行集合按三路对号找名字命中的行，
  * 取 updatedAt 最新的一条——打开员工时跳回它，历史与记忆原样续上；
  * 没有才新开一段（首见）。行集合是侧栏已加载分页，够用且零额外取数。

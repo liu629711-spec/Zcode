@@ -17,8 +17,8 @@ import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
-import { SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
-import { getPersonaChatBadge } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import { getPersonaChatBadge, stripPersonaTitlePrefix } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { getPathLeaf } from "@/lib/path.js";
 import { formatTaskTitleWithChanges, getTaskChangeSummary } from "@/lib/taskChangeSummary.js";
 import {
@@ -247,11 +247,17 @@ export const MemoTaskItem = memo(function TaskListItem({
           { label: taskAttentionLabel, count: String(taskAttention.count) },
         )
       : taskAttentionLabel;
-  const taskTitle =
+  const baseTaskTitle =
     task.title ||
     intl.formatMessage({
       id: task.forkedFromTaskId ? "taskList.forkedUntitled" : "taskList.untitled",
     });
+  const personaChatBadge = getPersonaChatBadge(task);
+  // 显示层去前缀（D4）：工牌已经表达身份，标题里的「员工名 · 」不再重复展示；
+  // 存储标题原样保留——冷重启的标题反推徽章仍靠这个前缀（改标题请走重命名弹窗）。
+  const taskTitle = personaChatBadge
+    ? stripPersonaTitlePrefix(baseTaskTitle, personaChatBadge.name)
+    : baseTaskTitle;
   const handleSelect = useCallback(() => {
     runUserAction({
       input: { featureId: "task.lifecycle", action: "open", trigger: "button" },
@@ -371,7 +377,6 @@ export const MemoTaskItem = memo(function TaskListItem({
   // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
   // 会话溯源，且让每一行多背一个全局 store 订阅。
   const isTaskOffPeak = isOffPeakTask(task);
-  const personaChatBadge = getPersonaChatBadge(task);
   const showTimelineIdleIndicator =
     variant === "timeline" && leadingIndicator === "none" && !isPinned;
   // 手机远控标记和置顶状态共用左侧 leading 槽。
@@ -667,8 +672,9 @@ export const MemoTaskItem = memo(function TaskListItem({
                     </span>
                   ) : null}
                   {personaChatBadge ? (
-                    // 驻场智能体徽章（D2）：不占左侧状态槽（未读/运行中/置顶 hover 会接管那里），
-                    // 与定时/闲时图标同列在时间元信息里；无色档案兜底只画图标，悬停有大白话说明。
+                    // 驻场智能体工牌（D2/D4）：从"小图标+可选色点"升级为"彩色名字牌"——
+                    // 用户真机反馈认不出谁是谁。颜色取档案色板，档案没选色则按名字哈希取色
+                    // （与工具调用渲染同一兜底约定），每个员工恒有稳定颜色可辨。
                     <ControlHintTooltip
                       title={intl.formatMessage(
                         { id: "taskList.personaChatBadge" },
@@ -684,18 +690,16 @@ export const MemoTaskItem = memo(function TaskListItem({
                           { id: "taskList.personaChatBadge" },
                           { name: personaChatBadge.name },
                         )}
-                        className="flex shrink-0 items-center gap-1"
+                        className={cn(
+                          "flex min-w-0 shrink items-center gap-1 rounded-[4px] px-1 leading-none",
+                          SUBAGENT_COLOR_CLASS[
+                            personaChatBadge.color ??
+                              resolveSubagentColorFromName(personaChatBadge.name)
+                          ],
+                        )}
                       >
-                        <Bot className="size-3.5 shrink-0" />
-                        {personaChatBadge.color ? (
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              "size-1.5 shrink-0 rounded-full",
-                              SUBAGENT_COLOR_CLASS[personaChatBadge.color],
-                            )}
-                          />
-                        ) : null}
+                        <Bot className="size-3 shrink-0" />
+                        <span className="min-w-0 truncate">{personaChatBadge.name}</span>
                       </span>
                     </ControlHintTooltip>
                   ) : null}
@@ -792,7 +796,7 @@ export const MemoTaskItem = memo(function TaskListItem({
                 )}
               >
                 {personaChatBadge ? (
-                  // 同 timeline 行：驻场智能体徽章归属时间元信息，不占左侧状态槽。
+                  // 同 timeline 行：彩色名字牌（D4），档案没选色按名字哈希取色。
                   <ControlHintTooltip
                     title={intl.formatMessage(
                       { id: "taskList.personaChatBadge" },
@@ -808,18 +812,16 @@ export const MemoTaskItem = memo(function TaskListItem({
                         { id: "taskList.personaChatBadge" },
                         { name: personaChatBadge.name },
                       )}
-                      className="flex shrink-0 items-center gap-1"
+                      className={cn(
+                        "flex min-w-0 shrink items-center gap-1 rounded-[4px] px-1 leading-none",
+                        SUBAGENT_COLOR_CLASS[
+                          personaChatBadge.color ??
+                            resolveSubagentColorFromName(personaChatBadge.name)
+                        ],
+                      )}
                     >
-                      <Bot className="size-3.5 shrink-0" />
-                      {personaChatBadge.color ? (
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            "size-1.5 shrink-0 rounded-full",
-                            SUBAGENT_COLOR_CLASS[personaChatBadge.color],
-                          )}
-                        />
-                      ) : null}
+                      <Bot className="size-3 shrink-0" />
+                      <span className="min-w-0 truncate">{personaChatBadge.name}</span>
                     </span>
                   </ControlHintTooltip>
                 ) : null}

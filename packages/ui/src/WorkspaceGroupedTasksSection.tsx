@@ -26,6 +26,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { TaskRenameDialog } from "@/TaskRenameDialog.js";
 import { TaskSpecDialog } from "@/TaskSpecDialog.js";
 import { shouldHideGroupedTaskContent, useGroupedTaskView } from "@/hooks/useGroupedTaskView.js";
+import { usePersonaBadgedTaskItems } from "@/hooks/usePersonaBadgedTaskItems.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { getPathLeaf } from "@/lib/path.js";
@@ -1560,6 +1561,18 @@ export function WorkspaceGroupedTasksSection({
     stickyGroupNode,
   ]);
 
+  // 顶层散任务（不在任何组里的行）走动路径：GroupedTaskItem 直吃 node.task，
+  // 绕不过组内虚拟列表的工牌合并——这里对根级 task 节点单独做同一套三路对号（D4）。
+  // 用户真机抓到的"分组视图没工牌"就是这批散任务（组内列表上一片已补）。
+  const topLevelTaskNodes = useMemo(
+    () => view.nodes.flatMap((node) => (node.type === "task" ? [node.task] : [])),
+    [view.nodes],
+  );
+  const badgedTopLevelTasks = usePersonaBadgedTaskItems(topLevelTaskNodes);
+  const badgedTopLevelTaskByKey = useMemo(
+    () => new Map(badgedTopLevelTasks.map((task) => [taskKey(task), task] as const)),
+    [badgedTopLevelTasks],
+  );
   const renderTopLevelNode = useCallback(
     (node: ZCodeGroupedTaskView["nodes"][number]) =>
       node.type === "group" ? (
@@ -1609,7 +1622,7 @@ export function WorkspaceGroupedTasksSection({
       ) : (
         <GroupedTaskItem
           key={taskKey(node.task)}
-          task={node.task}
+          task={badgedTopLevelTaskByKey.get(taskKey(node.task)) ?? node.task}
           groups={groups}
           remoteSessionId={getTaskRemoteSessionId(node.task)}
           workspaceLabel={getTaskWorkspaceLabel(node.task)}
@@ -1636,6 +1649,7 @@ export function WorkspaceGroupedTasksSection({
       activeWorkspacePath,
       activeDragTaskKey,
       activeDragGroupId,
+      badgedTopLevelTaskByKey,
       groupedTooltipsDisabled,
       collapsedGroupIds,
       draftWorkspaceLabel,

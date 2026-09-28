@@ -10,7 +10,10 @@ import { Badge } from "@/components/ui/badge.js";
 import { toast } from "@/components/ui/toast.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
-import { getPersonaChatBadge } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import {
+  getPersonaChatBadge,
+  stripPersonaTitlePrefix,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu.js";
 import {
   Tooltip,
@@ -125,7 +128,7 @@ function GroupedTaskRowComponent({
         )
       : taskAttentionLabel;
   const leadingIndicator = deriveTaskLeadingIndicator(task, taskActivity);
-  const taskTitle =
+  const baseTaskTitle =
     task.title ||
     intl.formatMessage({
       id: task.forkedFromTaskId ? "taskList.forkedUntitled" : "taskList.untitled",
@@ -168,6 +171,11 @@ function GroupedTaskRowComponent({
       </span>
     </ControlHintTooltip>
   ) : null;
+  // 显示层去前缀（D4）：工牌已表达身份，标题不重复员工名；存储标题不动
+  // （冷重启的标题反推徽章仍靠前缀）。
+  const taskTitle = personaChatBadge
+    ? stripPersonaTitlePrefix(baseTaskTitle, personaChatBadge.name)
+    : baseTaskTitle;
   const isActive =
     buildTaskWorkspaceKey(activeWorkspacePath, activeWorkspaceIdentity) === workspaceKey &&
     activeTaskId === task.taskId;
