@@ -5,6 +5,7 @@ import type { ZCodeTaskMeta } from "@zcode/shared";
 import { toast } from "@/components/ui/toast.js";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
+import { usePersonaBadgedTaskItems } from "@/hooks/usePersonaBadgedTaskItems.js";
 import { useLocalWorkspaceScopes } from "@/hooks/useLocalWorkspaceScopes.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -139,7 +140,12 @@ export function WorkspacePinnedTasksSection({
       compareZCodeTaskListItems(left, right, taskSortBy),
     );
   }, [localItems, remoteItems, taskSortBy]);
-  const items = showAllTasks ? sortedItems : sortedItems.slice(0, collapsedLimit);
+  const rawVisibleItems = useMemo(
+    () => (showAllTasks ? sortedItems : sortedItems.slice(0, collapsedLimit)),
+    [collapsedLimit, showAllTasks, sortedItems],
+  );
+  // 员工工牌跨视图合并（D2/D4）：与侧栏项目视图同优先级对号。
+  const items = usePersonaBadgedTaskItems(rawVisibleItems);
   const total = sortedItems.length;
   const syncingRemoteWorkspaces = workspaceTabs.some((tab) => {
     if (!tab.workspaceIdentity && !tab.remoteTarget && !tab.remoteSessionId) {

@@ -309,6 +309,7 @@ export function WorkspaceProjectAgentCreateDialog({
   agents,
   editingAgent = null,
   onOpenAgent,
+  onOpenNewChat,
   onCreate,
   onUpdate,
   workspacePath,
@@ -322,6 +323,8 @@ export function WorkspaceProjectAgentCreateDialog({
   agents: AgentSummary[];
   editingAgent?: AgentSummary | null;
   onOpenAgent: (agent: AgentSummary) => void;
+  /** 「开新对话」（D3）：不续接历史、另起一段该员工的会话；缺席时不渲染入口。 */
+  onOpenNewChat?: (agent: AgentSummary) => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
   onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
   /** 记忆区按目标工作区取数（编辑态才需要）；user 档案记事本在用户数据里，服务面自己解析。 */
@@ -399,25 +402,43 @@ export function WorkspaceProjectAgentCreateDialog({
                 {intl.formatMessage({ id: "workspaceSidebar.projectAgentsEmpty" })}
               </p>
             ) : (
-              <ul className="max-h-40 space-y-0.5 overflow-y-auto">
-                {agents.map((agent) => (
-                  <li key={agent.id}>
-                    <button
-                      type="button"
-                      data-testid={testId(TID_PROJECT_AGENT_ROW, agent.name)}
-                      className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/30"
-                      onClick={() => onOpenAgent(agent)}
+              <div className="space-y-0.5">
+                <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+                  {agents.map((agent) => (
+                    <li
+                      key={agent.id}
+                      className="flex items-center gap-1 rounded-md hover:bg-hover"
                     >
-                      <span className="truncate text-ui-base text-foreground">{agent.name}</span>
-                      {agent.description ? (
-                        <span className="truncate text-ui-sm text-foreground-subtle">
-                          {agent.description}
-                        </span>
+                      {/* 点员工 = 续接他最近一段对话（D3）；想开新话题走行尾「开新对话」。 */}
+                      <button
+                        type="button"
+                        data-testid={testId(TID_PROJECT_AGENT_ROW, agent.name)}
+                        className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                        onClick={() => onOpenAgent(agent)}
+                      >
+                        <span className="truncate text-ui-base text-foreground">{agent.name}</span>
+                        {agent.description ? (
+                          <span className="truncate text-ui-sm text-foreground-subtle">
+                            {agent.description}
+                          </span>
+                        ) : null}
+                      </button>
+                      {onOpenNewChat ? (
+                        <button
+                          type="button"
+                          className="mr-1 shrink-0 rounded px-1.5 py-0.5 text-ui-sm text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
+                          onClick={() => onOpenNewChat(agent)}
+                        >
+                          {intl.formatMessage({ id: "workspaceSidebar.projectAgentNewChat" })}
+                        </button>
                       ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+                <p className="px-0.5 text-ui-sm text-foreground-subtle">
+                  {intl.formatMessage({ id: "workspaceSidebar.projectAgentsResumeHint" })}
+                </p>
+              </div>
             )}
           </div>
         )}

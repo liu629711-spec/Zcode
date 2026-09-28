@@ -14,6 +14,7 @@ import {
 import {
   Archive,
   Blocks,
+  Bot,
   CalendarClock,
   Clock3,
   Cloud,
@@ -145,6 +146,7 @@ import {
 import {
   buildAgentMemoryDirectoryHint,
   buildRenamedPersonaTitle,
+  findLatestPersonaChatRow,
   getPersonaChatBadge,
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
@@ -192,7 +194,7 @@ export { WorkspaceSidebarCollapsedRail } from "@/WorkspaceSidebar/WorkspaceSideb
 type TaskOrganizeBy = SidebarTaskOrganizeBy;
 type TaskSortBy = SidebarTaskSortBy;
 type PrimaryTaskMode = "workspace" | "grouped";
-type SidebarTaskViewMode = "grouped" | "workspace" | "timeline" | "archived";
+type SidebarTaskViewMode = "grouped" | "workspace" | "timeline" | "archived" | "agents";
 
 interface SidebarFileTreeTarget {
   workspacePath: string;
@@ -249,6 +251,9 @@ function resolveSidebarTaskViewMode(params: {
   }
   if (params.taskOrganizeBy === "chronological") {
     return "timeline";
+  }
+  if (params.taskOrganizeBy === "agent") {
+    return "agents";
   }
   if (params.taskOrganizeBy === "grouped") {
     return "grouped";
@@ -604,10 +609,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     setProjectAgentProfileActionHandlers,
   ]);
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
-    Extract<TaskOrganizeBy, "project" | "chronological">
+    Extract<TaskOrganizeBy, "project" | "chronological" | "agent">
   >(() => {
     const initialOrganizeBy = readSidebarTaskPreferences().organizeBy;
-    return initialOrganizeBy === "chronological" ? "chronological" : "project";
+    if (initialOrganizeBy === "chronological" || initialOrganizeBy === "agent") {
+      return initialOrganizeBy;
+    }
+    return "project";
   });
   const [workspaceTaskVisibleLimitByKey, setWorkspaceTaskVisibleLimitByKey] =
     useState<WorkspaceTaskVisibleLimitByKey>({});
@@ -762,7 +770,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     });
   }, [taskOrganizeBy, taskSortBy]);
   useEffect(() => {
-    if (taskOrganizeBy === "project" || taskOrganizeBy === "chronological") {
+    if (
+      taskOrganizeBy === "project" ||
+      taskOrganizeBy === "chronological" ||
+      taskOrganizeBy === "agent"
+    ) {
       setWorkspaceTaskOrganizeBy(taskOrganizeBy);
     }
   }, [taskOrganizeBy]);
@@ -816,6 +828,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     // 从 Header 置顶当前任务后整条 row 会无处展示，看起来像 session 被删除。
     taskViewMode === "workspace" ||
     taskViewMode === "timeline" ||
+    taskViewMode === "agents" ||
     taskViewMode === "archived" ||
     taskViewMode === "grouped";
   const workspaceScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1161,7 +1174,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   });
   const activePrimaryTaskMode: PrimaryTaskMode =
     taskOrganizeBy === "grouped" ? "grouped" : "workspace";
-  const workspaceTaskViewValue = taskOrganizeBy === "chronological" ? "chronological" : "project";
+  const workspaceTaskViewValue =
+    taskOrganizeBy === "chronological"
+      ? "chronological"
+      : taskOrganizeBy === "agent"
+        ? "agent"
+        : "project";
   const showTaskViewFilter = activePrimaryTaskMode === "workspace" || showArchivedTasks;
   const showWorkspaceViewOptions = activePrimaryTaskMode === "workspace" && !showArchivedTasks;
   const showTaskSortOptions = activePrimaryTaskMode === "workspace" || showArchivedTasks;
@@ -1192,7 +1210,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     ],
   );
   const handleWorkspaceTaskViewChange = useCallback((value: string) => {
-    if (value !== "project" && value !== "chronological") {
+    if (value !== "project" && value !== "chronological" && value !== "agent") {
       return;
     }
     setWorkspaceTaskOrganizeBy(value);
@@ -1451,6 +1469,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                           <Clock3 className="size-4" />
                           {intl.formatMessage({
                             id: "workspaceSidebar.organizeChronologicalList",
+                          })}
+                        </DropdownMenuRadioItem>
+                        {/* 按智能体（D3 用户拍板）：每个员工一栏、名下会话归类，普通会话另列。 */}
+                        <DropdownMenuRadioItem value="agent">
+                          <Bot className="size-4" />
+                          {intl.formatMessage({
+                            id: "workspaceSidebar.viewByAgent",
                           })}
                         </DropdownMenuRadioItem>
                       </DropdownMenuRadioGroup>
@@ -1720,6 +1745,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                     activeWorkspaceIdentity={workspaceIdentity}
                     activeTaskId={activeTaskId}
                     taskSortBy={taskSortBy}
+                    onSelectTask={handleTaskRowSelect}
+                  />
+                ) : taskViewMode === "agents" ? (
+                  // 按智能体（D3）：复用时间线主体（同一份跨工作区数据与行交互），
+                  // 只把分组轴从日期换成员工——每个员工一栏、名下会话归类，普通会话另列。
+                  <WorkspaceTimelineTasksSection
+                    workspaceTabs={workspaceTabs}
+                    activeWorkspacePath={workspacePath}
+                    activeWorkspaceIdentity={workspaceIdentity}
+                    activeTaskId={activeTaskId}
+                    taskSortBy={taskSortBy}
+                    groupByAgent
                     onSelectTask={handleTaskRowSelect}
                   />
                 ) : (
@@ -1995,8 +2032,39 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               if (!target) {
                 return;
               }
-              // 选择既有档案 = 直接开聊；对话框立即收起，失败由 openAgentChat toast。
               setProjectAgentCreateTarget(null);
+              // 续接优先（D3 用户拍板：打开员工=他的历史都在）：跳回他最近一段对话，
+              // 消息/记忆/上下文原样续上；没有历史（首见）才新开一段。
+              const workspaceKey = buildTaskWorkspaceKey(
+                target.workspacePath,
+                target.workspaceIdentity,
+              );
+              const rows = workspaceTaskGroupByKey.get(workspaceKey)?.items ?? [];
+              const latest = findLatestPersonaChatRow(
+                rows,
+                agent.name,
+                usePersonaChatBadgeStore.getState().badgeByWorkspaceKey[workspaceKey],
+                projectAgents.agentsByWorkspaceKey.get(workspaceKey),
+              );
+              if (latest) {
+                registerPersonaChatBadge({
+                  workspacePath: target.workspacePath,
+                  workspaceIdentity: target.workspaceIdentity,
+                  taskId: latest.taskId,
+                  badge: { name: agent.name, ...(agent.color ? { color: agent.color } : {}) },
+                });
+                onSelectTask(target.workspacePath, latest.taskId, target.workspaceIdentity);
+                return;
+              }
+              void openProjectAgentChat(toProjectAgentPersona(agent), target);
+            }}
+            onOpenNewChat={(agent) => {
+              const target = projectAgentCreateTarget;
+              if (!target) {
+                return;
+              }
+              setProjectAgentCreateTarget(null);
+              // 「开新对话」：想聊新话题（不续接历史）时的入口，失败由 openAgentChat toast。
               void openProjectAgentChat(toProjectAgentPersona(agent), target);
             }}
             onCreate={async (draft) => {

@@ -2,13 +2,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ZCodeTaskMeta } from "@zcode/shared";
+import { Bot as BotIcon } from "lucide-react";
 import { toast } from "@/components/ui/toast.js";
+import { cn } from "@/components/lib/utils.js";
+import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import {
+  groupPersonaBadgedTaskItems,
+  type PersonaChatBadge,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
+import { usePersonaBadgedTaskItems } from "@/hooks/usePersonaBadgedTaskItems.js";
 import { useLocalWorkspaceScopes } from "@/hooks/useLocalWorkspaceScopes.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { getTaskTimelineGroupMessage, groupTaskTimelineItems } from "@/lib/taskTimelineGroups.js";
+import {
+  getTaskTimelineGroupMessage,
+  groupTaskTimelineItems,
+  type TaskTimelineGroupKey,
+} from "@/lib/taskTimelineGroups.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { compareZCodeTaskListItems } from "@/lib/taskListOrdering.js";
 import { buildWorkspaceServiceLookup } from "@/lib/workspaceServiceResolver.js";
@@ -38,6 +50,14 @@ interface TimelineTaskItemHandlers {
   onOpenTaskContextMenu: (taskId: string) => void;
 }
 
+interface TimelineGroupRow {
+  key: string;
+  label: TaskTimelineGroupKey | null;
+  items: ZCodeTaskMeta[];
+  /** 按智能体分组的员工栏头工牌（D3）；日期分组与普通会话组缺席。 */
+  badge?: PersonaChatBadge;
+}
+
 export function WorkspaceTimelineTasksSection({
   workspaceTabs,
   activeWorkspacePath,
@@ -45,6 +65,7 @@ export function WorkspaceTimelineTasksSection({
   activeTaskId,
   taskSortBy,
   groupByDate = true,
+  groupByAgent = false,
   taskRowVariant = "timeline",
   emptyMessage,
   onSelectTask,
@@ -55,6 +76,8 @@ export function WorkspaceTimelineTasksSection({
   activeTaskId: string | null;
   taskSortBy: "created" | "updated";
   groupByDate?: boolean;
+  /** 按智能体视图（D3）：分组轴换成员工（员工各一栏、名下会话归类，普通会话另列）。 */
+  groupByAgent?: boolean;
   taskRowVariant?: "default" | "timeline";
   emptyMessage?: string;
   onSelectTask: (
@@ -177,7 +200,13 @@ export function WorkspaceTimelineTasksSection({
       compareZCodeTaskListItems(left, right, taskSortBy),
     );
   }, [localItems, remoteItems, taskSortBy]);
-  const items = sortedItems.slice(0, visibleTaskLimit);
+  const visibleRawItems = useMemo(
+    () => sortedItems.slice(0, visibleTaskLimit),
+    [sortedItems, visibleTaskLimit],
+  );
+  // 员工工牌跨视图合并（D2/D4）：时间线行与侧栏项目视图同优先级对号，
+  // 切到时间线不再"员工隐身"（真机反馈的图七问题）。
+  const items = usePersonaBadgedTaskItems(visibleRawItems);
   const itemByKey = useMemo(() => {
     const nextItemByKey = new Map<string, ZCodeTaskMeta>();
     for (const item of items) {
@@ -192,10 +221,18 @@ export function WorkspaceTimelineTasksSection({
   const workspaceServiceLookupRef = useRef(workspaceServiceLookup);
   itemByKeyRef.current = itemByKey;
   workspaceServiceLookupRef.current = workspaceServiceLookup;
-  const timelineGroups = useMemo(() => {
+  const timelineGroups: TimelineGroupRow[] = useMemo(() => {
     const visibleItems = items.filter((item) =>
       workspaceServiceLookup.has(buildTaskWorkspaceKey(item.workspacePath, item.workspaceIdentity)),
     );
+    if (groupByAgent) {
+      return groupPersonaBadgedTaskItems(visibleItems).map((group) => ({
+        key: group.key,
+        label: null,
+        items: group.items,
+        ...(group.badge ? { badge: group.badge } : {}),
+      }));
+    }
     if (!groupByDate) {
       return [{ key: "all", label: null, items: visibleItems }];
     }
@@ -213,7 +250,7 @@ export function WorkspaceTimelineTasksSection({
         ),
       }))
       .filter((group) => group.items.length > 0);
-  }, [groupByDate, items, locale, taskSortBy, workspaceServiceLookup]);
+  }, [groupByAgent, groupByDate, items, locale, taskSortBy, workspaceServiceLookup]);
   const remoteTotal = remoteWorkspaceKeys.reduce(
     (sum, workspaceKey) =>
       sum +
@@ -676,7 +713,29 @@ export function WorkspaceTimelineTasksSection({
               const labelMessage = group.label ? getTaskTimelineGroupMessage(group.label) : null;
               return (
                 <li key={group.key} className="space-y-0.5">
-                  {labelMessage ? (
+                  {group.badge ? (
+                    // 员工栏头（D3）：彩色名字牌 + 名下会话数；颜色规则与行内工牌同一约定。
+                    <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+                      <span
+                        className={cn(
+                          "flex items-center gap-1 rounded-[4px] px-1.5 py-0.5 text-ui-sm font-medium leading-none",
+                          SUBAGENT_COLOR_CLASS[
+                            group.badge.color ?? resolveSubagentColorFromName(group.badge.name)
+                          ],
+                        )}
+                      >
+                        <BotIcon className="size-3 shrink-0" />
+                        {group.badge.name}
+                      </span>
+                      <span className="text-ui-sm text-foreground-subtlest">
+                        {group.items.length}
+                      </span>
+                    </div>
+                  ) : groupByAgent && group.key === "plain" ? (
+                    <div className="px-3 pt-2 pb-1 text-ui-base font-medium text-foreground-subtle">
+                      {intl.formatMessage({ id: "workspaceSidebar.agentsViewPlainGroup" })}
+                    </div>
+                  ) : labelMessage ? (
                     <div className="px-3 pt-2 pb-1 text-ui-base font-medium text-foreground-subtle">
                       {intl.formatMessage({ id: labelMessage.id }, labelMessage.values)}
                     </div>

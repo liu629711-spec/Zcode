@@ -12,7 +12,7 @@ type TaskTimelineGroupKind =
   | "lastMonth"
   | "older";
 
-interface TaskTimelineGroupKey {
+export interface TaskTimelineGroupKey {
   kind: TaskTimelineGroupKind;
   daysAgo?: number;
 }

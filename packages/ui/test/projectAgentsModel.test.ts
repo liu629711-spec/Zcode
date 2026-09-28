@@ -8,8 +8,10 @@ import {
   buildAgentMemoryDirectoryHint,
   buildRenamedPersonaTitle,
   buildRetitledPersonaTitle,
+  findLatestPersonaChatRow,
   findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
+  groupPersonaBadgedTaskItems,
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   selectProjectAgentsForWorkspace,
@@ -477,4 +479,49 @@ test("resolvePersonaChatBadgeForTask：行内 → 持久登记 → 标题反推 
   );
   // 三路都无 → undefined（普通会话行不吃员工菜单）。
   assert.equal(resolvePersonaChatBadgeForTask(task, undefined, []), undefined);
+});
+
+test("findLatestPersonaChatRow：三路对号找员工最近一段会话，取 updatedAt 最新", () => {
+  const rows = [
+    { taskId: "s1", title: "ui-plus · 旧话题", updatedAt: 100 },
+    { taskId: "s2", title: "ui-plus · 新话题", updatedAt: 300 },
+    { taskId: "s3", title: "掉前缀的卡死行", updatedAt: 999 },
+  ];
+  // 掉前缀的行靠持久登记归号，且它最新 → 就应续接它。
+  const registry = new Map([["s3", { name: "ui-plus" }]]);
+  assert.equal(
+    findLatestPersonaChatRow(rows, "ui-plus", registry, [{ name: "ui-plus" }])?.taskId,
+    "s3",
+  );
+  // 无登记时靠标题前缀反推，取最新前缀行。
+  assert.equal(
+    findLatestPersonaChatRow(rows.slice(0, 2), "ui-plus", undefined, [{ name: "ui-plus" }])
+      ?.taskId,
+    "s2",
+  );
+  // 没有任何归属 → undefined（首见员工走新建）。
+  assert.equal(findLatestPersonaChatRow(rows, "查无此人", new Map(), []), undefined);
+});
+
+test("groupPersonaBadgedTaskItems：员工各一栏（首次出现序），未归号进普通组", () => {
+  const rows = [
+    { taskId: "a1", title: "甲", agentPersona: { name: "阿龙" } },
+    { taskId: "p1", title: "普通会话" },
+    { taskId: "b1", title: "乙", agentPersona: { name: "阿虎", color: "purple" as const } },
+    { taskId: "a2", title: "丙", agentPersona: { name: "阿龙" } },
+  ];
+  const groups = groupPersonaBadgedTaskItems(rows);
+  assert.deepEqual(groups.map((group) => group.key), ["agent:阿龙", "agent:阿虎", "plain"]);
+  assert.deepEqual(
+    groups[0].items.map((item) => item.taskId),
+    ["a1", "a2"],
+    "同员工会话收进同一栏且保传入顺序",
+  );
+  assert.deepEqual(groups[1].badge, { name: "阿虎", color: "purple" });
+  assert.deepEqual(
+    groups[2].items.map((item) => item.taskId),
+    ["p1"],
+    "未归号会话进普通组",
+  );
+  assert.equal(groups[2].badge, undefined);
 });

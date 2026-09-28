@@ -1,7 +1,8 @@
 import type { BrowserStorageLike } from "@/lib/browserEnvironment.js";
 import { getSafeLocalStorage } from "@/lib/browserEnvironment.js";
 
-export type SidebarTaskOrganizeBy = "grouped" | "project" | "chronological";
+// "agent"：按智能体视图（D3 用户拍板）——每个员工一栏，名下会话归类，普通会话另列。
+export type SidebarTaskOrganizeBy = "grouped" | "project" | "chronological" | "agent";
 export type SidebarTaskSortBy = "created" | "updated";
 
 interface SidebarTaskPreferences {
@@ -17,7 +18,12 @@ const DEFAULT_SIDEBAR_TASK_PREFERENCES: SidebarTaskPreferences = {
 };
 
 function isSidebarTaskOrganizeBy(value: unknown): value is SidebarTaskOrganizeBy {
-  return value === "grouped" || value === "project" || value === "chronological";
+  return (
+    value === "grouped" ||
+    value === "project" ||
+    value === "chronological" ||
+    value === "agent"
+  );
 }
 
 function isSidebarTaskSortBy(value: unknown): value is SidebarTaskSortBy {

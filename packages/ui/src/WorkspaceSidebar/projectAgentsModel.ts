@@ -266,6 +266,71 @@ export function buildRenamedPersonaTitle(title: string, newName: string): string
 }
 
 /**
+ * 员工最近一段已归号会话（D3 续接）：行集合按三路对号找名字命中的行，
+ * 取 updatedAt 最新的一条——打开员工时跳回它，历史与记忆原样续上；
+ * 没有才新开一段（首见）。行集合是侧栏已加载分页，够用且零额外取数。
+ */
+export function findLatestPersonaChatRow<
+  T extends { taskId: string; title: string; updatedAt: number } & PersonaChatBadgeCarrier,
+>(
+  items: readonly T[],
+  agentName: string,
+  registeredByTaskId: ReadonlyMap<string, PersonaChatBadge> | undefined,
+  agents: readonly Pick<AgentSummary, "name" | "color">[] | undefined,
+): T | undefined {
+  let latest: T | undefined;
+  for (const item of items) {
+    const badge = resolvePersonaChatBadgeForTask(item, registeredByTaskId, agents);
+    if (badge?.name !== agentName) {
+      continue;
+    }
+    if (!latest || item.updatedAt > latest.updatedAt) {
+      latest = item;
+    }
+  }
+  return latest;
+}
+
+/** 「按智能体」视图的分栏（D3）：员工组带栏头工牌；未归号会话进无徽章的兜底组。 */
+export interface PersonaBadgeTaskGroup<T> {
+  key: string;
+  /** 员工组才有：栏头画彩色工牌用；普通会话组缺席。 */
+  badge?: PersonaChatBadge;
+  items: T[];
+}
+
+/**
+ * 按智能体分组（D3）：员工各一栏（栏序=条目传入顺序，即最近活动的员工在前，
+ * 与"更新时间排序"的列表语义一致），未归号会话收进最后"普通会话"组。
+ * 传入行须已合并徽章（usePersonaBadgedTaskItems 的产物）。
+ */
+export function groupPersonaBadgedTaskItems<T extends PersonaChatBadgeCarrier>(
+  items: readonly T[],
+): PersonaBadgeTaskGroup<T>[] {
+  const groups = new Map<string, PersonaBadgeTaskGroup<T>>();
+  const plain: T[] = [];
+  for (const item of items) {
+    const badge = item.agentPersona;
+    if (!badge) {
+      plain.push(item);
+      continue;
+    }
+    const key = `agent:${badge.name}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      groups.set(key, { key, badge, items: [item] });
+    }
+  }
+  const result = [...groups.values()];
+  if (plain.length > 0) {
+    result.push({ key: "plain", items: plain });
+  }
+  return result;
+}
+
+/**
  * 档案改名补链的行扫描（D2）：标题前缀=旧名+「 · 」的 persona 历史行 id 列表。
  * 调用方（侧栏改名成功钩子）按这些行逐个 register 新名徽章——标题反推对新名
  * 永远命中不了旧行，登记是它们唯一的持久工牌来源。
