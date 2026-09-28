@@ -4,10 +4,13 @@ import type { KeyboardEvent, MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { UniqueIdentifier } from "@dnd-kit/core";
 import { isCronTask, isOffPeakTask, type ZCodeTaskMeta } from "@zcode/shared";
-import { ArrowUpToLine, Clock, Cloud, Folder, ListTree, LoaderIcon, Moon, X } from "lucide-react";
+import { ArrowUpToLine, Bot, Clock, Cloud, Folder, ListTree, LoaderIcon, Moon, X } from "lucide-react";
 import { cn } from "@/components/lib/utils.js";
 import { Badge } from "@/components/ui/badge.js";
 import { toast } from "@/components/ui/toast.js";
+import { ControlHintTooltip } from "@/ControlHintTooltip.js";
+import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import { getPersonaChatBadge } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu.js";
 import {
   Tooltip,
@@ -133,6 +136,38 @@ function GroupedTaskRowComponent({
   // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
   // 会话溯源，且让每一行多背一个全局 store 订阅。
   const isTaskOffPeak = isOffPeakTask(task);
+  // 员工工牌（D4 分组视图）：与侧栏行/时间线行同一"彩色名字牌"约定——
+  // 档案色板取色，没选色的档案按名字哈希稳定取色。合并在虚拟列表层统一做，
+  // 这里只负责画（含 dragOverlay 预览）。
+  const personaChatBadge = getPersonaChatBadge(task);
+  const personaBadgeNode = personaChatBadge ? (
+    <ControlHintTooltip
+      title={intl.formatMessage(
+        { id: "taskList.personaChatBadge" },
+        { name: personaChatBadge.name },
+      )}
+      side="top"
+      align="end"
+    >
+      <span
+        data-persona-chat-badge="true"
+        role="img"
+        aria-label={intl.formatMessage(
+          { id: "taskList.personaChatBadge" },
+          { name: personaChatBadge.name },
+        )}
+        className={cn(
+          "flex min-w-0 shrink items-center gap-1 rounded-[4px] px-1 leading-none",
+          SUBAGENT_COLOR_CLASS[
+            personaChatBadge.color ?? resolveSubagentColorFromName(personaChatBadge.name)
+          ],
+        )}
+      >
+        <Bot className="size-3 shrink-0" />
+        <span className="min-w-0 truncate">{personaChatBadge.name}</span>
+      </span>
+    </ControlHintTooltip>
+  ) : null;
   const isActive =
     buildTaskWorkspaceKey(activeWorkspacePath, activeWorkspaceIdentity) === workspaceKey &&
     activeTaskId === task.taskId;
@@ -215,6 +250,7 @@ function GroupedTaskRowComponent({
                 <span className={cn("size-1.5 rounded-full", statusDotClassName)} />
               </span>
             ) : null}
+            {!hasPendingInteraction ? personaBadgeNode : null}
             {!hasPendingInteraction && isTaskCron ? (
               // drag overlay 也复用 grouped row 元信息；clock 放时间前面，不能跟未读点互斥。
               <Clock
@@ -409,6 +445,7 @@ function GroupedTaskRowComponent({
                   <span className={cn("size-1.5 rounded-full", statusDotClassName)} />
                 </span>
               ) : null}
+              {!hasPendingInteraction ? personaBadgeNode : null}
               {!hasPendingInteraction && isTaskCron ? (
                 // 可交互 grouped row 之前漏渲染 clock，导致 Projects 分组里的定时任务没有 icon。
                 // 这里和普通 task list 一样放在时间前面，同时不再被未读/运行状态顶掉。

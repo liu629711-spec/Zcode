@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ZCodeTaskMeta } from "@zcode/shared";
+import { usePersonaBadgedTaskItems } from "@/hooks/usePersonaBadgedTaskItems.js";
 import { GroupedTaskItem } from "@/workspace-grouped-tasks/task-item.js";
 import { taskKey } from "@/workspace-grouped-tasks/ids.js";
 import {
@@ -83,10 +84,15 @@ export function VirtualizedGroupedTaskList({
   const listRef = useRef<HTMLDivElement | null>(null);
   const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
-  const shouldVirtualize = shouldVirtualizeGroupedTasks(tasks.length);
+  // 员工工牌合并（D4 分组视图）：与侧栏/时间线同一套三路对号（行内 → 登记 → 标题反推），
+  // 在虚拟列表这层统一做一次，所有行（含虚拟化与非虚拟化路径、拖拽预览）都吃同一结果；
+  // 合并只换行对象、不改数量，虚拟化索引与测量不受影响。
+  const badgedTasks = usePersonaBadgedTaskItems(tasks);
+  const shouldVirtualize = shouldVirtualizeGroupedTasks(badgedTasks.length);
   const getItemKey = useCallback(
-    (index: number) => taskKey(tasks[index] ?? { workspacePath: "", taskId: String(index) }),
-    [tasks],
+    (index: number) =>
+      taskKey(badgedTasks[index] ?? { workspacePath: "", taskId: String(index) }),
+    [badgedTasks],
   );
 
   const updateScrollMargin = useCallback(() => {
@@ -134,7 +140,7 @@ export function VirtualizedGroupedTaskList({
   }, [groupId, shouldVirtualize, tasks.length, updateScrollMargin]);
 
   const rowVirtualizer = useVirtualizer({
-    count: shouldVirtualize ? tasks.length : 0,
+    count: shouldVirtualize ? badgedTasks.length : 0,
     getScrollElement: () => scrollElement,
     estimateSize: () => GROUPED_TASK_ROW_ESTIMATE_PX,
     getItemKey,
@@ -201,7 +207,7 @@ export function VirtualizedGroupedTaskList({
   const renderedVirtualTasks = useMemo(
     () =>
       virtualRows.map((virtualRow) => {
-        const task = tasks[virtualRow.index];
+        const task = badgedTasks[virtualRow.index];
         if (!task) {
           return null;
         }
@@ -221,11 +227,11 @@ export function VirtualizedGroupedTaskList({
           </div>
         );
       }),
-    [measureElement, renderTask, scrollMargin, tasks, virtualRows],
+    [measureElement, renderTask, scrollMargin, badgedTasks, virtualRows],
   );
 
   if (!shouldVirtualize) {
-    return <>{tasks.map((task) => renderTask(task))}</>;
+    return <>{badgedTasks.map((task) => renderTask(task))}</>;
   }
 
   return (
