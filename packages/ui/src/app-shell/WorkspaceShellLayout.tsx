@@ -1873,7 +1873,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                 variant="panel"
                                 className="min-h-full"
                               >
-                                <div className="mx-auto flex w-full max-w-5xl flex-col px-4 py-4 md:px-6 md:py-6">
+                                {/* 素材库 V3-1 改 2/3 列网格：容器随展厅拓宽到 7xl（仅此视图分支）。 */}
+                                <div className="mx-auto flex w-full max-w-7xl flex-col px-4 py-4 md:px-6 md:py-6">
                                   <Suspense
                                     fallback={
                                       <div className="py-12 text-center text-ui-sm text-foreground-subtle">
