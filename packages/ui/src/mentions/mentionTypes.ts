@@ -19,6 +19,10 @@ export interface MentionItemData {
   pluginId?: string;
   /** Plugin 商店 listing 原始图标；仅用于 UI，必须经 HTTPS 校验后加载。 */
   icon?: string;
+  /** 设计风格候选（V4.6）：面板用它走定制行渲染（风格名 + 色板），区别于普通文件。 */
+  designStyle?: boolean;
+  /** 设计风格主色（提取自 DESIGN.md 的 token 色，最多 4 个）；仅用于面板行内色板。 */
+  palette?: string[];
 }
 
 export interface MentionItem {

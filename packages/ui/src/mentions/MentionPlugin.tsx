@@ -20,6 +20,7 @@ import {
 import { useZCodeIntl } from "../i18n/IntlProvider.js";
 import { useOptionalPlatform } from "../hooks/usePlatform.js";
 import { ASSET_CATALOG } from "../asset-library/catalog/index.js";
+import { writeAssetBlueprintFiles } from "../asset-library/writeAssetFiles.js";
 import { toast } from "../components/ui/toast.js";
 import {
   extractActivePromptInputTrigger,
@@ -28,6 +29,7 @@ import {
   type ActivePromptInputTrigger,
 } from "../lib/promptInputTriggers.js";
 import { ContextMentionOptionContent } from "@/mentions/components/ContextMentionOptionContent.js";
+import { DesignStyleMentionOptionContent } from "@/mentions/components/DesignStyleMentionOptionContent.js";
 import { PluginMentionOptionContent } from "@/mentions/components/PluginMentionOptionContent.js";
 import {
   MentionPanel,
@@ -339,7 +341,11 @@ export function MentionPlugin({
           // 跟输入框里的 mention token 不一致。这里统一复用 fileDisplay，让面板和 token 使用同一套文件语义展示。
           content:
             item.category === "files" ? (
-              <ContextMentionOptionContent item={item} workspacePath={workspacePath} />
+              item.data?.designStyle ? (
+                <DesignStyleMentionOptionContent item={item} />
+              ) : (
+                <ContextMentionOptionContent item={item} workspacePath={workspacePath} />
+              )
             ) : item.category === "skills" ? (
               <span className="min-w-0 flex flex-1 items-center gap-2">
                 {/* skills 候选项需要和命令类项保持一致的主次信息密度，
@@ -612,14 +618,7 @@ export function MentionPlugin({
         return;
       }
       try {
-        const result = await platform?.assetLibraryWriteFiles?.({
-          workspacePath,
-          relativeDir: `.zcode/asset-library/${asset.id}`,
-          files: asset.files.map((file) => ({ name: file.name, content: file.content })),
-        });
-        if (!result) {
-          throw new Error("not_supported");
-        }
+        await writeAssetBlueprintFiles(platform, workspacePath, asset);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         toast(intl.formatMessage({ id: "assetLibrary.detail.writeFailedReason" }, { error: reason }));

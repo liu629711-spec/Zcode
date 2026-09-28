@@ -1,5 +1,9 @@
 /* oxlint-disable eslint(max-lines) -- composer 集中收口输入区 wiring（附件/草稿/历史/mention），拆分会打散收口粒度。 */
 import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
+import {
+  DesignStyleComposerHint,
+  matchesDesignStyleIntent,
+} from "@/asset-library/DesignStyleComposerHint.js";
 /**
  * v4 会话 composer（composer parity）。
  *
@@ -548,6 +552,11 @@ function ConversationComposerImpl({
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
+  // 设计意图提醒条（V4.6）：草稿命中设计关键词时展示风格推荐；关闭只在当前匹配期生效，
+  // 草稿不再命中后复位，下一次设计意图仍会提示。
+  const [designStyleHintDismissed, setDesignStyleHintDismissed] = useState(false);
+  const showDesignStyleHint =
+    !designStyleHintDismissed && matchesDesignStyleIntent(text) && !disabled;
   const [pending, setPending] = useState(false);
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
@@ -2245,6 +2254,13 @@ function ConversationComposerImpl({
               id: `chat.selections.limit.${conversationSelectionLimitReason}`,
             })}
           </div>
+        ) : null}
+        {showDesignStyleHint ? (
+          <DesignStyleComposerHint
+            workspacePath={workspacePath}
+            workspaceIdentity={workspaceIdentity}
+            onDismiss={() => setDesignStyleHintDismissed(true)}
+          />
         ) : null}
         <ChatPromptEditor
           workspacePath={workspacePath}
