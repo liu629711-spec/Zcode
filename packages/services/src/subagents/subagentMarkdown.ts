@@ -1,6 +1,7 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   createAgentStateId,
+  normalizeAgentId,
   parseSubagentMarkdownSelection,
   formatSubagentMarkdownModel,
   type AgentColor,
@@ -66,6 +67,9 @@ export function parseSubagentMarkdown(
   }
 
   const source = input.scope === "built-in" ? "built-in" : "user";
+  // 员工工号（D26）：非法形状（手写乱码/半截 uuid）等同无号，调用方按名字兜底对号，
+  // 不让一个坏号把工牌和记事本带进沟里。
+  const agentId = normalizeAgentId(frontmatter.agentId);
   const modelSelection = parseSubagentMarkdownSelection(frontmatter);
   const color = normalizeEnum(frontmatter.color, VALID_COLORS);
   const permissionMode = normalizeEnum(frontmatter.permissionMode, VALID_PERMISSION_MODES);
@@ -84,6 +88,7 @@ export function parseSubagentMarkdown(
       name,
       description,
       systemPrompt: parsed.body.trim(),
+      ...(agentId ? { agentId } : {}),
       ...(color ? { color } : {}),
       ...(modelSelection ? { modelSelection } : {}),
       ...(tools ? { tools } : {}),
@@ -112,6 +117,8 @@ export function serializeSubagentMarkdown(config: SubAgentConfig): string {
     `name: "${escapeYamlString(config.name)}"`,
     `description: "${escapeYamlString(config.description)}"`,
   ];
+  // 工号紧跟名字：档案第一页就是身份牌（D26），改名/换色都不动这一行。
+  appendScalar(frontmatterLines, "agentId", config.agentId);
   appendScalar(frontmatterLines, "color", config.color);
   if (config.modelSelection) {
     appendScalar(frontmatterLines, "model", formatSubagentMarkdownModel(config.modelSelection));

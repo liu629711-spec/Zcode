@@ -44,6 +44,13 @@ export type SubagentsListMode = "allRuntimeScopes" | "settingsUserOnly";
 
 export interface AgentSummary {
   id: string;
+  /**
+   * 员工工号（D26）：档案 frontmatter 里的稳定 uuid。
+   * 与上面的 `id` 不是一回事——`id` 是 `source:scope:名字` 现拼的 agents-state 键，
+   * 改名即变号（禁用记录/模型覆盖靠它）；`agentId` 才是"同一个人"的凭证，
+   * 会话徽章、记事本目录、@点将寻人都认它。老档案没有这一行 → 缺席，按名字兜底对号。
+   */
+  agentId?: string;
   name: string;
   description: string;
   systemPrompt: string;
@@ -95,6 +102,12 @@ export interface SubAgentConfig {
   name: string;
   description: string;
   systemPrompt: string;
+  /**
+   * 员工工号（D26）：档案 frontmatter `agentId`，落盘后不随改名变化。
+   * 调用方可以带号（内置班底包的档案自带号）；缺号时由 services 在写入时发号，
+   * 且**盘上已有的号一律优先**——号是身份，不允许任何调用方改写。
+   */
+  agentId?: string;
   color?: AgentColor;
   modelSelection?: ModelSelection;
   tools?: string[];
@@ -159,4 +172,19 @@ export function createAgentStateId(input: {
   source: AgentSource;
 }): string {
   return `${input.source}:${input.scope}:${input.name.trim().toLowerCase()}`;
+}
+
+/**
+ * 员工工号的形状（D26）：uuid 文本，档案 frontmatter `agentId` 落盘后不再改动。
+ * 校验放这里是因为 UI（工牌对号）、services（发号/读写档案）、core（会话快照携带）
+ * 三方都要判同一个形状，一处定义防漂移。非法形状一律视为无号，回落按名字对号。
+ */
+const AGENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function normalizeAgentId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return AGENT_ID_PATTERN.test(trimmed) ? trimmed.toLowerCase() : undefined;
 }

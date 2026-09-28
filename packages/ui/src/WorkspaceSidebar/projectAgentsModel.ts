@@ -97,6 +97,9 @@ export function toProjectAgentUpdateConfig(
     name: draft.name.trim(),
     description: draft.description.trim(),
     systemPrompt: draft.systemPrompt.trim(),
+    // 工号原样带回（D26）：档案整文件重写，漏带就丢号。丢号不是小事——片三之后
+    // 记事本目录按号落位，没号的档案回落到名字，改名即断链。
+    ...(agent.agentId ? { agentId: agent.agentId } : {}),
     ...(agent.color ? { color: agent.color } : {}),
     ...(agent.modelSelection ? { modelSelection: agent.modelSelection } : {}),
     ...(agent.tools?.length ? { tools: [...agent.tools] } : {}),

@@ -1,9 +1,11 @@
 /* eslint-disable max-lines */
 import { access, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   createAgentStateId,
   createPluginAgentStateId,
+  normalizeAgentId,
   parsePluginSubagentModelSelectionOverrides,
   DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
@@ -718,7 +720,9 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
         throw new Error(`Agent file "${basename(filePath)}" already exists`);
       }
 
-      const content = serializeSubagentMarkdown(normalizeConfig(params.config));
+      const content = serializeSubagentMarkdown(
+        withAgentIdIssuedIfMissing(normalizeConfig(params.config)),
+      );
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
       // 先验证即将写入的 Markdown 可解析，避免 serializer 回归时把坏 profile 落盘。
       await writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
@@ -741,13 +745,17 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
         throw new Error(`Agent file "${basename(filePath)}" already exists`);
       }
 
-      const content = serializeSubagentMarkdown(normalizeConfig(params.config));
+      // 旧档案一次读齐（D26/G6）：工号以盘上为准，改名搬家也吃这份旧档案。
+      const previous = await readPreviousAgentForUpdate(params, scope, filePath);
+      const content = serializeSubagentMarkdown(
+        withAgentIdPreserved(normalizeConfig(params.config), previous),
+      );
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
       // 更新时同样先 parse 再覆盖旧文件，避免失败保存破坏已有用户 agent。
       // G6 改名迁移：记事本目录在档案覆盖前先搬家——旧 key 取自旧档案 frontmatter
       // 的 name（文件名小写化恢复不出原始大小写）；rename 是同卷原子操作，失败即
       // 整单中止，此时档案还没写、记事本原地不动，两边数据都完好。
-      const memoryRenamePlan = await resolveAgentMemoryRenamePlan(params, scope);
+      const memoryRenamePlan = planAgentMemoryRenameFromPrevious(params, previous);
       if (memoryRenamePlan) {
         await applyAgentMemoryDirectoryRename(memoryRenamePlan);
       }
@@ -823,28 +831,41 @@ async function migrateDisabledAgentId(
 }
 
 /**
- * G6 改名迁移计划：从被覆盖前的旧档案读出旧名与旧记忆 scope，交给
- * planAgentMemoryDirectoryRename（与 core 注入/记忆面板同源的纯推导）算出记事本
- * 目录搬家对。旧档案读不出来（不存在/坏 frontmatter）就放弃迁移——宁可不动也不猜。
+ * 更新前把即将被覆盖的那份档案读出来（D26/G6 共用一次读）：工号要以盘上为准，
+ * 记事本搬家要知道旧名与旧记忆 scope，两件事同源。oldFilePath 缺席时兜底读
+ * **将要写入的目标文件本身**——同名编辑（最常见的保存）也该看见旧号，否则一次
+ * 没带 oldFilePath 的保存就会把号写丢，而号丢了记事本目录就回落到名字（片三）。
+ * 读不到（新建流程走 update、目标也不存在、坏 frontmatter）返回 undefined，
+ * 调用方各自退化——「无旧号可保」/「无搬家可做」，宁可不动也不猜。
  */
-async function resolveAgentMemoryRenamePlan(
+async function readPreviousAgentForUpdate(
   params: AgentUpdateParams,
   scope: "user" | "workspace",
-): Promise<AgentMemoryDirectoryRenamePlan | undefined> {
-  const previousFilePath = params.oldFilePath;
-  if (!previousFilePath) return undefined;
+  fallbackFilePath: string,
+): Promise<AgentSummary | undefined> {
+  const previousFilePath = params.oldFilePath ?? fallbackFilePath;
   let previousContent: string;
   try {
     previousContent = await readFile(previousFilePath, "utf-8");
   } catch {
-    // 旧档案不存在（新建流程误走 update）或不可读：没有旧 key 可迁。
+    // 旧档案不存在或不可读：没有旧号、也没有旧 key 可迁。
     return undefined;
   }
-  const previous = parseSubagentMarkdown({ content: previousContent, path: previousFilePath, scope });
-  if (!previous.agent?.name) return undefined;
-  const memoryScope = previous.agent.memory ?? "project";
+  return parseSubagentMarkdown({ content: previousContent, path: previousFilePath, scope }).agent;
+}
+
+/**
+ * G6 改名迁移计划：旧档案的 name/memory 交给 planAgentMemoryDirectoryRename
+ * （与 core 注入/记忆面板同源的纯推导）算出记事本目录搬家对。
+ */
+function planAgentMemoryRenameFromPrevious(
+  params: AgentUpdateParams,
+  previous: AgentSummary | undefined,
+): AgentMemoryDirectoryRenamePlan | undefined {
+  if (!previous?.name || !params.oldFilePath) return undefined;
+  const memoryScope = previous.memory ?? "project";
   return planAgentMemoryDirectoryRename({
-    previousAgentName: previous.agent.name,
+    previousAgentName: previous.name,
     nextAgentName: params.config.name.trim(),
     memoryScope,
     workspacePath: params.workspacePath,
@@ -852,6 +873,38 @@ async function resolveAgentMemoryRenamePlan(
     // 时会漂移——同 memoryService.resolveAgentMemoryDirectory 的既有注记。
     userMemoryRoot: getZCodeDataRootDir(),
   });
+}
+
+/**
+ * 新建发号（D26）：调用方带来合法号就采信（内置班底包的档案自带号，装上全机共用
+ * 同一凭证），缺号或号形不对就现发一个——坏号当无号处理，绝不让半截 uuid 落盘。
+ */
+function withAgentIdIssuedIfMissing(config: SubAgentConfig): SubAgentConfig {
+  const agentId = normalizeAgentId(config.agentId) ?? randomUUID();
+  return { ...config, agentId };
+}
+
+/**
+ * 更新保号（D26）：盘上已有号一律沿用——号是身份，UI 或调用方传什么都不作数
+ * （改名走的是同一条 update，正好在这里把号留住）。老档案没号则在这一次写入补发。
+ * 两个来源都没有号时**不发新号**，原样交回：片三的记事本目录按号落位，每次保存
+ * 凭空换一张号等于把小本本搬进无人认识的新址（就是「改名丢记忆」那类事故的翻版）。
+ * 也不做「列档案时顺手补号」：档案是 <ws>/.zcode/agents 下要进 git 的用户文件，
+ * 读一次改一次盘会凭空造脏 diff（与 D25「读路径不落盘」同一教训）。
+ */
+function withAgentIdPreserved(
+  config: SubAgentConfig,
+  previous: AgentSummary | undefined,
+): SubAgentConfig {
+  const agentId = previous?.agentId ?? normalizeAgentId(config.agentId);
+  if (agentId) {
+    return agentId === config.agentId ? config : { ...config, agentId };
+  }
+  // 只有读到了旧档案（确信是同一个人的一次延续）才补发，避免无锚点发号。
+  if (!previous) {
+    return config;
+  }
+  return { ...config, agentId: randomUUID() };
 }
 
 /**
