@@ -855,9 +855,11 @@ async function resolveAgentMemoryRenamePlan(
 }
 
 /**
- * G6 目录搬家：源目录不存在（智能体还没记过东西）无事可做；目标已存在时不覆盖
- * 不合并（保住两边数据，旧目录原地留在 <旧key>/ 下）；大小写不敏感文件系统上
- * 纯大小写改名的目标路径命中的就是源目录本身，不能当「目标已存在」跳过。
+ * G6 目录搬家：源目录不存在（智能体还没记过东西）无事可做；目标已存在时区分
+ * 两种情况——空目录（D25：读路径曾为改过名的旧会话现造空壳，空壳会挡搬家把
+ * 记忆留在旧 key 下）删掉空壳照常搬家；有内容则维持不覆盖不合并（保住两边
+ * 数据），记 warn 留给人工处理。大小写不敏感文件系统上纯大小写改名的目标路径
+ * 命中的就是源目录本身，不能当「目标已存在」跳过。
  * rename 失败向上抛，updateAgent 整单中止。
  */
 async function applyAgentMemoryDirectoryRename(plan: AgentMemoryDirectoryRenamePlan): Promise<void> {
@@ -868,13 +870,26 @@ async function applyAgentMemoryDirectoryRename(plan: AgentMemoryDirectoryRenameP
   }
   const caseOnlyRename = plan.fromDir.toLowerCase() === plan.toDir.toLowerCase();
   if (!caseOnlyRename && (await exists(plan.toDir))) {
-    subagentLogger.warn(
-      undefined,
-      `agent memory directory rename skipped, target already exists: ${plan.toDir}`,
-    );
-    return;
+    if (await isEmptyDirectory(plan.toDir)) {
+      await rm(plan.toDir, { recursive: true, force: true });
+    } else {
+      subagentLogger.warn(
+        undefined,
+        `agent memory directory rename skipped, target already exists: ${plan.toDir}`,
+      );
+      return;
+    }
   }
   await rename(plan.fromDir, plan.toDir);
+}
+
+async function isEmptyDirectory(dir: string): Promise<boolean> {
+  try {
+    const entries = await readdir(dir);
+    return entries.length === 0;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeConfig(config: SubAgentConfig): SubAgentConfig {

@@ -168,14 +168,17 @@ test("驻场记忆注入：总开关关闭（enabled=false/use=false/无配置�
   }
 });
 
-test("驻场记忆注入：project scope 读 <ws>/.zcode/agent-memory/<key>/MEMORY.md", async () => {
+test("驻场记忆注入：project scope 读 <ws>/.zcode/agent-memory/<key>/MEMORY.md，且不现造目录", async () => {
   const indexDir = join(WORKSPACE_ROOT, ".zcode", "agent-memory", "code-reviewer");
   const files = new Map([[join(indexDir, "MEMORY.md"), "- [old work](old.md) — context"]]);
   const { port, readPaths, createdDirectories } = createMemoryFileSystem(files);
   const prompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: "project" });
   assert.ok(prompt);
   assert.deepEqual(readPaths, [join(indexDir, "MEMORY.md")]);
-  assert.deepEqual(createdDirectories, [indexDir]);
+  // D25 幻影目录防线：读路径绝不建目录——改过名的旧会话按快照旧名恢复时，
+  // 曾在这里把空目录造在旧 key 下，挡住档案改名的记事本搬家（记忆"没了"）。
+  // 目录由首次真实写入（Write createParents）落盘，读取缺席 = 空索引基线。
+  assert.deepEqual(createdDirectories, []);
   assert.ok(prompt.includes(join(indexDir, "\\")), "prompt 应带上记忆根目录");
   assert.ok(prompt.includes("project-scope"), "prompt 应按 project scope 给指引");
   assert.ok(prompt.includes("- [old work](old.md) — context"));
@@ -202,10 +205,12 @@ test("驻场记忆注入：local scope 读 <ws>/.zcode/agent-memory-local/<key>/
   assert.ok(prompt.includes("local-scope"));
 });
 
-test("驻场记忆注入：MEMORY.md 缺失不炸，返回空索引基线 prompt", async () => {
-  const { port, readPaths } = createMemoryFileSystem(new Map());
+test("驻场记忆注入：MEMORY.md 缺失不炸，返回空索引基线 prompt，且零建目录（D25）", async () => {
+  const { port, readPaths, createdDirectories } = createMemoryFileSystem(new Map());
   const prompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: "project" });
   assert.ok(prompt);
   assert.equal(readPaths.length, 1);
   assert.ok(prompt.includes("Your MEMORY.md is currently empty"));
+  // 目录缺席时的读取也不许把目录造出来（幻影目录防线，D25）。
+  assert.deepEqual(createdDirectories, []);
 });

@@ -4,7 +4,6 @@ import type { FileSystemPort, Logger, TraceContext } from "@zcode/contracts";
 // 记事本目录推导的唯一实现（G3 面板同源）：core 注入与 services 面板都按它落盘/读盘。
 import { resolveAgentMemoryRoot } from "@zcode/shared/node";
 
-import { ensureMemoryDirectoryExists } from "../memory/directory.js";
 import type { AgentRuntimeConfig, MemoryRuntimeConfig } from "../runtime/types.js";
 import type { AgentMemoryScope, AgentProfile } from "./profile.js";
 import { buildPersistentAgentMemoryPrompt } from "./persistent-memory-prompt.js";
@@ -96,12 +95,10 @@ export async function loadPersistentAgentMemory(input: {
     storageRoot: input.memory.storageRoot,
     workspaceRoot: input.workspaceRoot,
   });
-  await ensureMemoryDirectoryExists(
-    input.fileSystemPort,
-    rootDir,
-    input.traceContext,
-    input.logger,
-  );
+  // 读路径不得现造目录（D25）：目录由首次真实写入（Write createParents）落盘。
+  // 曾在读取时 ensure 建目录——改过名的旧会话按快照旧名恢复，会把空目录造在
+  // 旧 key 下，随后档案再改名时 services 的搬家因「目标已存在」跳过，记忆
+  // 被留在旧目录里，面板看上去就是「记忆没了」。
 
   let indexContent = "";
   try {
@@ -149,12 +146,8 @@ export async function loadProjectAgentMemoryPrompt(input: {
     storageRoot: input.memory.storageRoot,
     workspaceRoot: input.workspaceRoot,
   });
-  await ensureMemoryDirectoryExists(
-    input.fileSystemPort,
-    rootDir,
-    input.traceContext,
-    input.logger,
-  );
+  // 读路径不得现造目录（D25），理由同 loadPersistentAgentMemory：旧名会话恢复
+  // 在这里造出的空目录，会挡住后续档案改名的记事本搬家。
 
   let indexContent = "";
   try {
