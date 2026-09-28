@@ -4,7 +4,7 @@ import { EXPLORE_AGENT_TYPE } from "./explore.js";
 import { formatExploreAllowedToolsForAgentDescription } from "./explore-tools.js";
 import { parseAgentFrontmatter, splitMarkdownFrontmatter } from "./profile-frontmatter.js";
 import { filterSubagentChildToolNames } from "./tool-policy.js";
-import type { ModelSelection } from "@zcode/shared";
+import { normalizeAgentId, type ModelSelection } from "@zcode/shared";
 import { resolveProfileModelSelection } from "./profile-model-selection.js";
 
 export const DEFAULT_SUBAGENT_TYPE = GENERAL_PURPOSE_AGENT_TYPE;
@@ -19,6 +19,11 @@ export type AgentProfileSource = "built-in" | "project" | "user";
 export type AgentMemoryScope = "user" | "project" | "local";
 
 export interface AgentProfile {
+  /**
+   * 员工工号（D26，档案 frontmatter `agentId`）：记事本目录认它落位，改名不换目录。
+   * 非法形状在解析处即当作无号（normalizeAgentId），回落到名字目录。
+   */
+  agentId?: string;
   background?: boolean;
   color?: "red" | "blue" | "green" | "yellow" | "purple" | "orange" | "pink" | "cyan";
   description: string;
@@ -178,6 +183,8 @@ export function parseAgentProfileFromMarkdown(input: {
   }
 
   const modelSelection = resolveProfileModelSelection(frontmatter);
+  // 员工工号（D26）：记事本目录按号落位；形状不对就当没有。
+  const agentId = normalizeAgentId(frontmatter.agentId);
   const color = normalizeColor(scalarString(frontmatter.color));
   const parsedPermissionMode = normalizePermissionMode(scalarString(frontmatter.permissionMode));
   // 项目级 subagent markdown 属于仓库输入，不能通过 frontmatter 把
@@ -211,6 +218,7 @@ export function parseAgentProfileFromMarkdown(input: {
       source: input.source,
       systemPrompt: parsed.body.trim(),
       ...(input.path ? { path: input.path } : {}),
+      ...(agentId ? { agentId } : {}),
       ...(modelSelection ? { modelSelection } : {}),
       ...(color ? { color } : {}),
       ...(permissionMode ? { permissionMode } : {}),

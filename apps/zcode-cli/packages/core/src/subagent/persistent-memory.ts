@@ -91,6 +91,8 @@ export async function loadPersistentAgentMemory(input: {
 
   const rootDir = resolveAgentMemoryRoot({
     agentName: input.profile.name,
+    // 号在场按号落位（D26）：与 services 记忆面板同一判据，改名不换目录。
+    ...(input.profile.agentId ? { agentId: input.profile.agentId } : {}),
     scope: input.profile.memory,
     storageRoot: input.memory.storageRoot,
     workspaceRoot: input.workspaceRoot,
@@ -131,6 +133,8 @@ export async function loadPersistentAgentMemory(input: {
 export async function loadProjectAgentMemoryPrompt(input: {
   fileSystemPort: FileSystemPort | undefined;
   agentName: string;
+  /** 员工工号（D26）：persona 快照携带，在场即按号定位记事本。 */
+  agentId?: string;
   memory: MemoryRuntimeConfig | undefined;
   memoryScope: AgentMemoryScope;
   logger?: Logger;
@@ -142,6 +146,7 @@ export async function loadProjectAgentMemoryPrompt(input: {
 
   const rootDir = resolveAgentMemoryRoot({
     agentName: input.agentName,
+    ...(input.agentId ? { agentId: input.agentId } : {}),
     scope: input.memoryScope,
     storageRoot: input.memory.storageRoot,
     workspaceRoot: input.workspaceRoot,

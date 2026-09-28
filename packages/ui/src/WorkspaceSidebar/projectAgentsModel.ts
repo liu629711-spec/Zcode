@@ -122,11 +122,13 @@ export function toProjectAgentUpdateConfig(
 /**
  * 删除确认弹窗里的记事本路径（G5/D7：删档案≠删记忆，路径要说真话）。
  * 与 core persistent-memory 的目录推导同源：project → <ws>/.zcode/agent-memory/<key>/，
- * local → <ws>/.zcode/agent-memory-local/<key>/；key 对合法档案名（[a-zA-Z0-9-]）即原名。
+ * local → <ws>/.zcode/agent-memory-local/<key>/；key 规则（D26）**有号按号**
+ * （`a-<uuid>`，与 shared/node resolveAgentMemoryKey 同形，UI 侧不引 node 模块，
+ * 由 packages/ui/test 的双向测试钉住不许漂移），无号才是清洗过的档案名。
  * user 记事本在用户数据目录，UI 不知道绝对路径 → 返回 null，由调用方换用不带路径的文案。
  */
 export function buildAgentMemoryDirectoryHint(
-  agent: Pick<AgentSummary, "name" | "memory">,
+  agent: Pick<AgentSummary, "name" | "memory" | "agentId">,
   workspacePath: string,
 ): string | null {
   const scope = agent.memory ?? "project";
@@ -134,7 +136,8 @@ export function buildAgentMemoryDirectoryHint(
     return null;
   }
   const dir = scope === "local" ? "agent-memory-local" : "agent-memory";
-  return `${workspacePath.replace(/\\/gu, "/")}/.zcode/${dir}/${agent.name}/`;
+  const key = agent.agentId ? `a-${agent.agentId}` : agent.name;
+  return `${workspacePath.replace(/\\/gu, "/")}/.zcode/${dir}/${key}/`;
 }
 
 /**

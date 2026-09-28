@@ -755,7 +755,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       // G6 改名迁移：记事本目录在档案覆盖前先搬家——旧 key 取自旧档案 frontmatter
       // 的 name（文件名小写化恢复不出原始大小写）；rename 是同卷原子操作，失败即
       // 整单中止，此时档案还没写、记事本原地不动，两边数据都完好。
-      const memoryRenamePlan = planAgentMemoryRenameFromPrevious(params, previous);
+      const memoryRenamePlan = planAgentMemoryRenameFromPrevious(params, previous, agent);
       if (memoryRenamePlan) {
         await applyAgentMemoryDirectoryRename(memoryRenamePlan);
       }
@@ -855,18 +855,23 @@ async function readPreviousAgentForUpdate(
 }
 
 /**
- * G6 改名迁移计划：旧档案的 name/memory 交给 planAgentMemoryDirectoryRename
+ * G6 改名迁移计划：旧档案的 name/memory/号 交给 planAgentMemoryDirectoryRename
  * （与 core 注入/记忆面板同源的纯推导）算出记事本目录搬家对。
+ * D26 后这里还要管"名字目录 → 号目录"的一次性归位：旧档案没号而这次上了号，
+ * 目录就跟着号走；旧目录原地保留由搬家逻辑处理（不覆盖已有内容的目标）。
  */
 function planAgentMemoryRenameFromPrevious(
   params: AgentUpdateParams,
   previous: AgentSummary | undefined,
+  nextAgent: AgentSummary,
 ): AgentMemoryDirectoryRenamePlan | undefined {
   if (!previous?.name || !params.oldFilePath) return undefined;
   const memoryScope = previous.memory ?? "project";
   return planAgentMemoryDirectoryRename({
     previousAgentName: previous.name,
     nextAgentName: params.config.name.trim(),
+    ...(previous.agentId ? { previousAgentId: previous.agentId } : {}),
+    ...(nextAgent.agentId ? { nextAgentId: nextAgent.agentId } : {}),
     memoryScope,
     workspacePath: params.workspacePath,
     // user 记事本根与记忆面板同源（services 数据目录）；CLI 显式改过 storage.dir

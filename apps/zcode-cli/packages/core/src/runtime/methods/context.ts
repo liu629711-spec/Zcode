@@ -76,6 +76,8 @@ export async function ensureContextInitialized(
       ? await loadProjectAgentMemoryPrompt({
           fileSystemPort: this.fileSystemPort,
           agentName: this.config.projectAgentPersona.name,
+          // 号在场按号定位记事本（D26）：与 services 记忆面板同一判据。
+          agentId: this.config.projectAgentPersona.agentId,
           memory: this.config.memory,
           memoryScope: this.config.projectAgentPersona.memory,
           logger: this.logger,

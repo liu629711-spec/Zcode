@@ -79,16 +79,25 @@ export function AgentMemorySection({
 
   const scope = agent.memory ?? "project";
 
+  // 记事本定位（D26）：有号就按号，与 core 的记忆注入共用同一判据
+  // （shared/node resolveAgentMemoryKey）。两边必须落在同一个目录，否则就是
+  // 「面板空白而员工在别处写」的老漂移；无号老档案回落到档案名。
+  const memoryTarget = useMemo(
+    () => ({
+      agentName: agent.name,
+      ...(agent.agentId ? { agentId: agent.agentId } : {}),
+      scope,
+      workspacePath,
+    }),
+    [agent.name, agent.agentId, scope, workspacePath],
+  );
+
   const refreshCatalog = useCallback(async () => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setState((current) => (current === "ready" ? current : "loading"));
     try {
-      const catalog = await memoryService.listAgentMemoryFiles({
-        agentName: agent.name,
-        scope,
-        workspacePath,
-      });
+      const catalog = await memoryService.listAgentMemoryFiles(memoryTarget);
       if (requestIdRef.current !== requestId) {
         return;
       }
@@ -103,7 +112,7 @@ export function AgentMemorySection({
       setError(getErrorMessage(caught));
       setState("error");
     }
-  }, [agent.name, memoryService, scope, workspacePath]);
+  }, [memoryTarget, memoryService]);
 
   useEffect(() => {
     if (!resolution.rpcReady) {
@@ -124,9 +133,7 @@ export function AgentMemorySection({
       setEditingLoading(true);
       try {
         const content = await memoryService.readAgentMemoryFile({
-          agentName: agent.name,
-          scope,
-          workspacePath,
+          ...memoryTarget,
           fileName,
         });
         // 请求期间用户可能已切到另一条，内容不回填错行。
@@ -145,7 +152,7 @@ export function AgentMemorySection({
         toast(getErrorMessage(caught));
       }
     },
-    [agent.name, deletingFile, editingBusy, memoryService, scope, workspacePath],
+    [deletingFile, editingBusy, memoryService, memoryTarget],
   );
 
   const saveEditor = useCallback(async () => {
@@ -156,9 +163,7 @@ export function AgentMemorySection({
     setEditingBusy(true);
     try {
       await memoryService.writeAgentMemoryFile({
-        agentName: agent.name,
-        scope,
-        workspacePath,
+        ...memoryTarget,
         fileName: editingFile,
         content: editingContent,
       });
@@ -170,7 +175,7 @@ export function AgentMemorySection({
     } finally {
       setEditingBusy(false);
     }
-  }, [agent.name, editingBusy, editingContent, editingFile, editingLoading, memoryService, refreshCatalog, scope, workspacePath]);
+  }, [editingBusy, editingContent, editingFile, editingLoading, memoryService, memoryTarget, refreshCatalog]);
 
   const deleteMemoryFile = useCallback(
     async (fileName: string) => {
@@ -189,9 +194,7 @@ export function AgentMemorySection({
       setDeletingFile(fileName);
       try {
         await memoryService.deleteAgentMemoryFile({
-          agentName: agent.name,
-          scope,
-          workspacePath,
+          ...memoryTarget,
           fileName,
         });
         if (editingFile === fileName) {
@@ -205,7 +208,7 @@ export function AgentMemorySection({
         setDeletingFile(null);
       }
     },
-    [agent.name, confirmDialog, editingFile, intl, memoryService, refreshCatalog, scope, workspacePath],
+    [confirmDialog, editingFile, intl, memoryService, memoryTarget, refreshCatalog],
   );
 
   const memoryCount = useMemo(

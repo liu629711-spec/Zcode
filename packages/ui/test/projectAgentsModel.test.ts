@@ -346,6 +346,28 @@ test("漂移钉住：UI 记事本提示与 shared 目录推导（core/面板同�
   }
 });
 
+test("漂移钉住（D26 号目录）：UI 提示与 shared 推导都按号落位，名字不参与", () => {
+  const agentId = "0f6a2c1e-77db-4a1b-9c3d-5e2f8b1a4c9d";
+  for (const scope of ["project", "local"] as const) {
+    const sharedRoot = resolveAgentMemoryRoot({
+      agentName: "code-reviewer",
+      agentId,
+      scope,
+      storageRoot: "",
+      workspaceRoot: "D:\\repo",
+    });
+    assert.ok(
+      sharedRoot.replace(/\\/gu, "/").includes(`/.zcode/${scope === "local" ? "agent-memory-local" : "agent-memory"}/a-${agentId}`),
+      "号目录带 a- 段（与老的名字目录物理区分，搬家时认得出）",
+    );
+    // 档案改了名也不影响：号在场即以号为准。
+    assert.equal(
+      buildAgentMemoryDirectoryHint({ name: "ui-pro", memory: scope, agentId }, "D:/repo"),
+      `${sharedRoot.replace(/\\/gu, "/")}/`,
+    );
+  }
+});
+
 test("漂移钉住：persona 记忆缺省与面板展示口径（memory ?? \"project\"）同一", () => {
   // 面板/删除提示按 `memory ?? "project"` 展示记事本路径，persona 载荷的缺省必须同一口径——
   // 否则会出现「面板有记事本、会话永远不读」的语义谎言（设置页三框建档即这条路径）。

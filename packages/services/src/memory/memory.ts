@@ -57,6 +57,12 @@ export interface IMemoryService {
 /** 记忆面板的目标定位：档案名 + 记忆范围 + 工作区（user 档案不需要工作区）。 */
 export interface AgentMemoryTargetParams {
   agentName: string;
+  /**
+   * 员工工号（D26）：有号就按号定位记事本，与 core 的注入路径同一判据
+   * （shared/node resolveAgentMemoryKey）。缺席 = 无号老档案，回落档案名。
+   * 两边必须同源传，否则面板显示空白而智能体在另一个目录里写（面板/注入漂移）。
+   */
+  agentId?: string;
   scope: AgentMemoryScope;
   /** project/local 记事本在 <workspacePath>/.zcode 下，必传；user 记事本可省略。 */
   workspacePath?: string;

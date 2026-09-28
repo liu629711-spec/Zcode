@@ -143,10 +143,12 @@ function loadPrompt(input: {
   memory?: { enabled?: boolean; use?: boolean; storageRoot?: string };
   memoryScope: "user" | "project" | "local";
   agentName?: string;
+  agentId?: string;
 }): Promise<string | undefined> {
   return loadProjectAgentMemoryPrompt({
     fileSystemPort: input.port,
     agentName: input.agentName ?? "code-reviewer",
+    ...(input.agentId ? { agentId: input.agentId } : {}),
     memory: input.memory,
     memoryScope: input.memoryScope,
     workspaceRoot: WORKSPACE_ROOT,
@@ -203,6 +205,44 @@ test("驻场记忆注入：local scope 读 <ws>/.zcode/agent-memory-local/<key>/
   assert.ok(prompt);
   assert.deepEqual(readPaths, [join(indexDir, "MEMORY.md")]);
   assert.ok(prompt.includes("local-scope"));
+});
+
+test("驻场记忆注入（D26）：号在场读 a-<uuid> 目录，档案叫什么都不影响落点", async () => {
+  const agentId = "0f6a2c1e-77db-4a1b-9c3d-5e2f8b1a4c9d";
+  // 名字目录里留着旧内容（改名前的历史落点），号目录里才是现在的记事本。
+  const staleDir = join(WORKSPACE_ROOT, ".zcode", "agent-memory", "ui-test");
+  const indexDir = join(WORKSPACE_ROOT, ".zcode", "agent-memory", `a-${agentId}`);
+  const { port, readPaths } = createMemoryFileSystem(
+    new Map([
+      [join(staleDir, "MEMORY.md"), "- [陈旧](stale.md) — 旧名字目录"],
+      [join(indexDir, "MEMORY.md"), "- [现职](now.md) — 号目录里的记忆"],
+    ]),
+  );
+  const prompt = await loadPrompt({
+    port,
+    memory: MEMORY_ON,
+    memoryScope: "project",
+    agentName: "ui-pro",
+    agentId,
+  });
+  assert.ok(prompt);
+  assert.deepEqual(readPaths, [join(indexDir, "MEMORY.md")], "只读号目录，不碰名字目录");
+  assert.ok(prompt.includes("- [现职](now.md) — 号目录里的记忆"));
+});
+
+test("驻场记忆注入（D26）：坏号当无号，回落名字目录（绝不用乱码拼路径）", async () => {
+  const indexDir = join(WORKSPACE_ROOT, ".zcode", "agent-memory", "code-reviewer");
+  const { port, readPaths } = createMemoryFileSystem(
+    new Map([[join(indexDir, "MEMORY.md"), "- [ok](ok.md) — 基线"]]),
+  );
+  const prompt = await loadPrompt({
+    port,
+    memory: MEMORY_ON,
+    memoryScope: "project",
+    agentId: "../../escape",
+  });
+  assert.ok(prompt);
+  assert.deepEqual(readPaths, [join(indexDir, "MEMORY.md")]);
 });
 
 test("驻场记忆注入：MEMORY.md 缺失不炸，返回空索引基线 prompt，且零建目录（D25）", async () => {

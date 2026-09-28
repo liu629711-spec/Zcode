@@ -146,6 +146,7 @@ function resolveAgentMemoryDirectory(params: AgentMemoryTargetParams): string {
   if (params.scope === "user") {
     return resolveAgentMemoryRoot({
       agentName: params.agentName,
+      ...(params.agentId ? { agentId: params.agentId } : {}),
       scope: "user",
       storageRoot: getZCodeDataRootDir(),
       workspaceRoot: "",
@@ -157,6 +158,7 @@ function resolveAgentMemoryDirectory(params: AgentMemoryTargetParams): string {
   }
   return resolveAgentMemoryRoot({
     agentName: params.agentName,
+    ...(params.agentId ? { agentId: params.agentId } : {}),
     scope: params.scope,
     storageRoot: "",
     workspaceRoot: workspacePath,
