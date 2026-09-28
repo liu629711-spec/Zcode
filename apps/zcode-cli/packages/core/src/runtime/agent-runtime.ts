@@ -123,6 +123,7 @@ import { InMemoryRuntimeTaskRegistry, type RuntimeTaskRegistry } from "../runtim
 import type { ChildClientPortsContext, ClientFacingPorts } from "./helpers/child-client-ports.js";
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import { projectPersistentAgentMemoryTools } from "../subagent/persistent-memory.js";
+import { createAgentCallPinnedPort } from "../subagent/agent-call-port.js";
 import { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 import { disposeNodeReplSession } from "../tool/handlers/node-repl.js";
@@ -165,6 +166,8 @@ export class AgentRuntime {
   private memoryRoot?: string;
   private memoryIndexContent?: string;
   private personaMemoryPrompt?: string;
+  /** 点将（D24）本轮名单，见 runtime/internal.ts 的说明；未点将时为空数组。 */
+  private turnPinnedAgentNames: readonly string[] = [];
   private memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   private contextSourcePort?: ContextSourcePort;
   private skillPort?: SkillPort;
@@ -289,7 +292,12 @@ export class AgentRuntime {
     this.fileSystemPort = deps.fileSystemPort;
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;
-    this.subagentPort = deps.subagentPort ?? runtime.createDefaultSubagentPort(deps);
+    // 点将（D24）：端口是派遣的唯一入口，在这里包一层就把本轮名单钉进归属，
+    // 不必把"用户点了谁"当工具参数穿过 executor/batch/call-runner 一堆装配点。
+    this.subagentPort = createAgentCallPinnedPort(
+      deps.subagentPort ?? runtime.createDefaultSubagentPort(deps),
+      () => this.turnPinnedAgentNames,
+    );
     this.dynamicWorkflowRunPort = deps.dynamicWorkflowRunPort;
     // GUI「配置」解析子代理模型用的目录（与工具上下文拿的是同一个端口）。
     this.modelCatalogPort = deps.modelCatalogPort;

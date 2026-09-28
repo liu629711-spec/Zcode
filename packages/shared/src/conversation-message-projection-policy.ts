@@ -53,6 +53,8 @@ const PROVIDER_CONTEXT_SYNTHETIC_SOURCES = new Set([
   "goal_completion_verification",
   "goal_state_change",
   "plugin_reference",
+  // 点将（D24）：运行时按原文固化的 model-only 提醒，不进用户气泡。
+  "agent_call",
   "queued_system_notification",
   "resume_goal_state",
   "resume_referenced_session_context",

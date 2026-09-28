@@ -71,6 +71,8 @@ function syntheticUserNoticeKind(source: SyntheticUserMessageSource): MessageSem
       return "system_reminder";
     case "plugin_reference":
       return "system_reminder";
+    case "agent_call":
+      return "system_reminder";
     case "rewind":
       return "rewind_notice";
     case "selection_side_chat":

@@ -264,6 +264,8 @@ export interface AgentRuntimeCoreMethods {
     reason: string,
     context?: Record<string, unknown>,
   ): void;
+  /** 点将（D24）：解析本轮正文的 agent:// 引用，设定派遣名单并固化提醒。 */
+  applyAgentCallFromTurn(userInput: string, traceContext: TraceContext): Promise<void>;
   injectPluginReferenceReminderFromTurn(
     userInput: string,
     traceContext: TraceContext,

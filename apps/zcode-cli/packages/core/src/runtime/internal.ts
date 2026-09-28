@@ -94,6 +94,11 @@ export interface AgentRuntimeInternal
   memoryIndexContent?: string;
   /** 驻场智能体会话在 context 初始化时读到的项目记忆 prompt（刷新重建 builder 时复用）。 */
   personaMemoryPrompt?: string;
+  /**
+   * 点将（D24）：本轮用户 @ 点名的员工名，派遣归属只能落在这几个人里。
+   * 每轮由 applyAgentCallFromTurn 重设（没点将 = 空数组），子代理端口据此改写 agentType。
+   */
+  turnPinnedAgentNames: readonly string[];
   memoryExtractionScheduler?: ProjectMemoryExtractionScheduler;
   contextSourcePort?: ContextSourcePort;
   skillPort?: SkillPort;

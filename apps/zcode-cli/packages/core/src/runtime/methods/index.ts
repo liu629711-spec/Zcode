@@ -79,6 +79,7 @@ import { createContextBuilderFromSnapshot } from "./context.js";
 import { loadProjectMemoryRoot } from "./context.js";
 import { logMemorySkipped } from "./context.js";
 import { injectPluginReferenceReminderFromTurn } from "./plugin-reference.js";
+import { applyAgentCallFromTurn } from "./agent-call.js";
 import { initializeMcp } from "./mcp.js";
 import { startMcpStartup } from "./mcp.js";
 import { discoverSkillsForContext } from "./context.js";
@@ -281,6 +282,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.loadProjectMemoryRoot = loadProjectMemoryRoot;
   proto.logMemorySkipped = logMemorySkipped;
   proto.injectPluginReferenceReminderFromTurn = injectPluginReferenceReminderFromTurn;
+  proto.applyAgentCallFromTurn = applyAgentCallFromTurn;
   proto.initializeMcp = initializeMcp;
   proto.startMcpStartup = startMcpStartup;
   proto.discoverSkillsForContext = discoverSkillsForContext;

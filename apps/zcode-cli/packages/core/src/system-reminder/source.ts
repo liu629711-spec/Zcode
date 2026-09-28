@@ -28,6 +28,7 @@ export const SYSTEM_REMINDER_PERSISTED_SOURCES = [
   "resume_goal_state",
   "goal_state_change",
   "plugin_reference",
+  "agent_call",
   "target_continuation",
   "goal_completion_verification",
   "rewind_notice",
@@ -103,6 +104,9 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
   // Plugin 对话引用：当轮生成后按
   // model-only synthetic notice 固化，后续只追加、不改写；冷恢复按原文重建以保持缓存前缀。
   plugin_reference: descriptor("current_turn", "per_current_turn", true, "sr.plugin_reference"),
+  // 点将（D24）：本轮点名谁派给谁，当轮生成后按 model-only notice 固化，
+  // 冷恢复按原文重建 attachment；派遣归属另有端口硬约束，不靠模型自觉。
+  agent_call: descriptor("current_turn", "per_current_turn", true, "sr.agent_call"),
   todo_reminder: descriptor("current_turn", "per_current_turn", true, "sr.todo_reminder"),
   task_status: descriptor("mid_turn_event", "mid_turn_event", true, "sr.task_status"),
   // 只用于 Read 等 tool result 内容内联 warning，不作为 synthetic user notice 持久化。

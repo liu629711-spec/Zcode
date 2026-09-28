@@ -19,6 +19,8 @@ export const zcodeSyntheticUserMessageSourceSchema = z.enum([
   "goal_state_change",
   "goal-continuation",
   "plugin_reference",
+  // 点将（D24）提醒的来源；必须与 contracts 的 SYNTHETIC_USER_MESSAGE_SOURCES 同词表。
+  "agent_call",
   "rewind",
   "selection_side_chat",
   "subagent",

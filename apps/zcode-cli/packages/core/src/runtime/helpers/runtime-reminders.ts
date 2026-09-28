@@ -114,6 +114,9 @@ export function runtimeMetadataForSyntheticUserMessageSource(
   if (source === "plugin_reference") {
     return systemReminderRuntimeMetadata("plugin_reference");
   }
+  if (source === "agent_call") {
+    return systemReminderRuntimeMetadata("agent_call");
+  }
   if (source === "selection_side_chat") {
     return systemReminderRuntimeMetadata("selection_side_chat");
   }

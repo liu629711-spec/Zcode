@@ -551,6 +551,9 @@ export async function executeTurnCommand(
             turnTraceContext,
             options?.toolDisallowlist,
           );
+          // 点将（D24）：同样只解析 canonical displayInput（命令模板里的 agent://
+          // 不算用户点名），并把本轮派遣归属钉在点到的员工身上。
+          await this.applyAgentCallFromTurn(displayInput, turnTraceContext);
         }
 
         this.messageHistory.setCacheMiss();

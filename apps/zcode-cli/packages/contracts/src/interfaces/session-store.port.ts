@@ -57,6 +57,8 @@ export const SYNTHETIC_USER_MESSAGE_SOURCES = [
   "goal_state_change",
   "goal-continuation",
   "plugin_reference",
+  // 点将（D24）：用户在本条消息里 @ 点名项目员工，运行时按同一原文固化一条提醒。
+  "agent_call",
   "rewind",
   "selection_side_chat",
   "subagent",
