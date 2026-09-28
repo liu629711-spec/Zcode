@@ -60,6 +60,7 @@ import {
   type SubagentReasoningFieldState,
 } from "@/settings/SubagentReasoningField.js";
 import { refreshLoadedSubagentsStoreForWorkspace } from "@/store/subagentsStore.js";
+import { requestProjectAgentRenameRelink } from "@/store/projectAgentProfileActionStore.js";
 import {
   PluginScopeMenu,
   getPluginWorkspaceKey,
@@ -1413,7 +1414,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       setSaving(true);
       try {
         if (editingAgent) {
-          await subagentsService.updateAgent({
+          const { agent } = await subagentsService.updateAgent({
             agentId: editingAgent.id,
             config,
             oldFilePath: editingAgent.path,
@@ -1422,6 +1423,23 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
             workspacePath: editingAgent.projectPath ?? targetWorkspacePath ?? undefined,
             workspaceIdentity: targetWorkspaceIdentity,
           });
+          // 改名补链（D27）：设置页改的名，历史会话标题也要跟着换牌——那批只能靠
+          // 「旧名 · 」标题前缀反推工牌的老会话，不改标题就会掉工牌。
+          // 执行者住侧栏（它才有会话行与任务服务），这里只发请求；侧栏没挂载就
+          // 跳过，号登记与档案目录刷新仍能让有号的会话认对人，无号老会话等下次
+          // 从会话行改名时一并跟上。
+          const relinkWorkspacePath = editingAgent.projectPath ?? targetWorkspacePath;
+          const newName = agent.name;
+          if (relinkWorkspacePath && newName !== editingAgent.name) {
+            requestProjectAgentRenameRelink({
+              workspacePath: relinkWorkspacePath,
+              ...(targetWorkspaceIdentity ? { workspaceIdentity: targetWorkspaceIdentity } : {}),
+              ...(agent.agentId ? { agentId: agent.agentId } : {}),
+              oldName: editingAgent.name,
+              newName,
+              ...(agent.color ? { color: agent.color } : {}),
+            });
+          }
         } else {
           await subagentsService.createAgent({
             config,

@@ -603,21 +603,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       resolveProjectAgentForRow,
     ],
   );
-  // Header「···」菜单的档案操作借用侧栏链路（D4 一致性）：编辑对话框/删除确认/列表刷新
-  // 都住在这里，Header 只发请求；侧栏未挂载（处理器缺席）时 Header 菜单项不渲染。
-  useEffect(() => {
-    setProjectAgentProfileActionHandlers({
-      edit: handleEditProjectAgent,
-      remove: (task) => {
-        void handleDeleteProjectAgent(task);
-      },
-    });
-    return () => setProjectAgentProfileActionHandlers(null);
-  }, [
-    handleDeleteProjectAgent,
-    handleEditProjectAgent,
-    setProjectAgentProfileActionHandlers,
-  ]);
+  // Header「···」菜单与设置页借用侧栏档案链路的处理器注册在 relinkRenamedAgentChats
+  // 之后（同一个 effect 挂三件处理器，补链要按声明顺序取引用）。
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
     Extract<TaskOrganizeBy, "project" | "chronological" | "agent">
   >(() => {
@@ -967,6 +954,37 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       workspaceTaskLists.groups,
     ],
   );
+  // Header「···」菜单的档案操作 + 设置页改名的补链都借用侧栏链路（D4/D27 一致性）：
+  // 编辑对话框、删除确认、列表刷新与会话行换牌住在侧栏（它才持有档案列表与任务服务），
+  // 别人只发请求；侧栏未挂载（处理器缺席）时入口不渲染或降级，不留死入口。
+  useEffect(() => {
+    setProjectAgentProfileActionHandlers({
+      edit: handleEditProjectAgent,
+      remove: (task) => {
+        void handleDeleteProjectAgent(task);
+      },
+      renameRelink: (request) => {
+        void relinkRenamedAgentChats({
+          target: {
+            workspacePath: request.workspacePath,
+            ...(request.workspaceIdentity?.trim()
+              ? { workspaceIdentity: request.workspaceIdentity.trim() }
+              : {}),
+          },
+          agentId: request.agentId,
+          oldName: request.oldName,
+          newName: request.newName,
+          color: request.color,
+        });
+      },
+    });
+    return () => setProjectAgentProfileActionHandlers(null);
+  }, [
+    handleDeleteProjectAgent,
+    handleEditProjectAgent,
+    relinkRenamedAgentChats,
+    setProjectAgentProfileActionHandlers,
+  ]);
   const handleShowMoreWorkspaceTasks = useCallback((workspaceKey: string) => {
     setWorkspaceTaskVisibleLimitByKey((current) =>
       increaseWorkspaceTaskVisibleLimit(current, workspaceKey),
