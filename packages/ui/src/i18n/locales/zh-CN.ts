@@ -5526,6 +5526,8 @@ const zhCN: Record<string, string> = {
   "chat.mention.category.results": "{count} 个匹配结果",
   "chat.mention.files.title": "文件",
   "chat.mention.files.empty": "没有匹配的文件",
+  "chat.mention.designStyles.title": "设计风格",
+  "chat.mention.designStyles.empty": "没有匹配的设计风格",
   "chat.mention.skills.title": "技能",
   "chat.mention.skills.empty": "没有匹配的技能",
   "chat.mention.skills.searchHint": "输入内容以搜索技能",

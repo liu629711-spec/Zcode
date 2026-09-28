@@ -18,6 +18,9 @@ import {
   KEY_TAB_COMMAND,
 } from "lexical";
 import { useZCodeIntl } from "../i18n/IntlProvider.js";
+import { useOptionalPlatform } from "../hooks/usePlatform.js";
+import { ASSET_CATALOG } from "../asset-library/catalog/index.js";
+import { toast } from "../components/ui/toast.js";
 import {
   extractActivePromptInputTrigger,
   getActivePromptInputTokenTailLength,
@@ -44,6 +47,7 @@ import {
   type MentionPanelGroupId,
 } from "./mentionPanelRouting.js";
 import { $createPromptMentionNode } from "./nodes/PromptMentionNode.js";
+import { useDesignStyleMentionProvider } from "./providers/designStylesMentionProvider.js";
 import { useFileMentionProvider } from "./providers/fileMentionProvider.js";
 import { usePluginsMentionProvider } from "./providers/pluginsMentionProvider.js";
 import { useSessionsMentionProvider } from "./providers/sessionsMentionProvider.js";
@@ -140,6 +144,9 @@ export function MentionPlugin({
 }: MentionPluginProps & { provider: ZCodeProvider }) {
   const [editor] = useLexicalComposerContext();
   const { intl } = useZCodeIntl();
+  // optional 变体：composer 会被没有 PlatformProvider 的宿主挂载（V4ComposerCuaEntry
+  // 的既有教训），缺平台时设计风格分组自动不可选，不能把整个 composer 拖崩。
+  const platform = useOptionalPlatform();
   const [activeTrigger, setActiveTrigger] = useState<ActivePromptInputTrigger | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const dismissedSignatureRef = useRef<string | null>(null);
@@ -197,6 +204,15 @@ export function MentionPlugin({
     intl.formatMessage({ id: "chat.mention.whiteboards.empty" }),
     intl.formatMessage({ id: "chat.mention.whiteboards.title" }),
   );
+  // 设计风格（V4.5 用户反馈：在输入框 @ 选择设计风格）：素材目录静态数据，
+  // 同步过滤；选中后由 selectOption 分支先落盘 DESIGN.md 再插入引用 chip。
+  const designStylesResult = useDesignStyleMentionProvider(
+    deferredActiveQuery,
+    isOpen && isContextTrigger,
+    intl.formatMessage({ id: "chat.mention.designStyles.empty" }),
+    intl.formatMessage({ id: "chat.mention.designStyles.title" }),
+    MENTION_DEFAULT_GROUP_PREVIEW_LIMIT,
+  );
   const sessionsResult = useSessionsMentionProvider(
     provider,
     workspacePath,
@@ -228,6 +244,14 @@ export function MentionPlugin({
         loading: fileResult.loading,
         errorText: fileResult.error?.message ?? null,
         emptyText: fileResult.emptyText,
+      },
+      "design-styles": {
+        id: "design-styles",
+        title: designStylesResult.title,
+        items: designStylesResult.items,
+        loading: designStylesResult.loading,
+        errorText: designStylesResult.error?.message ?? null,
+        emptyText: designStylesResult.emptyText,
       },
       plugins: {
         id: "plugins",
@@ -453,7 +477,7 @@ export function MentionPlugin({
   }, [disabled, editor]);
 
   const insertMentionItem = useCallback(
-    (item: MentionItem) => {
+    (item: MentionItem, trailingText?: string) => {
       if (item.category === "whiteboards" && onWhiteboardMentionSelected) {
         editor.update(() => {
           const selectionState = getCurrentTextNodeSelection();
@@ -545,7 +569,9 @@ export function MentionPlugin({
           selectionState.node,
           tokenEnd,
         );
-        const trailingWhitespace = $createTextNode(" ");
+        // 尾随文本默认一个空格；设计风格等"选中即成稿"的场景传完整正文（可含换行，
+        // 与 replaceEditorWithMention 的 trailingText 同一契约）。
+        const trailingNode = $createTextNode(trailingText ?? " ");
         selectionState.selection.insertNodes([
           $createPromptMentionNode({
             id: item.id,
@@ -556,9 +582,9 @@ export function MentionPlugin({
             description: item.description,
             data: item.data,
           }),
-          trailingWhitespace,
+          trailingNode,
         ]);
-        trailingWhitespace.selectEnd();
+        trailingNode.selectEnd();
       });
 
       dismissedSignatureRef.current = null;
@@ -572,6 +598,38 @@ export function MentionPlugin({
     [editor, onWhiteboardMentionSelected],
   );
 
+  // 设计风格选中分支（V4.5 用户反馈：在输入框 @ 选择设计风格）：先静默落盘规范文档
+  // （与素材库"发到会话"同一 IPC 白名单通道），成功后插入引用 chip + 口令——口令就是
+  // "按这套风格改造界面"的使用说明，用户直接发送或改写；落盘失败 toast 原因且不插入
+  // 指向不存在文件的 chip。
+  const selectDesignStyleItem = useCallback(
+    async (item: MentionItem) => {
+      const asset = ASSET_CATALOG.find(
+        (candidate) => candidate.id === item.id.slice("asset:".length),
+      );
+      if (!asset || asset.files.length === 0) {
+        insertMentionItem(item);
+        return;
+      }
+      try {
+        const result = await platform?.assetLibraryWriteFiles?.({
+          workspacePath,
+          relativeDir: `.zcode/asset-library/${asset.id}`,
+          files: asset.files.map((file) => ({ name: file.name, content: file.content })),
+        });
+        if (!result) {
+          throw new Error("not_supported");
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        toast(intl.formatMessage({ id: "assetLibrary.detail.writeFailedReason" }, { error: reason }));
+        return;
+      }
+      insertMentionItem(item, `\n\n${asset.prompt}`);
+    },
+    [insertMentionItem, intl, platform, workspacePath],
+  );
+
   const selectOption = useCallback(
     (index: number) => {
       const nextItem = flatItems[index];
@@ -582,11 +640,16 @@ export function MentionPlugin({
       if (nextItem.disabled) {
         return false;
       }
+      // 设计风格货（id = `asset:<id>`，file 类 mention）：先落盘再插入。
+      if (nextItem.id.startsWith("asset:")) {
+        void selectDesignStyleItem(nextItem);
+        return true;
+      }
 
       insertMentionItem(nextItem);
       return true;
     },
-    [flatItems, insertMentionItem],
+    [flatItems, insertMentionItem, selectDesignStyleItem],
   );
 
   useEffect(() => {

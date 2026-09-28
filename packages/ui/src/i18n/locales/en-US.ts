@@ -5774,6 +5774,8 @@ const enUS: Record<string, string> = {
   "chat.mention.category.results": "{count} matches",
   "chat.mention.files.title": "Files",
   "chat.mention.files.empty": "No matching files",
+  "chat.mention.designStyles.title": "Design styles",
+  "chat.mention.designStyles.empty": "No matching design styles",
   "chat.mention.skills.title": "Skills",
   "chat.mention.skills.empty": "No matching skills",
   "chat.mention.skills.searchHint": "Type to search skills",

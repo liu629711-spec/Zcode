@@ -84,3 +84,23 @@ test("纯 chip：英文 locale 用 titleEn 作 label", () => {
   );
   assert.equal(mention?.label, "English Name");
 });
+
+test("设计风格类：chip 后必须跟随口令（纯 chip 会让智能体零上下文，真机反馈）", () => {
+  const asset = manifest({
+    id: "design-agentic",
+    title: "Agentic · 设计风格",
+    category: "design-style",
+    prompt: "请按「Agentic」这套设计风格改造我的界面。",
+  });
+  const { text, mention } = buildAssetReferenceChipMessage(
+    asset,
+    ["./.zcode/asset-library/design-agentic/DESIGN.md"],
+    "zh-CN",
+  );
+  assert.ok(mention, "应产出结构化 mention");
+  assert.ok(text.startsWith(mention!.markdown), "chip 开头");
+  assert.ok(
+    text.includes("请按「Agentic」这套设计风格改造我的界面。"),
+    "设计风格 chip 后跟随口令",
+  );
+});

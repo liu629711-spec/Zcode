@@ -1,8 +1,10 @@
 /**
- * 递活消息组装（技术设计 §10 V2-2 → V3-2 引用 chip 化 → V4.4 纯 chip 化）：
+ * 递活消息组装（技术设计 §10 V2-2 → V3-2 引用 chip 化 → V4.4 纯 chip 化 → V4.5 设计风格例外）：
  * 普通货不再把全量代码怼进输入框，图纸先静默落盘到 `<workspace>/.zcode/asset-library/<id>/`，
  * 点"发到会话"后 composer 里**只出现一个素材引用 chip**（像「1 条对话引用」那种块），
  * 不带口令/说明文字——需求描述由用户自己写（V4.4 真机反馈拍板）。
+ * 例外（V4.5）：设计风格货的口令本身就是使用说明（"按这套风格改造界面，先读随附规范"），
+ * 纯 chip = 智能体零上下文，所以 chip 后始终跟随口令。
  */
 import { buildFileMentionMarkdown } from "../mentions/mentionMarkdown.js";
 import type { ComposerMentionPrefill } from "../store/zcodeSessionStoreTypes.js";
@@ -71,5 +73,12 @@ export function buildAssetReferenceChipMessage(
       ].join("\n"),
     };
   }
-  return { text: mention.markdown, mention };
+  // 设计风格类（V4.5 真机反馈"发过去什么内容都没有"）：口令本身就是使用说明
+  // （"按这套风格改造界面，先读随附规范"），纯 chip 会让智能体拿到零上下文——
+  // chip 后必须跟随口令。组件类货维持 V4.4 纯 chip（用户自己写需求）。
+  const text =
+    asset.category === "design-style"
+      ? `${mention.markdown}\n\n${asset.prompt}`
+      : mention.markdown;
+  return { text, mention };
 }
