@@ -224,6 +224,11 @@ export interface AgentRuntimeConfig {
    */
   projectAgentPersona?: {
     name: string;
+    /**
+     * 员工工号（D26）：随快照落盘，改名后仍是同一个人。
+     * 老会话没有这一键 = 回落按名字对号；记事本目录（片三）认它优先。
+     */
+    agentId?: string;
     memory?: AgentMemoryScope;
     color?: AgentColor;
     tools?: readonly string[];

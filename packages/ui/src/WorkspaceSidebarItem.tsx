@@ -87,6 +87,10 @@ import {
   restorePersonaTitlePrefix,
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import {
+  selectProjectAgentDirectoryForWorkspace,
+  useProjectAgentDirectoryStore,
+} from "@/store/projectAgentDirectoryStore.js";
+import {
   selectPersonaChatBadgesForWorkspace,
   usePersonaChatBadgeStore,
 } from "@/store/personaChatBadgeStore.js";
@@ -236,16 +240,18 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   const taskItemsRef = useRef(taskItems);
   taskItemsRef.current = taskItems;
   // 驻场智能体徽章登记（D2）：只订阅本工作区的登记，登记不变时 Map 引用稳定。
+  const personaChatWorkspaceKey = buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity);
   const personaChatBadges = usePersonaChatBadgeStore((state) =>
-    selectPersonaChatBadgesForWorkspace(
-      state,
-      buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
-    ),
+    selectPersonaChatBadgesForWorkspace(state, personaChatWorkspaceKey),
+  );
+  // 现役档案目录（D26）：登记里带着工号，改名后的旧登记要按号刷成档案当前的名字与颜色。
+  const projectAgentDirectory = useProjectAgentDirectoryStore((state) =>
+    selectProjectAgentDirectoryForWorkspace(state, personaChatWorkspaceKey),
   );
   // 带徽章行换新引用、其余行保持原引用，避免打穿 TaskListItem 的行级 memo。
   const badgedTaskItems = useMemo(
-    () => applyPersonaChatBadges(taskItems, personaChatBadges),
-    [taskItems, personaChatBadges],
+    () => applyPersonaChatBadges(taskItems, personaChatBadges, projectAgentDirectory),
+    [taskItems, personaChatBadges, projectAgentDirectory],
   );
   const workspaceZCodeStateRef = useRef(workspaceZCodeState);
   workspaceZCodeStateRef.current = workspaceZCodeState;

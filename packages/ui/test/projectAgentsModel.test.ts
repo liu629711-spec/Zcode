@@ -8,20 +8,23 @@ import {
   buildAgentMemoryDirectoryHint,
   buildRenamedPersonaTitle,
   buildRetitledPersonaTitle,
+  derivePersonaChatBadge,
   findLatestPersonaChatRow,
   findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
+  isPersonaChatRowOfRenamedAgent,
   groupPersonaBadgedTaskItems,
   personaChatRenameDraft,
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   restorePersonaTitlePrefix,
+  refreshPersonaChatBadgeFromDirectory,
   selectProjectAgentsForWorkspace,
   stripPersonaTitlePrefix,
   toProjectAgentCreateConfig,
   toProjectAgentPersona,
-  toProjectAgentPersonaFromDraft,
   toProjectAgentUpdateConfig,
+  toPersonaChatBadge,
   validateProjectAgentDraft,
   type PersonaChatBadge,
 } from "../src/WorkspaceSidebar/projectAgentsModel.js";
@@ -183,17 +186,6 @@ test("toProjectAgentPersona：空工具数组不进载荷（= 继承全部工具
     systemPrompt: "你是代码审查员",
     memoryScope: "project",
   });
-});
-
-test("toProjectAgentPersonaFromDraft：trim、固定 project scope，不带模型/工具/颜色键", () => {
-  assert.deepEqual(
-    toProjectAgentPersonaFromDraft({
-      name: "  reviewer  ",
-      description: "desc",
-      systemPrompt: " 你是代码审查员 ",
-    }),
-    { name: "reviewer", systemPrompt: "你是代码审查员", memoryScope: "project" },
-  );
 });
 
 test("resolveWorkspaceProjectAgentReachability：bound 本地只开本地 tab，bound 远程只开同路径 tab", () => {
@@ -503,17 +495,39 @@ test("findLatestPersonaChatRow：三路对号找员工最近一段会话，取 u
   // 掉前缀的行靠持久登记归号，且它最新 → 就应续接它。
   const registry = new Map([["s3", { name: "ui-plus" }]]);
   assert.equal(
-    findLatestPersonaChatRow(rows, "ui-plus", registry, [{ name: "ui-plus" }])?.taskId,
+    findLatestPersonaChatRow(rows, { name: "ui-plus" }, registry, [{ name: "ui-plus" }])?.taskId,
     "s3",
   );
   // 无登记时靠标题前缀反推，取最新前缀行。
   assert.equal(
-    findLatestPersonaChatRow(rows.slice(0, 2), "ui-plus", undefined, [{ name: "ui-plus" }])
-      ?.taskId,
+    findLatestPersonaChatRow(rows.slice(0, 2), { name: "ui-plus" }, undefined, [
+      { name: "ui-plus" },
+    ])?.taskId,
     "s2",
   );
   // 没有任何归属 → undefined（首见员工走新建）。
-  assert.equal(findLatestPersonaChatRow(rows, "查无此人", new Map(), []), undefined);
+  assert.equal(findLatestPersonaChatRow(rows, { name: "查无此人" }, new Map(), []), undefined);
+});
+
+test("findLatestPersonaChatRow：按号认人，员工改名后旧会话照样续得上（D26）", () => {
+  // 盘上标题还挂着旧名（改名跟走没扫到的行），档案现在叫 ui-pro。
+  const rows = [
+    { taskId: "s1", title: "ui-test · 旧话题", updatedAt: 100 },
+    { taskId: "s2", title: "普通会话", updatedAt: 900 },
+  ];
+  const registry = new Map([["s1", { name: "ui-test", agentId: "id-1" }]]);
+  assert.equal(
+    findLatestPersonaChatRow(rows, { name: "ui-pro", agentId: "id-1" }, registry, [
+      { name: "ui-pro", agentId: "id-1" },
+    ])?.taskId,
+    "s1",
+    "登记里的名字陈旧，但号是同一个人",
+  );
+  // 无号档案回落到名字判据（不许比改号前更差）。
+  assert.equal(
+    findLatestPersonaChatRow(rows, { name: "ui-test" }, registry, [{ name: "ui-test" }])?.taskId,
+    "s1",
+  );
 });
 
 test("groupPersonaBadgedTaskItems：员工各一栏（首次出现序），未归号进普通组", () => {
@@ -585,4 +599,132 @@ test("personaChatRenameDraft：无徽章行不改初值", () => {
     "你好",
     "陈旧旧名前缀同样剥掉，与行上显示层（stripPersonaTitlePrefix）同一判据",
   );
+});
+
+// ============================================================
+// D26 片二「会话带号认人」：徽章带号 → 按现役档案刷新 → 改名不再依赖补链
+// ============================================================
+
+test("toPersonaChatBadge：号与颜色缺席就不带键（老登记形状不变）", () => {
+  assert.deepEqual(toPersonaChatBadge({ name: "ui-pro" }), { name: "ui-pro" });
+  assert.deepEqual(toPersonaChatBadge({ name: "ui-pro", agentId: "id-1", color: "cyan" }), {
+    name: "ui-pro",
+    agentId: "id-1",
+    color: "cyan",
+  });
+  assert.deepEqual(toPersonaChatBadge({ name: "ui-pro", agentId: "" }), { name: "ui-pro" });
+});
+
+test("toProjectAgentPersona：档案的号随 persona 载荷进会话（D26 认人的起点）", () => {
+  const persona = toProjectAgentPersona({
+    name: "ui-pro",
+    systemPrompt: "p",
+    memory: "project",
+    agentId: "id-1",
+  } as AgentSummary);
+  assert.equal(persona.agentId, "id-1");
+  assert.equal(
+    toProjectAgentPersona({ name: "legacy", systemPrompt: "p" } as AgentSummary).agentId,
+    undefined,
+    "无号老档案的载荷不带 agentId 键",
+  );
+});
+
+test("refreshPersonaChatBadgeFromDirectory：号命中现役档案就换新名新色", () => {
+  const stale = { name: "ui-test", agentId: "id-1", color: "red" as const };
+  assert.deepEqual(
+    refreshPersonaChatBadgeFromDirectory(stale, [{ name: "ui-pro", agentId: "id-1" }]),
+    { name: "ui-pro", agentId: "id-1" },
+    "档案改名+换色后，工牌读的是档案本体（陈旧颜色不残留）",
+  );
+  const orphan = { name: "ui-test", agentId: "id-1", color: "red" as const };
+  assert.equal(
+    refreshPersonaChatBadgeFromDirectory(orphan, [{ name: "other", agentId: "id-9" }]),
+    orphan,
+    "号查不到人（档案删了/在别的工作区）返回同一对象，不抹工牌、不多余换引用",
+  );
+  assert.deepEqual(
+    refreshPersonaChatBadgeFromDirectory({ name: "ui-test" }, [{ name: "ui-pro" }]),
+    { name: "ui-test" },
+    "无号登记不动（按名字对号另有链路）",
+  );
+});
+
+test("resolvePersonaChatBadgeForTask：登记带号时改名后行上直接读出新名（不等补链）", () => {
+  const task = { taskId: "s1", title: "用户手改过的标题，没有前缀" };
+  const registry = new Map<string, PersonaChatBadge>([
+    ["s1", { name: "ui-test", agentId: "id-1" }],
+  ]);
+  assert.deepEqual(
+    resolvePersonaChatBadgeForTask(task, registry, [{ name: "ui-pro", agentId: "id-1" }]),
+    { name: "ui-pro", agentId: "id-1" },
+  );
+});
+
+test("applyPersonaChatBadges：登记行按号刷新，未登记行保持原引用", () => {
+  const plain = { taskId: "p1", title: "普通会话" };
+  const rows = [plain, { taskId: "s1", title: "ui-test · 旧话题" }];
+  const registry = new Map<string, PersonaChatBadge>([
+    ["s1", { name: "ui-test", agentId: "id-1" }],
+  ]);
+  const merged = applyPersonaChatBadges(rows, registry, [
+    { name: "ui-pro", agentId: "id-1", color: "green" },
+  ]);
+  assert.equal(merged[0], plain, "未命中行不许换引用（行级 memo 依赖）");
+  assert.deepEqual(merged[1].agentPersona, {
+    name: "ui-pro",
+    agentId: "id-1",
+    color: "green",
+  });
+});
+
+test("groupPersonaBadgedTaskItems：同一员工改名前后的两段会话进同一栏（按号归并）", () => {
+  const rows = [
+    { taskId: "a1", agentPersona: { name: "ui-test", agentId: "id-1" } },
+    { taskId: "a2", agentPersona: { name: "ui-pro", agentId: "id-1" } },
+  ];
+  const groups = groupPersonaBadgedTaskItems(rows);
+  assert.equal(groups.length, 1, "号相同就是同一个人，不许因为改过名劈成两栏");
+  assert.equal(groups[0].key, "agent:id-1");
+});
+
+test("isPersonaChatRowOfRenamedAgent：号两边都在就只认号（同名别人不许被换牌）", () => {
+  // 员工 id-1 从 ui-test 改名 ui-pro；id-2 是另一个员工，登记名恰好也叫 ui-test。
+  const base = { title: "ui-test · 你好", agentId: "id-1", oldName: "ui-test" };
+  assert.equal(
+    isPersonaChatRowOfRenamedAgent({ ...base, badges: [{ name: "ui-test", agentId: "id-1" }] }),
+    true,
+  );
+  assert.equal(
+    isPersonaChatRowOfRenamedAgent({ ...base, badges: [{ name: "ui-test", agentId: "id-2" }] }),
+    false,
+    "带着别人号的行 = 别人的人，名字撞车也不许换牌",
+  );
+  assert.equal(
+    isPersonaChatRowOfRenamedAgent({ ...base, badges: [{ name: "ui-test" }] }),
+    true,
+    "号之前的老登记按旧名",
+  );
+  assert.equal(
+    isPersonaChatRowOfRenamedAgent({ ...base, badges: [undefined] }),
+    true,
+    "没有徽章的行仍靠标题前缀认（D2 老判据不丢）",
+  );
+  assert.equal(
+    isPersonaChatRowOfRenamedAgent({ ...base, badges: [], title: "用户手改过的标题" }),
+    false,
+  );
+  assert.equal(
+    isPersonaChatRowOfRenamedAgent({ title: "ui-test · x", badges: [{ name: "ui-test" }], oldName: "ui-test" }),
+    true,
+    "无号档案的改名：整套老判据原样生效",
+  );
+});
+
+test("derivePersonaChatBadge：标题反推命中现役档案时顺手把号带上（D26）", () => {
+  const badge = derivePersonaChatBadge(
+    { title: "ui-pro · 你好" },
+    [{ name: "ui-pro", agentId: "id-1", color: "purple" }],
+  );
+  assert.deepEqual(badge, { name: "ui-pro", agentId: "id-1", color: "purple" });
 });

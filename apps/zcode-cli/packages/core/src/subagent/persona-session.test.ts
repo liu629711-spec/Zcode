@@ -166,3 +166,43 @@ test("mapPersonaToRuntimeConfig：空工具数组与缺席同义（继承全部�
   assert.equal(fragment.modelSelection, undefined);
   assert.deepEqual(fragment.projectAgentPersona, { name: "小助手" });
 });
+
+const AGENT_ID = "0f6a2c1e-77db-4a1b-9c3d-5e2f8b1a4c9d";
+
+test("persona 快照带号（D26）：号随 projectAgentPersona 落盘，回灌一路不丢", () => {
+  const snapshot = buildProjectAgentPersonaSnapshot(
+    { name: "ui-pro", agentId: AGENT_ID, memory: "project" },
+    "你是 UI 员工",
+  );
+  assert.deepEqual(snapshot, {
+    name: "ui-pro",
+    agentId: AGENT_ID,
+    systemPrompt: "你是 UI 员工",
+    memoryScope: "project",
+  });
+  // resume/fork 回灌同一条路：快照 → runtime config 切片仍带号（片三的记事本目录认它）。
+  assert.equal(
+    mapPersonaToRuntimeConfig(snapshot!, { includeModelSelection: false }).projectAgentPersona
+      .agentId,
+    AGENT_ID,
+  );
+});
+
+test("坏号不落盘（D26）：非法形状一律当无号，不许半截 uuid 决定记忆去哪", () => {
+  assert.equal(
+    buildProjectAgentPersonaSnapshot({ name: "ui", agentId: "not-a-uuid" }, "p")?.agentId,
+    undefined,
+  );
+  assert.equal(
+    buildProjectAgentPersonaSnapshot({ name: "ui", agentId: AGENT_ID.toUpperCase() }, "p")?.agentId,
+    AGENT_ID,
+    "大小写归一后落盘（号要当目录键用，形态必须唯一）",
+  );
+  assert.equal(
+    mapPersonaToRuntimeConfig(
+      { name: "ui", systemPrompt: "p", agentId: "  " },
+      { includeModelSelection: true },
+    ).projectAgentPersona.agentId,
+    undefined,
+  );
+});

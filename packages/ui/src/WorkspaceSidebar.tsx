@@ -148,11 +148,12 @@ import {
   buildRenamedPersonaTitle,
   findLatestPersonaChatRow,
   getPersonaChatBadge,
+  isPersonaChatRowOfRenamedAgent,
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   applyDerivedPersonaChatBadges,
   toProjectAgentPersona,
-  toProjectAgentPersonaFromDraft,
+  toPersonaChatBadge,
   type ProjectAgentPersona,
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
@@ -500,7 +501,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           workspacePath: target.workspacePath,
           workspaceIdentity: target.workspaceIdentity,
           taskId: sessionId,
-          badge: { name: persona.name, ...(persona.color ? { color: persona.color } : {}) },
+          // persona 载荷带号就登记号（D26）：会话与档案从此按号互认，改名不断链。
+          badge: toPersonaChatBadge(persona),
         });
         // 驻场智能体建的会话都在目标工作区本地，targetRemoteSessionId 不传。
         onSelectTask(target.workspacePath, sessionId, target.workspaceIdentity);
@@ -524,7 +526,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         usePersonaChatBadgeStore.getState().badgeByWorkspaceKey[workspaceKey],
         agents,
       );
-      const agent = badge ? agents?.find((candidate) => candidate.name === badge.name) : undefined;
+      // 先按号找人（D26）：号相同就是同一个员工，改名后「编辑档案/删除智能体」照样
+      // 接得上；无号的老会话回落按名字（徽章刷新已把名字对齐到现役档案）。
+      const agent = badge
+        ? badge.agentId
+          ? agents?.find((candidate) => candidate.agentId === badge.agentId)
+          : agents?.find((candidate) => candidate.name === badge.name)
+        : undefined;
       if (!badge || !agent) {
         return null;
       }
@@ -582,6 +590,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           workspacePath: target.workspacePath,
           workspaceIdentity: target.workspaceIdentity,
           names: [agent.name],
+          // 号一起给（D26）：改名过又没补链的登记行只认号，光按名字会留下死入口。
+          ...(agent.agentId ? { agentIds: [agent.agentId] } : {}),
         });
       }
     },
@@ -882,15 +892,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     workspaceIdentity,
   );
   /**
-   * 员工改名的会话侧跟走（D2）：该员工的历史会话行门牌一并对号。
-   * 行归属按三路对号取并集——登记徽章（跨改名时代的持久链接）、反推徽章、
-   * 旧名标题前缀。命中行走既有 renameTask 全链路换新名前缀（tasks-index +
-   * 打开会话头部实时更新 + titleOverridden 防快照回冲），再登记新名徽章兜底；
-   * 标题无「 · 」前缀（用户手动删过/历史残留）自动补回「新名 · 」，治愈卡死行。
+   * 员工改名的会话侧跟走（D2 + D26）：该员工的历史会话行门牌一并对号。
+   * 行归属按并集取号——带号时先认号（号不随改名变，陈旧名字也命中），再并上
+   * 旧名登记与旧名标题前缀（补上没号的老会话）。命中行走既有 renameTask 全链路
+   * 换新名前缀（tasks-index + 打开会话头部实时更新 + titleOverridden 防快照回冲），
+   * 再登记带号新牌；标题无「 · 」前缀（用户手动删过/历史残留）自动补回「新名 · 」。
    * 已知边界：仅扫侧栏已加载的分页行；单行失败不阻塞其余行（登记兜底）。
    */
   const relinkRenamedAgentChats = useCallback(
-    async (target: ProjectAgentTarget, oldName: string, newName: string, color?: AgentColor) => {
+    async (params: {
+      target: ProjectAgentTarget;
+      agentId?: string;
+      oldName: string;
+      newName: string;
+      color?: AgentColor;
+    }) => {
+      const { target, agentId, oldName, newName, color } = params;
       const workspaceKey = buildTaskWorkspaceKey(target.workspacePath, target.workspaceIdentity);
       const rows =
         workspaceTaskLists.groups.find(
@@ -901,19 +918,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         usePersonaChatBadgeStore.getState(),
         workspaceKey,
       );
-      const newBadge = { name: newName, ...(color ? { color } : {}) };
+      const newBadge = toPersonaChatBadge({ name: newName, agentId, color });
       relabelPersonaChatBadges({
         workspacePath: target.workspacePath,
         workspaceIdentity: target.workspaceIdentity,
         fromName: oldName,
+        ...(agentId ? { fromAgentId: agentId } : {}),
         toBadge: newBadge,
       });
       const taskService = boundServicesResolution.services.zcodeTaskService;
       for (const row of rows) {
-        const linked =
-          registeredBadges.get(row.taskId)?.name === oldName ||
-          getPersonaChatBadge(row)?.name === oldName ||
-          row.title.startsWith(`${oldName} · `);
+        const registered = registeredBadges.get(row.taskId);
+        const inline = getPersonaChatBadge(row);
+        const linked = isPersonaChatRowOfRenamedAgent({
+          title: row.title,
+          badges: [registered, inline],
+          agentId,
+          oldName,
+        });
         if (!linked) {
           continue;
         }
@@ -2042,7 +2064,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               const rows = workspaceTaskGroupByKey.get(workspaceKey)?.items ?? [];
               const latest = findLatestPersonaChatRow(
                 rows,
-                agent.name,
+                agent,
                 usePersonaChatBadgeStore.getState().badgeByWorkspaceKey[workspaceKey],
                 projectAgents.agentsByWorkspaceKey.get(workspaceKey),
               );
@@ -2051,7 +2073,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                   workspacePath: target.workspacePath,
                   workspaceIdentity: target.workspaceIdentity,
                   taskId: latest.taskId,
-                  badge: { name: agent.name, ...(agent.color ? { color: agent.color } : {}) },
+                  badge: toPersonaChatBadge(agent),
                 });
                 onSelectTask(target.workspacePath, latest.taskId, target.workspaceIdentity);
                 return;
@@ -2077,7 +2099,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 return false;
               }
               // 孤儿档案闭环（D3 收口的前提）：建档成功即自动开一段该智能体的会话。
-              void openProjectAgentChat(toProjectAgentPersonaFromDraft(draft), target);
+              // 用服务回传的档案本体构造 persona（D26）：号是这次写入才发的，
+              // 拿草稿拼载荷就会把号漏在会话外——第一段对话从此不认号。
+              void openProjectAgentChat(toProjectAgentPersona(created), target);
               return true;
             }}
             onUpdate={async (agent, draft) => {
@@ -2087,15 +2111,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               }
               const updated = await projectAgents.updateAgent(entry.target, agent, draft);
               if (updated && draft.name.trim() !== agent.name) {
-                // 改名跟走（D2 会话侧）：历史会话标题换新名前缀 + 徽章登记兜底。
-                await relinkRenamedAgentChats(
-                  entry.target,
-                  agent.name,
-                  draft.name.trim(),
-                  agent.color,
-                );
+                // 改名跟走（D2 会话侧）：历史会话标题换新名前缀 + 带号徽章登记兜底。
+                await relinkRenamedAgentChats({
+                  target: entry.target,
+                  agentId: updated.agentId ?? agent.agentId,
+                  oldName: agent.name,
+                  newName: draft.name.trim(),
+                  color: agent.color,
+                });
               }
-              return updated;
+              return Boolean(updated);
             }}
           />
 

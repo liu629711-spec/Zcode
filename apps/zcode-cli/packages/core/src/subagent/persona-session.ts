@@ -3,6 +3,7 @@
 // 这里只收口「多段拼接」「标题记账」「persona 快照」「persona → runtime config 映射」
 // 四个纯规则，I/O 见 persistent-memory.ts。
 
+import { normalizeAgentId } from "@zcode/shared";
 import type {
   AgentColor,
   AgentMemoryScope,
@@ -40,6 +41,7 @@ export function buildProjectAgentPersonaSnapshot(
   persona:
     | {
         name: string;
+        agentId?: string;
         memory?: AgentMemoryScope;
         color?: AgentColor;
         tools?: readonly string[];
@@ -49,8 +51,12 @@ export function buildProjectAgentPersonaSnapshot(
   systemPrompt: string | undefined,
 ): ZCodeSessionPersona | undefined {
   if (!persona?.name || !systemPrompt) return undefined;
+  // 号先过形状判据再落盘：片三起号决定记事本目录，半截/乱码号落进快照等于把记忆
+  // 寄到一个没人认识的路径上，宁可当无号（回落到名字对号）。
+  const agentId = normalizeAgentId(persona.agentId);
   return {
     name: persona.name,
+    ...(agentId ? { agentId } : {}),
     systemPrompt,
     ...(persona.memory ? { memoryScope: persona.memory } : {}),
     ...(persona.color ? { color: persona.color } : {}),
@@ -70,6 +76,8 @@ export interface PersonaRuntimeConfigFragment {
   systemPrompt: string;
   projectAgentPersona: {
     name: string;
+    /** 员工工号（D26）：随快照落盘，resume/fork 回灌同源。 */
+    agentId?: string;
     memory?: AgentMemoryScope;
     color?: AgentColor;
     tools?: readonly string[];
@@ -94,6 +102,7 @@ export function mapPersonaToRuntimeConfig(
   persona: ZCodeSessionPersona,
   options: { includeModelSelection: boolean },
 ): PersonaRuntimeConfigFragment {
+  const agentId = normalizeAgentId(persona.agentId);
   return {
     ...(options.includeModelSelection && persona.modelSelection
       ? { modelSelection: persona.modelSelection }
@@ -105,6 +114,7 @@ export function mapPersonaToRuntimeConfig(
     systemPrompt: persona.systemPrompt,
     projectAgentPersona: {
       name: persona.name,
+      ...(agentId ? { agentId } : {}),
       ...(persona.memoryScope ? { memory: persona.memoryScope } : {}),
       ...(persona.color ? { color: persona.color } : {}),
       ...(persona.tools?.length ? { tools: [...persona.tools] } : {}),

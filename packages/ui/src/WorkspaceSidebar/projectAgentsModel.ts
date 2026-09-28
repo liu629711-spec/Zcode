@@ -14,6 +14,11 @@ export interface ProjectAgentDraft {
 /** 任务列表行的驻场智能体徽章（D2）：名字给悬停大白话，颜色缺省 = 只画图标。 */
 export interface PersonaChatBadge {
   name: string;
+  /**
+   * 员工工号（D26）：档案稳定 uuid。认人先认它——名字只是老会话（快照没号）的
+   * 兜底对号方式。号在档案改名后仍是同一个人，徽章文字随档案目录刷新成新名。
+   */
+  agentId?: string;
   color?: AgentColor;
 }
 
@@ -145,6 +150,8 @@ export type ProjectAgentPersona = ZCodeSessionPersona;
 export function toProjectAgentPersona(agent: AgentSummary): ProjectAgentPersona {
   return {
     name: agent.name,
+    // 工号随载荷进会话（D26）：老档案没号就不带，恢复与对号各自回落名字。
+    ...(agent.agentId ? { agentId: agent.agentId } : {}),
     systemPrompt: agent.systemPrompt,
     // 记忆范围缺省 project（与建档/三框更新同约定）：面板与删除提示都按
     // `agent.memory ?? "project"` 展示记事本路径，载荷缺省必须同一口径。
@@ -158,14 +165,45 @@ export function toProjectAgentPersona(agent: AgentSummary): ProjectAgentPersona 
 }
 
 /**
- * 侧栏建档（三框简表）产出的 persona：记忆范围固定 project（与 toProjectAgentCreateConfig 同一约定），
- * 模型/工具/颜色缺省 = 跟随会话缺省。建档成功即按它直接开会话（孤儿档案闭环）。
+ * 徽章对号要吃的档案摘要最小面（D26 起含工号）：侧栏目录下发、标题反推、号反查
+ * 档案名共用这一份形状，避免各处自己 Pick 出不同口径。
  */
-export function toProjectAgentPersonaFromDraft(draft: ProjectAgentDraft): ProjectAgentPersona {
+export type PersonaBadgeAgentEntry = Pick<AgentSummary, "name" | "color" | "agentId">;
+
+/**
+ * 号优先的徽章刷新（D26）：登记/行内标记里带着号 → 拿号去现役档案目录查人，
+ * 查到就用档案当前的名字与颜色重画工牌。于是**档案改名后，历史会话的工牌自动
+ * 显示新名**，不再依赖"改名时逐行补链"（补链仍在，但只服务没有号的老会话）。
+ * 号查不到人（档案删了、或在别的工作区）就保留登记原样——不把工牌抹掉。
+ */
+export function refreshPersonaChatBadgeFromDirectory(
+  badge: PersonaChatBadge,
+  agents: readonly PersonaBadgeAgentEntry[] | undefined,
+): PersonaChatBadge {
+  const agentId = badge.agentId;
+  if (!agentId || !agents) {
+    return badge;
+  }
+  const agent = agents.find((candidate) => candidate.agentId === agentId);
+  if (!agent) {
+    return badge;
+  }
+  return { name: agent.name, agentId, ...(agent.color ? { color: agent.color } : {}) };
+}
+
+/**
+ * 工牌本体（D2/D26）：档案或 persona 摘要 → 徽章三件套（名字 + 号 + 颜色）。
+ * 登记与补链各处都走它，避免有的地方漏带号——号漏带的那一行就退回按名字认人。
+ */
+export function toPersonaChatBadge(source: {
+  name: string;
+  agentId?: string;
+  color?: AgentColor;
+}): PersonaChatBadge {
   return {
-    name: draft.name.trim(),
-    systemPrompt: draft.systemPrompt.trim(),
-    memoryScope: "project",
+    name: source.name,
+    ...(source.agentId ? { agentId: source.agentId } : {}),
+    ...(source.color ? { color: source.color } : {}),
   };
 }
 
@@ -198,7 +236,7 @@ export function resolveWorkspaceProjectAgentReachability(params: {
  */
 export function applyDerivedPersonaChatBadges<
   T extends { taskId: string; title: string },
->(items: readonly T[], agents: readonly Pick<AgentSummary, "name" | "color">[]): T[] {
+>(items: readonly T[], agents: readonly PersonaBadgeAgentEntry[]): T[] {
   if (agents.length === 0) {
     return [...items];
   }
@@ -215,30 +253,37 @@ export function applyDerivedPersonaChatBadges<
 /** 徽章的标题反推单行版（D2）：标题「名字 · 」前缀 × 现役档案名单对号，前缀陷阱不误标。 */
 export function derivePersonaChatBadge<T extends { title: string }>(
   row: T,
-  agents: readonly Pick<AgentSummary, "name" | "color">[],
+  agents: readonly PersonaBadgeAgentEntry[],
 ): PersonaChatBadge | undefined {
   const matched = agents.find((agent) => row.title.startsWith(`${agent.name} · `));
   if (!matched) {
     return undefined;
   }
-  return { name: matched.name, ...(matched.color ? { color: matched.color } : {}) };
+  // 反推命中的是现役档案，号顺手带上（D26）：此后这一行的认人与改名跟走都靠号，
+  // 不再需要"改名时逐行补链"才不丢工牌。
+  return {
+    name: matched.name,
+    ...(matched.agentId ? { agentId: matched.agentId } : {}),
+    ...(matched.color ? { color: matched.color } : {}),
+  };
 }
 
 /**
- * 单行徽章三路解析（D2，与侧栏多行合并同一优先级）：行内标记 → 持久登记 → 标题反推。
- * Header「···」菜单等只拿到裸 task meta 的消费方用它复现侧栏行上同样的对号结果，
- * 避免"侧栏有徽章、Header 没菜单"的第二处漂移。
+ * 单行徽章四路解析（D2/D26）：**号 → 行内标记 → 持久登记 → 标题反推**，最后一步
+ * 统一过档案目录刷新（refreshPersonaChatBadgeFromDirectory）。
+ * Header「···」菜单、时间线/置顶/分组视图与侧栏都走这一处，避免"这个视图认得出、
+ * 那个视图隐身"的第二种漂移；号在场时改名不再影响认人。
  */
 export function resolvePersonaChatBadgeForTask(
   task: { taskId: string; title: string } & PersonaChatBadgeCarrier,
   registeredByTaskId: ReadonlyMap<string, PersonaChatBadge> | undefined,
-  agents: readonly Pick<AgentSummary, "name" | "color">[] | undefined,
+  agents: readonly PersonaBadgeAgentEntry[] | undefined,
 ): PersonaChatBadge | undefined {
-  return (
+  const badge =
     getPersonaChatBadge(task) ??
     registeredByTaskId?.get(task.taskId) ??
-    derivePersonaChatBadge(task, agents ?? [])
-  );
+    derivePersonaChatBadge(task, agents ?? []);
+  return badge ? refreshPersonaChatBadgeFromDirectory(badge, agents) : undefined;
 }
 
 /**
@@ -327,22 +372,55 @@ export function restorePersonaTitlePrefix(previousTitle: string, draft: string):
 }
 
 /**
- * 员工最近一段已归号会话（D3 续接）：行集合按三路对号找名字命中的行，
+ * 改名跟走的行归属判定（D2/D26）：给一行上已知的徽章线索（登记徽章、行内徽章），
+ * 判断这行是不是"要换牌的那个员工"。
+ * 号两边都在 → 只认号：带着别人号的行不能因为名字恰好等于旧名就被换走（真机同名陷阱）。
+ * 行上没有任何号线索 → 沿用老判据（旧名登记或「旧名 · 」标题前缀）。
+ */
+export function isPersonaChatRowOfRenamedAgent(params: {
+  title: string;
+  badges: readonly (PersonaChatBadge | undefined)[];
+  agentId?: string;
+  oldName: string;
+}): boolean {
+  const { title, badges, agentId, oldName } = params;
+  const known = badges.filter((badge): badge is PersonaChatBadge => Boolean(badge));
+  if (agentId && known.some((badge) => badge.agentId === agentId)) {
+    return true;
+  }
+  if (known.some((badge) => badge.agentId !== undefined)) {
+    return false;
+  }
+  return known.some((badge) => badge.name === oldName) || title.startsWith(`${oldName} · `);
+}
+
+/**
+ * 员工最近一段已归号会话（D3 续接）：行集合按徽章对号找属于这个员工的行，
  * 取 updatedAt 最新的一条——打开员工时跳回它，历史与记忆原样续上；
  * 没有才新开一段（首见）。行集合是侧栏已加载分页，够用且零额外取数。
+ * 认人先认号（D26）：带号档案改名后照样找得到旧会话，名字只是无号时的兜底。
  */
 export function findLatestPersonaChatRow<
   T extends { taskId: string; title: string; updatedAt: number } & PersonaChatBadgeCarrier,
 >(
   items: readonly T[],
-  agentName: string,
+  agent: PersonaBadgeAgentEntry,
   registeredByTaskId: ReadonlyMap<string, PersonaChatBadge> | undefined,
-  agents: readonly Pick<AgentSummary, "name" | "color">[] | undefined,
+  agents: readonly PersonaBadgeAgentEntry[] | undefined,
 ): T | undefined {
   let latest: T | undefined;
   for (const item of items) {
     const badge = resolvePersonaChatBadgeForTask(item, registeredByTaskId, agents);
-    if (badge?.name !== agentName) {
+    if (!badge) {
+      continue;
+    }
+    // 两边都有号就只认号（D26）：名字并集会误伤"恰好叫这个名字的另一个员工"；
+    // 任一侧没号（号之前的老会话、无号档案）才回落到名字比对。
+    const matched =
+      badge.agentId !== undefined && agent.agentId !== undefined
+        ? badge.agentId === agent.agentId
+        : badge.name === agent.name;
+    if (!matched) {
       continue;
     }
     if (!latest || item.updatedAt > latest.updatedAt) {
@@ -376,7 +454,8 @@ export function groupPersonaBadgedTaskItems<T extends PersonaChatBadgeCarrier>(
       plain.push(item);
       continue;
     }
-    const key = `agent:${badge.name}`;
+    // 分栏按号归并（D26）：同一个员工改名前后的两段会话进同一栏；无号老会话按名字归。
+    const key = `agent:${badge.agentId ?? badge.name}`;
     const existing = groups.get(key);
     if (existing) {
       existing.items.push(item);
@@ -411,12 +490,14 @@ export function findPersonaRowIdsByTitlePrefix<
 export function applyPersonaChatBadges<T extends { taskId: string }>(
   items: readonly T[],
   badgeByTaskId: ReadonlyMap<string, PersonaChatBadge>,
+  agents?: readonly PersonaBadgeAgentEntry[],
 ): (T & PersonaChatBadgeCarrier)[] {
   if (badgeByTaskId.size === 0) {
     return [...items];
   }
   return items.map((item) => {
     const badge = badgeByTaskId.get(item.taskId);
-    return badge ? { ...item, agentPersona: badge } : item;
+    // 号在场先按现役档案刷新（D26）：登记写于改名之前也照样读出当前名字与颜色。
+    return badge ? { ...item, agentPersona: refreshPersonaChatBadgeFromDirectory(badge, agents) } : item;
   });
 }

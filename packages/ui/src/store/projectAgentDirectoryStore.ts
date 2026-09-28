@@ -1,19 +1,19 @@
 import { create } from "zustand";
-import type { AgentSummary } from "@zcode/shared";
+import type { PersonaBadgeAgentEntry } from "@/WorkspaceSidebar/projectAgentsModel.js";
 
 /**
- * 驻场智能体档案目录（D2 跨视图对号）：侧栏已取到的档案摘要（名字+颜色）下发给
+ * 驻场智能体档案目录（D2 跨视图对号）：侧栏已取到的档案摘要（名字+颜色+工号）下发给
  * 其它消费方——Header「···」菜单判员工行、时间线/置顶视图反推徽章与上色。
- * 只带名字与颜色两个字段，避免把 AgentSummary 整壳泄露给渲染层。
+ * 只带对号要用的最小面（PersonaBadgeAgentEntry），避免把 AgentSummary 整壳泄露给渲染层。
  */
-export type ProjectAgentDirectoryEntry = Pick<AgentSummary, "name" | "color">;
+export type ProjectAgentDirectoryEntry = PersonaBadgeAgentEntry;
 
 const EMPTY_DIRECTORY: readonly ProjectAgentDirectoryEntry[] = [];
 
 interface ProjectAgentDirectoryState {
   agentsByWorkspaceKey: Record<string, readonly ProjectAgentDirectoryEntry[]>;
   publishAgentsByWorkspaceKey: (
-    agentsByWorkspaceKey: ReadonlyMap<string, readonly AgentSummary[]>,
+    agentsByWorkspaceKey: ReadonlyMap<string, readonly PersonaBadgeAgentEntry[]>,
   ) => void;
 }
 
@@ -24,6 +24,7 @@ export const useProjectAgentDirectoryStore = create<ProjectAgentDirectoryState>(
     for (const [workspaceKey, agents] of agentsByWorkspaceKey) {
       next[workspaceKey] = agents.map((agent) => ({
         name: agent.name,
+        ...(agent.agentId ? { agentId: agent.agentId } : {}),
         ...(agent.color ? { color: agent.color } : {}),
       }));
     }

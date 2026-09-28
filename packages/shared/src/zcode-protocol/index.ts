@@ -1565,6 +1565,10 @@ export type ZCodeSessionSubagentsResult = z.infer<typeof zcodeSessionSubagentsRe
 // persona 形状从此只能加可选字段，不得改必填形状（落盘旧行要能继续解析）。
 export const zcodeSessionPersonaSchema = z.object({
   name: nonEmptyString,
+  // 员工工号（D26）：档案 frontmatter 的稳定 uuid，随 persona 快照落进会话记录。
+  // 会话认人从此先认号，名字退为老会话（无号）的兜底对号；可选字段——旧会话行
+  // 没有这一键必须继续能解析（上面的 additive 纪律）。
+  agentId: nonEmptyString.optional(),
   systemPrompt: nonEmptyString,
   memoryScope: z.enum(["user", "project", "local"]).optional(),
   modelSelection: modelSelectionSchema.optional(),

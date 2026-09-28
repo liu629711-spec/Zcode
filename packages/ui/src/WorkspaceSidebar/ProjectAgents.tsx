@@ -118,10 +118,13 @@ export function useWorkspaceProjectAgents(params: {
   }, [reload]);
 
   const createAgent = useCallback(
-    async (target: ProjectAgentTarget, draft: ProjectAgentDraft): Promise<boolean> => {
+    async (
+      target: ProjectAgentTarget,
+      draft: ProjectAgentDraft,
+    ): Promise<AgentSummary | null> => {
       setSaving(true);
       try {
-        await subagentsService.createAgent({
+        const { agent } = await subagentsService.createAgent({
           config: toProjectAgentCreateConfig(draft),
           provider: ZCODE_AGENT_PROVIDER,
           scope: "workspace",
@@ -129,10 +132,12 @@ export function useWorkspaceProjectAgents(params: {
           workspaceIdentity: target.workspaceIdentity,
         });
         await reload();
-        return true;
+        // 回传服务刚写的档案本体（D26）：建档即发号，号在这里第一次进 UI，
+        // 随后「自动开一段会话」的 persona 载荷才带得上号。
+        return agent;
       } catch (error) {
         toast(error instanceof Error ? error.message : String(error));
-        return false;
+        return null;
       } finally {
         setSaving(false);
       }
@@ -143,10 +148,14 @@ export function useWorkspaceProjectAgents(params: {
   // 编辑档案（G5/D4）：侧栏只露 名字/介绍/人设 三框，其余字段由 toProjectAgentUpdateConfig
   // 原样带回（updateAgent 整文件重写）；oldFilePath 让改名场景能删旧文件。
   const updateAgent = useCallback(
-    async (target: ProjectAgentTarget, agent: AgentSummary, draft: ProjectAgentDraft) => {
+    async (
+      target: ProjectAgentTarget,
+      agent: AgentSummary,
+      draft: ProjectAgentDraft,
+    ): Promise<AgentSummary | null> => {
       setSaving(true);
       try {
-        await subagentsService.updateAgent({
+        const { agent: saved } = await subagentsService.updateAgent({
           agentId: agent.id,
           config: toProjectAgentUpdateConfig(agent, draft),
           oldFilePath: agent.path,
@@ -156,10 +165,11 @@ export function useWorkspaceProjectAgents(params: {
           workspaceIdentity: target.workspaceIdentity,
         });
         await reload();
-        return true;
+        // 回传写盘后的档案本体：老档案这次才补上号（D26），调用方改名跟走要用它。
+        return saved;
       } catch (error) {
         toast(error instanceof Error ? error.message : String(error));
-        return false;
+        return null;
       } finally {
         setSaving(false);
       }

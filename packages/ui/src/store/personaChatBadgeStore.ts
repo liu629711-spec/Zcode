@@ -72,18 +72,24 @@ interface PersonaChatBadgeState {
     taskId: string;
     badge: PersonaChatBadge;
   }) => void;
-  /** 档案改名补链：该工作区登记里 fromName 的工牌整体换成 toBadge（标题前缀行的补挂由调用方 register 逐行写）。 */
+  /**
+   * 档案改名补链：该工作区登记里这个员工的工牌整体换成 toBadge。
+   * 带 fromAgentId 就按号找人（D26：号不随改名变，登记里名字陈旧也照样命中），
+   * 没号的老登记回落到 fromName。标题前缀行的补挂由调用方 register 逐行写。
+   */
   relabelPersonaChatBadges: (params: {
     workspacePath: string;
     workspaceIdentity?: string;
     fromName: string;
+    fromAgentId?: string;
     toBadge: PersonaChatBadge;
   }) => void;
-  /** 档案删除摘牌：该工作区登记里 name 命中的工牌摘掉（与标题反推在档案消失后的行为一致）。 */
+  /** 档案删除摘牌：name 或号命中的工牌摘掉（与标题反推在档案消失后的行为一致）。 */
   removePersonaChatBadgesByNames: (params: {
     workspacePath: string;
     workspaceIdentity?: string;
     names: readonly string[];
+    agentIds?: readonly string[];
   }) => void;
 }
 
@@ -124,12 +130,24 @@ export const usePersonaChatBadgeStore = create<PersonaChatBadgeState>()((set) =>
         return patch ?? state;
       });
     },
-    relabelPersonaChatBadges: ({ workspacePath, workspaceIdentity, fromName, toBadge }) => {
+    relabelPersonaChatBadges: ({
+      workspacePath,
+      workspaceIdentity,
+      fromName,
+      fromAgentId,
+      toBadge,
+    }) => {
       set((state) => {
         const patch = withWorkspaceMap(state, { workspacePath, workspaceIdentity }, (map) => {
           let changed = false;
           for (const [taskId, badge] of map) {
-            if (badge.name === fromName && badge !== toBadge) {
+            // 两边都有号就只认号（D26）——名字并集会把"恰好叫旧名的另一个员工"换错牌；
+            // 任一侧没号（号之前的老登记）才回落到旧名比对。
+            const hit =
+              fromAgentId !== undefined && badge.agentId !== undefined
+                ? badge.agentId === fromAgentId
+                : badge.name === fromName;
+            if (hit && badge !== toBadge) {
               map.set(taskId, toBadge);
               changed = true;
             }
@@ -139,13 +157,14 @@ export const usePersonaChatBadgeStore = create<PersonaChatBadgeState>()((set) =>
         return patch ?? state;
       });
     },
-    removePersonaChatBadgesByNames: ({ workspacePath, workspaceIdentity, names }) => {
+    removePersonaChatBadgesByNames: ({ workspacePath, workspaceIdentity, names, agentIds }) => {
       const nameSet = new Set(names);
+      const agentIdSet = new Set(agentIds ?? []);
       set((state) => {
         const patch = withWorkspaceMap(state, { workspacePath, workspaceIdentity }, (map) => {
           let changed = false;
           for (const [taskId, badge] of map) {
-            if (nameSet.has(badge.name)) {
+            if (nameSet.has(badge.name) || (badge.agentId && agentIdSet.has(badge.agentId))) {
               map.delete(taskId);
               changed = true;
             }

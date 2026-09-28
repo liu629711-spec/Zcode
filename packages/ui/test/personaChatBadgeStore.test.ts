@@ -90,3 +90,53 @@ test("remove：按名单摘牌，只动命中名字的登记", () => {
   assert.equal(badgeMapFor(KEY_A).has("s1"), false);
   assert.equal(badgeMapFor(KEY_A).has("s2"), true);
 });
+
+test("relabel 按号（D26）：登记里名字陈旧也换成现役档案的新牌，无号登记靠名字并集", () => {
+  resetPersonaChatBadgeStoreForTest();
+  const store = usePersonaChatBadgeStore.getState();
+  // s1 = 带号登记但名字还写着改名前的旧名；s2 = 号之前的老登记（只有旧名）。
+  store.registerPersonaChatBadge({
+    workspacePath: KEY_A,
+    taskId: "s1",
+    badge: { name: "ui-test", agentId: "id-1" },
+  });
+  store.registerPersonaChatBadge({ workspacePath: KEY_A, taskId: "s2", badge: { name: "ui-test" } });
+  store.registerPersonaChatBadge({
+    workspacePath: KEY_A,
+    taskId: "s3",
+    badge: { name: "ui-test", agentId: "id-2" },
+  });
+
+  store.relabelPersonaChatBadges({
+    workspacePath: KEY_A,
+    fromName: "ui-test",
+    fromAgentId: "id-1",
+    toBadge: { name: "ui-pro", agentId: "id-1" },
+  });
+  assert.deepEqual(badgeMapFor(KEY_A).get("s1"), { name: "ui-pro", agentId: "id-1" });
+  assert.deepEqual(badgeMapFor(KEY_A).get("s2"), { name: "ui-pro", agentId: "id-1" });
+  assert.deepEqual(
+    badgeMapFor(KEY_A).get("s3"),
+    { name: "ui-test", agentId: "id-2" },
+    "别人的号不许被牵连",
+  );
+});
+
+test("remove 按号（D26）：改名过又没补链的登记，光按名字会留下死入口", () => {
+  resetPersonaChatBadgeStoreForTest();
+  const store = usePersonaChatBadgeStore.getState();
+  store.registerPersonaChatBadge({
+    workspacePath: KEY_A,
+    taskId: "s1",
+    badge: { name: "ui-test", agentId: "id-1" },
+  });
+  store.registerPersonaChatBadge({ workspacePath: KEY_A, taskId: "s2", badge: { name: "planner" } });
+
+  store.removePersonaChatBadgesByNames({
+    workspacePath: KEY_A,
+    names: ["ui-pro"],
+    agentIds: ["id-1"],
+  });
+  assert.equal(badgeMapFor(KEY_A).has("s1"), false, "档案现名 ui-pro、登记里还写着旧名");
+  assert.equal(badgeMapFor(KEY_A).has("s2"), true);
+});
