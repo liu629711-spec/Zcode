@@ -214,6 +214,20 @@ export function applyDerivedPersonaChatBadges<
 }
 
 /**
+ * 改名跟走的标题换牌（D2 会话侧）：persona 会话标题 =「员工名 · 首条输入」，
+ * 员工名 [a-zA-Z0-9-] 不含「 · 」，首个分隔符即名字段边界。返回换牌后的完整
+ * 标题；无分隔符（用户手改过的自定义标题）或名字段为空返回 null，调用方跳过
+ * 改写只补徽章登记——用户的自定义标题不被我们动。
+ */
+export function buildRetitledPersonaTitle(title: string, newName: string): string | null {
+  const separator = title.indexOf(" · ");
+  if (separator <= 0) {
+    return null;
+  }
+  return `${newName} · ${title.slice(separator + 3)}`;
+}
+
+/**
  * 档案改名补链的行扫描（D2）：标题前缀=旧名+「 · 」的 persona 历史行 id 列表。
  * 调用方（侧栏改名成功钩子）按这些行逐个 register 新名徽章——标题反推对新名
  * 永远命中不了旧行，登记是它们唯一的持久工牌来源。

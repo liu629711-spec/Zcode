@@ -48,6 +48,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type {
+  AgentColor,
   AgentSummary,
   Locale,
   RemoteTarget,
@@ -143,7 +144,7 @@ import {
 } from "@/WorkspaceSidebar/ProjectAgents.js";
 import {
   buildAgentMemoryDirectoryHint,
-  findPersonaRowIdsByTitlePrefix,
+  buildRetitledPersonaTitle,
   getPersonaChatBadge,
   resolveWorkspaceProjectAgentReachability,
   applyDerivedPersonaChatBadges,
@@ -152,8 +153,12 @@ import {
   type ProjectAgentPersona,
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
+import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
 import { toast } from "@/components/ui/toast.js";
-import { usePersonaChatBadgeStore } from "@/store/personaChatBadgeStore.js";
+import {
+  selectPersonaChatBadgesForWorkspace,
+  usePersonaChatBadgeStore,
+} from "@/store/personaChatBadgeStore.js";
 import { cn } from "@/components/lib/utils.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import {
@@ -824,6 +829,77 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         }),
       ),
     [workspaceTaskLists.groups, projectAgents.agentsByWorkspaceKey],
+  );
+  // 改名跟走需要任务服务：bound 解析一份（renameTask 按 params.workspacePath 定向，
+  // 一个实例可操作任意本地工作区的任务，与 subagentsService.list 同一约定）。
+  const boundServicesResolution = useWorkspaceServicesResolution(
+    workspacePath,
+    workspaceRemoteSessionId,
+    workspaceIdentity,
+  );
+  /**
+   * 员工改名的会话侧跟走（D2）：该员工的历史会话行门牌一并对号。
+   * 行归属按三路对号取并集——登记徽章（跨改名时代的持久链接）、反推徽章、
+   * 旧名标题前缀。命中行走既有 renameTask 全链路换新名前缀（tasks-index +
+   * 打开会话头部实时更新 + titleOverridden 防快照回冲），再登记新名徽章兜底；
+   * 用户手改过的自定义标题（无「 · 」分隔符）只补登记不改写。
+   * 已知边界：仅扫侧栏已加载的分页行；单行失败不阻塞其余行（登记兜底）。
+   */
+  const relinkRenamedAgentChats = useCallback(
+    async (target: ProjectAgentTarget, oldName: string, newName: string, color?: AgentColor) => {
+      const workspaceKey = buildTaskWorkspaceKey(target.workspacePath, target.workspaceIdentity);
+      const rows =
+        workspaceTaskLists.groups.find(
+          (group) =>
+            buildTaskWorkspaceKey(group.workspacePath, group.workspaceIdentity) === workspaceKey,
+        )?.items ?? [];
+      const registeredBadges = selectPersonaChatBadgesForWorkspace(
+        usePersonaChatBadgeStore.getState(),
+        workspaceKey,
+      );
+      const newBadge = { name: newName, ...(color ? { color } : {}) };
+      relabelPersonaChatBadges({
+        workspacePath: target.workspacePath,
+        workspaceIdentity: target.workspaceIdentity,
+        fromName: oldName,
+        toBadge: newBadge,
+      });
+      const taskService = boundServicesResolution.services.zcodeTaskService;
+      for (const row of rows) {
+        const linked =
+          registeredBadges.get(row.taskId)?.name === oldName ||
+          getPersonaChatBadge(row)?.name === oldName ||
+          row.title.startsWith(`${oldName} · `);
+        if (!linked) {
+          continue;
+        }
+        const retitled = buildRetitledPersonaTitle(row.title, newName);
+        if (taskService && retitled) {
+          try {
+            await taskService.renameTask({
+              taskId: row.taskId,
+              workspacePath: target.workspacePath,
+              title: retitled,
+              ...(target.workspaceIdentity ? { workspaceIdentity: target.workspaceIdentity } : {}),
+            });
+          } catch (error) {
+            logger.warn("[projectAgents] 改名跟走：会话标题换牌失败，徽章登记兜底", error);
+          }
+        }
+        registerPersonaChatBadge({
+          workspacePath: target.workspacePath,
+          workspaceIdentity: target.workspaceIdentity,
+          taskId: row.taskId,
+          badge: newBadge,
+        });
+      }
+    },
+    [
+      boundServicesResolution.services.zcodeTaskService,
+      relabelPersonaChatBadges,
+      registerPersonaChatBadge,
+      workspaceTaskLists.groups,
+    ],
   );
   const handleShowMoreWorkspaceTasks = useCallback((workspaceKey: string) => {
     setWorkspaceTaskVisibleLimitByKey((current) =>
@@ -1912,36 +1988,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               }
               const updated = await projectAgents.updateAgent(entry.target, agent, draft);
               if (updated && draft.name.trim() !== agent.name) {
-                // 改名补链（D2）：标题带旧名前缀的历史行，标题反推对新名永远失效——
-                // 旧登记整体换新名，标题旧行逐行补挂新名登记（落 localStorage，跨重启成立）。
-                const newBadge = {
-                  name: draft.name.trim(),
-                  ...(agent.color ? { color: agent.color } : {}),
-                };
-                relabelPersonaChatBadges({
-                  workspacePath: entry.target.workspacePath,
-                  workspaceIdentity: entry.target.workspaceIdentity,
-                  fromName: agent.name,
-                  toBadge: newBadge,
-                });
-                const workspaceKey = buildTaskWorkspaceKey(
-                  entry.target.workspacePath,
-                  entry.target.workspaceIdentity,
+                // 改名跟走（D2 会话侧）：历史会话标题换新名前缀 + 徽章登记兜底。
+                await relinkRenamedAgentChats(
+                  entry.target,
+                  agent.name,
+                  draft.name.trim(),
+                  agent.color,
                 );
-                const rows =
-                  workspaceTaskLists.groups.find(
-                    (group) =>
-                      buildTaskWorkspaceKey(group.workspacePath, group.workspaceIdentity) ===
-                      workspaceKey,
-                  )?.items ?? [];
-                for (const taskId of findPersonaRowIdsByTitlePrefix(rows, agent.name)) {
-                  registerPersonaChatBadge({
-                    workspacePath: entry.target.workspacePath,
-                    workspaceIdentity: entry.target.workspaceIdentity,
-                    taskId,
-                    badge: newBadge,
-                  });
-                }
               }
               return updated;
             }}

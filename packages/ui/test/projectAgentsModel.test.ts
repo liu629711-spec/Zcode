@@ -6,6 +6,7 @@ import {
   applyDerivedPersonaChatBadges,
   applyPersonaChatBadges,
   buildAgentMemoryDirectoryHint,
+  buildRetitledPersonaTitle,
   findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
   resolveWorkspaceProjectAgentReachability,
@@ -430,4 +431,17 @@ test("findPersonaRowIdsByTitlePrefix：只收旧名前缀行，改名补链的�
   // 分隔符带空格：ui-pro-team / ui-pro-planner 都不吃 ui-pro 的链。
   assert.deepEqual(findPersonaRowIdsByTitlePrefix(rows, "ui-pro-team"), ["s2"]);
   assert.deepEqual(findPersonaRowIdsByTitlePrefix(rows, "不存在"), []);
+});
+
+test("buildRetitledPersonaTitle：换新名前缀保历史首条输入；自定义标题不动", () => {
+  assert.equal(
+    buildRetitledPersonaTitle("ui-test · 你好，认识我吗", "UI-plus"),
+    "UI-plus · 你好，认识我吗",
+  );
+  // 跨改名时代的陈旧前缀也按首个分隔符对号（员工名 [a-zA-Z0-9-] 不含「 · 」）。
+  assert.equal(buildRetitledPersonaTitle("UI-pro · 排个计划", "UI-plus"), "UI-plus · 排个计划");
+  // 无分隔符 = 用户自定义标题：返回 null，调用方跳过改写只补登记。
+  assert.equal(buildRetitledPersonaTitle("我的装修讨论", "UI-plus"), null);
+  // 名字段为空（分隔符在开头）：视为非 persona 标题，不改写。
+  assert.equal(buildRetitledPersonaTitle(" · 开头就是分隔符", "UI-plus"), null);
 });
