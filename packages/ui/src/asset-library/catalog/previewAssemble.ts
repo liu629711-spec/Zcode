@@ -17,6 +17,22 @@ import { OPEN_SOURCE_PREVIEWS, PREVIEW_RUNTIME_CHUNKS } from "./preview-html.js"
 
 const assembled = new Map<string, string>();
 
+/**
+ * 块加载顺序（依赖序，不是字母序）：motion 打包产物在模块顶层就解构 react 块
+ * 注册的导出（Fragment 等），react 不先就位它当场崩掉、整棵组件树挂不上——
+ * 真机反馈的"预览空白"真因即构建脚本按字母序 .sort() 把 motion 排到了 react 前。
+ * 未知块名排在最后（容错将来新增的独立库）。
+ */
+const CHUNK_DEPENDENCY_ORDER = ["react", "motion", "three", "liveline", "glimm"];
+
+export function orderPreviewChunks(chunks: string[]): string[] {
+  return [...chunks].sort(
+    (a, b) =>
+      CHUNK_DEPENDENCY_ORDER.indexOf(a) - CHUNK_DEPENDENCY_ORDER.indexOf(b) ||
+      a.localeCompare(b),
+  );
+}
+
 /** 逃逸 `</script`：拼接产物里出现它会截断标签（老产线 wrapHtml 同款处理）。 */
 function escapeScript(js: string): string {
   return js.replaceAll("</script", "<\\/script");
@@ -32,7 +48,7 @@ export function assembleOpenSourcePreview(id: string): string {
   if (cached !== undefined) return cached;
   const entry = OPEN_SOURCE_PREVIEWS[id];
   if (!entry) return "";
-  const chunks = entry.chunks
+  const chunks = orderPreviewChunks(entry.chunks)
     .map((name) => {
       const chunk = PREVIEW_RUNTIME_CHUNKS[name];
       if (!chunk) return "";

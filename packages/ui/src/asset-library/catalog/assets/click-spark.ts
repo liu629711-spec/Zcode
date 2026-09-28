@@ -16,7 +16,7 @@ const HTML = `<!doctype html>
 <style>
   * { box-sizing: border-box; margin: 0; }
   body {
-    min-height: 100%; display: grid; place-items: center;
+    min-height: 100vh; display: grid; place-items: center;
     background: radial-gradient(120% 130% at 50% 0%, #0d1526 0%, #0a0e1a 60%, #070a12 100%);
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
     cursor: crosshair; overflow: hidden;

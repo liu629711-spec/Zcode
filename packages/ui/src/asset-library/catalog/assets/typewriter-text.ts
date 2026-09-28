@@ -13,7 +13,7 @@ const HTML = `<!doctype html>
 <title>打字机文字</title>
 <style>
   body {
-    min-height: 100%; display: grid; place-items: center;
+    min-height: 100vh; display: grid; place-items: center;
     background: linear-gradient(160deg, #0b1020 0%, #101a30 55%, #0a0f1c 100%);
     font-family: ui-monospace, "Cascadia Code", Consolas, "PingFang SC", monospace;
   }

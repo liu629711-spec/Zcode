@@ -60,6 +60,9 @@ const CHUNKS = {
 };
 
 /** 裸模块 id → 块名（组件源码里出现这些 import 就要求对应块）。 */
+/** 块依赖序：motion 顶层解构 react 注册导出，react 必须最先注册；字母序会把 motion 排前面（真机白屏真因）。 */
+const CHUNK_ORDER = Object.keys(CHUNKS);
+
 const MODULE_TO_CHUNK = Object.fromEntries(
   Object.entries(CHUNKS).flatMap(([chunk, modules]) => modules.map((id) => [id, chunk])),
 );
@@ -412,7 +415,7 @@ async function buildOpenSourcePreview(manifest, runtimeTmp) {
             return chunk;
           }),
       ),
-    ].sort();
+    ].sort((a, b) => CHUNK_ORDER.indexOf(a) - CHUNK_ORDER.indexOf(b));
     const { css } = await compileTailwindCss(tempDir, manifest.preview.theme);
     if (!css.includes("@layer")) throw new Error(`${manifest.id}: tailwind 产物异常`);
     console.log(

@@ -13,7 +13,7 @@ const HTML = `<!doctype html>
 <title>磁吸按钮</title>
 <style>
   body {
-    min-height: 100%; margin: 0; display: grid; place-items: center;
+    min-height: 100vh; margin: 0; display: grid; place-items: center;
     background: radial-gradient(110% 110% at 50% 0%, #131024 0%, #0b0a18 60%, #070610 100%);
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   }

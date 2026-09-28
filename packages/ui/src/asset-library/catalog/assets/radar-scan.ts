@@ -14,7 +14,7 @@ const HTML = `<!doctype html>
 <title>雷达扫描</title>
 <style>
   body {
-    min-height: 100%; margin: 0; display: grid; place-items: center;
+    min-height: 100vh; margin: 0; display: grid; place-items: center;
     background: radial-gradient(120% 120% at 50% 0%, #0a1410 0%, #070d0b 55%, #050807 100%);
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   }

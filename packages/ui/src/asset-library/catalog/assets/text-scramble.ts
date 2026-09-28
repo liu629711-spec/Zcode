@@ -14,7 +14,7 @@ const HTML = `<!doctype html>
 <title>解码文字</title>
 <style>
   body {
-    min-height: 100%; display: grid; place-items: center;
+    min-height: 100vh; display: grid; place-items: center;
     background: linear-gradient(165deg, #0a1220 0%, #0b1930 55%, #081020 100%);
     font-family: ui-monospace, "Cascadia Code", Consolas, "PingFang SC", monospace;
   }

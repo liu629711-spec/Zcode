@@ -15,7 +15,7 @@ const HTML = `<!doctype html>
 <style>
   * { box-sizing: border-box; margin: 0; }
   body {
-    min-height: 100%; display: grid; place-items: center; overflow: hidden;
+    min-height: 100vh; display: grid; place-items: center; overflow: hidden;
     background: #0a0f1c;
     font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   }
