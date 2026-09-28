@@ -3,6 +3,7 @@ import test from "node:test";
 import type { AgentSummary } from "@zcode/shared";
 import { resolveAgentMemoryRoot } from "@zcode/shared/node";
 import {
+  applyDerivedPersonaChatBadges,
   applyPersonaChatBadges,
   buildAgentMemoryDirectoryHint,
   getPersonaChatBadge,
@@ -364,4 +365,55 @@ test("getPersonaChatBadge：读 agentPersona 内联标记，普通会话行无�
     agentPersona: { name: "code-reviewer" },
   } as Parameters<typeof getPersonaChatBadge>[0];
   assert.deepEqual(getPersonaChatBadge(badged), { name: "code-reviewer" });
+});
+
+test("applyDerivedPersonaChatBadges：persona 标题前缀 × 现役档案 → 冷重启工牌（名字+颜色）", () => {
+  const agents = [
+    { name: "ui-pro", color: "purple" as const },
+    { name: "planner" },
+  ];
+  const personaRow = { taskId: "s1", title: "ui-pro · 你好呀，你是谁" };
+  const colorlessRow = { taskId: "s2", title: "planner · 排个计划" };
+  const plainRow = { taskId: "s3", title: "修复登录超时" };
+
+  const [badged, colorless, plain] = applyDerivedPersonaChatBadges(
+    [personaRow, colorlessRow, plainRow],
+    agents,
+  );
+  assert.deepEqual(getPersonaChatBadge(badged as never), { name: "ui-pro", color: "purple" });
+  assert.deepEqual(getPersonaChatBadge(colorless as never), { name: "planner" }, "无色档案只带名字（兜底只画图标）");
+  assert.equal(getPersonaChatBadge(plain as never), undefined);
+  // 未命中行保持原引用（行级 memo 靠引用判等）。
+  assert.equal(plain, plainRow);
+});
+
+test("applyDerivedPersonaChatBadges：前缀陷阱不误标——ui-pro-team 的标题不吃 ui-pro 的徽章", () => {
+  const agents = [{ name: "ui-pro" }];
+  const teamRow = { taskId: "t1", title: "ui-pro-team · 我是独立员工" };
+  const [derived] = applyDerivedPersonaChatBadges([teamRow], agents);
+  assert.equal(getPersonaChatBadge(derived as never), undefined);
+});
+
+test("applyDerivedPersonaChatBadges：已带登记徽章的行原引用保留（登记层优先，反推不覆盖）", () => {
+  const agents = [{ name: "ui-pro", color: "purple" as const }];
+  const registered = {
+    taskId: "s1",
+    title: "ui-pro · 你好",
+    agentPersona: { name: "ui-pro" },
+  };
+  const [kept] = applyDerivedPersonaChatBadges([registered], agents);
+  assert.equal(kept, registered, "登记行必须原引用返回，反推不做二次覆盖");
+});
+
+test("applyDerivedPersonaChatBadges：空名单退化为等价副本，改名后按新档案名对号", () => {
+  const rows = [{ taskId: "s1", title: "ui-pro · 你好" }];
+  const copy = applyDerivedPersonaChatBadges(rows, []);
+  assert.deepEqual(copy, rows);
+  assert.notEqual(copy, rows);
+  assert.equal(copy[0], rows[0], "空名单不换行引用，只换数组壳");
+
+  // 改名跟走的边界：反推按「当前档案名」匹配标题前缀——档案改名后旧标题不再命中，
+  // 这是 meta_json 落盘（第二落点）落地前的已知上限，测试钉住语义防止误以为已跟走。
+  const renamed = applyDerivedPersonaChatBadges(rows, [{ name: "大龙" }]);
+  assert.equal(getPersonaChatBadge(renamed[0] as never), undefined);
 });

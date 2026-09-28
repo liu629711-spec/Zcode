@@ -183,6 +183,37 @@ export function resolveWorkspaceProjectAgentReachability(params: {
 }
 
 /**
+ * 标题反推徽章（D2 冷重启补缺的轻量 producer）：persona 会话标题恒为
+ * 「智能体名 · 首条输入」（core buildProjectAgentSessionTitle 落盘，且 persona 会话
+ * 关闭标题二次生成，前缀跨重启稳定在 tasks-index 里），拿工作区现役档案按前缀
+ * 对号即得徽章——零新增持久化。名字与「 · 」分隔符的边界让前缀陷阱（ui-pro vs
+ * ui-pro-team）天然不误标。内存登记（badge store）仍优先，本函数只补重启后
+ * 登记丢失的行；已知上限：任务被手动改名（标题不再带前缀）后反推失效，
+ * 彻底解法仍是 tasks-index meta_json 的 agentPersona 落盘（第二落点）。
+ */
+export function applyDerivedPersonaChatBadges<
+  T extends { taskId: string; title: string },
+>(items: readonly T[], agents: readonly Pick<AgentSummary, "name" | "color">[]): T[] {
+  if (agents.length === 0) {
+    return [...items];
+  }
+  return items.map((item) => {
+    // 已带徽章的行原样保引用：登记层优先，反推不做二次覆盖。
+    if ((item as T & PersonaChatBadgeCarrier).agentPersona) {
+      return item;
+    }
+    const matched = agents.find((agent) => item.title.startsWith(`${agent.name} · `));
+    if (!matched) {
+      return item;
+    }
+    return {
+      ...item,
+      agentPersona: { name: matched.name, ...(matched.color ? { color: matched.color } : {}) },
+    };
+  });
+}
+
+/**
  * 把徽章登记合并进任务行：命中的行挂 agentPersona 标记，未命中的行保持原引用——
  * 侧栏流式刷新按引用判等打穿 memo，这里不能给无关行换新引用。
  * 徽章登记为空时原样返回同一数组。

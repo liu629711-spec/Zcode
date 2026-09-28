@@ -145,6 +145,7 @@ import {
   buildAgentMemoryDirectoryHint,
   getPersonaChatBadge,
   resolveWorkspaceProjectAgentReachability,
+  applyDerivedPersonaChatBadges,
   toProjectAgentPersona,
   toProjectAgentPersonaFromDraft,
   type ProjectAgentPersona,
@@ -783,12 +784,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const workspaceTaskGroupByKey = useMemo(
     () =>
       new Map(
-        workspaceTaskLists.groups.map((group) => [
-          buildTaskWorkspaceKey(group.workspacePath, group.workspaceIdentity),
-          group,
-        ]),
+        workspaceTaskLists.groups.map((group) => {
+          const key = buildTaskWorkspaceKey(group.workspacePath, group.workspaceIdentity);
+          // 徽章反推（D2 冷重启补缺）：persona 会话标题「智能体名 · …」× 现役档案对号。
+          // 登记层（badge store）在 WorkspaceSidebarItem 内仍优先；agents 未载/为空时
+          // 反推退化为等价副本，不打穿下游 memo。
+          return [
+            key,
+            {
+              ...group,
+              items: applyDerivedPersonaChatBadges(
+                group.items,
+                projectAgents.agentsByWorkspaceKey.get(key) ?? EMPTY_PROJECT_AGENTS,
+              ),
+            },
+          ] as const;
+        }),
       ),
-    [workspaceTaskLists.groups],
+    [workspaceTaskLists.groups, projectAgents.agentsByWorkspaceKey],
   );
   const handleShowMoreWorkspaceTasks = useCallback((workspaceKey: string) => {
     setWorkspaceTaskVisibleLimitByKey((current) =>
