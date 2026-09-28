@@ -77,6 +77,13 @@ export function buildSubagentMentionMarkdown(label: string): string {
   return `@${label}`;
 }
 
+// 点将引用（D24）的 canonical 载体：`[@员工名](agent://员工名)`。
+// 身份只在 destination——core 的 agent-call 解析器只认 destination，label 换着写也
+// 不影响派给谁；纯文本 `@label` 那种形态给人看没问题，机器没法和文件名/技能区分。
+export function buildAgentCallMentionMarkdown(label: string, agentName: string): string {
+  return `[${escapeMarkdownLabel(`@${label}`)}](agent://${escapeMarkdownDestination(agentName)})`;
+}
+
 export function buildSessionMentionMarkdown(sessionId: string, label?: string): string {
   const trimmedLabel = label?.trim();
   if (!trimmedLabel || trimmedLabel === sessionId) {
@@ -97,11 +104,16 @@ type MentionTextPart =
   | { type: "directory"; label: string }
   | { type: "skill"; label: string }
   | { type: "command"; label: string }
-  | { type: "subagent"; label: string }
+  | { type: "subagent"; label: string; agentName?: string }
   | { type: "session"; label: string }
   | { type: "plugin"; label: string; pluginId?: string };
 
 const PLUGIN_STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+// 点将引用的名字段（D24）：与档案名字符集同一条（[A-Za-z0-9-]{3,50}），
+// 也与 core 的 agent-call 解析器同判据——这里只决定回显要不要带身份，
+// 真正的派遣裁决在 core，判据不一致时以 core 为准（它会当无引用处理）。
+const AGENT_MENTION_NAME_PATTERN = /^[A-Za-z0-9-]{3,50}$/;
 
 function parsePluginStableId(destination: string): string | undefined {
   if (!destination.startsWith("plugin://")) return undefined;
@@ -199,6 +211,15 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
         type: "plugin",
         label: label.startsWith("@") ? label.slice(1) : label,
         ...(pluginId ? { pluginId } : {}),
+      });
+    } else if (destination.startsWith("agent://")) {
+      // 点将引用（D24）：身份只在 destination，label 只作展示；坏形状原样当引用壳，
+      // 不猜名字也不改写（判定权在 core 的 agent-call 解析器，那里才是硬约束）。
+      const agentName = destination.slice("agent://".length);
+      parts.push({
+        type: "subagent",
+        label: label.startsWith("@") ? label.slice(1) : label,
+        ...(AGENT_MENTION_NAME_PATTERN.test(agentName) ? { agentName } : {}),
       });
     } else if (label.startsWith("$")) {
       parts.push({ type: "skill", label: label.slice(1) });

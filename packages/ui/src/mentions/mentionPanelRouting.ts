@@ -2,6 +2,7 @@ import type { PromptInputTrigger } from "@/lib/promptInputTriggers.js";
 
 export type MentionPanelGroupId =
   | "plugins"
+  | "agents"
   | "files"
   | "design-styles"
   | "sessions"
@@ -11,6 +12,9 @@ export type SessionMentionWorkspaceScope = "current-workspace" | "same-authority
 
 const CONTEXT_GROUP_ORDER: readonly MentionPanelGroupId[] = [
   "plugins",
+  // 点将（D24）：项目员工紧跟插件之后、文件之前——用户找的是"谁来干"，
+  // 排在满屏文件名前面才可能被看见。
+  "agents",
   "files",
   "design-styles",
   "sessions",

@@ -50,6 +50,7 @@ import {
 } from "./mentionPanelRouting.js";
 import { $createPromptMentionNode } from "./nodes/PromptMentionNode.js";
 import { useDesignStyleMentionProvider } from "./providers/designStylesMentionProvider.js";
+import { useAgentCallMentionProvider } from "./providers/agentCallMentionProvider.js";
 import { useFileMentionProvider } from "./providers/fileMentionProvider.js";
 import { usePluginsMentionProvider } from "./providers/pluginsMentionProvider.js";
 import { useSessionsMentionProvider } from "./providers/sessionsMentionProvider.js";
@@ -237,6 +238,18 @@ export function MentionPlugin({
     intl.formatMessage({ id: "chat.mention.plugins.title" }),
   );
 
+  // 点将（D24）：@ 项目员工，这条消息的活就固定派给他。候选吃侧栏下发的档案目录，
+  // 与侧栏"项目员工"同一份事实，不再另开一路取数。
+  const agentsResult = useAgentCallMentionProvider({
+    workspacePath,
+    workspaceIdentity,
+    query: deferredActiveQuery,
+    enabled: isOpen && isContextTrigger,
+    emptyText: intl.formatMessage({ id: "chat.mention.agents.empty" }),
+    title: intl.formatMessage({ id: "chat.mention.agents.title" }),
+    limit: MENTION_DEFAULT_GROUP_PREVIEW_LIMIT,
+  });
+
   const panelGroups = useMemo<MentionResultGroup<MentionItem>[]>(() => {
     const groupsById = {
       files: {
@@ -262,6 +275,14 @@ export function MentionPlugin({
         loading: pluginsResult.loading,
         errorText: pluginsResult.error?.message ?? null,
         emptyText: pluginsResult.emptyText,
+      },
+      agents: {
+        id: "agents",
+        title: agentsResult.title,
+        items: agentsResult.items,
+        loading: agentsResult.loading,
+        errorText: agentsResult.error?.message ?? null,
+        emptyText: agentsResult.emptyText,
       },
       sessions: {
         id: "sessions",
@@ -306,6 +327,9 @@ export function MentionPlugin({
     pluginsResult.items,
     pluginsResult.loading,
     pluginsResult.title,
+    agentsResult.items,
+    agentsResult.loading,
+    agentsResult.title,
     sessionsResult.emptyText,
     sessionsResult.error,
     sessionsResult.items,

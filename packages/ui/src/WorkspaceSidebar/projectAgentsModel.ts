@@ -170,8 +170,13 @@ export function toProjectAgentPersona(agent: AgentSummary): ProjectAgentPersona 
 /**
  * 徽章对号要吃的档案摘要最小面（D26 起含工号）：侧栏目录下发、标题反推、号反查
  * 档案名共用这一份形状，避免各处自己 Pick 出不同口径。
+ * description 也给出去：@ 点将的面板（D24）要用一句话告诉用户每个人是干什么的，
+ * 那份目录是侧栏唯一已经取准的项目员工快照，不再另开一路取数。
  */
-export type PersonaBadgeAgentEntry = Pick<AgentSummary, "name" | "color" | "agentId">;
+export type PersonaBadgeAgentEntry = Pick<
+  AgentSummary,
+  "name" | "color" | "agentId" | "description"
+>;
 
 /**
  * 号优先的徽章刷新（D26）：登记/行内标记里带着号 → 拿号去现役档案目录查人，

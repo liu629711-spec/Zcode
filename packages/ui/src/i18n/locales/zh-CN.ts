@@ -5534,6 +5534,8 @@ const zhCN: Record<string, string> = {
   "chat.mention.files.title": "文件",
   "chat.mention.files.empty": "没有匹配的文件",
   "chat.mention.designStyles.title": "设计风格",
+  "chat.mention.agents.title": "项目员工",
+  "chat.mention.agents.empty": "这个项目还没有员工，先在侧栏建一个或请进预置班底",
   "chat.mention.designStyles.empty": "没有匹配的设计风格",
   "chat.designStyle.hint.question": "要设计界面？挑一套现成风格一键套用：",
   "chat.designStyle.hint.more": "输入 @ 可浏览全部 {count} 套",

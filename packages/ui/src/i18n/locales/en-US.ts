@@ -5782,6 +5782,8 @@ const enUS: Record<string, string> = {
   "chat.mention.files.title": "Files",
   "chat.mention.files.empty": "No matching files",
   "chat.mention.designStyles.title": "Design styles",
+  "chat.mention.agents.title": "Project agents",
+  "chat.mention.agents.empty": "No agents in this project yet — create one in the sidebar or install the preset crew",
   "chat.mention.designStyles.empty": "No matching design styles",
   "chat.designStyle.hint.question": "Designing an interface? Apply a ready-made style in one click:",
   "chat.designStyle.hint.more": "Type @ to browse all {count} styles",

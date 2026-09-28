@@ -24,6 +24,7 @@ export const useProjectAgentDirectoryStore = create<ProjectAgentDirectoryState>(
     for (const [workspaceKey, agents] of agentsByWorkspaceKey) {
       next[workspaceKey] = agents.map((agent) => ({
         name: agent.name,
+        description: agent.description,
         ...(agent.agentId ? { agentId: agent.agentId } : {}),
         ...(agent.color ? { color: agent.color } : {}),
       }));
