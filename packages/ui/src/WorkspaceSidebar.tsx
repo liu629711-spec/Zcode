@@ -2140,6 +2140,31 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               }
               return Boolean(updated);
             }}
+            onInstallRoster={async () => {
+              // 请进预置班底（D23）：建档落在本项目 .zcode/agents，每位都是普通驻场档案。
+              const target = projectAgentCreateTarget ?? projectAgentEditTarget?.target;
+              if (!target) {
+                return;
+              }
+              const result = await projectAgents.installPresetRoster(target);
+              if (result.installed.length > 0) {
+                toast(
+                  intl.formatMessage(
+                    { id: "workspaceSidebar.projectAgentRosterInstalled" },
+                    { count: String(result.installed.length) },
+                  ),
+                );
+              }
+              if (result.failed.length > 0) {
+                // 失败的明确说出来：静默少建一位 = 用户以为班底到齐了。
+                toast(
+                  intl.formatMessage(
+                    { id: "workspaceSidebar.projectAgentRosterFailed" },
+                    { count: String(result.failed.length) },
+                  ),
+                );
+              }
+            }}
           />
 
           <WorkspaceSidebarFooter

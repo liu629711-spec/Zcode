@@ -30,6 +30,7 @@ import {
   type ProjectAgentDraftError,
   type ProjectAgentPersona,
 } from "./projectAgentsModel.js";
+import { planProjectAgentRosterInstall, type ProjectAgentRosterInstallResult } from "./projectAgentRoster.js";
 
 /** 驻场智能体操作的目标工作区坐标：创建和开会话都按它定向（照 useSavedWorkflowLauncher 先例）。 */
 export interface ProjectAgentTarget {
@@ -177,6 +178,47 @@ export function useWorkspaceProjectAgents(params: {
     [reload, subagentsService],
   );
 
+  // 请进预置班底（D23）：把产品自带的几位员工建成本项目的驻场档案。
+  // 走与手工建档同一条 createAgent 链路（号在建档时发），逐个建、失败不中断整批，
+  // 结果回执交给调用方用一句话说清——静默少建一位就等于用户以为班底到齐了。
+  const installPresetRoster = useCallback(
+    async (target: ProjectAgentTarget): Promise<ProjectAgentRosterInstallResult> => {
+      const workspaceKey = buildTaskWorkspaceKey(target.workspacePath, target.workspaceIdentity);
+      const existing = agentsByWorkspaceKey.get(workspaceKey) ?? [];
+      const planned = planProjectAgentRosterInstall(existing.map((agent) => agent.name));
+      const result: ProjectAgentRosterInstallResult = { installed: [], failed: [] };
+      if (planned.length === 0) {
+        return result;
+      }
+      setSaving(true);
+      try {
+        for (const member of planned) {
+          try {
+            await subagentsService.createAgent({
+              config: toProjectAgentCreateConfig(member),
+              provider: ZCODE_AGENT_PROVIDER,
+              scope: "workspace",
+              workspacePath: target.workspacePath,
+              workspaceIdentity: target.workspaceIdentity,
+            });
+            result.installed.push(member.name);
+          } catch (error) {
+            logger.warn("[projectAgents] 班底建档失败，继续其余成员", {
+              name: member.name,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            result.failed.push(member.name);
+          }
+        }
+        await reload();
+      } finally {
+        setSaving(false);
+      }
+      return result;
+    },
+    [agentsByWorkspaceKey, reload, subagentsService],
+  );
+
   // 删除档案（G5/D7）：服务端只删 profile 文件，记事本目录本来就不在删除范围里。
   const deleteAgent = useCallback(
     async (target: ProjectAgentTarget, agent: AgentSummary): Promise<boolean> => {
@@ -201,6 +243,7 @@ export function useWorkspaceProjectAgents(params: {
     loadingAgents,
     createAgent,
     updateAgent,
+    installPresetRoster,
     deleteAgent,
   };
 }
@@ -322,6 +365,7 @@ export function WorkspaceProjectAgentCreateDialog({
   onOpenNewChat,
   onCreate,
   onUpdate,
+  onInstallRoster,
   workspacePath,
   workspaceIdentity,
   workspaceRemoteSessionId,
@@ -337,6 +381,8 @@ export function WorkspaceProjectAgentCreateDialog({
   onOpenNewChat?: (agent: AgentSummary) => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
   onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
+  /** 请进预置班底（D23）：把产品自带的员工建成本项目的驻场档案；缺席则不渲染入口。 */
+  onInstallRoster?: () => void;
   /** 记忆区按目标工作区取数（编辑态才需要）；user 档案记事本在用户数据里，服务面自己解析。 */
   workspacePath?: string;
   workspaceIdentity?: string;
@@ -350,6 +396,10 @@ export function WorkspaceProjectAgentCreateDialog({
   });
   const [errors, setErrors] = useState<ProjectAgentDraftError[]>([]);
   const isEditing = editingAgent !== null;
+  // 班底缺几位（D23）：按项目现有档案名算，同名（含大小写差异）不重复请人。
+  const rosterMissingCount = onInstallRoster
+    ? planProjectAgentRosterInstall(agents.map((agent) => agent.name)).length
+    : 0;
 
   useEffect(() => {
     if (open) {
@@ -403,6 +453,22 @@ export function WorkspaceProjectAgentCreateDialog({
             <p className="text-ui-base font-medium text-foreground-subtle">
               {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
             </p>
+            {rosterMissingCount > 0 ? (
+              // 请进预置班底（D23）：一句点齐产品自带的几位员工；已有同名的不动。
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full justify-center"
+                disabled={saving}
+                onClick={onInstallRoster}
+              >
+                {intl.formatMessage(
+                  { id: "workspaceSidebar.projectAgentInstallRoster" },
+                  { count: String(rosterMissingCount) },
+                )}
+              </Button>
+            ) : null}
             {loadingAgents ? (
               <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
                 {intl.formatMessage({ id: "workspaceSidebar.projectAgentsLoading" })}
