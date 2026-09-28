@@ -93,6 +93,28 @@ export const PLUGIN_MENTION_ICON_NODE = [
   ["path", { d: "M7 5V3" }],
 ] as const satisfies MentionLucideIconNode;
 
+/** 素材引用（可复用组件货）：lucide「component」四菱形。 */
+export const COMPONENT_MENTION_ICON_NODE = [
+  ["path", { d: "M5.5 8.5 9 12l-3.5 3.5L2 12l3.5-3.5Z" }],
+  ["path", { d: "m12 2 3.5 3.5L12 9 8.5 5.5 12 2Z" }],
+  ["path", { d: "M18.5 8.5 22 12l-3.5 3.5L15 12l3.5-3.5Z" }],
+  ["path", { d: "m12 15 3.5 3.5L12 22l-3.5-3.5 3.5-3.5Z" }],
+] as const satisfies MentionLucideIconNode;
+
+/** 设计风格引用：lucide「palette」调色板。 */
+export const PALETTE_MENTION_ICON_NODE = [
+  [
+    "path",
+    {
+      d: "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z",
+    },
+  ],
+  ["circle", { cx: "13.5", cy: "6.5", r: ".5", fill: "currentColor" }],
+  ["circle", { cx: "17.5", cy: "10.5", r: ".5", fill: "currentColor" }],
+  ["circle", { cx: "8.5", cy: "7.5", r: ".5", fill: "currentColor" }],
+  ["circle", { cx: "6.5", cy: "12.5", r: ".5", fill: "currentColor" }],
+] as const satisfies MentionLucideIconNode;
+
 export function createMentionSvgIcon(iconNode: MentionLucideIconNode): SVGSVGElement {
   const svg = document.createElementNS(SVG_NAMESPACE, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");

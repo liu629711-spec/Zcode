@@ -23,6 +23,8 @@ export interface MentionItemData {
   designStyle?: boolean;
   /** 设计风格主色（提取自 DESIGN.md 的 token 色，最多 4 个）；仅用于面板行内色板。 */
   palette?: string[];
+  /** 素材/风格引用归属的素材 id（V4.6）：引用 chip 悬停预览按 id 查预览产物。 */
+  assetId?: string;
 }
 
 export interface MentionItem {

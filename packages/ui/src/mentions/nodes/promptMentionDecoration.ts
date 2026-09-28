@@ -9,8 +9,10 @@ import type { MentionCategory, MentionItemData } from "@/mentions/mentionTypes.j
 import {
   COMMAND_MENTION_ICON_NODE,
   COMPACT_COMMAND_MENTION_ICON_NODE,
+  COMPONENT_MENTION_ICON_NODE,
   createMentionSvgIcon,
   GOAL_COMMAND_MENTION_ICON_NODE,
+  PALETTE_MENTION_ICON_NODE,
   PLUGIN_MENTION_ICON_NODE,
   SESSION_MENTION_ICON_NODE,
   SKILL_MENTION_ICON_NODE,
@@ -19,6 +21,7 @@ import {
   WORKFLOW_COMMAND_MENTION_ICON_NODE,
   type MentionLucideIconNode,
 } from "@/mentions/nodes/mentionIconDom.js";
+import { attachAssetMentionPreview } from "@/mentions/nodes/assetMentionPreview.js";
 
 const pendingImages = new WeakMap<HTMLElement, HTMLImageElement>();
 
@@ -72,6 +75,12 @@ export function decoratePromptMention(
     return;
   }
   if (category === "files") {
+    // 素材/设计风格引用（V4.6）：中文 label + 专属图标 + 悬停预览，不再伪装成文件路径。
+    if (data?.assetId) {
+      setMask(dom, data.designStyle ? PALETTE_MENTION_ICON_NODE : COMPONENT_MENTION_ICON_NODE);
+      attachAssetMentionPreview(dom, data.assetId);
+      return;
+    }
     const descriptor = resolveFileDisplayDescriptor(data?.path ?? data?.relativePath ?? value);
     const url = data?.kind === "directory" ? FOLDER_FILE_ICON_SRC : descriptor.fileIconSrc;
     setImage(dom, url, () =>

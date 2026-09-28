@@ -11,8 +11,10 @@
  */
 import { useMemo } from "react";
 import { ASSET_CATALOG } from "@/asset-library/catalog/index.js";
+import { resolveDesignStyleZhName } from "@/asset-library/catalog/designStyleZh.js";
 import type { AssetManifest } from "@/asset-library/catalog/types.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { buildFileMentionMarkdown } from "@/mentions/mentionMarkdown.js";
 import { getMentionGroupLimitForQuery } from "@/mentions/mentionSearch.js";
 import type { MentionCategoryResult, MentionItem } from "@/mentions/mentionTypes.js";
@@ -25,6 +27,15 @@ export const DESIGN_STYLE_ASSETS: readonly AssetManifest[] = ASSET_CATALOG.filte
 /** chip 上的展示名去掉固定的「· 设计风格」尾巴（分组标题已经说明了语境）。 */
 export function resolveDesignStyleLabel(title: string): string {
   return title.replace(/\s*·\s*设计风格$/, "");
+}
+
+/** 展示名（V4.6）：中文 locale 用中文名对照表，缺条目回落英文原名。 */
+export function resolveDesignStyleDisplayName(
+  asset: AssetManifest,
+  locale: string,
+): string {
+  const english = resolveDesignStyleLabel(asset.title);
+  return locale === "en-US" ? english : resolveDesignStyleZhName(asset.id, english);
 }
 
 /** 规范文档落盘后的确定性入口路径（单文件 DESIGN.md，先于落盘可知）。 */
@@ -75,9 +86,9 @@ export function getFeaturedDesignStyleAssets(count: number): AssetManifest[] {
   return featured;
 }
 
-function toDesignStyleMentionItem(asset: AssetManifest): MentionItem {
+function toDesignStyleMentionItem(asset: AssetManifest, locale: string): MentionItem {
   const relativePath = resolveDesignStyleEntryPath(asset).replace(/^\.\//, "");
-  const label = resolveDesignStyleLabel(asset.title);
+  const label = resolveDesignStyleDisplayName(asset, locale);
   return {
     id: `asset:${asset.id}`,
     category: "files",
@@ -85,11 +96,12 @@ function toDesignStyleMentionItem(asset: AssetManifest): MentionItem {
     description: asset.description,
     value: `./${relativePath}`,
     markdown: buildFileMentionMarkdown(`./${relativePath}`, label),
-    keywords: [asset.id, asset.title, ...asset.tags],
+    keywords: [asset.id, asset.title, resolveDesignStyleZhName(asset.id, ""), ...asset.tags],
     data: {
       kind: "file",
       relativePath,
       designStyle: true,
+      assetId: asset.id,
       palette: extractDesignStylePalette(asset),
     },
   };
@@ -112,6 +124,7 @@ export function useDesignStyleMentionProvider(
 ): MentionCategoryResult {
   // 没有平台通道（写盘不可能成功）的宿主里直接不出候选，避免给出必败选项。
   const canWrite = useOptionalPlatform()?.assetLibraryWriteFiles != null;
+  const { locale } = useZCodeIntl();
   const normalizedQuery = query.trim().toLowerCase();
   const limit = getMentionGroupLimitForQuery(normalizedQuery, defaultPreviewLimit) ?? 8;
   const items = useMemo(() => {
@@ -120,8 +133,8 @@ export function useDesignStyleMentionProvider(
     }
     return DESIGN_STYLE_ASSETS.filter((asset) => matchesDesignStyleQuery(asset, normalizedQuery))
       .slice(0, limit)
-      .map(toDesignStyleMentionItem);
-  }, [canWrite, enabled, normalizedQuery, limit]);
+      .map((asset) => toDesignStyleMentionItem(asset, locale));
+  }, [canWrite, enabled, locale, normalizedQuery, limit]);
   return {
     items,
     loading: false,

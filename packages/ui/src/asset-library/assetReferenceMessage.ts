@@ -8,10 +8,18 @@
  */
 import { buildFileMentionMarkdown } from "../mentions/mentionMarkdown.js";
 import type { ComposerMentionPrefill } from "../store/zcodeSessionStoreTypes.js";
+import { resolveDesignStyleZhName } from "./catalog/designStyleZh.js";
 import type { AssetManifest } from "./catalog/types.js";
 
-/** 引用 chip 的展示标签：用素材名，不用文件名/路径（用户看的是"这份素材"）。 */
+/**
+ * 引用 chip 的展示标签（V4.6）：设计风格用中文名（Airbnb→「Airbnb 民宿风」等），
+ * 其余素材用素材名；英文 locale 维持英文名。chip 渲染层对带 assetId 的 mention
+ * 不再做文件名覆盖，中文名原样上屏。
+ */
 function resolveChipLabel(asset: AssetManifest, locale = "zh-CN"): string {
+  if (asset.category === "design-style" && locale !== "en-US") {
+    return resolveDesignStyleZhName(asset.id, asset.title);
+  }
   return locale === "en-US" ? (asset.titleEn ?? asset.title) : asset.title;
 }
 
@@ -46,6 +54,9 @@ export function buildAssetReferenceMention(
     data: {
       kind: "file",
       relativePath: entryPath.replace(/^\.\//, ""),
+      // 素材引用身份：chip 渲染层据此免文件名覆盖，并挂悬停预览。
+      assetId: asset.id,
+      ...(asset.category === "design-style" ? { designStyle: true } : {}),
     },
   };
 }

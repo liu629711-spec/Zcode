@@ -20,6 +20,7 @@ import {
   DESIGN_STYLE_ASSETS,
   extractDesignStylePalette,
   getFeaturedDesignStyleAssets,
+  resolveDesignStyleDisplayName,
   resolveDesignStyleEntryPath,
 } from "@/mentions/providers/designStylesMentionProvider.js";
 import { writeAssetBlueprintFiles } from "./writeAssetFiles.js";
@@ -108,7 +109,7 @@ export function DesignStyleComposerHint({
                 ))}
               </span>
             )}
-            {asset.title.replace(/\s*·\s*设计风格$/, "")}
+            {resolveDesignStyleDisplayName(asset, locale)}
           </button>
         );
       })}

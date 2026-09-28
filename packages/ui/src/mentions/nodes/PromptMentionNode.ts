@@ -18,11 +18,16 @@ export * from "@/mentions/nodes/mentionIconDom.js";
 
 function displayLabel(payload: PromptMentionPayload): string {
   const label = normalizePromptMentionDisplayLabel(payload.category, payload.label, payload.value);
-  return payload.category === "files"
-    ? resolveFileDisplayDescriptor(
+  // 素材/设计风格引用（V4.6 用户反馈：不要展示文件名）：label 是素材中文名，
+  // 不吃路径文件名覆盖——普通工作区文件 mention 仍按文件语义展示。
+  if (payload.category === "files" && !payload.data?.assetId) {
+    return (
+      resolveFileDisplayDescriptor(
         payload.data?.path ?? payload.data?.relativePath ?? payload.value,
       ).fileName || label
-    : label;
+    );
+  }
+  return label;
 }
 
 export interface PromptMentionPayload {
@@ -133,7 +138,8 @@ export class PromptMentionNode extends TextNode {
       prevNode.__data?.relativePath !== this.__data?.relativePath ||
       prevNode.__data?.kind !== this.__data?.kind ||
       prevNode.__data?.scope !== this.__data?.scope ||
-      prevNode.__data?.icon !== this.__data?.icon
+      prevNode.__data?.icon !== this.__data?.icon ||
+      prevNode.__data?.assetId !== this.__data?.assetId
     ) {
       decoratePromptMention(dom, this.__category, this.__value, this.__data);
     }
