@@ -1,5 +1,5 @@
 /**
- * 沙箱小房间——素材预览的唯一容器（技术设计 §2）。
+ * 沙箱小房间——素材预览的唯一容器（技术设计 §2；V3 重构为「缩放舞台」）。
  *
  * **铁律：sandbox 永远只有 `allow-scripts` 一个值。**
  * 绝不允许 allow-same-origin / allow-popups / allow-top-navigation：
@@ -7,20 +7,43 @@
  * `allow-same-origin` 组合等价于逃逸），srcdoc 里的任何脚本都不可信。
  * 校验器 catalogCheck.assertSandboxSafe 钉住这个常量，谁改谁过不了检查。
  *
+ * **V3 缩放舞台（真机反馈：展示不全/错位/偏移的根治）**：
+ * demo 一律按固定设计视口（DESIGN_WIDTH×DESIGN_HEIGHT）渲染，再整体等比缩放
+ * 塞进卡片的舞台框——不管 demo 内容设计得多宽多高，都完整可见、绝不裁切、
+ * 绝不出滚动条、绝不错位。舞台框的纵横比恒等于设计视口（aspect-ratio 由卡片给）。
+ * 这也是 beautifului.dev 等站的通用做法：预览是"整页缩略"，不是"裁剪窗口"。
+ *
  * previewHtml 的收录规范（写给备货的人）：自包含、禁一切外链、禁 localStorage
  * （沙箱是无源环境，访问即抛）、动画货带 prefers-reduced-motion 降级。
+ * 运行时还会再注入一段 no-scroll 样式（withNoScrollPreview）兜底——收录规范
+ * 就算被未来的人违反，预览里也长不出滚动条。
  *
- * 状态全套：onLoad 前骨架态（token 对齐 AutomationTemplateSkeletonGrid）+
- * 骨架上的"重试"兜底（key 重挂载 iframe）；previewHtml 为空串 = react 货产物
- * 没生成（忘跑 scripts/build-asset-previews.mjs），渲染错误态——这状态不该被
- * 用户看到，但必须有，防静默白屏。
+ * 状态全套：onLoad 前骨架态 + 骨架上的"重试"兜底（key 重挂载 iframe）；
+ * previewHtml 为空串 = react 货产物没生成（忘跑 scripts/build-asset-previews.mjs），
+ * 渲染错误态——这状态不该被用户看到，但必须有，防静默白屏。
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ASSET_SANDBOX } from "./catalog/catalogCheck.js";
 
 /** iframe sandbox 的唯一合法值；定义与恒等校验在 catalogCheck（此处再导出）。 */
 export { ASSET_SANDBOX };
+
+/** 设计视口：所有 demo 的"画布尺寸"。卡片舞台的纵横比必须与它一致。 */
+export const PREVIEW_DESIGN_WIDTH = 880;
+export const PREVIEW_DESIGN_HEIGHT = 550;
+
+/** 兜底样式：预览里永远不许出现滚动条（收录规范违反时的最后一道防线）。 */
+export const NO_SCROLL_PREVIEW_STYLE =
+  "<style>html,body{overflow:hidden!important;scrollbar-width:none!important}::-webkit-scrollbar{width:0!important;height:0!important;display:none!important}</style>";
+
+/** 把兜底样式注进预览 HTML（有 head 插 head，否则前置——避免破坏 doctype 触发怪异模式）。 */
+export function withNoScrollPreview(html: string): string {
+  const headMatch = /<head[^>]*>/i.exec(html);
+  return headMatch
+    ? html.replace(headMatch[0], headMatch[0] + NO_SCROLL_PREVIEW_STYLE)
+    : NO_SCROLL_PREVIEW_STYLE + html;
+}
 
 interface AssetPreviewFrameProps {
   /** 自包含预览 HTML（catalogCheck 保证无外链/无 localStorage） */
@@ -32,11 +55,25 @@ interface AssetPreviewFrameProps {
 export function AssetPreviewFrame({ previewHtml, title }: AssetPreviewFrameProps) {
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0);
 
   // 换了预览内容（如详情弹层切货）时回到骨架态，别拿旧 iframe 的 loaded 硬撑
   useEffect(() => {
     setLoaded(false);
   }, [previewHtml]);
+
+  // 缩放舞台：量舞台框实际宽度，得出缩放系数（设计视口 → 舞台框）
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      if (width > 0) setScale(width / PREVIEW_DESIGN_WIDTH);
+    });
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, []);
 
   const retry = () => {
     setLoaded(false);
@@ -58,16 +95,20 @@ export function AssetPreviewFrame({ previewHtml, title }: AssetPreviewFrameProps
   }
 
   return (
-    <div className="relative h-full w-full">
-      {/* scrolling="no" + 内层 overflow 兜底：预览区里永远不出现滚动条（V3-1 真机反馈）。
-          序号 demo 曾写 min-height:100vh 致溢出，已批量改 100%；这层是第二道保险——
-          货架里任何一件将来溢出，也只是被裁掉，不会长出丑陋的滑动框。 */}
+    <div ref={stageRef} className="relative h-full w-full overflow-hidden">
       <iframe
         key={attempt}
-        className="block h-full w-full rounded-lg border-0"
+        className="absolute top-0 left-0 border-0"
+        style={{
+          width: PREVIEW_DESIGN_WIDTH,
+          height: PREVIEW_DESIGN_HEIGHT,
+          transform: scale > 0 ? `scale(${scale})` : undefined,
+          transformOrigin: "top left",
+          visibility: scale > 0 ? undefined : "hidden",
+        }}
         sandbox={ASSET_SANDBOX}
         scrolling="no"
-        srcDoc={previewHtml}
+        srcDoc={withNoScrollPreview(previewHtml)}
         title={title}
         onLoad={() => setLoaded(true)}
       />

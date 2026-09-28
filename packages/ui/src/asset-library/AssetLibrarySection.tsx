@@ -78,66 +78,81 @@ export function AssetLibrarySection({
   };
 
   return (
-    <div ref={rootRef} className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-      {/* sticky 工具栏：负 margin 抵消 shell 容器的 px/py，毛玻璃条全宽贴住滚动容器顶。 */}
-      <div className="sticky top-0 z-10 -mx-4 -mt-4 bg-background/70 px-4 pt-4 pb-3 backdrop-blur-md md:-mx-6 md:-mt-6 md:px-6 md:pt-6">
-        <div className="flex flex-col gap-4">
-          <div>
-            <h1 className="text-ui-lg font-semibold text-foreground">
-              {intl.formatMessage({ id: "assetLibrary.title" })}
-            </h1>
-            <p className="mt-1 text-ui-sm text-foreground-subtle">
-              {intl.formatMessage({ id: "assetLibrary.description" })}
-            </p>
-          </div>
+    <div ref={rootRef} className="mx-auto flex w-full max-w-7xl flex-col gap-4">
+      {/* 页头：不吸顶——大标题滚走就滚走，吸顶条只留高频操作（旧版整块吸顶既占高度
+          又把第一行卡片压出"被遮住"的观感）。 */}
+      <div>
+        <h1 className="text-ui-lg font-semibold text-foreground">
+          {intl.formatMessage({ id: "assetLibrary.title" })}
+        </h1>
+        <p className="mt-1 text-ui-sm text-foreground-subtle">
+          {intl.formatMessage({ id: "assetLibrary.description" })}
+        </p>
+      </div>
 
-          <div className="flex flex-col gap-2.5">
-            <div className="relative">
-              <SearchIcon
-                className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground-subtlest"
-                aria-hidden="true"
-              />
-              <Input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={intl.formatMessage({ id: "assetLibrary.search.placeholder" })}
-                aria-label={intl.formatMessage({ id: "assetLibrary.search.label" })}
-                className="pl-8"
-                data-testid="asset-library-search"
-              />
-            </div>
-            <div
-              className="flex flex-wrap items-center gap-1.5"
-              role="group"
-              aria-label={intl.formatMessage({ id: "assetLibrary.category.ariaLabel" })}
-              data-testid="asset-library-category-filter"
-            >
-              {(["all", ...CATEGORY_ORDER] as const).map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={category === key}
-                  className={cn(
-                    "rounded-full px-2.5 py-0.5 text-ui-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused",
-                    category === key
-                      ? "bg-selected text-foreground"
-                      : "text-foreground-subtle hover:bg-hover hover:text-foreground",
-                  )}
-                  onClick={() => setCategory(key)}
-                >
-                  {intl.formatMessage({ id: `assetLibrary.category.${key}` })}
-                </button>
-              ))}
-              <span
-                className="ml-auto text-ui-sm text-foreground-subtlest"
-                aria-live="polite"
-                data-testid="asset-library-count"
-              >
-                {intl.formatMessage({ id: "assetLibrary.count" }, { count: visibleAssets.length })}
-              </span>
-            </div>
+      {/* 吸顶工具条：搜索 + 分类 + 计数 + 回到顶部。近实底（95%+blur）防内容透叠；
+          回顶按钮住在这里而不是右下角悬浮——悬浮钮会压住卡片内容（真机反馈）。 */}
+      <div className="sticky top-0 z-10 -mx-4 rounded-b-xl border-b border-border/60 bg-background/95 px-4 py-2.5 backdrop-blur-md md:-mx-6 md:px-6">
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <SearchIcon
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-foreground-subtlest"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={intl.formatMessage({ id: "assetLibrary.search.placeholder" })}
+              aria-label={intl.formatMessage({ id: "assetLibrary.search.label" })}
+              className="pl-8"
+              data-testid="asset-library-search"
+            />
           </div>
+          {showBackToTop ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              data-testid="asset-library-back-to-top"
+              aria-label={intl.formatMessage({ id: "assetLibrary.backToTop" })}
+              title={intl.formatMessage({ id: "assetLibrary.backToTop" })}
+              onClick={scrollToTop}
+            >
+              <ArrowUpIcon className="size-3.5" aria-hidden="true" />
+            </Button>
+          ) : null}
+        </div>
+        <div
+          className="mt-2 flex flex-wrap items-center gap-1.5"
+          role="group"
+          aria-label={intl.formatMessage({ id: "assetLibrary.category.ariaLabel" })}
+          data-testid="asset-library-category-filter"
+        >
+          {(["all", ...CATEGORY_ORDER] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={category === key}
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-ui-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused",
+                category === key
+                  ? "bg-selected text-foreground"
+                  : "text-foreground-subtle hover:bg-hover hover:text-foreground",
+              )}
+              onClick={() => setCategory(key)}
+            >
+              {intl.formatMessage({ id: `assetLibrary.category.${key}` })}
+            </button>
+          ))}
+          <span
+            className="ml-auto text-ui-sm text-foreground-subtlest"
+            aria-live="polite"
+            data-testid="asset-library-count"
+          >
+            {intl.formatMessage({ id: "assetLibrary.count" }, { count: visibleAssets.length })}
+          </span>
         </div>
       </div>
 
@@ -190,23 +205,6 @@ export function AssetLibrarySection({
           ))}
         </div>
       )}
-
-      {/* 回到顶部（sticky bottom 悬浮条）：滚过 600px 才出现，贴滚动容器右下角。 */}
-      {showBackToTop ? (
-        <div className="pointer-events-none sticky bottom-4 z-10 flex justify-end">
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="pointer-events-auto rounded-full shadow-lg"
-            data-testid="asset-library-back-to-top"
-            onClick={scrollToTop}
-          >
-            <ArrowUpIcon className="size-3.5" aria-hidden="true" data-icon="inline-start" />
-            {intl.formatMessage({ id: "assetLibrary.backToTop" })}
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }

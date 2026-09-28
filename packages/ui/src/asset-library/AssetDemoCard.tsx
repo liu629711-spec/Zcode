@@ -49,7 +49,11 @@ import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
 import type { AssetFile, AssetManifest } from "./catalog/types.js";
 import { buildAssetTryPrompt } from "./assetTryPrompt.js";
 import { buildAssetReferenceChipMessage } from "./assetReferenceMessage.js";
-import { AssetPreviewFrame } from "./AssetPreviewFrame.js";
+import {
+  AssetPreviewFrame,
+  PREVIEW_DESIGN_HEIGHT,
+  PREVIEW_DESIGN_WIDTH,
+} from "./AssetPreviewFrame.js";
 import { useInView } from "./useInView.js";
 
 /** locale 展示名：En 字段缺失回退中文原字段（titleEn ?? title）。 */
@@ -211,115 +215,116 @@ export function AssetDemoCard({
       data-asset-id={manifest.id}
       className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border-hover"
     >
-      <header className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-        <div className="flex min-w-0 items-baseline gap-3">
+      {/* V3 重设计：头部两行固定高度——第一行 序号+标题+徽标+图标操作组（不换行），
+          第二行描述单独 truncate。操作全改图标（带 title），文字按钮在窄卡上挤换行
+          是旧版"错位/参差"的元凶之一。 */}
+      <header className="flex flex-col gap-1.5">
+        <div className="flex min-w-0 items-center gap-2">
           <span
             aria-hidden="true"
-            className="font-mono text-ui-xl leading-none text-foreground-subtlest tabular-nums"
+            className="font-mono text-ui-sm leading-none text-foreground-subtlest tabular-nums"
           >
             {String(index + 1).padStart(2, "0")}
           </span>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-ui-base font-semibold text-foreground">{title}</h2>
-              <span className="rounded-full bg-surface-hover px-1.5 py-0.5 text-ui-sm leading-none text-foreground-subtle">
-                {intl.formatMessage({ id: `assetLibrary.category.${manifest.category}` })}
-              </span>
-              <span
-                className="rounded-full border border-border px-1.5 py-0.5 text-ui-sm leading-none text-foreground-subtle"
-                aria-label={intl.formatMessage({ id: "assetLibrary.license.aria" }, { license })}
-              >
-                {license}
-              </span>
-            </div>
-            <p className="mt-1 truncate text-ui-sm leading-snug text-foreground-subtle">{description}</p>
-          </div>
-        </div>
-        <div
-          role="group"
-          aria-label={intl.formatMessage({ id: "assetLibrary.card.actionsLabel" })}
-          className="flex shrink-0 items-center gap-1"
-        >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            data-testid="asset-library-code-toggle"
-            aria-pressed={codeOpen}
-            aria-label={intl.formatMessage({
-              id: codeOpen ? "assetLibrary.card.collapseCodeAria" : "assetLibrary.card.codeAria",
-            })}
-            title={intl.formatMessage({
-              id: codeOpen ? "assetLibrary.card.collapseCode" : "assetLibrary.card.code",
-            })}
-            onClick={() => setCodeOpen((open) => !open)}
+          <h2 className="min-w-0 truncate text-ui-base font-semibold text-foreground">{title}</h2>
+          <span className="shrink-0 rounded-full bg-surface-hover px-1.5 py-0.5 text-ui-sm leading-none text-foreground-subtle">
+            {intl.formatMessage({ id: `assetLibrary.category.${manifest.category}` })}
+          </span>
+          <span
+            className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-ui-sm leading-none text-foreground-subtle"
+            aria-label={intl.formatMessage({ id: "assetLibrary.license.aria" }, { license })}
           >
-            <CodeXmlIcon className="size-3.5" aria-hidden="true" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            data-testid="asset-library-copy"
-            aria-label={copyAriaLabel}
-            title={copyLabel}
-            onClick={() => {
-              void handleCopy();
-            }}
+            {license}
+          </span>
+          <div
+            role="group"
+            aria-label={intl.formatMessage({ id: "assetLibrary.card.actionsLabel" })}
+            className="ml-auto flex shrink-0 items-center gap-0.5"
           >
-            {copyIcon}
-          </Button>
-          {readOnly ? null : (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid="asset-library-send-new-chat"
-                aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToNewChatAria" })}
-                disabled={isSending}
-                aria-busy={isSending}
-                onClick={handleSendToNewChat}
-              >
-                {isSending ? (
-                  <LoaderIcon className="size-3 animate-spin" aria-hidden="true" data-icon="inline-start" />
-                ) : (
-                  <SendIcon className="size-3" aria-hidden="true" data-icon="inline-start" />
-                )}
-                {intl.formatMessage({ id: "assetLibrary.detail.sendToNewChat" })}
-              </Button>
-              {hasActiveChat ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              data-testid="asset-library-code-toggle"
+              aria-pressed={codeOpen}
+              aria-label={intl.formatMessage({
+                id: codeOpen ? "assetLibrary.card.collapseCodeAria" : "assetLibrary.card.codeAria",
+              })}
+              title={intl.formatMessage({
+                id: codeOpen ? "assetLibrary.card.collapseCode" : "assetLibrary.card.code",
+              })}
+              onClick={() => setCodeOpen((open) => !open)}
+            >
+              <CodeXmlIcon className="size-3.5" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              data-testid="asset-library-copy"
+              aria-label={copyAriaLabel}
+              title={copyLabel}
+              onClick={() => {
+                void handleCopy();
+              }}
+            >
+              {copyIcon}
+            </Button>
+            {readOnly ? null : (
+              <>
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
-                  data-testid="asset-library-send-current-chat"
-                  aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChatAria" })}
+                  size="icon-sm"
+                  data-testid="asset-library-send-new-chat"
+                  aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToNewChatAria" })}
+                  title={intl.formatMessage({ id: "assetLibrary.detail.sendToNewChat" })}
                   disabled={isSending}
                   aria-busy={isSending}
-                  onClick={handleSendToCurrentChat}
+                  onClick={handleSendToNewChat}
                 >
                   {isSending ? (
-                    <LoaderIcon className="size-3 animate-spin" aria-hidden="true" data-icon="inline-start" />
+                    <LoaderIcon className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : (
-                    <MessageSquareTextIcon className="size-3" aria-hidden="true" data-icon="inline-start" />
+                    <SendIcon className="size-3.5" aria-hidden="true" />
                   )}
-                  {intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChat" })}
                 </Button>
-              ) : null}
-            </>
-          )}
+                {hasActiveChat ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    data-testid="asset-library-send-current-chat"
+                    aria-label={intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChatAria" })}
+                    title={intl.formatMessage({ id: "assetLibrary.detail.sendToCurrentChat" })}
+                    disabled={isSending}
+                    aria-busy={isSending}
+                    onClick={handleSendToCurrentChat}
+                  >
+                    {isSending ? (
+                      <LoaderIcon className="size-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <MessageSquareTextIcon className="size-3.5" aria-hidden="true" />
+                    )}
+                  </Button>
+                ) : null}
+              </>
+            )}
+          </div>
         </div>
+        <p className="truncate text-ui-sm leading-snug text-foreground-subtle">{description}</p>
       </header>
 
-      {/* 演示区：首次进视口挂真沙箱，之后永久保留 DOM——出视口 display:none 藏起来，
-          回视口零重挂载（滚动抖动根治）。骨架态只在首次进视口前出现；
-          overflow-hidden 圆角边框钉住预览溢出。 */}
+      {/* 演示舞台（V3 缩放舞台）：纵横比恒等于设计视口（880×550），AssetPreviewFrame 把
+          demo 按设计视口渲染再等比缩进来——内容永远完整，不裁切、不错位、无滚动条。
+          浅色 demo（三站原版多为浅色主题）在这层画框里是"作品照"，与深色 UI 的反差是
+          有意的装裱，不再显得突兀。首次进视口挂真沙箱，之后永久保留 DOM（滚动零重挂载）。 */}
       <div
         ref={ref}
         data-testid="asset-library-preview"
         aria-label={intl.formatMessage({ id: "assetLibrary.detail.previewLabel" })}
-        className="h-[240px] shrink-0 overflow-hidden rounded-xl border border-border bg-background"
+        className="w-full shrink-0 overflow-hidden rounded-xl border border-border bg-background"
+        style={{ aspectRatio: `${PREVIEW_DESIGN_WIDTH} / ${PREVIEW_DESIGN_HEIGHT}` }}
       >
         {hasBeenInView ? (
           <div className="h-full w-full" style={{ display: inView ? undefined : "none" }}>
