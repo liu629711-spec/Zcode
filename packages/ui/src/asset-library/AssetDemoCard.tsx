@@ -14,7 +14,7 @@
  *
  * 递活逻辑（技术设计 §10 V2-2 引用化）：
  * - 普通货先经 platform 把图纸静默落盘到 `<workspace>/.zcode/asset-library/<id>/`，
- *   消息 = 口令 + 逐文件引用链接（buildAssetReferenceMessage），智能体自己读文件；
+ *   消息 = 纯素材引用 chip（buildAssetReferenceChipMessage，V4.4：不带口令，用户自己写说明），智能体读落盘文件；
  *   落盘失败（异常/不支持）toast 提示并退回 buildAssetTryPrompt 全量文本（原行为）。
  * - prompt 类货（files 空）不落盘，仍走 buildAssetTryPrompt（本就是口令语义）。
  * - 「发到新会话」走 onCreateTask({ initialPrompt })；「发到当前会话」写
@@ -235,8 +235,10 @@ export function AssetDemoCard({
           <span className="shrink-0 rounded-full bg-surface-hover px-1.5 py-0.5 text-ui-sm leading-none text-foreground-subtle">
             {intl.formatMessage({ id: `assetLibrary.category.${manifest.category}` })}
           </span>
+          {/* 授权徽标（V4.4）：UIverse 货的署名串很长，shrink-0 会把标题挤没、图标组
+              挤出卡片边界（真机反馈"按钮漂移"）——允许收缩截断，全文留在 aria-label。 */}
           <span
-            className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-ui-sm leading-none text-foreground-subtle"
+            className="min-w-0 max-w-44 truncate rounded-full border border-border px-1.5 py-0.5 text-ui-sm leading-none text-foreground-subtle"
             aria-label={intl.formatMessage({ id: "assetLibrary.license.aria" }, { license })}
           >
             {license}

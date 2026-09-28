@@ -1,11 +1,8 @@
 /**
- * 递活消息组装（技术设计 §10 V2-2 + V3-2 引用 chip 化）：
+ * 递活消息组装（技术设计 §10 V2-2 → V3-2 引用 chip 化 → V4.4 纯 chip 化）：
  * 普通货不再把全量代码怼进输入框，图纸先静默落盘到 `<workspace>/.zcode/asset-library/<id>/`，
- * 消息 = 口令一句 + **结构化文件引用 chip**（不是代码原文），智能体自己读文件装进项目。
- *
- * V3-2 真机反馈：用户要把素材引用做成插件商店那种"一个 chip"的体验（像「1 条对话引用」），
- * 所以这里除了 canonical 文本，还产出 ComposerMentionPrefill——composer 会把它渲染成
- * 可点击的 chip 节点，而不是把路径/代码铺满输入框。
+ * 点"发到会话"后 composer 里**只出现一个素材引用 chip**（像「1 条对话引用」那种块），
+ * 不带口令/说明文字——需求描述由用户自己写（V4.4 真机反馈拍板）。
  */
 import { buildFileMentionMarkdown } from "../mentions/mentionMarkdown.js";
 import type { ComposerMentionPrefill } from "../store/zcodeSessionStoreTypes.js";
@@ -17,26 +14,10 @@ function resolveChipLabel(asset: AssetManifest, locale = "zh-CN"): string {
 }
 
 /**
- * canonical 消息 = 口令 + 落盘指引 + 逐文件相对路径引用。
- * 这是"真正发给智能体"的文本（含文件路径信息，供它读盘），不是给用户看的代码。
- */
-export function buildAssetReferenceMessage(asset: AssetManifest, writtenRelativePaths: string[]): string {
-  return [
-    asset.prompt,
-    "",
-    `图纸已写进项目（${writtenRelativePaths.length} 个文件），直接读这些文件按口令装进项目，不要在回复里重复贴代码：`,
-    // writtenPaths 与 asset.files 同序（main 侧按 files 顺序返回）
-    ...writtenRelativePaths.map((writtenPath, index) =>
-      buildFileMentionMarkdown(writtenPath, asset.files[index]!.name),
-    ),
-  ].join("\n");
-}
-
-/**
- * 引用 chip（V3-2）：给 composer 的结构化 mention——
+ * 引用 chip：给 composer 的结构化 mention——
  * markdown 用**首个图纸文件的相对路径**做 canonical 链接目标（点 chip 能打开文件），
  * label 用素材名。composer 侧 setMention/appendFileMention 会渲染成 chip。
- * 多个文件时 chip 指向入口文件（index.html 优先），其余文件路径留在正文里。
+ * 多个文件时 chip 指向入口文件（index.html 优先），其余文件随目录落盘、智能体按需读取。
  */
 export function buildAssetReferenceMention(
   asset: AssetManifest,
@@ -68,9 +49,9 @@ export function buildAssetReferenceMention(
 }
 
 /**
- * 引用 chip 化消息：正文=口令 + 落盘指引（**不含文件路径列表**，路径由 chip 承载），
- * mention.markdown 必须与正文 canonical 前缀一致（composer 用 startsWith 判定 chip 节点）。
- * 组装顺序遵循 composer 既有约定：`[chip] 正文`——chip 在消息开头（同插件商店试用）。
+ * chip 化消息（V4.4）：正文**只有 chip 本身**（mention.markdown），零附加文字——
+ * composer 用 startsWith 判定 chip 节点，剩余正文为空串即"纯引用块"。
+ * 落盘失败等异常路径仍退回带预期文件清单的纯文本，保持不静默。
  */
 export function buildAssetReferenceChipMessage(
   asset: AssetManifest,
@@ -78,7 +59,6 @@ export function buildAssetReferenceChipMessage(
   locale = "zh-CN",
 ): { text: string; mention?: ComposerMentionPrefill } {
   const mention = buildAssetReferenceMention(asset, writtenRelativePaths, locale);
-  const guidance = `图纸已写进项目（${writtenRelativePaths.length} 个文件），直接读这些文件按口令装进项目，不要在回复里重复贴代码。`;
   if (!mention) {
     // 落盘返回空（不该发生）：退回纯文本，保持不静默——列出预期文件名供智能体自行查找。
     const expectedFiles = asset.files.map((file) => `.zcode/asset-library/${asset.id}/${file.name}`);
@@ -86,12 +66,10 @@ export function buildAssetReferenceChipMessage(
       text: [
         asset.prompt,
         "",
-        `图纸应已写进项目（目录 .zcode/asset-library/${asset.id}/），请先读取以下文件再按口令装进项目：`,
+        `图纸应已写进项目（目录 .zcode/asset-library/${asset.id}/），请先读取以下文件再装进项目：`,
         ...expectedFiles,
       ].join("\n"),
     };
   }
-  // chip 开头 + 空行 + 口令 + 落盘指引；mention.markdown 是正文的 canonical 前缀。
-  const text = `${mention.markdown}\n\n${asset.prompt}\n\n${guidance}`;
-  return { text, mention };
+  return { text: mention.markdown, mention };
 }
