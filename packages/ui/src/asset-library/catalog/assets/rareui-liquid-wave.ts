@@ -29,6 +29,6 @@ export const RareUiLiquidWaveAsset: AssetManifest = {
   source: { site: "RareUI", url: "https://github.com/Codewithswappy/RareUI", license: "MIT" },
   preview: {
     theme: "rareui",
-    demo: "import LiquidWave from \"./LiquidWave\";\nexport default function Demo() { return <LiquidWave color1=\"#38bdf8\" color2=\"#818cf8\" color3=\"#f472b6\" />; }",
+    demo: "import LiquidWave from \"./LiquidWave\";\nexport default function Demo() { return <div style={{ width: \"100vw\", height: \"100vh\" }}><LiquidWave color1=\"#38bdf8\" color2=\"#818cf8\" color3=\"#f472b6\" /></div>; }",
   },
 };

@@ -38,12 +38,23 @@ export const PREVIEW_DESIGN_HEIGHT = 500;
 export const NO_SCROLL_PREVIEW_STYLE =
   "<style>html,body{overflow:hidden!important;scrollbar-width:none!important}::-webkit-scrollbar{width:0!important;height:0!important;display:none!important}</style>";
 
-/** 把兜底样式注进预览 HTML（有 head 插 head，否则前置——避免破坏 doctype 触发怪异模式）。 */
+/**
+ * 导航拦截：收录货的 demo 里带着上游的真实外链（如 RareUI 数据表的 x.com 链接），
+ * 沙箱只给 allow-scripts 时点击 <a> 会把 iframe **自己**导航走（self-navigation 不被
+ * sandbox 拦），原预览整个消失——真机表现"点一下就黑了"。捕获段 preventDefault
+ * 把一切链接跳转/表单提交按死在预览里；弹窗（target=_blank/window.open）本来就被
+ * 无 allow-popups 的沙箱挡住，无需处理。
+ */
+export const NO_NAVIGATE_PREVIEW_SCRIPT =
+  "<script>document.addEventListener('click',function(e){var t=e.target;if(t&&t.closest&&t.closest('a[href]')){e.preventDefault();e.stopPropagation();}},true);document.addEventListener('submit',function(e){e.preventDefault();},true);</script>";
+
+/** 把兜底样式与导航拦截注进预览 HTML（有 head 插 head，否则前置——避免破坏 doctype 触发怪异模式）。 */
 export function withNoScrollPreview(html: string): string {
   const headMatch = /<head[^>]*>/i.exec(html);
+  const injected = NO_SCROLL_PREVIEW_STYLE + NO_NAVIGATE_PREVIEW_SCRIPT;
   return headMatch
-    ? html.replace(headMatch[0], headMatch[0] + NO_SCROLL_PREVIEW_STYLE)
-    : NO_SCROLL_PREVIEW_STYLE + html;
+    ? html.replace(headMatch[0], headMatch[0] + injected)
+    : injected + html;
 }
 
 interface AssetPreviewFrameProps {

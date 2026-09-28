@@ -100,12 +100,11 @@ export function AssetDemoCard({
 } & AssetCardActions) {
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
-  const { ref, inView } = useInView<HTMLDivElement>();
-  // 首挂后不卸（V3-1）：inView 只管「第一次」挂载和之后的显示/隐藏。
-  const [hasBeenInView, setHasBeenInView] = useState(false);
-  useEffect(() => {
-    if (inView) setHasBeenInView(true);
-  }, [inView]);
+  // 视口 ±1200px 内才挂真沙箱，离远即卸载（V4.3）：253 张卡若"挂后永不卸"，
+  // 活跃 WebGL 上下文会随滚动越积越多，撞上 Chromium ~16 个的限额后最早的画布
+  // 直接丢上下文变空白（真机：金属字等 WebGL 货空白、脱离应用单开却正常）。
+  // 卸载发生在缓冲带内、卡片保持 aspect-ratio 高度，滚动不跳、重挂不闪屏。
+  const { ref, inView } = useInView<HTMLDivElement>("1200px 0px");
   const blueprintFiles = resolveBlueprintFiles(manifest);
   const isPromptAsset = manifest.files.length === 0;
   const [codeOpen, setCodeOpen] = useState(false);
@@ -321,10 +320,11 @@ export function AssetDemoCard({
         <p className="truncate text-ui-sm leading-snug text-foreground-subtle">{description}</p>
       </header>
 
-      {/* 演示舞台（V3 缩放舞台）：纵横比恒等于设计视口（880×550），AssetPreviewFrame 把
+      {/* 演示舞台（V3 缩放舞台）：纵横比恒等于设计视口（800×500），AssetPreviewFrame 把
           demo 按设计视口渲染再等比缩进来——内容永远完整，不裁切、不错位、无滚动条。
           浅色 demo（三站原版多为浅色主题）在这层画框里是"作品照"，与深色 UI 的反差是
-          有意的装裱，不再显得突兀。首次进视口挂真沙箱，之后永久保留 DOM（滚动零重挂载）。 */}
+          有意的装裱，不再显得突兀。视口 ±1200px 缓冲带内挂真沙箱（V4.3，防 WebGL
+          上下文耗尽），离远卸载、回到缓冲带重挂。 */}
       <div
         ref={ref}
         data-testid="asset-library-preview"
@@ -332,8 +332,8 @@ export function AssetDemoCard({
         className="w-full shrink-0 overflow-hidden rounded-xl border border-border bg-background"
         style={{ aspectRatio: `${PREVIEW_DESIGN_WIDTH} / ${PREVIEW_DESIGN_HEIGHT}` }}
       >
-        {hasBeenInView ? (
-          <div className="h-full w-full" style={{ display: inView ? undefined : "none" }}>
+        {inView ? (
+          <div className="h-full w-full">
             <AssetPreviewFrame previewHtml={manifest.previewHtml} title={manifest.title} />
           </div>
         ) : (
