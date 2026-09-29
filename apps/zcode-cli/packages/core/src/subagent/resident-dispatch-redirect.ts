@@ -86,6 +86,7 @@ export function createResidentDispatchRedirectPort(
         content: [{ type: "text" as const, text }],
         totalToolUseCount: 0,
         totalDurationMs: Date.now() - startedAt,
+        workOrderRedirect: true,
       };
     } catch {
       // 端口拒绝（工单轮嵌套上限等）→ 回落原派遣，不改行为。

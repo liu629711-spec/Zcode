@@ -147,11 +147,16 @@ function formatAgentOutputForModel(output: unknown): string {
       `tool_uses: ${data.totalToolUseCount}`,
       `duration_ms: ${data.totalDurationMs}`,
     ];
-    return [
-      ...childContent,
-      `agentId: ${data.agentId} (use SendMessage with to: '${data.agentId}' to continue this agent)`,
-      `<usage>${usageLines.join("\n")}</usage>`,
-    ].join("\n");
+    // 改判产物（resident-dispatch-redirect）：没有临时工实例可续，续接提示会教模型
+    // 回头用 SendMessage 找不存在的东西——恰好是 2026-09-29 真机事故的源头；
+    // usage 同理（没有 helper 运行过），一并省略。
+    const trailingLines = data.workOrderRedirect
+      ? []
+      : [
+          `agentId: ${data.agentId} (use SendMessage with to: '${data.agentId}' to continue this agent)`,
+          `<usage>${usageLines.join("\n")}</usage>`,
+        ];
+    return [...childContent, ...trailingLines].join("\n");
   }
 
   const launchLines = [

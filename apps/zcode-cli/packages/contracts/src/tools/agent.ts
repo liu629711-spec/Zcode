@@ -52,6 +52,12 @@ export interface AgentCompletedOutput {
   totalDurationMs: number;
   totalTokens?: number;
   usage?: ModelUsage;
+  /**
+   * 本次“派遣”实际被改判成了向驻场智能体投递的工单（resident-dispatch-redirect）。
+   * 展示层据此省略「用 SendMessage 续接」的临时工提示——改判没有临时工实例，
+   * 那句提示会教模型去 SendMessage 找一个不存在的对象（2026-09-29 真机事故源头）。
+   */
+  workOrderRedirect?: boolean;
 }
 
 export interface AgentBackgroundedOutput {
@@ -88,6 +94,7 @@ export const AgentCompletedOutputSchema = z
     totalDurationMs: z.number().int().nonnegative(),
     totalTokens: z.number().int().nonnegative().optional(),
     usage: z.record(z.unknown()).optional(),
+    workOrderRedirect: z.boolean().optional(),
   })
   .strict();
 
