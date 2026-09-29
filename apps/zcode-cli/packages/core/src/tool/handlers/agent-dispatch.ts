@@ -110,10 +110,13 @@ export const agentDispatchToolEntry: ToolEntry = {
   metadata: {
     name: "AgentDispatch",
     // 三条划界写进 contract：与点将（Agent/Task = 临时工）、与 SendMessage、与普通回话。
+    // 选择的默认取向（2026-09-29 真机教训）：用户点名让某个智能体做任何事（哪怕一句你好）
+    // 都必须走本工具——临时工豁免会把"让 X 给我发个你好"这类主场景吞给 Agent 工具。
     description:
-      "Hand a complete task to another agent's resident persona session in the current workspace. The task runs in that agent's own session with its own identity, memory and permissions, leaves a permanent record there, and a receipt with the final answer is delivered back to this session later. This is different from the Agent tool (@-mentioned temporary helpers): temporary helpers run inside THIS conversation and leave no trace elsewhere. It is also different from SendMessage, which only relays a message to a running subagent. Use it when the user asks to hand work over to a specific agent of this workspace, not for quick in-conversation questions.",
+      "Hand a task to another agent of this workspace: the task is delivered into that agent's own resident session, runs there with that agent's identity, memory and permissions, and leaves a permanent record in that session; a receipt carrying the final answer is delivered back to this conversation afterwards. This is the right tool whenever the user asks another agent BY NAME to do something or to send something - e.g. 'have UI-plus send me a greeting', '让 UI-plus 给我发个你好', 'ask code-plus to fix the login page', 'open a new session for code-plus and have it ...' - no matter how small the task is: the user expects it to land in that agent's own session, not this one. Do not confuse it with the Agent tool's in-conversation helpers: a helper runs inside THIS conversation, leaves nothing in the named agent's session, and that agent never learns about the task. Only keep a named agent's task inside this conversation when the user explicitly asks to handle it right here without involving that agent's session.",
     modelInstructions: [
-      "Use only when the user explicitly asks to hand a task to another agent of this workspace (派单/交给/转交某智能体). Do not use it for quick questions that a temporary in-conversation helper can answer.",
+      "Default to this tool whenever the user's message names another agent of this workspace as the doer - 让/叫/请/交给/转交/给 <name> 发…做…, have <name> ..., ask <name> to ..., open a new session for <name> - INCLUDING greetings and other one-line asks. The named agent must receive the task in its own session; do NOT answer with an in-conversation subagent for these.",
+      "Handle the request inside this conversation only when the user explicitly wants it handled here without involving the other agent's session, or is asking about the agents rather than tasking them.",
       "Pass the agent's agentId when it is known; otherwise pass the agent's exact name. Ambiguous or unknown names are rejected - never guess an id.",
       "Write the task as complete standalone instructions; the target agent cannot see this conversation.",
       "Set newSession=true only when the user asks for a fresh session; by default the task goes to the agent's latest persona session.",
