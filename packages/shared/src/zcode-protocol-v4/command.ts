@@ -245,6 +245,16 @@ export const commandPayloadSchemas = {
   // amendWorkflowRunSettings：run 卡 / 详情页的「配置」直接请 agent 以新设置修订 run，不经模型轮。载荷、结果与拒绝
   // 词表见 workflow-run-settings-command.ts；能力缺席 → V4CapabilityUnsupportedError。
   amendWorkflowRunSettings: amendWorkflowRunSettingsPayloadSchema,
+  // dispatchAgentWorkOrder：@ 菜单「派单」直达宿主能力（D29/D5，不经模型绕圈）。
+  // 与点将（agent:// 提及）语义分开：工单进对方常驻会话留档动他的记忆，干完有回执。
+  // 业务拒绝以 guard.agentWorkOrder* 的 reasonCode 回 ACK（词表在 bootstrap 端口）。
+  dispatchAgentWorkOrder: z.object({
+    // 目标档案名（UI 从档案目录下发，本就是精确名）；服务端照旧 agentId 优先、歧义拒绝。
+    agent: z.string().trim().min(1),
+    task: z.string().trim().min(1).max(8192),
+    // true 强制开新 persona 会话；缺省投目标最新一段（无则自动开）。
+    newSession: z.boolean().optional(),
+  }),
   renameSession: z.object({ title: z.string() }),
   deleteSession: z.object({}),
   discardSharedContext: z.object({ contextId: z.string().trim().min(1) }).strict(),
@@ -420,6 +430,15 @@ export const commandResultSchema = z.discriminatedUnion("type", [
     delivery: z.enum(["startNow", "queue", "guide"]),
     inputId: z.string(),
     messageId: z.string().optional(),
+  }),
+  z.object({
+    // dispatchAgentWorkOrder accepted ACK（D29/D5）：发起方「已受理」凭据。
+    // delivery=queued 表示目标忙、已按既有消息排队——投递成功 ≠ 对方已处理，措辞不得暗示已开跑。
+    type: z.literal("dispatchAgentWorkOrder"),
+    targetSessionId: z.string().min(1),
+    agentName: z.string(),
+    delivery: z.enum(["started", "queued"]),
+    createdSession: z.boolean(),
   }),
   z.object({
     // restart discarded 过去只返回一个无差别 fault，renderer 无法区分

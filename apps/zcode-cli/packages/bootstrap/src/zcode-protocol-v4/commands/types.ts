@@ -278,4 +278,19 @@ export interface V4CommandCoreHost {
     envelope: CommandEnvelope,
     error: unknown,
   ): Promise<void>;
+  /**
+   * 派单（D29/D5）执行面：@ 菜单「派单」直达宿主能力。binder 实现里组装协议派单端口
+   * （createProtocolAgentDispatchPort，发起方会话惰性绑定 envelope.sessionId）——
+   * 目标解析/冷会话恢复/回执接线全在端口实现里，与 core 工具共用同一条投递链；
+   * 业务拒绝以 guard.agentWorkOrder* 的 reasonCode 抛出，网关原样上行进 ack.reasonCode。
+   */
+  dispatchAgentWorkOrder?(
+    sessionId: string,
+    input: CommandPayloadMap["dispatchAgentWorkOrder"],
+  ): Promise<{
+    targetSessionId: string;
+    agentName: string;
+    delivery: "started" | "queued";
+    createdSession: boolean;
+  }>;
 }

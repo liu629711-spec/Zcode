@@ -1,6 +1,7 @@
 // 原生 handler 注册表（每组加一行 spread）。
 // 组文件命名 = 命令分组：session-flow / queue / session-mgmt /
 // goal-compact / model-config / interaction-background / fork-edit-retry。
+import { agentWorkOrderHandlers } from "./agent-work-order.js";
 import { forkEditRetryHandlers } from "./fork-edit-retry.js";
 import { fileRewindHandlers } from "./file-rewind.js";
 import { goalCompactHandlers } from "./goal-compact.js";
@@ -23,4 +24,5 @@ export const NATIVE_HANDLERS = {
   ...forkEditRetryHandlers,
   ...fileRewindHandlers,
   ...assistantFeedbackHandlers,
+  ...agentWorkOrderHandlers,
 } as const;

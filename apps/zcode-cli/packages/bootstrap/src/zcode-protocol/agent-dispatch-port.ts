@@ -44,6 +44,20 @@ export interface ProtocolAgentDispatchPortDeps {
 }
 
 /**
+ * 工单拒绝 guard id（UI 按它分流成人话，不走错误文本匹配——网关约定：
+ * 携带 reasonCode 的领域错误原样上行进 ack.reasonCode，error.message 进 ack.message）。
+ */
+export const AGENT_WORK_ORDER_GUARDS = {
+  nested: "guard.agentWorkOrderNested",
+  targetNotFound: "guard.agentWorkOrderTargetNotFound",
+  targetAmbiguous: "guard.agentWorkOrderTargetAmbiguous",
+} as const;
+
+function agentWorkOrderGuardError(reasonCode: string, message: string): Error {
+  return Object.assign(new Error(message), { name: "AgentWorkOrderGuardError", reasonCode });
+}
+
+/**
  * persona 快照 × 目标档案对号（照 findLatestPersonaChatRow 判据，D26）：
  * 两边都有号只认号；任一侧无号才比名字。
  */
@@ -115,23 +129,31 @@ export function createProtocolAgentDispatchPort(
     async dispatch(input: AgentDispatchRequest): Promise<AgentDispatchResult> {
       const ownRecord = deps.resolveOwnSession?.();
       if (!ownRecord) {
-        throw new Error("AgentDispatch is not bound to a session record");
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.nested,
+          "AgentDispatch is not bound to a session record",
+        );
       }
       // 端口自检：工单唤醒轮内再派单 → 直接拒绝（照 automation-port 自检先例）。
       const activeInputId = ownRecord.app.runtime.getActiveTurnInfo()?.inputId;
       if (activeInputId?.trim().startsWith(WORK_ORDER_INPUT_ID_PREFIX)) {
-        throw new Error("Cannot dispatch a work order while running an agent work order turn.");
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.nested,
+          "Cannot dispatch a work order while running an agent work order turn.",
+        );
       }
 
       const profiles = ownRecord.app.runtime.getAgentProfiles();
       const resolution = resolveWorkOrderTarget(input.agent, profiles);
       if (resolution.kind === "not_found") {
-        throw new Error(
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.targetNotFound,
           `No agent profile matches "${resolution.agent}" in this workspace. Ask the user to check the agent name or id.`,
         );
       }
       if (resolution.kind === "ambiguous") {
-        throw new Error(
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.targetAmbiguous,
           `Agent "${resolution.agent}" matches multiple profiles (${resolution.matchedNames.join(", ")}). Dispatch by the agent's unique agentId instead.`,
         );
       }

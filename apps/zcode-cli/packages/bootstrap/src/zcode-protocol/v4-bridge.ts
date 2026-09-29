@@ -97,6 +97,7 @@ import {
   registerForkedSession,
   readSessionContextUsage,
 } from "./server-operations.js";
+import { createProtocolAgentDispatchPort } from "./agent-dispatch-port.js";
 import type {
   ZCodeProtocolAgentServerContext,
   ZCodeProtocolSessionRecord,
@@ -1348,6 +1349,23 @@ export function createConversationV4Gateway(
     recordForkStartFailure: async (sessionId, envelope, error) => {
       await recordForkStartFailureBestEffort(context, sessionId, envelope, error, {
         parentSessionId: String(envelope.sessionId ?? ""),
+      });
+    },
+    // 派单（D29/D5）执行面：组装协议派单端口（发起方会话惰性绑定），投递与回执接线
+    // 全在端口实现里；guard.agentWorkOrder* 拒绝带 reasonCode 上行，UI 据此说人话。
+    dispatchAgentWorkOrder: async (sessionId, input) => {
+      const port = createProtocolAgentDispatchPort(context, {
+        resolveOwnSession: () => context.sessions.get(sessionId),
+        createPersonaSessionRecord: async ({ workspace, persona }) =>
+          await createSessionRecordForV4(context, { workspace, persona, persistence: "immediate" }),
+        activateSessionRecord: async (targetSessionId) =>
+          (await activateSessionForResume(context, { sessionId: targetSessionId })).record,
+      });
+      return await port.dispatch({
+        agent: input.agent,
+        task: input.task,
+        ...(input.newSession !== undefined ? { newSession: input.newSession } : {}),
+        sourceSessionId: sessionId,
       });
     },
   };
