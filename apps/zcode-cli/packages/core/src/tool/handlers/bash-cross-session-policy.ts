@@ -35,6 +35,14 @@ const CROSS_SESSION_LONG_FLAGS = new Set(["--resume", "--continue", "--fork"]);
 /** 短开关 -c = --continue。只在 argv[0] 本身就是 zcode CLI 时认它，避免 grep -c 之类误伤。 */
 const CROSS_SESSION_SHORT_FLAGS = new Set(["-c"]);
 
+/**
+ * 无头建会话开关（真机事故 2026-09-30 补收）：`zcode --prompt/-p …` 另起一个
+ * 不进产品名册的野会话，与 --resume 同属绕开派单/审批链的后门——模型已用它
+ * 绕过后门还谎报"新会话开好了"。与跨会话开关同一守卫（alwaysAsk 压过 yolo）。
+ */
+const HEADLESS_RUN_LONG_FLAGS = new Set(["--prompt"]);
+const HEADLESS_RUN_SHORT_FLAGS = new Set(["-p"]);
+
 /** 把脚本字符串再递归交给守卫的壳命令：`bash -c 'zcode --resume x'` 也算跨会话操作。 */
 const SHELL_WRAPPERS = new Set([
   "bash",
@@ -70,11 +78,11 @@ export function isCrossSessionCliInvocation(command: string, depth = 0): boolean
   return analysis.commands.some((invocation) => isGuardedInvocation(invocation.argv, depth));
 }
 
-/** 原文兜底：同时提到 zcode 系可执行与跨会话开关字面量才算（误伤面极窄，方向是多确认）。 */
+/** 原文兜底：同时提到 zcode 系可执行与跨会话/无头开关字面量才算（误伤面极窄，方向是多确认）。 */
 function rawTextGuard(text: string): boolean {
   return (
     /\bzcode(?:\.(?:exe|cmd|ps1|cjs|mjs|js))?\b/i.test(text) &&
-    /--resume|--continue|--fork/.test(text)
+    /--resume|--continue|--fork|--prompt/.test(text)
   );
 }
 
@@ -91,10 +99,11 @@ function isGuardedInvocation(argv: readonly string[], depth: number): boolean {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index]!;
     if (CROSS_SESSION_LONG_FLAGS.has(token) || token.startsWith("--resume=")) return true;
-    // -c 只在紧跟 zcode 位置上才算它的开关（`zcode -c`、`env X=1 zcode -c`），
-    // `grep -c zcode` 这类撞车不算。
+    if (HEADLESS_RUN_LONG_FLAGS.has(token) || token.startsWith("--prompt=")) return true;
+    // -c/-p 只在紧跟 zcode 位置上才算它的开关（`zcode -c`、`env X=1 zcode -p hi`），
+    // `grep -c zcode`、`sort -p` 这类撞车不算。
     if (
-      CROSS_SESSION_SHORT_FLAGS.has(token) &&
+      (CROSS_SESSION_SHORT_FLAGS.has(token) || HEADLESS_RUN_SHORT_FLAGS.has(token)) &&
       index > 0 &&
       ZCODE_CLI_BASENAMES.has(executableBasename(argv[index - 1]!))
     ) {

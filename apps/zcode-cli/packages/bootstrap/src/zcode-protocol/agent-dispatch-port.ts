@@ -184,13 +184,13 @@ export function createProtocolAgentDispatchPort(
         // （一个 CLI 进程一个 workspace，跨 workspace 目标在这里就不存在）。
         // 本单指定模型（D32）覆盖档案默认：新会话从出生就带着它（persona
         // modelSelection 走 create 路径落会话常驻选择），后续轮不回退。
-        // workOrderOnly（D32 真机事故）：逐单开的工作台会话不进侧栏/归档列表，
-        // 结果由回执送回发起方——否则会话区堆成片一次性空壳（用户原话"太混乱"）。
+        // 可见性（真机反馈 2026-09-30）：用户点名"新建一个会话"就是要看得见的新
+        // 会话——不盖 workOrderOnly（隐藏机制保留备用）；派单堆积的真正解法是
+        // 复用最近会话（不带 newSession 的派单永远不新增行）+ 守住 CLI 后门。
         const created = await deps.createPersonaSessionRecord({
           workspace: ownRecord.workspace,
           persona: {
             ...profileToPersona(profile),
-            workOrderOnly: true,
             ...(input.modelSelection === undefined
               ? {}
               : { modelSelection: input.modelSelection }),

@@ -58,12 +58,28 @@ test("命令替换/反引号体静态不可知，按原文兜底守卫", () => {
 });
 
 test("普通命令不误伤：无跨会话开关、或未提到 zcode 都放行", () => {
-  assert.equal(isCrossSessionCliInvocation('zcode --prompt "帮我看看这段日志"'), false);
   assert.equal(isCrossSessionCliInvocation("grep -c zcode access.log"), false);
   assert.equal(isCrossSessionCliInvocation('echo "以后用 zcode --resume 接着聊"'), false);
   assert.equal(isCrossSessionCliInvocation("bash -c 'echo hi'"), false);
   assert.equal(isCrossSessionCliInvocation("git status"), false);
   assert.equal(isCrossSessionCliInvocation(""), false);
+});
+
+test("无头建会话后门（真机事故 2026-09-30）：zcode --prompt/-p 直呼被守卫拦下", () => {
+  // 事故原命令形状：node + 开发版绝对路径 + --prompt 新建野会话。
+  assert.equal(
+    isCrossSessionCliInvocation(
+      'node "D:/ZCodeing/ZCode/apps/zcode-cli/packages/cli/dist/zcode.cjs" --prompt "请只回复一句话，内容要带帅哥二字"',
+    ),
+    true,
+  );
+  assert.equal(isCrossSessionCliInvocation("zcode --prompt 帮我看看日志"), true);
+  assert.equal(isCrossSessionCliInvocation("zcode --prompt=帮我看看日志"), true);
+  // 短旗标 -p 只在紧跟 zcode 时算（env 前缀也认）；sort -p 这类撞车不误伤。
+  assert.equal(isCrossSessionCliInvocation("env ZCODE_MODEL=x zcode -p 你好"), true);
+  assert.equal(isCrossSessionCliInvocation("sort -p zcode.txt"), false);
+  // 壳命令递归同样覆盖。
+  assert.equal(isCrossSessionCliInvocation("bash -c 'zcode --prompt hi'"), true);
 });
 
 test("解析失败的命令按原文保守兜底（宁可多确认）", () => {
