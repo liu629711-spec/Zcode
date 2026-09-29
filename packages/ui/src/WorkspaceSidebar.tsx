@@ -146,6 +146,7 @@ import {
 import {
   buildAgentMemoryDirectoryHint,
   buildRenamedPersonaTitle,
+  findLatestArchivedPersonaChatRow,
   findLatestPersonaChatRow,
   getPersonaChatBadge,
   isPersonaChatRowOfRenamedAgent,
@@ -156,6 +157,7 @@ import {
   toPersonaChatBadge,
   type ProjectAgentPersona,
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { applyTaskQueryCacheMutation } from "@/store/taskQueryCacheStore.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
 import { toast } from "@/components/ui/toast.js";
@@ -2080,11 +2082,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 target.workspaceIdentity,
               );
               const rows = workspaceTaskGroupByKey.get(workspaceKey)?.items ?? [];
+              const agents = projectAgents.agentsByWorkspaceKey.get(workspaceKey);
               const latest = findLatestPersonaChatRow(
                 rows,
                 agent,
                 usePersonaChatBadgeStore.getState().badgeByWorkspaceKey[workspaceKey],
-                projectAgents.agentsByWorkspaceKey.get(workspaceKey),
+                agents,
               );
               if (latest) {
                 registerPersonaChatBadge({
@@ -2096,7 +2099,52 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 onSelectTask(target.workspacePath, latest.taskId, target.workspaceIdentity);
                 return;
               }
-              void openProjectAgentChat(toProjectAgentPersona(agent), target);
+              // 归档兜底（真机事故 2026-09-29）：员工对话被（正常）归档后不进侧栏
+              // 列表（规则=!pinned&&!archived），上面的查找永远落空 → 点员工被当
+              // 首见开空白草稿，历史像"丢了"。这里去归档堆捞最近一段：取消归档
+              // 回列表再续接；档案柜里也真没有，才轮到新开一段（首见）。
+              void (async () => {
+                try {
+                  if (!boundServicesResolution.rpcReady) {
+                    throw new Error("workspace task service not ready");
+                  }
+                  const scope = {
+                    workspacePath: target.workspacePath,
+                    ...(target.workspaceIdentity ? { workspaceIdentity: target.workspaceIdentity } : {}),
+                  };
+                  const archived =
+                    await boundServicesResolution.services.zcodeTaskService.listArchivedTasks(scope);
+                  const archivedLatest = findLatestArchivedPersonaChatRow(archived, agent);
+                  if (!archivedLatest) {
+                    void openProjectAgentChat(toProjectAgentPersona(agent), target);
+                    return;
+                  }
+                  const restored =
+                    await boundServicesResolution.services.zcodeTaskService.unarchiveTask({
+                      taskId: archivedLatest.taskId,
+                      ...scope,
+                    });
+                  if (restored) {
+                    applyTaskQueryCacheMutation({
+                      previousTask: archivedLatest,
+                      nextTask: restored,
+                      previousState: { pinned: false, archived: true },
+                      nextState: { pinned: false, archived: false },
+                    });
+                  }
+                  registerPersonaChatBadge({
+                    workspacePath: target.workspacePath,
+                    workspaceIdentity: target.workspaceIdentity,
+                    taskId: archivedLatest.taskId,
+                    badge: toPersonaChatBadge(agent),
+                  });
+                  onSelectTask(target.workspacePath, archivedLatest.taskId, target.workspaceIdentity);
+                } catch (error) {
+                  // 查找/恢复失败退回旧行为（新开一段）：罕见路径，不阻塞老板找到人聊天。
+                  logger.warn("[workspaceSidebar] 归档堆续接查找失败，退回新开对话", error);
+                  void openProjectAgentChat(toProjectAgentPersona(agent), target);
+                }
+              })();
             }}
             onOpenNewChat={(agent) => {
               const target = projectAgentCreateTarget;

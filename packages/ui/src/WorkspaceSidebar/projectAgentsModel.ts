@@ -450,6 +450,26 @@ export function findLatestPersonaChatRow<
   return latest;
 }
 
+/**
+ * 员工在归档堆里的最近一段（D3 续接的归档兜底）：归档行不进侧栏列表（列表规则
+ * = !pinned && !archived），而续接查找只扫侧栏已加载行——员工对话被（正常）归档后，
+ * 点开员工永远找不到历史、被当首见开空白草稿（真机事故 2026-09-29：用户归档清理
+ * 侧栏，全部员工会话像"消失"）。这里对归档任务 meta 做同款标题反推，再复用
+ * findLatestPersonaChatRow 的认人逻辑取最近一段。已知上限与标题反推一致：归档前
+ * 改过名（标题前缀还是旧名）且登记徽章已随重启丢失时认不出——彻底解仍是
+ * tasks-index meta_json 落盘工牌。
+ */
+export function findLatestArchivedPersonaChatRow<
+  T extends { taskId: string; title: string; updatedAt: number } & PersonaChatBadgeCarrier,
+>(archivedTasks: readonly T[], agent: PersonaBadgeAgentEntry): T | undefined {
+  return findLatestPersonaChatRow(
+    applyDerivedPersonaChatBadges(archivedTasks, [agent]),
+    agent,
+    undefined,
+    [agent],
+  );
+}
+
 /** 「按智能体」视图的分栏（D3）：员工组带栏头工牌；未归号会话进无徽章的兜底组。 */
 export interface PersonaBadgeTaskGroup<T> {
   key: string;

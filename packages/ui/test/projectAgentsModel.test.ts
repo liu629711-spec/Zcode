@@ -10,6 +10,7 @@ import {
   buildRetitledPersonaTitle,
   derivePersonaChatBadge,
   findLatestPersonaChatRow,
+  findLatestArchivedPersonaChatRow,
   findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
   isPersonaChatRowOfRenamedAgent,
@@ -561,6 +562,21 @@ test("findLatestPersonaChatRow：三路对号找员工最近一段会话，取 u
   );
   // 没有任何归属 → undefined（首见员工走新建）。
   assert.equal(findLatestPersonaChatRow(rows, { name: "查无此人" }, new Map(), []), undefined);
+});
+
+test("findLatestArchivedPersonaChatRow：归档堆里靠标题反推捞员工最近一段（无登记可用）", () => {
+  // 归档行不进侧栏列表，登记徽章重启即丢——唯一线索是存储标题的「名字 · 」前缀。
+  const archived = [
+    { taskId: "a1", title: "ui-plus · 一次派单任务", updatedAt: 200 },
+    { taskId: "a2", title: "ui-plus · 你好", updatedAt: 500 },
+    { taskId: "a3", title: "普通会话没前缀", updatedAt: 900 },
+  ];
+  assert.equal(findLatestArchivedPersonaChatRow(archived, { name: "ui-plus" })?.taskId, "a2");
+  // 档案柜里真没有这个员工 → undefined（首见，走新开一段）。
+  assert.equal(findLatestArchivedPersonaChatRow(archived, { name: "查无此人" }), undefined);
+  // 前缀陷阱：员工 ui-pro 不能认领 ui-pro-team 的归档行。
+  const trapped = [{ taskId: "t1", title: "ui-pro-team · 他的话题", updatedAt: 800 }];
+  assert.equal(findLatestArchivedPersonaChatRow(trapped, { name: "ui-pro" }), undefined);
 });
 
 test("findLatestPersonaChatRow：按号认人，员工改名后旧会话照样续得上（D26）", () => {
