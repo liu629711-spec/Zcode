@@ -73,6 +73,12 @@ export function AgentWorkOrderDraftCard({
         className="mt-2 w-full resize-none rounded-xl border border-border bg-surface px-2.5 py-2 text-ui-base leading-5 text-foreground outline-none placeholder:text-foreground-subtlest focus:border-[var(--color-ring)] disabled:opacity-60"
         onChange={(event) => onTaskChange(event.target.value)}
         onKeyDown={(event) => {
+          // 中文 IME 组合期（选词/撤词）的 Enter/Esc 属于输入法操作：
+          // Enter 不能把没打完的任务提交出去（LexicalChatInput.shouldSubmitLexicalEnter
+          // 同一守卫），Esc 不能顺手关卡片。
+          if (event.nativeEvent.isComposing) {
+            return;
+          }
           if (event.key === "Escape") {
             event.stopPropagation();
             onCancel();
