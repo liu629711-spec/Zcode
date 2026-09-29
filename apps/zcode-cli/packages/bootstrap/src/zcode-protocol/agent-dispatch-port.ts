@@ -194,6 +194,14 @@ export function createProtocolAgentDispatchPort(
       const targetRecord =
         context.sessions.get(targetSessionId) ??
         (await deps.activateSessionRecord(targetSessionId));
+      // 真机事故修复（2026-09-29）：新建的 persona 会话此前不落行，draft 态不进会话区
+      // （侧栏看不见“新开的会话”），且冷恢复按 id 查库落空。工单是外部活动，落行语义
+      // 照既有的 ensureSessionPersistedForExternalActivity——首输入用任务正文，标题
+      // 因此是「智能体名 · 任务」。投递前后都幂等（sessionPersisted 置位即返回）。
+      await targetRecord.app.runtime.ensureSessionPersistedForExternalActivity(
+        input.task,
+        { traceContext: targetRecord.traceContext },
+      );
       const admission = await targetRecord.app.runtime.enqueueAgentWorkOrder({
         envelope,
         traceContext: targetRecord.traceContext,
