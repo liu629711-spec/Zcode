@@ -163,3 +163,23 @@ export const workflowLaunchMetaSchema = z.object({
   amend: workflowSettingsAmendMetaSchema.optional(),
 });
 export type WorkflowLaunchMeta = z.infer<typeof workflowLaunchMetaSchema>;
+
+// 派单工单的唤醒轮元数据（D29/D5）。
+// 目标会话里该轮没有可见用户行（carrier 是 model-only synthetic notice），工单卡是唯一
+// 呈现：来源标注（谁派的单）+ 任务正文，缩进/边框防对方输出冒充本会话指令。
+// 冷恢复（消息 metadata.envelope）与活投影（TurnStarted payload）取同一份，冷热同形
+// （workflowLaunch 同一纪律）。发射侧铸造、有界：任务正文在卡片上完整可读，
+// 8KB 上界与工单 carrier 的实际用量对齐，防大粘贴撑爆每行协议载荷。
+export const agentWorkOrderMetaSchema = z.object({
+  // 工单身份（uuid）；回执 originMeta.workId 与它对账。
+  workOrderId: z.string().min(1).max(128),
+  // 发起方档案名；用户会话直接派单时为空串（卡片据此改标「来自用户」）。
+  fromAgentName: z.string().max(200),
+  // 发起方智能体工号；发起方不是驻场智能体时缺席。
+  fromAgentId: z.string().min(1).max(128).optional(),
+  // 发起方会话 id（回执的归还地址），供诊断；卡片不显示。
+  fromSessionId: z.string().min(1).max(128),
+  // 任务正文（工单 carrier 里 <work-order> 标签内的原文）。
+  task: z.string().max(8192),
+});
+export type AgentWorkOrderMeta = z.infer<typeof agentWorkOrderMetaSchema>;

@@ -4,7 +4,11 @@
 import { z } from "zod";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { timestampSchema } from "./core.js";
-import { backgroundResultOriginMetaSchema, workflowLaunchMetaSchema } from "./workflow-row-meta.js";
+import {
+  agentWorkOrderMetaSchema,
+  backgroundResultOriginMetaSchema,
+  workflowLaunchMetaSchema,
+} from "./workflow-row-meta.js";
 
 // RowBase。rowId：session 内单调、永不复用、事件日志的确定性纯函数。
 const rowBaseFields = {
@@ -34,10 +38,12 @@ export type RowActions = NonNullable<z.infer<typeof rowActionsSchema>>;
 
 // workflow 轮的行级元数据拆到了 workflow-row-meta.ts（max-lines）；名字在此原样再导出。
 export {
+  agentWorkOrderMetaSchema,
   backgroundResultOriginMetaSchema,
   workflowLaunchMetaSchema,
   workflowNotificationMetaSchema,
   workflowSettingsAmendMetaSchema,
+  type AgentWorkOrderMeta,
   type BackgroundResultOriginMeta,
   type WorkflowLaunchMeta,
   type WorkflowNotificationMeta,
@@ -88,6 +94,9 @@ export const turnHeaderRowSchema = z.object({
   originMeta: backgroundResultOriginMetaSchema.optional(),
   // origin === "workflowLaunch" 的轮上在场（活投影来源）；与 originMeta 并列，不复用其形状。
   workflowLaunch: workflowLaunchMetaSchema.optional(),
+  // origin === "agentWorkOrder" 的轮上在场（D29/D5 工单卡：来源标注 + 任务正文；
+  // 该轮没有可见用户行，这张卡就是工单在目标会话的全部呈现）。冷热同形同 workflowLaunch。
+  agentWorkOrder: agentWorkOrderMetaSchema.optional(),
   fileChanges: z
     .object({
       additions: z.number(),

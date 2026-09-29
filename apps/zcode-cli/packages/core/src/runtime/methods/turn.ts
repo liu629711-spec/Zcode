@@ -322,6 +322,8 @@ export async function executeTurnCommand(
           inputSource: options?.inputSource,
           inputVisibility: options?.inputVisibility,
           originMeta: options?.originMeta,
+          // 工单卡元数据（D29/D5）：工单唤醒轮随 TurnStarted 下发，投影写上 turnHeader。
+          ...(options?.agentWorkOrder ? { agentWorkOrder: options.agentWorkOrder } : {}),
           ...(options?.epilogueStart === undefined ? {} : { epilogueStart: options.epilogueStart }),
           ...(options?.backgroundSource ? { backgroundSource: options.backgroundSource } : {}),
           targetId: options?.targetId,

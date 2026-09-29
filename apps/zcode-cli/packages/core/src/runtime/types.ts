@@ -5,6 +5,7 @@ import type {
   JsonSchema,
   AgentExecutionTelemetryPort,
   AgentTelemetryCausation,
+  AgentWorkOrderMeta,
   BackgroundResultOriginMeta,
   ContextUsageBreakdownItem,
   CoordinatorResponsePort,
@@ -478,6 +479,11 @@ export interface ExecuteTurnOptionsBase {
   inputVisibility?: MessageVisibility;
   /** 显式传入的本轮工单身份（D29）；工单唤醒轮据此在执行边界禁 AgentDispatch（嵌套上限=1）。 */
   workOrderId?: string;
+  /**
+   * 工单轮的卡片元数据（D29/D5，`workOrderId` 在场时随 TurnStarted 下发）；
+   * 活投影与冷恢复据此在目标会话画「来自 X 的工单」卡（与消息 metadata.envelope 同一份，冷热同形）。
+   */
+  agentWorkOrder?: AgentWorkOrderMeta;
   originMeta?: BackgroundResultOriginMeta;
   /** 仅用于冻结 background notification batch 的整批因果来源，不用于展示。 */
   backgroundSource?: BackgroundResultOriginMeta["backgroundSource"];

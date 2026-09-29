@@ -21,6 +21,7 @@ import type {
 } from "@zcode/contracts";
 import type { EventId, SessionEvent, SessionId, TraceId, TurnId } from "@zcode/contracts";
 import {
+  boundAgentWorkOrderMeta,
   CompactTimelineStatus,
   CompactTrigger,
   CoreErrorType,
@@ -36,10 +37,12 @@ import {
   isConversationRealUserTurnStarter,
 } from "@zcode/shared";
 import {
+  agentWorkOrderMetaSchema,
   conversationInputIntentSchema,
   errorAttributionSchema,
   workflowLaunchMetaSchema,
   workflowNotificationMetaSchema,
+  type AgentWorkOrderMeta,
   type ErrorAttribution,
   type WorkflowLaunchMeta,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -1321,6 +1324,20 @@ function parseWorkflowNotificationMeta(
   return parsed.success ? parsed.data : undefined;
 }
 
+/**
+ * 工单唤醒轮的卡片元数据（D29/D5 冷恢复）：core 落库时把信封写在消息 metadata.envelope
+ * （persistSyntheticUserNoticeForSession），这里按 schema 防御性回读，畸形/缺席回 undefined
+ * ——那轮冷恢复后退化为无卡轮，绝不抛（投影重建路径，坏载荷不打挂冷恢复）。
+ * 回读后照 live 同一道有界化（boundAgentWorkOrderMeta），冷热同形。
+ */
+function agentWorkOrderMetaOfMessage(message: MessageWithParts): AgentWorkOrderMeta | undefined {
+  const candidate = message.info.metadata?.envelope;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return undefined;
+  const parsed = agentWorkOrderMetaSchema.safeParse(candidate);
+  if (!parsed.success) return undefined;
+  return boundAgentWorkOrderMeta(parsed.data);
+}
+
 function isLegacyCompactMaintenanceInput(
   message: MessageWithParts,
   nextMessage: MessageWithParts | undefined,
@@ -1807,6 +1824,11 @@ export function synthesizeEventsFromMessages(
             inputSource: wakeSource,
             ...(wakeSource === "background_task" || wakeSource === "agent_work_order_receipt"
               ? { originMeta: backgroundResultOriginMetaOfMessage(message) }
+              : {}),
+            // 工单唤醒轮（D29/D5）：冷恢复同样带卡片元数据，漏掉它工单卡就只在
+            // 活会话出现，重启后目标会话看不到「谁派的活」。
+            ...(wakeSource === "agent_work_order"
+              ? { agentWorkOrder: agentWorkOrderMetaOfMessage(message) }
               : {}),
             // model-only trigger 同样是持久 user 实体；若不传 messageId，
             // cold 会退化到 hydrate-turn-N，live/cold productTurn 身份再次分叉。

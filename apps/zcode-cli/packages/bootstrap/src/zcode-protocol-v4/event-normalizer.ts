@@ -1,4 +1,5 @@
 import type {
+  AgentWorkOrderMeta,
   BackgroundResultOriginMeta,
   ModelStreamingPayload,
   SessionEvent,
@@ -73,6 +74,11 @@ export interface CanonicalUserIntentFact extends CanonicalConversationFactBase {
    * 活投影据它在 turnHeader / userInput 两行上画启动卡；与消息 metadata 里的同一份对齐（冷热同形）。
    */
   workflowLaunch?: WorkflowLaunchMeta;
+  /**
+   * 派单工单唤醒轮的工单元数据（`inputSource === "agent_work_order"` 时在场，D29/D5）。
+   * 活投影据它在 turnHeader 上画工单卡；与消息 metadata.envelope 里的同一份对齐（冷热同形）。
+   */
+  agentWorkOrder?: AgentWorkOrderMeta;
   /** `input` 从此下标起是引擎附加文本。 */
   epilogueStart?: number;
   sourceCommandId?: string;
@@ -256,6 +262,7 @@ function normalizeTurnStarted(
     turnHeaderOrigin: turnHeaderOrigin(payload.inputSource),
     ...(payload.originMeta ? { originMeta: payload.originMeta } : {}),
     ...(payload.workflowLaunch ? { workflowLaunch: payload.workflowLaunch } : {}),
+    ...(payload.agentWorkOrder ? { agentWorkOrder: payload.agentWorkOrder } : {}),
     ...(payload.epilogueStart === undefined ? {} : { epilogueStart: payload.epilogueStart }),
     ...((payload.intent?.sourceCommandId ?? payload.inputId)
       ? { sourceCommandId: payload.intent?.sourceCommandId ?? payload.inputId }

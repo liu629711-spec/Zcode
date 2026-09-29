@@ -437,6 +437,45 @@ export function boundWorkflowLaunchMeta(input: WorkflowLaunchMeta): WorkflowLaun
   return bounded;
 }
 
+/**
+ * 派单工单的唤醒轮元数据（D29/D5）。目标会话该轮没有可见用户行，工单卡（来源标注 +
+ * 任务正文，缩进/边框防冒充）是它在 UI 的全部呈现；与 shared 的 `agentWorkOrderMetaSchema`
+ * 同形，冷恢复（消息 metadata.envelope）与活投影（TurnStarted payload）取同一份（冷热同形）。
+ */
+export interface AgentWorkOrderMeta {
+  /** 工单身份（uuid）；回执 originMeta.workId 与它对账。 */
+  workOrderId: string;
+  /** 发起方档案名；用户会话直接派单时为空串（UI 据此改标「来自用户」）。 */
+  fromAgentName: string;
+  /** 发起方智能体工号；发起方不是驻场智能体时缺席。 */
+  fromAgentId?: string;
+  /** 发起方会话 id（回执的归还地址），供诊断；卡片不显示。 */
+  fromSessionId: string;
+  /** 任务正文（工单 carrier 里 <work-order> 标签内的原文）；有界见 {@link boundAgentWorkOrderMeta}。 */
+  task: string;
+}
+
+/** {@link AgentWorkOrderMeta.task} 的字符上界；超界截断加省略号（卡片要完整可读，不能丢行）。 */
+export const AGENT_WORK_ORDER_TASK_MAX_CHARS = 8_192;
+
+/**
+ * 把工单轮元数据收进边界内：task 超 {@link AGENT_WORK_ORDER_TASK_MAX_CHARS} 截断加省略号。
+ * 铸造侧就地调用（core 发事件与冷恢复重建各调一次），保证消息 metadata 与 TurnStarted
+ * payload 拿到同一份有界值，行 parse 永不因超界失败。
+ */
+export function boundAgentWorkOrderMeta(input: AgentWorkOrderMeta): AgentWorkOrderMeta {
+  return {
+    workOrderId: input.workOrderId,
+    fromAgentName: input.fromAgentName,
+    ...(input.fromAgentId === undefined ? {} : { fromAgentId: input.fromAgentId }),
+    fromSessionId: input.fromSessionId,
+    task:
+      input.task.length > AGENT_WORK_ORDER_TASK_MAX_CHARS
+        ? `${input.task.slice(0, AGENT_WORK_ORDER_TASK_MAX_CHARS - 1)}…`
+        : input.task,
+  };
+}
+
 export interface TurnStartedPayloadBase {
   /** 执行入口的单调 epoch 毫秒；hooks/持久化发生在 TurnStarted 发布前，不能据发布时间反推执行开始。 */
   executionStartedAt?: number;
@@ -460,6 +499,11 @@ export interface TurnStartedPayloadBase {
    * 活投影据它画启动卡；与消息 metadata 里的同一份对齐（冷热同形）。
    */
   workflowLaunch?: WorkflowLaunchMeta;
+  /**
+   * 派单工单唤醒轮的工单元数据（`inputSource === "agent_work_order"` 时在场，D29/D5）。
+   * 活投影据它在 turnHeader 上画工单卡；与消息 metadata.envelope 里的同一份对齐（冷热同形）。
+   */
+  agentWorkOrder?: AgentWorkOrderMeta;
   /** 缺省为 agent，兼容旧事件与历史 transcript。 */
   executionKind?: TurnExecutionKind;
   /**

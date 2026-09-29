@@ -2017,6 +2017,8 @@ export class ProductProjection {
       ...(fact.sourceCommandId ? { sourceCommandId: fact.sourceCommandId } : {}),
       ...(fact.originMeta ? { originMeta: fact.originMeta } : {}),
       ...(fact.workflowLaunch ? { workflowLaunch: fact.workflowLaunch } : {}),
+      // 工单卡元数据（D29/D5）：工单唤醒轮没有可见用户行，这张卡是它的全部呈现。
+      ...(fact.agentWorkOrder ? { agentWorkOrder: fact.agentWorkOrder } : {}),
       state: "running",
       startedAt: headerBase.createdAt,
     };

@@ -7,7 +7,7 @@
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { QueryId, TraceContext } from "../deps.js";
 import type { AgentWorkOrderEnvelope } from "@zcode/contracts";
-import { WORK_ORDER_INPUT_ID_PREFIX } from "@zcode/contracts";
+import { WORK_ORDER_INPUT_ID_PREFIX, boundAgentWorkOrderMeta } from "@zcode/contracts";
 import { createRuntimeCommandId, type WorkOrderRuntimeCommand } from "../command-queue.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import {
@@ -169,6 +169,16 @@ export async function runWorkOrderCommand(
       toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES],
       traceContext: command.traceContext,
       workOrderId: command.workOrderId,
+      // 工单卡元数据（D29/D5）：随 TurnStarted 下发，目标会话画「来自 X 的工单」卡。
+      agentWorkOrder: boundAgentWorkOrderMeta({
+        workOrderId: command.envelope.workOrderId,
+        fromAgentName: command.envelope.fromAgentName,
+        ...(command.envelope.fromAgentId
+          ? { fromAgentId: command.envelope.fromAgentId }
+          : {}),
+        fromSessionId: command.envelope.fromSessionId,
+        task: command.envelope.task,
+      }),
     });
   } catch (error) {
     this.logger?.warn("Agent work order turn failed", {
