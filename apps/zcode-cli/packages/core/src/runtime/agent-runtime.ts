@@ -128,6 +128,7 @@ import type { ChildClientPortsContext, ClientFacingPorts } from "./helpers/child
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import { projectPersistentAgentMemoryTools } from "../subagent/persistent-memory.js";
 import { createAgentCallPinnedPort } from "../subagent/agent-call-port.js";
+import { createResidentDispatchRedirectPort } from "../subagent/resident-dispatch-redirect.js";
 import { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
 import { disposeNodeReplSession } from "../tool/handlers/node-repl.js";
@@ -298,10 +299,19 @@ export class AgentRuntime {
     this.pdfDocumentPort = deps.pdfDocumentPort;
     // 点将（D24）：端口是派遣的唯一入口，在这里包一层就把本轮名单钉进归属，
     // 不必把"用户点了谁"当工具参数穿过 executor/batch/call-runner 一堆装配点。
-    this.subagentPort = createAgentCallPinnedPort(
+    const pinnedPort = createAgentCallPinnedPort(
       deps.subagentPort ?? runtime.createDefaultSubagentPort(deps),
       () => this.turnPinnedAgentNames,
     );
+    // 驻场改判（2026-09-29 真机教训）：模型点名驻场档案却选了 Agent 临时工时，
+    // 在端口层改判为工单投递（软引导对弱模型无效，工具清单里在场也不选）。
+    // 与点将互补：本轮有 @ 名单即放行；无名派遣/插件档案原样转发。
+    this.subagentPort = createResidentDispatchRedirectPort(pinnedPort, {
+      getPinnedNames: () => this.turnPinnedAgentNames,
+      getResidentProfiles: () => this.config.subagents?.profiles ?? [],
+      getDispatchPort: () => deps.agentDispatchPort,
+      getSourceSessionId: () => sessionId,
+    });
     this.dynamicWorkflowRunPort = deps.dynamicWorkflowRunPort;
     // GUI「配置」解析子代理模型用的目录（与工具上下文拿的是同一个端口）。
     this.modelCatalogPort = deps.modelCatalogPort;
