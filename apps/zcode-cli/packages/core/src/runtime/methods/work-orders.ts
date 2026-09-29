@@ -113,13 +113,25 @@ export async function runWorkOrderCommand(
   const foregroundExecution = beginForegroundExecution.call(this, command);
   try {
     const messageID = createMessageId();
+    // 工单卡元数据（D29/D5）：落库与 TurnStarted 用**同一份有界值**（boundAgentWorkOrderMeta
+    // 的铸造侧承诺）。工具路径的 task 没有上限，信封若原样落库，冷恢复的
+    // agentWorkOrderMetaSchema（max 8192）会解析失败回 undefined、重启后工单卡消失——
+    // 活投影侧有界所以卡在，冷热就此分叉。元数据只喂 UI 卡（回执对账走内存信封），
+    // 截断不影响模型面：carrier（command.text）与模型历史仍是全文。
+    const agentWorkOrderMeta = boundAgentWorkOrderMeta({
+      workOrderId: command.envelope.workOrderId,
+      fromAgentName: command.envelope.fromAgentName,
+      ...(command.envelope.fromAgentId ? { fromAgentId: command.envelope.fromAgentId } : {}),
+      fromSessionId: command.envelope.fromSessionId,
+      task: command.envelope.task,
+    });
     // 内存历史与持久化同一份原文（<work-order> 信封）；执行期投影再补
     // 「非用户权威」框架（provider-entry-origins 的 agent_work_order 分支）。
     this.messageHistory.addUser(command.text, runtimeInputMetadata("agent_work_order"));
     await this.persistSyntheticUserNoticeForSession({
       messageID,
       metadata: {
-        envelope: command.envelope,
+        envelope: agentWorkOrderMeta,
         inputPresentation: "agent_work_order",
         visibility: "model-only",
       },
@@ -155,6 +167,13 @@ export async function runWorkOrderCommand(
       module: "core.runtime",
       workOrderId: command.workOrderId,
     });
+    // 侧栏标题来源：persona 会话标题 =「智能体名 · 首条输入」且二次生成已关
+    // （ensureSessionPersisted 吃 displayInput），不传 displayInput 会让首次派单开出的
+    // 新会话标题铸自英文 carrier 噪音（[AGENT WORK ORDER - NOT USER INPUT] …），
+    // 且 persona 会话改不回来。任务正文才是人话标题；displayInput 只进 TurnStarted
+    // 与标题——本轮 model-only + skipInputRecord，投影不会因此冒用户行，
+    // plugin/点将的 mention 解析也被 turn.ts 的 model-only 门挡住。
+    const displayTask = command.envelope.task.trim();
     await this.executeTurnCommand(command.text, undefined, {
       abortSignal: foregroundExecution.controller.signal,
       inputId: command.inputId,
@@ -169,16 +188,9 @@ export async function runWorkOrderCommand(
       toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES],
       traceContext: command.traceContext,
       workOrderId: command.workOrderId,
-      // 工单卡元数据（D29/D5）：随 TurnStarted 下发，目标会话画「来自 X 的工单」卡。
-      agentWorkOrder: boundAgentWorkOrderMeta({
-        workOrderId: command.envelope.workOrderId,
-        fromAgentName: command.envelope.fromAgentName,
-        ...(command.envelope.fromAgentId
-          ? { fromAgentId: command.envelope.fromAgentId }
-          : {}),
-        fromSessionId: command.envelope.fromSessionId,
-        task: command.envelope.task,
-      }),
+      // 工单卡元数据（D29/D5）：随 TurnStarted 下发，目标会话画「来自 X 的任务」卡。
+      agentWorkOrder: agentWorkOrderMeta,
+      ...(displayTask ? { displayInput: displayTask } : {}),
     });
   } catch (error) {
     this.logger?.warn("Agent work order turn failed", {
