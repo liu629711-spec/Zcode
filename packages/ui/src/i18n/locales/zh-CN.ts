@@ -1519,7 +1519,7 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.projectAgentEditMenu": "编辑档案",
   "workspaceSidebar.projectAgentDeleteMenu": "删除智能体",
   "workspaceSidebar.projectAgentNewChat": "开新对话",
-  "workspaceSidebar.projectAgentsResumeHint": "点员工 = 回到他最近的对话接着聊；想开新话题点「开新对话」",
+  "workspaceSidebar.projectAgentsResumeHint": "点一个智能体 = 回到他最近的对话接着聊；想开新话题点「开新对话」",
   "workspaceSidebar.viewByAgent": "按智能体",
   "workspaceSidebar.agentsViewPlainGroup": "普通会话",
   "workspaceSidebar.projectAgentEditTitle": "编辑智能体档案",
