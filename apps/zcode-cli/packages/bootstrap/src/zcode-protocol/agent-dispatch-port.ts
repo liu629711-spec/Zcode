@@ -11,14 +11,20 @@
 // 就被拒绝，不会触达目标会话。
 
 import {
+  SessionEventType,
   WORK_ORDER_INPUT_ID_PREFIX,
   type AgentDispatchPort,
   type AgentDispatchRequest,
   type AgentDispatchResult,
   type AgentWorkOrderEnvelope,
+  type SessionEvent,
 } from "@zcode/contracts";
 import type { ZCodeSessionPersona, ZCodeWorkspaceRef } from "@zcode/shared";
-import { resolveWorkOrderTarget, type AgentProfile } from "@zcode/core";
+import {
+  resolveWorkOrderTarget,
+  type AgentProfile,
+  type WorkOrderReceiptOutcome,
+} from "@zcode/core";
 
 import type {
   ZCodeProtocolAgentServerContext,
@@ -170,6 +176,15 @@ export function createProtocolAgentDispatchPort(
         envelope,
         traceContext: targetRecord.traceContext,
       });
+      // 完成钩子（D29/D3）：目标轮 TurnComplete/TurnError（按 workorder- inputId 对号）
+      // 后把携带最终答案的回执投回发起方会话。投递成功 ≠ 已处理；本轮终态见回执。
+      scheduleWorkOrderReceiptRelay(context, deps, {
+        targetRecord,
+        inputId: admission.inputId,
+        envelope,
+        agentName: profile.name,
+        ...(profile.agentId ? { agentId: profile.agentId } : {}),
+      });
       context.logger?.info("Agent work order dispatched", {
         createdSession,
         delivery: admission.delivery,
@@ -188,4 +203,117 @@ export function createProtocolAgentDispatchPort(
       };
     },
   };
+}
+
+// ── 派单回执（D29/D3）：目标轮完成钩子与回执投递 ─────────────────────
+
+/**
+ * 目标会话事件 → 回执终态。按工单唤醒轮的 `workorder-` inputId 对号
+ * （TurnComplete/TurnError 载荷带 inputId），其余事件一律忽略。
+ * cancelled 轮不假报完成；TurnError/异常终态如实带原因（Codex 错误指引口径）。
+ * 载荷按 unknown record 防御性收窄（server-operations 同风格），畸形载荷不投递。
+ */
+export function receiptOutcomeFromSessionEvent(
+  event: SessionEvent,
+  workOrderInputId: string,
+): WorkOrderReceiptOutcome | undefined {
+  const payload = event.payload;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return undefined;
+  const record = payload as Record<string, unknown>;
+  if (record.inputId !== workOrderInputId) return undefined;
+  if (event.type === SessionEventType.TurnComplete) {
+    if (record.resultType === "success" && typeof record.response === "string") {
+      return { status: "completed", response: record.response };
+    }
+    if (record.resultType === "cancelled") return { status: "cancelled" };
+    return {
+      status: "failed",
+      reason: `the work order turn ended with resultType ${String(record.resultType)}`,
+    };
+  }
+  if (event.type === SessionEventType.TurnError) {
+    const error = record.error;
+    const reason =
+      typeof error === "object" && error !== null && typeof (error as Record<string, unknown>).message === "string"
+        ? ((error as Record<string, unknown>).message as string)
+        : "unknown turn error";
+    return { status: "failed", reason };
+  }
+  return undefined;
+}
+
+/**
+ * 完成钩子：订阅目标 record 的会话事件，目标轮落终态后把回执投回发起方会话
+ * （发起方 record 不在场则先 activateSessionForResume 恢复——落库等重开）。
+ * 首个终态事件即退订；目标 record 被关闭/进程退出时钩子随 record 消失，
+ * 回执与工单同样属于「死会话里不可恢复」的 best-effort 通知（发起方持有受理凭据）。
+ */
+function scheduleWorkOrderReceiptRelay(
+  context: ZCodeProtocolAgentServerContext,
+  deps: ProtocolAgentDispatchPortDeps,
+  input: {
+    targetRecord: ZCodeProtocolSessionRecord;
+    inputId: string;
+    envelope: AgentWorkOrderEnvelope;
+    agentName: string;
+    agentId?: string;
+  },
+): void {
+  const unsubscribe = input.targetRecord.app.runtime.subscribeEvents({
+    onSessionEvent: (event: SessionEvent) => {
+      const outcome = receiptOutcomeFromSessionEvent(event, input.inputId);
+      if (!outcome) return;
+      unsubscribe();
+      void deliverWorkOrderReceipt(context, deps, {
+        envelope: input.envelope,
+        agentName: input.agentName,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        targetSessionId: input.targetRecord.app.sessionId,
+        outcome,
+      }).catch((error) => {
+        context.logger?.warn("Failed to deliver agent work order receipt", {
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "agent_work_order_receipt.delivery_failed",
+          fromSessionId: input.envelope.fromSessionId,
+          module: "bootstrap.zcode_protocol",
+          outcomeStatus: outcome.status,
+          targetSessionId: input.targetRecord.app.sessionId,
+          workOrderId: input.envelope.workOrderId,
+        });
+      });
+    },
+  });
+}
+
+async function deliverWorkOrderReceipt(
+  context: ZCodeProtocolAgentServerContext,
+  deps: ProtocolAgentDispatchPortDeps,
+  input: {
+    envelope: AgentWorkOrderEnvelope;
+    agentName: string;
+    agentId?: string;
+    targetSessionId: string;
+    outcome: WorkOrderReceiptOutcome;
+  },
+): Promise<void> {
+  const initiatorRecord =
+    context.sessions.get(input.envelope.fromSessionId) ??
+    (await deps.activateSessionRecord(input.envelope.fromSessionId));
+  initiatorRecord.app.runtime.enqueueAgentWorkOrderReceipt({
+    workOrderId: input.envelope.workOrderId,
+    agentName: input.agentName,
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+    targetSessionId: input.targetSessionId,
+    envelope: input.envelope,
+    outcome: input.outcome,
+    traceContext: initiatorRecord.traceContext,
+  });
+  context.logger?.info("Agent work order receipt delivered", {
+    event: "agent_work_order_receipt.delivered",
+    fromSessionId: input.envelope.fromSessionId,
+    module: "bootstrap.zcode_protocol",
+    outcomeStatus: input.outcome.status,
+    targetSessionId: input.targetSessionId,
+    workOrderId: input.envelope.workOrderId,
+  });
 }

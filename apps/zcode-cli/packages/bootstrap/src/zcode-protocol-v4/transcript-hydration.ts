@@ -1285,13 +1285,16 @@ function backgroundResultOriginMetaOfMessage(
   const backgroundSource = record.backgroundSource;
   const workId = typeof record.workId === "string" ? record.workId.trim() : "";
   const title = typeof record.title === "string" ? record.title.trim() : "";
-  // 三个取值与 BackgroundResultOriginMeta 保持同步（contracts/src/events/session.events.ts）。
+  // 取值与 BackgroundResultOriginMeta 保持同步（contracts/src/events/session.events.ts）。
   // "workflow" 是 workflow run（workId ≡ runId）：漏掉它，workflow 的后台结果轮在冷恢复后会
   // 静默退化成一条无标题 model-only 消息，工具卡→详情页的关联键随之丢失。
+  // "agent_work_order_receipt" 是派单回执轮（D29/D3，workId ≡ workOrderId）：漏掉它，
+  // 回执轮在冷恢复后退化为无标题行，发起方看不到「谁交的活」。
   if (
     (backgroundSource !== "bash" &&
       backgroundSource !== "subagent" &&
-      backgroundSource !== "workflow") ||
+      backgroundSource !== "workflow" &&
+      backgroundSource !== "agent_work_order_receipt") ||
     !workId ||
     !title
   ) {
@@ -1802,7 +1805,7 @@ export function synthesizeEventsFromMessages(
             input: wakeSource === "background_task" ? textOfMessage(message.parts) : "",
             inputVisibility: "model-only",
             inputSource: wakeSource,
-            ...(wakeSource === "background_task"
+            ...(wakeSource === "background_task" || wakeSource === "agent_work_order_receipt"
               ? { originMeta: backgroundResultOriginMetaOfMessage(message) }
               : {}),
             // model-only trigger 同样是持久 user 实体；若不传 messageId，

@@ -403,6 +403,9 @@ function turnHeaderOrigin(
   switch (source) {
     case "background_task":
       return "backgroundResult";
+    // 派单回执轮（D29/D3）：照 backgroundResult 轮头链呈现「交活」卡（设计复核纠错③）。
+    case "agent_work_order_receipt":
+      return "backgroundResult";
     case "goal-continuation":
       return "goalContinuation";
     case "rewind":
@@ -434,6 +437,8 @@ function userInputOrigin(
     // 工单 carrier 是 model-only 输入，不产生可见 user row；
     // 显式 synthetic 而非缺省 realUser（否则会冒成用户气泡）。
     case "agent_work_order":
+    // 派单回执 carrier（D29/D3）同档：非用户权威，显式 synthetic 防冒用户气泡。
+    case "agent_work_order_receipt":
       return "synthetic";
     case "fork":
     case "plugin_reference":
