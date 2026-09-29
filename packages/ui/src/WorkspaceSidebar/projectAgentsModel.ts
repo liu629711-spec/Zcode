@@ -1,6 +1,7 @@
 import type {
   AgentColor,
   AgentSummary,
+  ModelSelection,
   SubAgentConfig,
   ZCodeSessionPersona,
 } from "@zcode/shared";
@@ -9,6 +10,8 @@ export interface ProjectAgentDraft {
   name: string;
   description: string;
   systemPrompt: string;
+  /** 本智能体固定用的模型（注册表拼写）；缺席 = 跟随默认。派单可用 model 参数临时覆盖。 */
+  modelSelection?: ModelSelection;
 }
 
 /** 任务列表行的驻场智能体徽章（D2）：名字给悬停大白话，颜色缺省 = 只画图标。 */
@@ -77,6 +80,7 @@ export function toProjectAgentCreateConfig(draft: ProjectAgentDraft): SubAgentCo
     description: draft.description.trim(),
     systemPrompt: draft.systemPrompt.trim(),
     memory: "project",
+    ...(draft.modelSelection ? { modelSelection: draft.modelSelection } : {}),
   };
 }
 
@@ -106,7 +110,15 @@ export function toProjectAgentUpdateConfig(
     // 记事本目录按号落位，没号的档案回落到名字，改名即断链。
     ...(agent.agentId ? { agentId: agent.agentId } : {}),
     ...(agent.color ? { color: agent.color } : {}),
-    ...(agent.modelSelection ? { modelSelection: agent.modelSelection } : {}),
+    // 模型以表单为准（预填带旧值，随选择器走）。键缺席（旧调用方/未触模型）原样
+    // 带回档案值；键在场但为空 = 用户清空选择 → 回到继承默认。两种契约都成立。
+    ...("modelSelection" in draft
+      ? draft.modelSelection
+        ? { modelSelection: draft.modelSelection }
+        : {}
+      : agent.modelSelection
+        ? { modelSelection: agent.modelSelection }
+        : {}),
     ...(agent.tools?.length ? { tools: [...agent.tools] } : {}),
     ...(agent.disallowedTools?.length ? { disallowedTools: [...agent.disallowedTools] } : {}),
     ...(agent.skills?.length ? { skills: [...agent.skills] } : {}),

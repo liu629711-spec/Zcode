@@ -307,6 +307,38 @@ test("toProjectAgentUpdateConfig：空列表与缺席字段不落盘，记忆范
   assert.equal("mcpServers" in config, false);
 });
 
+test("toProjectAgentUpdateConfig：模型选择随表单走——带了就替换，键在场为空=清回继承（2026-09-29 指派模型）", () => {
+  const agent = {
+    id: "agent-3",
+    name: "with-model",
+    description: "d",
+    systemPrompt: "p",
+    modelSelection: { providerId: "provider-a", modelId: "old-model" },
+    path: "D:/repo/.zcode/agents/with-model.md",
+    scope: "workspace",
+    source: "user",
+    enabled: true,
+  } as AgentSummary;
+
+  // 表单换了模型 → 用表单的。
+  const replaced = toProjectAgentUpdateConfig(agent, {
+    name: "with-model",
+    description: "d",
+    systemPrompt: "p",
+    modelSelection: { providerId: "provider-a", modelId: "new-model" },
+  });
+  assert.deepEqual(replaced.modelSelection, { providerId: "provider-a", modelId: "new-model" });
+
+  // 表单键在场但为空 = 用户清空选择 → 模型落空（继承默认），不得回填旧值。
+  const cleared = toProjectAgentUpdateConfig(agent, {
+    name: "with-model",
+    description: "d",
+    systemPrompt: "p",
+    modelSelection: undefined,
+  });
+  assert.equal("modelSelection" in cleared, false);
+});
+
 test("buildAgentMemoryDirectoryHint：project/local 给出项目内路径，user 返回 null，反斜杠归一", () => {
   const agent = (memory?: string) =>
     ({ name: "code-reviewer", ...(memory ? { memory } : {}) }) as Pick<

@@ -8,6 +8,11 @@ import {
   testId,
   type AgentSummary,
 } from "@zcode/shared";
+import {
+  ModelConfigSelect,
+  type ModelSelectFooterAction,
+  type ModelSelectGroup,
+} from "@/ModelConfigSelect.js";
 import { Button } from "@/components/ui/button.js";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog.js";
 import { Input } from "@/components/ui/input.js";
@@ -15,7 +20,12 @@ import { Textarea } from "@/components/ui/textarea.js";
 import { toast } from "@/components/ui/toast.js";
 import { logger } from "@/logger.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
-import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
+import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
+import { useWorkspaceServicesResolution, useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { buildRegistryModelSelectGroups, resolveModelDisplayName } from "@/lib/modelSelectionGroups.js";
+import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
+import { encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
+import { completeNewModelSelection } from "@zcode/provider";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import { acquireWorkspaceConnection } from "@/v4/workspaceConnectionRegistry.js";
@@ -395,11 +405,76 @@ export function WorkspaceProjectAgentCreateDialog({
     systemPrompt: "",
   });
   const [errors, setErrors] = useState<ProjectAgentDraftError[]>([]);
+  // 模型选择（2026-09-29 用户需求：建档时指派用什么模型）。缺席 = 继承默认。
+  const localHostServices = useBaseWorkspaceServices();
+  const modelSelectionRead = useModelSelectionServiceView(localHostServices.modelSelectionService);
+  const modelSelectionView =
+    modelSelectionRead.state.status === "ready" ? modelSelectionRead.state.view : null;
+  const modelGroups = useMemo((): ModelSelectGroup[] => {
+    if (!modelSelectionView) return [];
+    return buildRegistryModelSelectGroups(ZCODE_AGENT_PROVIDER, modelSelectionView, {
+      startPlanBadgeLabel: intl.formatMessage({
+        id: "settings.modelProvider.connectionMode.startPlanBadge",
+      }),
+      apiKeyLabel: intl.formatMessage({ id: "settings.modelProvider.apiKey" }),
+      codingPlanLabel: intl.formatMessage({
+        id: "settings.modelProvider.connectionMode.codingPlan",
+      }),
+    });
+  }, [intl, modelSelectionView]);
   const isEditing = editingAgent !== null;
   // 班底缺几位（D23）：按项目现有档案名算，同名（含大小写差异）不重复请人。
   const rosterMissingCount = onInstallRoster
     ? planProjectAgentRosterInstall(agents.map((agent) => agent.name)).length
     : 0;
+  // 模型选择器（2026-09-29 用户需求）：建档/编辑都指派"这个员工用什么模型"。
+  // 清空 = 继承默认；reasoningLevel 取注册表默认档（与设置页同源），界面先不摆档位。
+  const INHERIT_MODEL_VALUE = "inherit";
+  const neverLocked = () => false;
+  const modelValue = draft.modelSelection
+    ? encodeCustomModelValue(draft.modelSelection.providerId, draft.modelSelection.modelId)
+    : INHERIT_MODEL_VALUE;
+  const modelValueAvailable = modelGroups.some((group) =>
+    group.items.some((item) => item.value === modelValue),
+  );
+  const defaultModelLabel = intl.formatMessage({ id: "settings.subagents.model.defaultMain" });
+  const modelTriggerLabel =
+    modelValue === INHERIT_MODEL_VALUE
+      ? defaultModelLabel
+      : !modelValueAvailable
+        ? intl.formatMessage({ id: "settings.subagents.model.select" })
+        : (resolveModelDisplayName(modelGroups, modelValue) ?? modelValue);
+  const modelFooterActions = useMemo<ModelSelectFooterAction[]>(
+    () => [
+      {
+        key: "projectAgentModel:inherit",
+        label: defaultModelLabel,
+        onSelect: () => setDraft((prev) => ({ ...prev, modelSelection: undefined })),
+        selected: draft.modelSelection === undefined,
+      },
+    ],
+    [defaultModelLabel, draft.modelSelection],
+  );
+  const handleModelValueChange = (nextValue: string) => {
+    if (nextValue === INHERIT_MODEL_VALUE) {
+      setDraft((prev) => ({ ...prev, modelSelection: undefined }));
+      return;
+    }
+    const parsed = parseModelPickerValue(nextValue);
+    const withReasoning = modelSelectionView
+      ? completeNewModelSelection(modelSelectionView, parsed)
+      : undefined;
+    setDraft((prev) => ({
+      ...prev,
+      modelSelection: {
+        providerId: parsed.providerId,
+        modelId: parsed.modelId,
+        ...(withReasoning?.options?.reasoningLevel
+          ? { options: { reasoningLevel: withReasoning.options.reasoningLevel } }
+          : {}),
+      },
+    }));
+  };
 
   useEffect(() => {
     if (open) {
@@ -409,6 +484,9 @@ export function WorkspaceProjectAgentCreateDialog({
               name: editingAgent.name,
               description: editingAgent.description,
               systemPrompt: editingAgent.systemPrompt,
+              ...(editingAgent.modelSelection
+                ? { modelSelection: editingAgent.modelSelection }
+                : {}),
             }
           : { name: "", description: "", systemPrompt: "" },
       );
@@ -562,6 +640,30 @@ export function WorkspaceProjectAgentCreateDialog({
               })}
             />
             {fieldError("promptRequired")}
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-ui-base font-medium text-foreground-subtle">
+              {intl.formatMessage({ id: "settings.subagents.form.model.label" })}
+            </label>
+            <ModelConfigSelect
+              modelGroups={modelGroups}
+              normalizedValue={modelValue}
+              triggerLabel={modelTriggerLabel}
+              showManageModelsAction={false}
+              lockReasonMessage=""
+              isItemLocked={neverLocked}
+              onValueChange={handleModelValueChange}
+              footerActions={modelFooterActions}
+              manageModelsLabel={intl.formatMessage({
+                id: "chat.toolbar.model.manageModels",
+              })}
+              contentSide="top"
+              contentAlign="end"
+              focusSelectorOnClose={null}
+              labelVisibilityClassName="inline-flex min-w-0"
+              triggerClassName="h-8 w-full max-w-none justify-between rounded-lg border border-input-border bg-input px-3 py-1.5 text-foreground hover:border-input-border-hover hover:bg-input focus-visible:border-input-border-focused focus-visible:bg-input-focused"
+              triggerLabelClassName="inline-flex min-w-0 truncate text-left"
+            />
           </div>
           {isEditing ? null : (
             <p className="text-ui-sm text-foreground-subtle">
