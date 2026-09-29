@@ -1,7 +1,7 @@
 /* eslint-disable max-lines -- turn group 需要在同一处维护普通 assistant 与后台结果的严格行序，拆分会重复 actions/preview/tail 协议。 */
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { Fragment, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, Bot } from "lucide-react";
 import {
   TID_CHAT_ASSISTANT_HISTORY_CONTENT,
   TID_CHAT_ASSISTANT_HISTORY_TRIGGER,
@@ -63,6 +63,11 @@ import type { ConversationCuaGroupEvent } from "@/v4/conversationCuaGroups.js";
 import { ConversationAgentToolCallRow } from "@/v4/ConversationAgentToolCallRow.js";
 import { ConversationFileSummaryPanel } from "@/v4/ConversationFileSummaryPanel.js";
 import { WorkflowNotificationToolRow } from "@/v4/WorkflowNotificationToolRow.js";
+import { AgentWorkOrderTurnCard } from "@/v4/AgentWorkOrderTurnCard.js";
+import {
+  AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE,
+  resolveAgentWorkOrderMeta,
+} from "@/v4/agentWorkOrderTurn.js";
 import { ConversationWorkflowDigests } from "@/v4/ConversationWorkflowDigests.js";
 import { ConversationWorkflowCompletion } from "@/v4/ConversationWorkflowCompletion.js";
 import { resolveWorkflowTurnDigests } from "@/v4/workflowTurnDigests.js";
@@ -943,6 +948,18 @@ function resolveWorkflowNotification(
   return originMeta?.backgroundSource === "workflow" ? originMeta.workflowNotification : undefined;
 }
 
+/**
+ * 派单回执轮（D29/D3）：发起方「<目标> 交活：<答案>」的收据样式。
+ * 标题由 CLI 权威铸造（completed =「<交活方> 交活」，失败/中断按终态改口，不假报完成），
+ * 这里只判定要不要画收据头（Bot 名牌），答案本体走轮内既有 assistant 流程。
+ */
+function isAgentWorkOrderReceiptResult(unit: ConversationTurnRenderUnit): boolean {
+  return (
+    unit.header?.origin === "backgroundResult" &&
+    unit.header.originMeta?.backgroundSource === AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE
+  );
+}
+
 function ConversationBackgroundResultWork({
   unit,
   apiRetry,
@@ -1055,6 +1072,23 @@ function ConversationBackgroundResultWork({
           onOpenArtifact={openWorkflowArtifact}
           pendingQids={workflowPendingQids}
         />
+      ) : isAgentWorkOrderReceiptResult(unit) ? (
+        // 派单回执（D29/D5）：收据头带 Bot 名牌，与 bash/subagent 的裸标题行区分开；
+        // 答案本体就是本轮的 assistant 正文，紧随其后照常渲染。
+        <div className="flex w-full items-center gap-2 border-b border-[var(--color-border)]/50 pb-2">
+          <span
+            className="flex h-5 shrink-0 items-center rounded-[4px] bg-muted px-1.5 leading-none text-foreground-subtle"
+            aria-hidden="true"
+          >
+            <Bot className="size-3" />
+          </span>
+          <div
+            data-testid={testId(TID_CHAT_BACKGROUND_RESULT_TITLE, unit.key)}
+            className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
+          >
+            {title}
+          </div>
+        </div>
       ) : (
         <div className="flex w-full border-b border-[var(--color-border)]/50 pb-2">
           <div
@@ -1215,6 +1249,7 @@ function ConversationTurnGroupImpl({
   const canRetryLatestAssistant = latestAssistantTextRow?.actions?.canRetry === true;
   const canForkLatestAssistant = latestAssistantTextRow?.actions?.canFork === true;
   const backgroundResultTitle = resolveBackgroundResultTitle(unit);
+  const agentWorkOrderMeta = resolveAgentWorkOrderMeta(unit.header);
   const hasAssistantWorkContent = unit.timelineOnly
     ? unit.assistantWorkRows.length > 0
     : unit.assistantWorkRows.length > 0 ||
@@ -1318,6 +1353,12 @@ function ConversationTurnGroupImpl({
           context={context}
         />
       ))}
+      {agentWorkOrderMeta ? (
+        // 工单卡（D29/D5）：工单唤醒轮没有可见用户行，这张卡是它在目标会话的
+        // 全部呈现——来源标注 + 任务正文，缩进/边框防对方输出冒充本会话指令。
+        // 轮还没产出任何内容时卡片也必须在场（running 中不能空白）。
+        <AgentWorkOrderTurnCard meta={agentWorkOrderMeta} />
+      ) : null}
       {hasAssistantTurnContent ? (
         // deferAssistantActions 后工具栏被移到文件 summary 之后，
         // 之前 hover group 只包住工具栏自己，导致必须悬停到不可见按钮位置才出现。
