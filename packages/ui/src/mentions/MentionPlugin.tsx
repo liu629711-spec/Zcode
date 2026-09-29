@@ -30,6 +30,7 @@ import {
 } from "../lib/promptInputTriggers.js";
 import { ContextMentionOptionContent } from "@/mentions/components/ContextMentionOptionContent.js";
 import { AgentCallMentionOptionContent } from "@/mentions/components/AgentCallMentionOptionContent.js";
+import { AgentWorkOrderDraftCard } from "@/mentions/components/AgentWorkOrderDraftCard.js";
 import { DesignStyleMentionOptionContent } from "@/mentions/components/DesignStyleMentionOptionContent.js";
 import { PluginMentionOptionContent } from "@/mentions/components/PluginMentionOptionContent.js";
 import {
@@ -73,6 +74,13 @@ interface MentionPluginProps {
   sessionId?: string | null;
   disabled?: boolean;
   onWhiteboardMentionSelected?: (boardId: string) => void | Promise<void>;
+  /**
+   * 派单（D30/D5）：智能体候选行的第二个动作。参数（目标档案名, 任务正文），
+   * 实现在宿主 composer（SessionPane→ConversationComposer 传入）：发 v4
+   * dispatchAgentWorkOrder 命令直达宿主派单能力，resolve 值是受理口径
+   * （started=空闲即刻成轮；queued=目标忙已排队）。rejected 时 Error.message 已是人话。
+   */
+  onDispatchAgentWorkOrder?: (agentName: string, task: string) => Promise<"started" | "queued">;
 }
 
 function getWrappedMentionIndex(currentIndex: number, delta: number, itemCount: number): number {
@@ -145,6 +153,7 @@ export function MentionPlugin({
   container,
   disabled = false,
   onWhiteboardMentionSelected,
+  onDispatchAgentWorkOrder,
 }: MentionPluginProps & { provider: ZCodeProvider }) {
   const [editor] = useLexicalComposerContext();
   const { intl } = useZCodeIntl();
@@ -250,6 +259,58 @@ export function MentionPlugin({
     title: intl.formatMessage({ id: "chat.mention.agents.title" }),
     limit: MENTION_DEFAULT_GROUP_PREVIEW_LIMIT,
   });
+
+  // 派单（D30/D5）：候选行的第二个动作弹的小输入框。状态在本插件（面板是它的门户），
+  // 提交经 onDispatchAgentWorkOrder 直达宿主派单能力——不往 composer 塞文本，塞了就变点将。
+  const [dispatchDraft, setDispatchDraft] = useState<{ agentName: string } | null>(null);
+  const [dispatchTask, setDispatchTask] = useState("");
+  const [dispatchPending, setDispatchPending] = useState(false);
+
+  const closeMentionPanel = useCallback(() => {
+    dismissedSignatureRef.current = null;
+    activeTokenRef.current = null;
+    setActiveTrigger(null);
+    setSelectedIndex(0);
+  }, []);
+
+  const closeDispatchDraft = useCallback(() => {
+    setDispatchDraft(null);
+    setDispatchTask("");
+    setDispatchPending(false);
+    requestAnimationFrame(() => {
+      editor.focus();
+    });
+  }, [editor]);
+
+  const submitDispatchDraft = useCallback(async () => {
+    if (!dispatchDraft || !onDispatchAgentWorkOrder) return;
+    const task = dispatchTask.trim();
+    if (!task || dispatchPending) return;
+    setDispatchPending(true);
+    try {
+      const delivery = await onDispatchAgentWorkOrder(dispatchDraft.agentName, task);
+      toast(
+        intl.formatMessage(
+          {
+            id:
+              delivery === "queued"
+                ? "chat.mention.agents.dispatchQueued"
+                : "chat.mention.agents.dispatchAccepted",
+          },
+          { name: dispatchDraft.agentName },
+        ),
+      );
+      closeDispatchDraft();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      toast(
+        `${intl.formatMessage({ id: "chat.mention.agents.dispatchFailed" })}${
+          reason ? `：${reason}` : ""
+        }`,
+      );
+      setDispatchPending(false);
+    }
+  }, [closeDispatchDraft, dispatchDraft, dispatchPending, dispatchTask, intl, onDispatchAgentWorkOrder]);
 
   const panelGroups = useMemo<MentionResultGroup<MentionItem>[]>(() => {
     const groupsById = {
@@ -405,6 +466,19 @@ export function MentionPlugin({
             ) : item.category === "plugins" ? (
               <PluginMentionOptionContent item={item} />
             ) : undefined,
+          // 派单（D30/D5）：智能体行的第二个动作，与整行选择（点将=agent:// 提及）分开叫。
+          trailingAction:
+            item.category === "subagents" && onDispatchAgentWorkOrder
+              ? {
+                  label: intl.formatMessage({ id: "chat.mention.agents.dispatch" }),
+                  hint: intl.formatMessage({ id: "chat.mention.agents.dispatchHint" }),
+                  onActivate: () => {
+                    closeMentionPanel();
+                    setDispatchTask("");
+                    setDispatchDraft({ agentName: item.value });
+                  },
+                }
+              : undefined,
         })),
         loading: group.loading,
         loadingText: intl.formatMessage({
@@ -413,7 +487,7 @@ export function MentionPlugin({
         errorText: group.errorText,
         emptyText: group.emptyText,
       })),
-    [intl, panelGroups, workspacePath],
+    [intl, panelGroups, workspacePath, closeMentionPanel, onDispatchAgentWorkOrder],
   );
 
   useEffect(() => {
@@ -793,21 +867,35 @@ export function MentionPlugin({
     ? intl.formatMessage({ id: "chat.mention.emptyResults" })
     : "";
 
-  if (!isOpen || !container) {
+  if (!container) {
     return null;
   }
 
   return createPortal(
-    <MentionPanel
-      title={panelTitle}
-      description={panelDescription}
-      trigger={activeTrigger?.trigger ?? "@"}
-      sections={panelSections}
-      emptyText={panelEmptyText}
-      selectedIndex={selectedIndex}
-      hasActiveQuery={hasActiveQuery}
-      onSelect={selectOption}
-    />,
+    <>
+      {isOpen ? (
+        <MentionPanel
+          title={panelTitle}
+          description={panelDescription}
+          trigger={activeTrigger?.trigger ?? "@"}
+          sections={panelSections}
+          emptyText={panelEmptyText}
+          selectedIndex={selectedIndex}
+          hasActiveQuery={hasActiveQuery}
+          onSelect={selectOption}
+        />
+      ) : null}
+      {dispatchDraft && onDispatchAgentWorkOrder ? (
+        <AgentWorkOrderDraftCard
+          agentName={dispatchDraft.agentName}
+          task={dispatchTask}
+          pending={dispatchPending}
+          onTaskChange={setDispatchTask}
+          onSubmit={submitDispatchDraft}
+          onCancel={closeDispatchDraft}
+        />
+      ) : null}
+    </>,
     container,
   );
 }

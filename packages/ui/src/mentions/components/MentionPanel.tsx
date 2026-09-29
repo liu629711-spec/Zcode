@@ -27,6 +27,16 @@ export interface MentionPanelOption {
   disabled?: boolean;
   /** 禁选原因；无自定义 content 时展示在描述位。 */
   disabledReason?: string;
+  /**
+   * 行尾次要动作（D30 点将/派单）：独立按钮，点击只执行动作本身，不触发整行选择
+   * （主按钮仍是既有语义）。键盘 Enter 走整行选择；次要动作是鼠标/触摸直达入口。
+   */
+  trailingAction?: {
+    label: string;
+    /** 一句话说明（title/aria-label）：与主动作（点将）分开叫、分开懂。 */
+    hint: string;
+    onActivate: () => void;
+  };
 }
 
 export interface MentionPanelSection {
@@ -388,9 +398,10 @@ function OptionRow({
 }) {
   const { option, flatOptionIndex } = row;
   const isDisabled = option.disabled === true;
+  const trailingAction = option.trailingAction;
 
   return (
-    <div className="py-px w-full">
+    <div className="flex w-full items-center gap-1 py-px">
       <button
         type="button"
         role="option"
@@ -404,7 +415,7 @@ function OptionRow({
         data-selected={isSelected ? "true" : "false"}
         data-disabled={isDisabled ? "true" : "false"}
         className={cn(
-          "flex h-8 w-full items-center gap-3 rounded-xl px-3 text-left transition-colors",
+          "flex h-8 min-w-0 flex-1 items-center gap-3 rounded-xl px-3 text-left transition-colors",
           isDisabled
             ? "cursor-not-allowed opacity-50"
             : isSelected
@@ -441,6 +452,29 @@ function OptionRow({
           </span>
         )}
       </button>
+      {trailingAction ? (
+        <button
+          type="button"
+          aria-label={`${trailingAction.label}：${trailingAction.hint}`}
+          title={`${trailingAction.label}：${trailingAction.hint}`}
+          data-testid={testId(TID_PROMPT_SUGGESTION_OPTION, `${option.id}:trailing-action`)}
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-ui-xs text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground",
+            isDisabled && "pointer-events-none opacity-50",
+          )}
+          onMouseDown={(event) => {
+            // 次要动作是独立按钮：只执行动作本身，不触发整行选择、不夺编辑器状态。
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            trailingAction.onActivate();
+          }}
+        >
+          {trailingAction.label}
+        </button>
+      ) : null}
     </div>
   );
 }
