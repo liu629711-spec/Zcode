@@ -942,7 +942,9 @@ async function sendMessageToLocalAgent(
   if (!task || task.type !== "local_agent") {
     return createSendMessageFailure(
       request,
-      `No active local_agent task found for target ${request.to}.`,
+      `No active local_agent task found for target ${request.to}. ` +
+        `SendMessage only continues a background agent launched earlier in this conversation; that instance may already be gone. ` +
+        `To hand a task to a resident agent of this workspace, use the AgentDispatch tool with the agent's name or agentId.`,
     );
   }
 

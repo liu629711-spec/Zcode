@@ -114,6 +114,10 @@ function buildAgentProviderDescription(
     "- A new Agent call starts fresh, so the prompt must be self-contained.",
     "- `run_in_background: true` runs the agent asynchronously; you'll be notified when it completes.",
     "- When you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.",
+    // 2026-09-29 真机教训：用户点名让某个具名智能体做任何事（哪怕一句问候）都必须走
+    // AgentDispatch；Agent 临时工与 SendMessage 都到不了对方的常驻会话。立在此处是因为
+    // 每次子代理结果的 agentId 提示都会诱导模型改走 SendMessage。
+    "- If the user asks a NAMED agent of this workspace to do something or send something (a resident/project agent, e.g. '让 UI-plus 给我发个你好', 'have code-plus fix the login page'), use the AgentDispatch tool instead of this tool: an Agent helper runs inside THIS conversation only, and the named agent's own resident session never learns about the task. SendMessage continues only a background agent launched here; it cannot reach a resident agent.",
     // 只保留「用户点名工作流」这一种情形：工作流一律由用户显式请求触发，与系统提示词其余
     // 部分一致。不能把「结果层层喂给下一步的多代理编排」也划给 CreateWorkflow，
     // 那等于让模型在用户没开口时自行选择工作流。
