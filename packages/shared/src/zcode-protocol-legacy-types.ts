@@ -21,6 +21,9 @@ export const zcodeSyntheticUserMessageSourceSchema = z.enum([
   "plugin_reference",
   // 点将（D24）提醒的来源；必须与 contracts 的 SYNTHETIC_USER_MESSAGE_SOURCES 同词表。
   "agent_call",
+  // 派单（D29）工单 carrier 的来源；与 contracts 的 SYNTHETIC_USER_MESSAGE_SOURCES
+  // 保持同一词表，否则 v3 mapper 收窄该 source 会 tsc 失败。
+  "agent_work_order",
   "rewind",
   "selection_side_chat",
   "subagent",

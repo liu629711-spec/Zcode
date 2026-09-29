@@ -55,6 +55,8 @@ const PROVIDER_CONTEXT_SYNTHETIC_SOURCES = new Set([
   "plugin_reference",
   // 点将（D24）：运行时按原文固化的 model-only 提醒，不进用户气泡。
   "agent_call",
+  // 派单工单（D29）：provider 可见的 model-only carrier，不进用户气泡。
+  "agent_work_order",
   "queued_system_notification",
   "resume_goal_state",
   "resume_referenced_session_context",
@@ -75,6 +77,8 @@ const MODEL_ONLY_TURN_TRIGGER_SOURCES = new Set([
   "subagent_message",
   "goal-continuation",
   "target_continuation",
+  // 派单工单（D29）：落库未跑完的工单在冷恢复时按 model-only 唤醒轮重建（live/cold 同形）。
+  "agent_work_order",
 ]);
 
 export function getConversationMessageProjectionPolicy(

@@ -9,6 +9,8 @@ export const RuntimeInputPresentationSchema = z.enum([
   "subagent_reply",
   "task_notification_steer",
   "task_notification",
+  // 派单工单唤醒轮（D29）：目标会话里工单 carrier 的落库形态标记。
+  "agent_work_order",
 ]);
 export type RuntimeInputPresentation = z.infer<typeof RuntimeInputPresentationSchema>;
 

@@ -67,6 +67,9 @@ export const turnHeaderRowSchema = z.object({
     "goalContinuation",
     "editRerun",
     "workflowLaunch",
+    // 派单工单唤醒轮（D29）：工单卡（slice B）按此 origin 画；旧桌面 + 新 CLI
+    // 闭集加值该行 parse 失败被丢，与 workflowLaunch 加值同一档偏斜，同批发布。
+    "agentWorkOrder",
   ]),
   // 执行语义由 CLI 投影裁决；UI 不得根据输入文本或 duration 反推。
   // optional 仅用于兼容旧 snapshot，新的 turnHeader 一律显式写入。
