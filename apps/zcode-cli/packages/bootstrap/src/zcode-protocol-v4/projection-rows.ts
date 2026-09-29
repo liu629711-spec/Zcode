@@ -36,6 +36,9 @@ function mapTurnHeaderOrigin(
       return "goalContinuation";
     case "rewind":
       return "editRerun";
+    // 派单工单唤醒轮（D29）：与 event-normalizer 同表同词，live/cold 一致。
+    case "agent_work_order":
+      return "agentWorkOrder";
     default:
       return "userInput";
   }
@@ -53,6 +56,9 @@ function mapUserInputOrigin(
     case "subagent":
     case "subagent_message":
       return "mailbox";
+    // 工单 carrier 是 model-only 输入，不产生可见 user row；显式 synthetic 防冒用户气泡。
+    case "agent_work_order":
+      return "synthetic";
     case "fork":
     case "plugin_reference":
     case "rewind":

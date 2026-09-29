@@ -65,7 +65,8 @@ export interface CanonicalUserIntentFact extends CanonicalConversationFactBase {
     | "backgroundResult"
     | "goalContinuation"
     | "editRerun"
-    | "workflowLaunch";
+    | "workflowLaunch"
+    | "agentWorkOrder";
   originMeta?: BackgroundResultOriginMeta;
   /**
    * 中枢直接启动已保存工作流的启动轮元数据（`inputSource === "workflow_launch"` 时在场）。
@@ -406,6 +407,9 @@ function turnHeaderOrigin(
       return "goalContinuation";
     case "rewind":
       return "editRerun";
+    // 派单工单唤醒轮（D29）：turnHeader 用专属 origin，UI 据此画工单卡而不是普通轮头。
+    case "agent_work_order":
+      return "agentWorkOrder";
     // 中枢直接启动：turnHeader 与 userInput 同用 workflowLaunch origin，UI 据此画启动卡而非用户气泡。
     case "workflow_launch":
       return "workflowLaunch";
@@ -427,6 +431,10 @@ function userInputOrigin(
       // child 回复是 mailbox runtime carrier，不是真实用户输入；
       // live/cold 即使都隐藏它，也必须保留相同 canonical origin。
       return "mailbox";
+    // 工单 carrier 是 model-only 输入，不产生可见 user row；
+    // 显式 synthetic 而非缺省 realUser（否则会冒成用户气泡）。
+    case "agent_work_order":
+      return "synthetic";
     case "fork":
     case "plugin_reference":
     case "rewind":

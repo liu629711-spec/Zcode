@@ -32,6 +32,7 @@ import type { ModelProviderSourceTitle } from "../model-config.js";
 import type { ZCodeInstalledPluginData } from "../plugins.js";
 import type {
   AutomationPort,
+  AgentDispatchPort,
   OffPeakPort,
   BackgroundTaskCancelResult,
   CollaborationMode,
@@ -180,6 +181,8 @@ export interface ZCodeAppOptions {
   uiLocale?: UiLocale;
   onWorkflowEvent?: (event: WorkflowEvent) => void | Promise<void>;
   automationPort?: AutomationPort;
+  /** 跨会话派单端口（D29）；存在即注册 AgentDispatch 工具。 */
+  agentDispatchPort?: AgentDispatchPort;
   offPeakPort?: OffPeakPort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;
