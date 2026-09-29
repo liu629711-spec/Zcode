@@ -61,15 +61,21 @@ export function isCrossSessionCliInvocation(command: string, depth = 0): boolean
   const trimmed = command.trim();
   if (trimmed.length === 0) return false;
   const analysis = analyzeBashCommand(trimmed);
-  if (analysis.hasParseErrors) {
-    // 解析失败的结构不可信（argv 已不可靠）：保守起见对原文做兜底判定，
+  if (analysis.hasParseErrors || analysis.hasDynamicWords) {
+    // 解析失败，或带命令替换/参数展开（$(…)、反引号、$var）：argv 里的结构静态不可信——
+    // $(…) 里真正执行什么静态不可知，与解析失败同一认识论处境。保守起见对原文做兜底判定，
     // 宁可多弹一次确认也不放走一条跨会话直呼。
-    return (
-      /\bzcode(?:\.(?:exe|cmd|ps1|cjs|mjs|js))?\b/i.test(trimmed) &&
-      /--resume|--continue|--fork/.test(trimmed)
-    );
+    return rawTextGuard(trimmed);
   }
   return analysis.commands.some((invocation) => isGuardedInvocation(invocation.argv, depth));
+}
+
+/** 原文兜底：同时提到 zcode 系可执行与跨会话开关字面量才算（误伤面极窄，方向是多确认）。 */
+function rawTextGuard(text: string): boolean {
+  return (
+    /\bzcode(?:\.(?:exe|cmd|ps1|cjs|mjs|js))?\b/i.test(text) &&
+    /--resume|--continue|--fork/.test(text)
+  );
 }
 
 function isGuardedInvocation(argv: readonly string[], depth: number): boolean {
@@ -98,11 +104,14 @@ function isGuardedInvocation(argv: readonly string[], depth: number): boolean {
   return false;
 }
 
-/** 取壳命令引出的脚本字符串（`bash -c <script>` / `cmd /c <script>` / `pwsh -Command <script>`）。 */
+/** 取壳命令引出的脚本字符串（`bash -c/-lc/-ic <script>` / `cmd /c <script>` / `pwsh -Command <script>`）。 */
 function extractWrapperScript(argv: readonly string[]): string | undefined {
   for (let index = 1; index < argv.length - 1; index += 1) {
     const flag = argv[index]!.toLowerCase();
-    if (flag === "-c" || flag === "/c" || flag === "-command") return argv[index + 1];
+    // -lc/-ic 这类合并短旗标同样把脚本字符串带在下一个 token（bash -lc 'zcode --resume x' 是模型日常拼写）。
+    if (/^-[a-z]*c$/i.test(flag) || flag === "/c" || flag === "/k" || flag === "-command") {
+      return argv[index + 1];
+    }
   }
   return undefined;
 }

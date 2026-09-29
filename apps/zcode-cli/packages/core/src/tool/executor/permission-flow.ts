@@ -61,6 +61,10 @@ export async function resolveToolPermission(
     workingDirectory: deps.getWorkingDirectory(),
   };
   const runtimePermissionContext = resolveRuntimePermissionContext(deps);
+  // 一次解析两处共用：checkPermission 的判定与审批 gate 的 askOptions（askOptions 只在
+  // 运行时能力上声明的工具——如 Bash 的跨会话守卫——静态 entry 读不到）。
+  const runtimeCapability =
+    resolveRuntimePermissionCapability(entry, executionInput, runtimePermissionContext);
   const rulePolicy = entry.resolvePermissionRulePolicy?.(executionInput, runtimePermissionContext);
   const suggestedPermissionUpdates =
     rulePolicy?.suggestedPermissionUpdates ??
@@ -84,10 +88,7 @@ export async function resolveToolPermission(
   }
 
   let permissionDecision = deps.permissionService.checkPermission(
-    permissionContext,
-    resolveRuntimePermissionCapability(entry, executionInput, runtimePermissionContext),
-    projectRules,
-    rulePolicy,
+    permissionContext, runtimeCapability, projectRules, rulePolicy,
   );
   permissionDecision = applyPreToolPermissionDecision(permissionDecision, preToolHookResult, mode);
   permissionDecision = applyMemoryFilePermission({
@@ -151,7 +152,8 @@ export async function resolveToolPermission(
     };
   }
 
-  const approval = resolveToolApproval(deps, toolCall, entry, executionInput, traceContext);
+  const approval = resolveToolApproval(deps, toolCall, entry, runtimeCapability,
+    executionInput, traceContext);
   if (approval.gate === "proceed") {
     telemetry?.setPermissionDecision("not_required");
     return { allowed: true, executionInput };

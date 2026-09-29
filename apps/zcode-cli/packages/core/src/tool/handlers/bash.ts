@@ -83,9 +83,11 @@ function resolveBashPermissionCapability(
   if (!command) return undefined;
   // D32 后门收口：Bash 直呼 zcode CLI 跨会话操作（--resume/--continue 直达别的会话）
   // 会绕开产品逻辑。声明 alwaysAsk 让确认在任何权限模式下成立（含 yolo 直通、
-  // 项目 allow 规则都压不过它），用户仍可逐次放行。
+  // 项目 allow 规则都压不过它），用户仍可逐次放行。askOptions 把弹窗的"不再询问"
+  // 换成会话作用域（照 create-workflow.ts 先例）：checkAlwaysAsk 只认 sessionRules，
+  // 持久项目 allow 规则压不过这道确认，若让弹窗继续提供项目级"不再询问"就是个假按钮。
   if (isCrossSessionCliInvocation(command)) {
-    return { permission: { alwaysAsk: true } };
+    return { permission: { alwaysAsk: true, askOptions: { allowAlways: "session" } } };
   }
   if (!isRuntimeReadOnlyBashCommand(command, context)) return undefined;
   return {

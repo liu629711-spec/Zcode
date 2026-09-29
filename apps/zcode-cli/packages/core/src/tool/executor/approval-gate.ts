@@ -4,6 +4,7 @@ import {
   type ToolResultDisplayPayload,
   type TraceContext,
 } from "@zcode/contracts";
+import type { PermissionToolCapability } from "../../permission/service.js";
 import type { ExecutableToolCall, ToolEntry } from "../types.js";
 import type { ToolExecutorDeps } from "./types.js";
 
@@ -37,12 +38,16 @@ export function resolveToolApproval(
   deps: ToolExecutorDeps,
   toolCall: ExecutableToolCall,
   entry: ToolEntry,
+  permissionCapability: PermissionToolCapability,
   executionInput: unknown,
   traceContext: TraceContext,
 ): ResolvedToolApproval {
   // `permission` 类型上是必填，但 executor 也会被只声明了一部分字段的 entry 驱动
   // （测试桩、动态注册的工具）。周边代码靠 spread 而不是读字段来容忍这一点，gate 同理。
-  const optionsPolicy = resolveOptionsPolicy(entry.permission?.askOptions?.allowAlways);
+  // askOptions 读的是**合并后**的运行时能力：只在运行时能力上声明的 askOptions
+  // （如 Bash 的跨会话守卫把"不再询问"收窄成会话作用域）不能在这里被静态 entry 顶掉；
+  // 合并顺序 runtime 覆盖静态（permission-capability.ts），无运行时声明时与旧行为逐字节一致。
+  const optionsPolicy = resolveOptionsPolicy(permissionCapability.permission?.askOptions?.allowAlways);
 
   if (!entry.prepareApproval) {
     return { gate: "ask", ...(optionsPolicy ? { optionsPolicy } : {}) };
