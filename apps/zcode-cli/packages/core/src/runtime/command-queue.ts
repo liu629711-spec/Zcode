@@ -111,6 +111,12 @@ export interface WorkOrderRuntimeCommand extends RuntimeCommandBase {
   readonly envelope: AgentWorkOrderEnvelope;
   /** 信封拼装后的工单正文（<work-order> 包裹）。 */
   readonly text: string;
+  /** 本单一次性指定模型（注册表拼写）；唤醒轮只造本轮 Model，不改写目标会话常驻选择。 */
+  readonly modelSelection?: {
+    providerId: string;
+    modelId: string;
+    options?: { reasoningLevel?: string };
+  };
 }
 
 /**

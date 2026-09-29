@@ -179,6 +179,12 @@ export interface AgentRuntimeCoreMethods {
   enqueueAgentWorkOrder(input: {
     envelope: AgentWorkOrderEnvelope;
     traceContext?: TraceContext;
+    /** 本单一次性指定模型（注册表拼写）；只造工单轮的 Model，不改写目标会话常驻选择。 */
+    modelSelection?: {
+      providerId: string;
+      modelId: string;
+      options?: { reasoningLevel?: string };
+    };
   }): Promise<EnqueueAgentWorkOrderResult>;
   enqueueAgentWorkOrderReceipt(input: EnqueueAgentWorkOrderReceiptInput): void;
   enqueueSubagentMessage(input: EnqueueSubagentMessageInput): undefined;

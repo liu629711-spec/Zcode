@@ -27,8 +27,19 @@ export interface AgentDispatchRequest {
   /** 目标档案：agentId（uuid）优先，其次精确名（仅限本项目作用域）。歧义即拒绝。 */
   agent: string;
   task: string;
+  /** 新会话的人类短标题（会话列表展示用）；仅在新建会话时作为首输入标题种子。 */
+  title?: string;
   /** true 强制开新 persona 会话；默认投目标最新一段 persona 会话（无则自动开）。 */
   newSession?: boolean;
+  /**
+   * 本单指定模型（发起方目录里解析出的注册表拼写）。缺席 = 用目标智能体自己的模型；
+   * 只作用于工单这一轮，不改写目标会话的常驻选择（闲时任务同款语义）。
+   */
+  modelSelection?: {
+    providerId: string;
+    modelId: string;
+    options?: { reasoningLevel?: string };
+  };
   /** 发起方会话（信封的 fromSessionId 由执行器注入，不来自模型输入）。 */
   sourceSessionId: string;
   /** 发起方档案名/工号（信封署名；执行器注入）。 */
@@ -44,6 +55,8 @@ export interface AgentDispatchResult {
   delivery: "started" | "queued";
   /** 目标 persona 会话是本次新建的。 */
   createdSession: boolean;
+  /** 本单实际使用的模型 modelId；指定模型时必在。 */
+  model?: string;
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   type ToolPermissionSpec,
 } from "@zcode/contracts";
 import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
+import { resolveModelReference } from "./model-reference.js";
 
 const AGENT_DISPATCH_TOOL_TIMEOUT_MS = 30_000;
 const AGENT_DISPATCH_MODEL_BYTES = 16_000;
@@ -57,24 +58,62 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
   const parsed = AgentDispatchInputSchema.parse(input) as AgentDispatchInput;
   assertDispatchPort(context);
 
+  // 指定模型（2026-09-29 用户需求）：在发起方目录里解析注册表拼写，解析失败如实
+  // 报错并附可选清单（recoverable——模型可重试修正，不是死路）。
+  let modelSelection: {
+    providerId: string;
+    modelId: string;
+    options?: { reasoningLevel?: string };
+  } | undefined;
+  if (parsed.model !== undefined) {
+    if (!context.modelCatalogPort) {
+      throw createCoreError(
+        CoreErrorType.ConfigurationError,
+        "Model catalog is not configured for AgentDispatch",
+        {
+          context: {
+            toolCallId: context.toolCallId,
+            toolName: "AgentDispatch",
+          },
+          recoverable: false,
+        },
+      );
+    }
+    const resolution = resolveModelReference(parsed.model, context.modelCatalogPort.listModels());
+    if (!resolution.ok) {
+      throw createCoreError(CoreErrorType.ToolExecutionFailed, resolution.message, {
+        context: {
+          toolCallId: context.toolCallId,
+          toolName: "AgentDispatch",
+        },
+        recoverable: true,
+      });
+    }
+    modelSelection = resolution.selection;
+  }
+
   // 发起方署名由执行器注入（当前会话），模型不可伪造来源信封。
   const result = await context.agentDispatchPort.dispatch({
     agent: parsed.agent,
     task: parsed.task,
+    ...(parsed.title === undefined ? {} : { title: parsed.title }),
     ...(parsed.newSession === undefined ? {} : { newSession: parsed.newSession }),
+    ...(modelSelection === undefined ? {} : { modelSelection }),
     sourceSessionId: context.sessionId,
   });
   const deliveryNote =
     result.delivery === "queued"
       ? "The target session is busy; the work order is queued and will run at the next turn boundary."
       : "The work order has been delivered into the target session.";
+  const acceptance = `Work order accepted by ${result.agentName}. ${deliveryNote} This only confirms delivery; the answer will arrive later as a receipt in this session.`;
   return {
     targetSessionId: result.targetSessionId,
     agentName: result.agentName,
     ...(result.agentId ? { agentId: result.agentId } : {}),
     delivery: result.delivery,
     createdSession: result.createdSession,
-    message: `Work order accepted by ${result.agentName}. ${deliveryNote} This only confirms delivery; the answer will arrive later as a receipt in this session.`,
+    ...(result.model ? { model: result.model } : {}),
+    message: result.model ? `${acceptance} Running on model ${result.model}.` : acceptance,
   } satisfies AgentDispatchOutput;
 };
 
@@ -119,7 +158,9 @@ export const agentDispatchToolEntry: ToolEntry = {
       "Handle the request inside this conversation only when the user explicitly wants it handled here without involving the other agent's session, or is asking about the agents rather than tasking them.",
       "Pass the agent's agentId when it is known; otherwise pass the agent's exact name. Ambiguous or unknown names are rejected - never guess an id.",
       "Write the task as complete standalone instructions; the target agent cannot see this conversation.",
-      "Set newSession=true only when the user asks for a fresh session; by default the task goes to the agent's latest persona session.",
+      "Set newSession=true only when the user asks for a fresh session; by default the task goes to the agent's latest persona session. When a new session is requested, also pass a short human title (title) in the user's language - it becomes the session's name in the list.",
+      "If the user asks for a new session WITHOUT naming which agent should work in it, ask first instead of picking an agent from earlier conversation context - a session opened for the wrong agent is a wrong delivery.",
+      "When the user names a model for the task ('用 deepseek 回复我', 'use deepseek-v4.1'), pass it as model; the override applies to that task only. Changing an agent's default model is done via its profile, not this tool.",
       "A successful call only means the work order was accepted (queued if the target is busy). The final answer arrives as a separate receipt; do not claim the task is done.",
       "Never call AgentDispatch from a turn that was itself started by an agent work order; nesting is not allowed.",
     ],

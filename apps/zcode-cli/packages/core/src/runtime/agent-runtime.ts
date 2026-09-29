@@ -425,6 +425,12 @@ export interface AgentRuntime {
   enqueueAgentWorkOrder(input: {
     envelope: AgentWorkOrderEnvelope;
     traceContext?: TraceContext;
+    /** 本单一次性指定模型（注册表拼写）；只造工单轮的 Model，不改写目标会话常驻选择。 */
+    modelSelection?: {
+      providerId: string;
+      modelId: string;
+      options?: { reasoningLevel?: string };
+    };
   }): Promise<EnqueueAgentWorkOrderResult>;
   /**
    * 派单（D29/D3）窄公共入口：把目标轮的回执投进发起方会话（排队或即刻成轮）。

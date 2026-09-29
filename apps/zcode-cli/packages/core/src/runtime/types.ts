@@ -500,6 +500,12 @@ export interface ExecuteTurnOptionsBase {
   traceContext?: TraceContext;
   /** 当前 Submission 的 Selection 只用于本次执行，并可绑定逐请求依赖。 */
   modelExecution?: ModelExecutionContext;
+  /**
+   * 工单轮的一次性指定模型（D29+）：只造本轮 Model，不改写会话常驻选择
+   * （applySubmissionExecutionState 只在 intent.modelSelection 在场时才落会话选择，
+   * 工单轮不带 intent）。注册表拼写由发起方目录解析后传入。
+   */
+  executionModelSelection?: ModelSelection;
 }
 
 export type ExecuteTurnOptions = ExecuteTurnOptionsBase &

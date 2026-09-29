@@ -8,6 +8,7 @@ import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { QueryId, TraceContext } from "../deps.js";
 import type { AgentWorkOrderEnvelope } from "@zcode/contracts";
 import { WORK_ORDER_INPUT_ID_PREFIX, boundAgentWorkOrderMeta } from "@zcode/contracts";
+import type { ModelSelection } from "@zcode/shared";
 import { createRuntimeCommandId, type WorkOrderRuntimeCommand } from "../command-queue.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
 import {
@@ -36,6 +37,8 @@ export async function enqueueAgentWorkOrder(
   input: {
     envelope: AgentWorkOrderEnvelope;
     traceContext?: TraceContext;
+    /** 本单一次性指定模型（注册表拼写）；只造工单轮的 Model，不改写目标会话常驻选择。 */
+    modelSelection?: ModelSelection;
   },
 ): Promise<EnqueueAgentWorkOrderResult> {
   const traceContext = input.traceContext ?? this.rootTraceContext;
@@ -61,6 +64,7 @@ export async function enqueueAgentWorkOrder(
     text,
     traceContext,
     workOrderId,
+    ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
   };
   this.enqueueRuntimeCommand(command);
   // 账本 admission（durable 痕迹）：runtime 命令队列是纯内存的，崩溃后由 resume 统一收口。
@@ -193,14 +197,46 @@ export async function runWorkOrderCommand(
       ...(displayTask ? { displayInput: displayTask } : {}),
     });
   } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
     this.logger?.warn("Agent work order turn failed", {
       ...traceContextToLogContext(command.traceContext),
       commandId: command.id,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: reason,
       event: "agent_work_order.turn_failed",
       module: "core.runtime",
       workOrderId: command.workOrderId,
     });
+    // 工单失败也要在目标会话留终态（真机教训：轮死在 provider 风控时，会话里
+    // 只剩工单卡和一个没有终态的空轮，打开像"卡住了"）。model-only：模型下轮
+    // 知道上一单为什么没成；用户侧的失败告知由发起方会话的回执承担（D3）。
+    try {
+      const failureMessageId = createMessageId();
+      const failureText = `Work order execution failed: ${reason}`;
+      this.messageHistory.addUser(failureText, runtimeInputMetadata("agent_work_order"));
+      await this.persistSyntheticUserNoticeForSession({
+        messageID: failureMessageId,
+        metadata: {
+          inputPresentation: "agent_work_order",
+          visibility: "model-only",
+        },
+        sessionId: this.sessionId,
+        source: "agent_work_order",
+        text: failureText,
+        traceContext: command.traceContext,
+        visibility: "model-only",
+      });
+    } catch (noticeError) {
+      // 终态留痕失败不能覆盖原始失败原因；回执链已经把失败带给发起方。
+      this.logger?.warn("Failed to persist agent work order failure notice", {
+        ...traceContextToLogContext(command.traceContext),
+        commandId: command.id,
+        errorMessage: noticeError instanceof Error ? noticeError.message : String(noticeError),
+        event: "agent_work_order.failure_notice_failed",
+        module: "core.runtime",
+        status: "failed",
+        workOrderId: command.workOrderId,
+      });
+    }
   } finally {
     finishForegroundExecution.call(this, foregroundExecution);
   }

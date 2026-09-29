@@ -100,7 +100,13 @@ export async function executeTurnCommand(
   // 普通 Turn 过去在异步初始化完成后才读取 Session Selection/输出样式，
   // 初始化期间发生的切模会越过 admission 边界，错误影响已经开始的 Turn。
   // 这里在任何 await 之前冻结本轮事实；后续配置变化只作用于下一轮。
-  const admittedModelSelection = options?.intent?.modelSelection ?? this.getSessionModelSelection();
+  // executionModelSelection（工单轮的一次性指定模型）优先于会话常驻选择，且不写入
+  // 会话选择——applySubmissionExecutionState 只在 intent.modelSelection 在场时才落
+  // 会话选择，工单轮不带 intent，指定模型随轮结束即散。
+  const admittedModelSelection =
+    options?.intent?.modelSelection ??
+    options?.executionModelSelection ??
+    this.getSessionModelSelection();
   const admittedOutputStyle = this.config.outputStyle;
   const compactInstructions = parseCompactCommand(input);
   const rewindCommand = parseRewindCommand(input);
