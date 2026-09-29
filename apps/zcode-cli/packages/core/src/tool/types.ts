@@ -5,6 +5,7 @@
 import type {
   ExecutionShellSelection,
   AutomationPort,
+  AgentDispatchPort,
   OffPeakPort,
   EmbeddedSearchBackend,
   ExecutionPort,
@@ -136,6 +137,8 @@ export interface ToolExecutionContext {
   telemetry?: ToolExecutionSpanWriter;
   /** 当前工具调用是否属于 automation 派发轮；写工具 handler 用它做最终权限校验。 */
   automationTurn?: boolean;
+  /** 当前工具调用是否属于工单唤醒轮；AgentDispatch handler 用它做最终拒绝（嵌套上限=1）。 */
+  workOrderTurn?: boolean;
   /** 当前工具调用是否属于闲时任务派发轮；OffPeakCreate handler 用它做最终拒绝。 */
   offPeakTurn?: boolean;
   traceContext?: TraceContext;
@@ -166,6 +169,8 @@ export interface ToolExecutionContext {
   workflowEscalatePort?: WorkflowEscalatePort;
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
+  /** 跨会话派单端口；缺席则 AgentDispatch 不可用（未注册）。 */
+  agentDispatchPort?: AgentDispatchPort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;

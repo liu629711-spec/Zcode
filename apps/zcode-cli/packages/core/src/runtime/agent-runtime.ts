@@ -68,6 +68,9 @@ import type {
 } from "./deps.js";
 import { installAgentRuntimeMethods } from "./methods/index.js";
 import type { StartSavedWorkflowRunResult } from "./methods/dynamic-workflow-run-start.js";
+import type { EnqueueAgentWorkOrderResult } from "./methods/work-orders.js";
+import type { AgentWorkOrderEnvelope } from "./deps.js";
+import type { AgentProfile } from "../subagent/profile.js";
 import type {
   AmendWorkflowRunSettingsInput,
   AmendWorkflowRunSettingsResult,
@@ -364,6 +367,10 @@ export interface AgentRuntime {
   getSessionModelSelection(): ModelSelection | undefined;
   setSessionModelSelection(selection: ModelSelection | undefined): void;
   getProjectId(): ProjectId;
+  /** 派单（D29）端口读取本会话装载的现役档案；解析规则在 subagent/work-order.ts。 */
+  getAgentProfiles(): readonly AgentProfile[];
+  /** 派单发起方署名（persona 会话带 name/agentId）；普通会话缺席。 */
+  getProjectAgentPersona(): AgentRuntimeConfig["projectAgentPersona"];
   ensureSessionPersistedForExternalActivity(
     input: string,
     options?: { traceContext?: TraceContext },
@@ -399,6 +406,15 @@ export interface AgentRuntime {
     attachments?: TurnState["attachments"],
     options?: PromptAdmissionOptions,
   ): Promise<PromptAdmissionReceipt>;
+  /**
+   * 派单（D29/D2）窄公共入口：把一条工单 carrier 投进本会话（排队或即刻成轮）。
+   * 目标解析/会话定位在 bootstrap 协议端口；core 只负责排队、落库 synthetic notice
+   * 与按工单身份成轮。投递成功 ≠ 已处理——delivery 是诚实口径的受理事实。
+   */
+  enqueueAgentWorkOrder(input: {
+    envelope: AgentWorkOrderEnvelope;
+    traceContext?: TraceContext;
+  }): Promise<EnqueueAgentWorkOrderResult>;
   /** Session 常驻池使用的 runtime busy 权威事实，包含 queue/drain/reservation。 */
   hasActiveOrQueuedTurnWork(): boolean;
   /** Session 常驻池使用的后台 Bash/Agent/Workflow running 权威事实。 */

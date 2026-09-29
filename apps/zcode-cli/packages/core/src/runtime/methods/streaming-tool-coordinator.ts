@@ -29,6 +29,7 @@ import { persistPendingToolPart } from "./tool-part-persistence.js";
 import {
   isAutomationMutationRestrictedTurn,
   isOffPeakCreateRestrictedTurn,
+  isWorkOrderRestrictedTurn,
   recordModelHistoryRound,
   type RegularTurnLoopState,
 } from "./turn-loop-state.js";
@@ -289,6 +290,7 @@ async function executeDuringStream(
     model: state.model,
     automationTurn: isAutomationMutationRestrictedTurn(state),
     offPeakTurn: isOffPeakCreateRestrictedTurn(state),
+    workOrderTurn: isWorkOrderRestrictedTurn(state),
     signal: options.abortSignal,
     traceContext: options.traceContext,
     onBatchStart: async () => {

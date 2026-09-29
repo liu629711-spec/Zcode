@@ -8,6 +8,7 @@ import {
 import { getMode, getPlanEnabled } from "./config.js";
 import { getSessionModelSelection, setSessionModelSelection } from "./config.js";
 import { getProjectId } from "./config.js";
+import { getAgentProfiles, getProjectAgentPersona } from "./config.js";
 import { setWorkingDirectory } from "./config.js";
 import { ensureSessionPersistedForExternalActivity } from "./config.js";
 import { getActiveTurnInfo } from "./config.js";
@@ -45,6 +46,7 @@ import {
   sealBackgroundTaskNotifications,
 } from "./background-notifications.js";
 import { drainPendingRuntimeCommandsForActiveLoop } from "./runtime-command-active-loop.js";
+import { enqueueAgentWorkOrder } from "./work-orders.js";
 import { enqueueSubagentMessage } from "./subagent-messages.js";
 import {
   acquireForegroundPromotionLease,
@@ -209,6 +211,8 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.getSessionModelSelection = getSessionModelSelection;
   proto.setSessionModelSelection = setSessionModelSelection;
   proto.getProjectId = getProjectId;
+  proto.getAgentProfiles = getAgentProfiles;
+  proto.getProjectAgentPersona = getProjectAgentPersona;
   proto.setWorkingDirectory = setWorkingDirectory;
   proto.ensureSessionPersistedForExternalActivity = ensureSessionPersistedForExternalActivity;
   proto.maybeStartSessionTitleGenerationFromExternalInput =
@@ -257,6 +261,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.releaseForegroundPromotionLease = releaseForegroundPromotionLease;
   proto.stopActiveForegroundExecution = stopActiveForegroundExecution;
   proto.enqueueBackgroundTaskNotification = enqueueBackgroundTaskNotification;
+  proto.enqueueAgentWorkOrder = enqueueAgentWorkOrder;
   proto.enqueueSubagentMessage = enqueueSubagentMessage;
   proto.drainPendingRuntimeCommandsForActiveLoop = drainPendingRuntimeCommandsForActiveLoop;
   proto.sealBackgroundTaskNotifications = sealBackgroundTaskNotifications;

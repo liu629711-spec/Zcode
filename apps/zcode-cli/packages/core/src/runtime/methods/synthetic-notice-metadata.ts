@@ -73,6 +73,10 @@ function syntheticUserNoticeKind(source: SyntheticUserMessageSource): MessageSem
       return "system_reminder";
     case "agent_call":
       return "system_reminder";
+    // 派单工单（D29）：目标会话里的唤醒轮 carrier，与 background_task 同档——
+    // provider 可见、UI 不画用户气泡（卡片归 UI 专用呈现）。
+    case "agent_work_order":
+      return "background_notification";
     case "rewind":
       return "rewind_notice";
     case "selection_side_chat":

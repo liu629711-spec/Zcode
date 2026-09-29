@@ -34,7 +34,12 @@ import type {
   ContextBuilder,
   ExecutionShellSelection,
 } from "./deps.js";
-import type { BackgroundResultOriginMeta, ContextUsageBreakdownItem } from "@zcode/contracts";
+import type {
+  AgentWorkOrderEnvelope,
+  BackgroundResultOriginMeta,
+  ContextUsageBreakdownItem,
+} from "@zcode/contracts";
+import type { EnqueueAgentWorkOrderResult } from "./methods/work-orders.js";
 import type { RuntimeCommand, RuntimeCommandId } from "./command-queue.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
@@ -170,6 +175,10 @@ export interface AgentRuntimeCoreMethods {
     toolName?: string;
     traceContext: TraceContext;
   }): void;
+  enqueueAgentWorkOrder(input: {
+    envelope: AgentWorkOrderEnvelope;
+    traceContext?: TraceContext;
+  }): Promise<EnqueueAgentWorkOrderResult>;
   enqueueSubagentMessage(input: EnqueueSubagentMessageInput): undefined;
   drainPendingRuntimeCommandsForActiveLoop(): Promise<{
     backgroundSubagentResultConsumed: boolean;

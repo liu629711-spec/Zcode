@@ -12,6 +12,7 @@ import type {
   BrowserControlPort,
   ExecutionShellSelection,
   AutomationPort,
+  AgentDispatchPort,
   OffPeakPort,
   FileSystemPort,
   HttpClientPort,
@@ -105,6 +106,7 @@ export interface ToolExecutorOptions {
   workflowEscalatePort?: WorkflowEscalatePort;
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
+  agentDispatchPort?: AgentDispatchPort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
@@ -168,6 +170,8 @@ export interface ToolExecutor {
 export interface ToolExecuteOptions {
   automationTurn?: boolean;
   offPeakTurn?: boolean;
+  /** 当前执行处于工单唤醒轮；AgentDispatch 的 context 标志（嵌套上限终审）来源。 */
+  workOrderTurn?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
@@ -211,6 +215,7 @@ export interface ToolExecutorDeps {
   workflowEscalatePort?: WorkflowEscalatePort;
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
+  agentDispatchPort?: AgentDispatchPort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;

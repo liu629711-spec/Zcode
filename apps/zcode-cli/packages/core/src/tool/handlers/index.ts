@@ -43,6 +43,7 @@ import {
   cronListToolEntry,
   cronUpdateToolEntry,
 } from "./cron.js";
+import { agentDispatchToolEntry } from "./agent-dispatch.js";
 import { offPeakCreateToolEntry, offPeakListToolEntry } from "./off-peak.js";
 import {
   createEnterPlanModeToolEntry,
@@ -89,6 +90,8 @@ export const builtInTools: ToolEntry[] = [
   cronListToolEntry,
   cronUpdateToolEntry,
   cronDeleteToolEntry,
+  // 派单（D29/D1）：跨会话工单投递；端口在场才注册（includeAgentDispatch）。
+  agentDispatchToolEntry,
   offPeakCreateToolEntry,
   offPeakListToolEntry,
   enterPlanModeToolEntry,
@@ -172,6 +175,8 @@ interface RegisterBuiltInToolsOptions {
   includeEscalate?: boolean;
   includeWorkflow?: boolean;
   includeAutomation?: boolean;
+  /** 派单（D29）会话内工具面；由 AgentDispatchPort 在场驱动，工单轮/子代理不注册。 */
+  includeAgentDispatch?: boolean;
   /** Off-Peak 会话内创建工具面；由 host 的 offPeakToolEnabled flag（灰度/远程门）驱动。 */
   includeOffPeak?: boolean;
   /**
@@ -245,6 +250,9 @@ export function registerBuiltInTools(
         entry.metadata.name === "CronDelete") &&
       options.includeAutomation !== true
     ) {
+      continue;
+    }
+    if (entry.metadata.name === "AgentDispatch" && options.includeAgentDispatch !== true) {
       continue;
     }
     if (

@@ -115,6 +115,8 @@ export type {
   Logger,
   AttachmentStorageMetadata,
   AutomationPort,
+  AgentDispatchPort,
+  AgentWorkOrderEnvelope,
   OffPeakPort,
   BackgroundExecutionSnapshot,
   BackgroundTaskCancelResult,

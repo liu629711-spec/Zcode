@@ -12,6 +12,7 @@ import type {
 } from "../deps.js";
 import type { ActiveTurnSteeringState } from "../types.js";
 import type { SubagentRunOptions } from "@zcode/contracts";
+import { WORK_ORDER_INPUT_ID_PREFIX } from "@zcode/contracts";
 import type { DrainedPendingInputDiagnostics } from "../types.js";
 import type { TurnMachineImpl } from "../deps.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
@@ -22,6 +23,11 @@ export const RAPID_REFILL_TOOL_TURN_THRESHOLD = 3;
 export const MAX_CONSECUTIVE_RAPID_REFILLS = 3;
 export const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
 const AUTOMATION_QUERY_ID_PREFIX = "automation-";
+// 工单唤醒轮（D29/D1）：与 automation 同构的第三套三重信号。
+// 显式 workOrderId 为主信号；inputId/queryId 的 workorder- 前缀与 turn denylist
+// 的 AgentDispatch 哨兵是纵深兜底，三层合起来执行「嵌套上限=1」。
+// 前缀单一来源在 contracts（与 bootstrap 端口自检共用）。
+const WORK_ORDER_QUERY_ID_PREFIX = WORK_ORDER_INPUT_ID_PREFIX;
 /**
  * 闲时派发轮隐藏的工具；OffPeakList 只读保留。
  * - OffPeakCreate：防止闲时任务递归自我派生、无限调度。
@@ -77,6 +83,8 @@ export interface RegularTurnLoopState {
   activeTurn?: ActiveTurnSteeringState;
   /** Host admission 显式传入的本轮 automation 身份；不能从持久 task metadata 推断。 */
   automationId?: string;
+  /** 显式传入的本轮工单身份（D29）；工单唤醒轮据此禁 AgentDispatch（嵌套上限=1）。 */
+  workOrderId?: string;
   /** Host admission 显式传入的本轮闲时任务身份；与 automationId 互斥，不从持久 meta 推断。 */
   offPeakTaskId?: string;
   /** CronCreate 命中全局上限后，本用户 turn 永久切为纯文本回复，禁止模型自行恢复。 */
@@ -149,6 +157,22 @@ export function isOffPeakCreateRestrictedTurn(state: RegularTurnLoopState): bool
   // 兜底只认 OffPeakCreate 这一哨兵：旧 host 派发的 denylist 可能尚未带上 新增的工具。
   const disallowedTools = new Set(state.toolDisallowlist ?? []);
   return disallowedTools.has(OFF_PEAK_MUTATION_TOOL_NAMES[0]);
+}
+
+/**
+ * 本轮是否为工单唤醒 turn（需 deny AgentDispatch，嵌套上限=1）。三重信号与
+ * isAutomationMutationRestrictedTurn 同构：显式 workOrderId 为主信号；
+ * inputId/queryId 的 workorder- 前缀与 turn denylist 是纵深兜底。
+ */
+export function isWorkOrderRestrictedTurn(state: RegularTurnLoopState): boolean {
+  if (state.workOrderId?.trim()) return true;
+  const queryId = state.turnTraceContext.queryId?.trim();
+  if (queryId?.startsWith(WORK_ORDER_QUERY_ID_PREFIX)) return true;
+
+  // 兜底只认 AgentDispatch 这一哨兵：绕过显式身份的工单轮（旧 host / 异常入口）
+  // 仍要被终审拦住，工单轮内绝不允许再派单。
+  const disallowedTools = new Set(state.toolDisallowlist ?? []);
+  return disallowedTools.has("AgentDispatch");
 }
 
 export function evaluateRapidRefill(

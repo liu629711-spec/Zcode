@@ -1,5 +1,5 @@
 import type { TraceContext, TurnState } from "./deps.js";
-import type { BackgroundResultOriginMeta, WorkflowLaunchMeta } from "@zcode/contracts";
+import type { AgentWorkOrderEnvelope, BackgroundResultOriginMeta, WorkflowLaunchMeta } from "@zcode/contracts";
 import type {
   ActiveTurnStartReservation,
   ContinueActiveTargetLoopOptions,
@@ -14,6 +14,7 @@ export type RuntimeCommandMode =
   | "target-continuation-loop"
   | "task-notification"
   | "subagent-message"
+  | "work-order"
   | "control-only-turn";
 export type RuntimeCommandId = string & {
   readonly __runtimeCommandId: unique symbol;
@@ -88,6 +89,25 @@ export interface SubagentMessageRuntimeCommand extends RuntimeCommandBase {
 }
 
 /**
+ * 派单工单命令（D29/D2）：目标会话忙时在 runtime 命令队列排队，回合边界取件
+ * 独立成轮（绝不打断进行中回合）。与 task-notification 同一家族但**刻意不合并批次**：
+ * 工单轮必须携带自己的身份（workOrderId/inputId）与 tool denylist（嵌套上限=1）。
+ */
+export interface WorkOrderRuntimeCommand extends RuntimeCommandBase {
+  readonly branchGeneration: number;
+  readonly mode: "work-order";
+  readonly source: "agent_work_order";
+  /** 工单身份（uuid）；唤醒轮 options.workOrderId 携带同一值。 */
+  readonly workOrderId: string;
+  /** 唤醒轮 inputId/queryId，`workorder-<workOrderId>` 派生。 */
+  readonly inputId: string;
+  /** 信封结构体（落库 message metadata 供 UI 卡片/回执对账）。 */
+  readonly envelope: AgentWorkOrderEnvelope;
+  /** 信封拼装后的工单正文（<work-order> 包裹）。 */
+  readonly text: string;
+}
+
+/**
  * 一条排队的 controlOnly 用户轮：GUI「配置」
  * 已经把 run 修订掉了，这条命令只负责把这件事记进会话。它不进模型轮，却要落一条 user 消息，而
  * user 消息插不进一个正在跑的 turn（provider 语法：assistant 的 tool_use 与 tool_result 之间
@@ -112,6 +132,7 @@ export type RuntimeCommand =
   | TargetContinuationLoopRuntimeCommand
   | TaskNotificationRuntimeCommand
   | SubagentMessageRuntimeCommand
+  | WorkOrderRuntimeCommand
   | ControlOnlyTurnRuntimeCommand;
 
 export interface RuntimeCommandQueue {

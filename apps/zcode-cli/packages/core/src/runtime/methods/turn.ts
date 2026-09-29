@@ -564,6 +564,8 @@ export async function executeTurnCommand(
         loopState = {
           activeTurn,
           ...(options?.automationId ? { automationId: options.automationId } : {}),
+          // 工单唤醒轮的身份进入 loop state，供工具执行边界 deny AgentDispatch（嵌套上限=1）。
+          ...(options?.workOrderId ? { workOrderId: options.workOrderId } : {}),
           // 闲时派发轮的身份进入 loop state，供工具执行边界 deny OffPeakCreate。
           ...(options?.offPeakTaskId ? { offPeakTaskId: options.offPeakTaskId } : {}),
           anomalyWarningsInjected: 0,

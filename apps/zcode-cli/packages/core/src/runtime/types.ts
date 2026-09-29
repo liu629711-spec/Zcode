@@ -71,6 +71,7 @@ import type {
   BrowserControlPort,
   ExecutionShellSelection,
   AutomationPort,
+  AgentDispatchPort,
   OffPeakPort,
   FileSystemPort,
   HttpClientPort,
@@ -386,6 +387,8 @@ export interface AgentRuntimeDeps {
   runtimeTaskRegistry?: RuntimeTaskRegistry;
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
+  /** 跨会话派单端口（D29）；存在即注册 AgentDispatch，缺席则工具不可见。 */
+  agentDispatchPort?: AgentDispatchPort;
   offPeakPort?: OffPeakPort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;
@@ -473,6 +476,8 @@ export interface ExecuteTurnOptionsBase {
   inputSource?: SyntheticUserMessageSource;
   inputPresentation?: RuntimeInputPresentation;
   inputVisibility?: MessageVisibility;
+  /** 显式传入的本轮工单身份（D29）；工单唤醒轮据此在执行边界禁 AgentDispatch（嵌套上限=1）。 */
+  workOrderId?: string;
   originMeta?: BackgroundResultOriginMeta;
   /** 仅用于冻结 background notification batch 的整批因果来源，不用于展示。 */
   backgroundSource?: BackgroundResultOriginMeta["backgroundSource"];
@@ -748,6 +753,8 @@ export interface PermissionDecisionResult {
 export interface ExecuteToolsOptions {
   automationTurn?: boolean;
   offPeakTurn?: boolean;
+  /** 当前执行处于工单唤醒轮；AgentDispatch 执行边界终审的来源（嵌套上限=1）。 */
+  workOrderTurn?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
   /** 仅透传给当前 turn 同步等待的 Agent child。 */

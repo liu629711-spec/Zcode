@@ -108,6 +108,21 @@ export function getProjectId(this: AgentRuntimeInternal): ProjectId {
   return projectIdFromDirectory(this.workspaceRoot);
 }
 
+export function getAgentProfiles(
+  this: AgentRuntimeInternal,
+): readonly import("../../subagent/profile.js").AgentProfile[] {
+  // 派单（D29）端口读取本会话装载的现役档案（user+project 两作用域）；
+  // 解析规则在 core/src/subagent/work-order.ts，端口只取原始名单。
+  return this.config.subagents?.profiles ?? [];
+}
+
+export function getProjectAgentPersona(
+  this: AgentRuntimeInternal,
+): AgentRuntimeInternal["config"]["projectAgentPersona"] {
+  // 派单（D29）发起方署名：persona 会话带 name/agentId，普通会话缺席（信封退化为 user）。
+  return this.config.projectAgentPersona;
+}
+
 export function setWorkingDirectory(this: AgentRuntimeInternal, cwd: string): void {
   // Bash cwd 持久化只应影响当前 runtime 会话，不能改变工作区身份。
   this.workingDirectory = cwd;

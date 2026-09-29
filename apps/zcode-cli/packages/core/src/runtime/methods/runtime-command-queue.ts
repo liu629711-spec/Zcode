@@ -8,6 +8,7 @@ import {
 } from "./background-notifications.js";
 import { persistSubagentMessageCommand } from "./subagent-messages.js";
 import { runControlOnlyTurnCommand } from "./control-only-turn.js";
+import { runWorkOrderCommand } from "./work-orders.js";
 import { createTurnCancelledError } from "../helpers/index.js";
 import { executeTargetContinuationCommand } from "./target.js";
 import { runActiveTargetContinuationLoop } from "./target-continuation-loop.js";
@@ -53,6 +54,12 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
           throw new Error("Runtime command queue returned a mixed task-notification batch");
         }
         await runTaskNotificationBatch.call(this, notificationCommands);
+        continue;
+      }
+      if (firstCommand.mode === "work-order") {
+        // 工单独占成轮，不与通知合并批次：轮身份（workOrderId/inputId）与
+        // turn denylist（嵌套上限=1）都必须逐单携带。
+        await runWorkOrderCommand.call(this, firstCommand);
         continue;
       }
       if (commands.length !== 1) {
@@ -393,7 +400,9 @@ async function runTaskNotificationBatch(
   }
 }
 
-function beginForegroundExecution(
+// 导出给 work-orders.ts 复用：工单唤醒轮与 task-notification 批次同一套
+// 前台执行（abort 域 + 跨越轮生命周期的取消）。
+export function beginForegroundExecution(
   this: AgentRuntimeInternal,
   command: RuntimeCommand,
 ): ActiveForegroundExecutionState {
@@ -422,7 +431,7 @@ function beginForegroundExecution(
   return state;
 }
 
-function finishForegroundExecution(
+export function finishForegroundExecution(
   this: AgentRuntimeInternal,
   state: ActiveForegroundExecutionState,
 ): void {

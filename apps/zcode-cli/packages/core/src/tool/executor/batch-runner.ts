@@ -41,6 +41,7 @@ export async function executeToolBatch(
         executeOne(tc, {
           automationTurn: options?.automationTurn,
           offPeakTurn: options?.offPeakTurn,
+          workOrderTurn: options?.workOrderTurn,
           signal: options?.signal,
           traceContext: options?.traceContext,
           subagentModelOverride: options?.subagentModelOverride,
@@ -79,6 +80,8 @@ export async function* executeToolSchedule(
 
     const groupResults = await executeBatch(groupTools, {
       automationTurn: options?.automationTurn,
+      // offPeakTurn 刻意不在此透传（与既有行为一致，不因 workOrderTurn 顺带改语义）。
+      workOrderTurn: options?.workOrderTurn,
       signal: options?.signal,
       traceContext: options?.traceContext,
       subagentModelOverride: options?.subagentModelOverride,
