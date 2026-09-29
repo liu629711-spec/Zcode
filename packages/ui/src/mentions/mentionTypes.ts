@@ -1,3 +1,5 @@
+import type { AgentColor } from "@zcode/shared";
+
 export type MentionCategory =
   | "files"
   | "skills"
@@ -7,8 +9,7 @@ export type MentionCategory =
   | "sessions"
   | "plugins";
 
-export interface MentionItemData {
-  kind?: "file" | "directory" | "whiteboard";
+export interface MentionItemData {  kind?: "file" | "directory" | "whiteboard";
   path?: string;
   relativePath?: string;
   boardId?: string;
@@ -25,6 +26,8 @@ export interface MentionItemData {
   palette?: string[];
   /** 素材/风格引用归属的素材 id（V4.6）：引用 chip 悬停预览按 id 查预览产物。 */
   assetId?: string;
+  /** 点将候选（D24）：档案色，面板行用它画与侧栏同一枚彩色工牌（缺色按名字哈希兜底）。 */
+  agentColor?: AgentColor;
 }
 
 export interface MentionItem {

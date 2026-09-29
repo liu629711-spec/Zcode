@@ -47,6 +47,8 @@ export function mapProjectAgentsToCallMentionItems(
         value: name,
         markdown: buildAgentCallMentionMarkdown(name, name),
         keywords: [name, agent.description],
+        // 档案色带进面板（D24）：与侧栏工牌同色，用户在两处认同一个人。
+        data: { ...(agent.color ? { agentColor: agent.color } : {}) },
       } satisfies MentionItem;
     });
 }

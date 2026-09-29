@@ -29,6 +29,7 @@ import {
   type ActivePromptInputTrigger,
 } from "../lib/promptInputTriggers.js";
 import { ContextMentionOptionContent } from "@/mentions/components/ContextMentionOptionContent.js";
+import { AgentCallMentionOptionContent } from "@/mentions/components/AgentCallMentionOptionContent.js";
 import { DesignStyleMentionOptionContent } from "@/mentions/components/DesignStyleMentionOptionContent.js";
 import { PluginMentionOptionContent } from "@/mentions/components/PluginMentionOptionContent.js";
 import {
@@ -397,6 +398,10 @@ export function MentionPlugin({
               </span>
             ) : item.category === "sessions" ? (
               <ContextMentionOptionContent item={item} workspacePath={workspacePath} />
+            ) : item.category === "subagents" ? (
+              // 点将候选（D24）：不给专属行就会掉进 `undefined` 分支，只剩一个光名字、
+              // 和文件行混在一起看不出"这是能派活的人"。
+              <AgentCallMentionOptionContent item={item} />
             ) : item.category === "plugins" ? (
               <PluginMentionOptionContent item={item} />
             ) : undefined,

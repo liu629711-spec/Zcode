@@ -97,4 +97,11 @@ test("mapProjectAgentsToCallMentionItems：过滤非法名、按名字与介绍�
   assert.equal(item.category, "subagents");
   assert.equal(item.markdown, "[@code-builder](agent://code-builder)");
   assert.equal(item.id, "agent-call:code-builder");
+  // 面板行靠这个色画工牌（与侧栏同一枚）：无色档案不给 data.agentColor，由行内哈希兜底。
+  assert.deepEqual(item.data, { agentColor: "green" });
+  assert.deepEqual(
+    mapProjectAgentsToCallMentionItems([directory[0]!], "doc")[0]!.data,
+    {},
+    "档案没选色就不带 agentColor 键",
+  );
 });
