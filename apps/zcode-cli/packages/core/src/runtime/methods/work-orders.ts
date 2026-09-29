@@ -194,6 +194,13 @@ export async function runWorkOrderCommand(
       workOrderId: command.workOrderId,
       // 工单卡元数据（D29/D5）：随 TurnStarted 下发，目标会话画「来自 X 的任务」卡。
       agentWorkOrder: agentWorkOrderMeta,
+      // 本单一次性指定模型（D32）：命令带着但执行轮此前没接——工单实际仍跑会话
+      // 常驻模型，发起侧却如实报 "Running on model X"（真机事故 2026-09-29：指定
+      // 自定义模型被静默回退到官方套餐，撞上 provider 风控）。turn.ts 的 admission
+      // （executionModelSelection 优先于会话选择且不落盘）早已就绪，只欠这一传。
+      ...(command.modelSelection === undefined
+        ? {}
+        : { executionModelSelection: command.modelSelection }),
       ...(displayTask ? { displayInput: displayTask } : {}),
     });
   } catch (error) {

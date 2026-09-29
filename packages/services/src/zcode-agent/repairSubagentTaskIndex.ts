@@ -30,8 +30,13 @@ export async function repairSubagentTaskIndex(params: {
     // 旧 Agent 不支持参数时直接失败；缺失记录、跨身份结果和已失效订阅均不能推断为可删除。
     for (const session of sessions) {
       if (!isCurrent()) return;
+      // 派单工作台会话（D32）与 subagent child 同属"派生索引不该有行"的类：
+      // workOrderOnly 是落盘 persona 经 mapSessionInfo 透传的权威标记，
+      // 行是漏网的历史残留才走到这里。
+      const isDerivedOnlyRow =
+        session.sessionKind === "subagent_child" || session.workOrderOnly === true;
       if (
-        session.sessionKind !== "subagent_child" ||
+        !isDerivedOnlyRow ||
         !batch.includes(session.sessionId) ||
         resolveWorkspaceKey(session.workspace) !== resolveWorkspaceKey(target)
       )

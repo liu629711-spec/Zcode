@@ -182,9 +182,19 @@ export function createProtocolAgentDispatchPort(
       if (!targetSessionId) {
         // 既有 createSession persona 链开新段；工作区用发起方自己的 workspace ref
         // （一个 CLI 进程一个 workspace，跨 workspace 目标在这里就不存在）。
+        // 本单指定模型（D32）覆盖档案默认：新会话从出生就带着它（persona
+        // modelSelection 走 create 路径落会话常驻选择），后续轮不回退。
+        // workOrderOnly（D32 真机事故）：逐单开的工作台会话不进侧栏/归档列表，
+        // 结果由回执送回发起方——否则会话区堆成片一次性空壳（用户原话"太混乱"）。
         const created = await deps.createPersonaSessionRecord({
           workspace: ownRecord.workspace,
-          persona: profileToPersona(profile),
+          persona: {
+            ...profileToPersona(profile),
+            workOrderOnly: true,
+            ...(input.modelSelection === undefined
+              ? {}
+              : { modelSelection: input.modelSelection }),
+          },
         });
         targetSessionId = created.sessionId;
         createdSession = true;

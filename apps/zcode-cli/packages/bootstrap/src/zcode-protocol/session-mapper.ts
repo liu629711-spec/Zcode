@@ -308,6 +308,9 @@ export function mapSessionInfo(input: {
     traceId: input.session?.traceID ?? input.app?.traceId,
     sessionId,
     sessionKind: (input.session?.taskType ?? input.taskType ?? "interactive") as ZCodeSessionKind,
+    // 派单工作台标记（D32）：落盘 persona 快照 → 协议可见，任务索引据此跳过
+    // （工单会话是干活台面不是聊天记录，不进侧栏/归档列表）。
+    ...(input.session?.persona?.workOrderOnly ? { workOrderOnly: true } : {}),
     status: input.projection?.status ?? "idle",
     target: mapSessionGoal(input.projection?.target),
     title: input.session?.title ?? "",

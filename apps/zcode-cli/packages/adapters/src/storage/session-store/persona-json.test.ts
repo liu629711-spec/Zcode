@@ -65,3 +65,22 @@ test("decode：形状漂移（缺 name/systemPrompt/非对象）→ undefined，
     assert.equal(decodeSessionPersonaJson(raw), undefined, raw);
   }
 });
+
+test("encode/decode：workOrderOnly 派单工作台标记随快照落盘往返（D32 additive 字段）", () => {
+  const persona = {
+    name: "UI-plus",
+    systemPrompt: "干活的",
+    workOrderOnly: true,
+  };
+  const raw = encodeSessionPersonaJson(persona);
+  assert.ok(raw, "带新字段的 persona 必须能落盘");
+  const decoded = decodeSessionPersonaJson(raw);
+  assert.equal(decoded?.workOrderOnly, true);
+  // 旧字段不丢：同一份快照里常规字段照常往返。
+  assert.equal(decoded?.name, "UI-plus");
+  // 无标记的普通 persona 行为不变。
+  assert.equal(decodeSessionPersonaJson(encodeSessionPersonaJson({
+    name: "code-test",
+    systemPrompt: "聊天用",
+  }))?.workOrderOnly, undefined);
+});

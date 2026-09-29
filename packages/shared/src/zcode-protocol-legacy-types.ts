@@ -151,6 +151,9 @@ export const zcodeSessionInfoSchema = z
     mode: zcodeSessionModeSchema,
     status: zcodeSessionStatusSchema,
     model: modelSelectionSchema.optional(),
+    // 派单工作台标记（D32）：从落盘 persona 快照透传（mapSessionInfo）。
+    // 任务索引据此跳过——工单会话不进侧栏/归档列表，见 persona schema 同名注释。
+    workOrderOnly: z.boolean().optional(),
     target: zcodeSessionGoalSchema.nullable().optional(),
     createdAt: timestampMsSchema,
     updatedAt: timestampMsSchema,

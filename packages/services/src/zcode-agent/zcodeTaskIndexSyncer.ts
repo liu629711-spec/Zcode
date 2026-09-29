@@ -1672,6 +1672,10 @@ export function createZCodeTaskIndexSyncer(
     const meta = buildMetaFromSnapshot(snapshot, options);
     // 旧 child 标签页的显式 resume 仍会同步快照；只读详情不能重新写成主任务。
     if (snapshot.session.sessionKind === "subagent_child") return meta;
+    // 派单工作台会话（D32）：persona.workOrderOnly 的工单会话不进侧栏/归档——
+    // 它是干活台面不是聊天记录，回执已把结果送回发起方；逐单开会话曾把
+    // 会话区与归档区堆成片一次性空壳。显式打开（回执链）仍可读，只是不入列。
+    if (snapshot.session.workOrderOnly === true) return meta;
     // 同时把 snapshot.messages 里可见的聊天正文索引下去，
     // 让 TaskSearchDialog 正文搜索能命中；旧 sqlite 行下次到这里时自然回填。
     const searchableText = buildSearchableTextFromSnapshot(snapshot);

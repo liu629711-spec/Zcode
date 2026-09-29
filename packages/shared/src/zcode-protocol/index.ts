@@ -1575,6 +1575,11 @@ export const zcodeSessionPersonaSchema = z.object({
   tools: z.array(nonEmptyString).optional(),
   disallowedTools: z.array(nonEmptyString).optional(),
   color: z.enum(["red", "blue", "green", "yellow", "purple", "orange", "pink", "cyan"]).optional(),
+  // 派单工作台标记（D32 真机事故）：AgentDispatch 为执行工单新建的会话带此标记，
+  // 侧栏/归档的任务索引跳过它——工单会话是干活的台面不是聊天记录，回执已把
+  // 结果送回发起方；逐单开会话曾在会话区/归档区堆出成片一次性空壳。可选字段，
+  // additive 纪律同上；用户此后在该会话里手聊不改变不 Listed 的既成事实（v1 边界）。
+  workOrderOnly: z.boolean().optional(),
 });
 export type ZCodeSessionPersona = z.infer<typeof zcodeSessionPersonaSchema>;
 

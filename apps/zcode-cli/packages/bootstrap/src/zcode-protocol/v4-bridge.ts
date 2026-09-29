@@ -1426,18 +1426,24 @@ export function createConversationV4Gateway(
         taskTypes: [...TASK_LIST_SESSION_TYPES],
         workspaceID: parsedRemote ? (workspaceId as WorkspaceId) : null,
       });
-      return stored.map((session) => ({
-        sessionId: String(session.id),
-        workspaceId,
-        ...(session.parentID ? { parentSessionId: String(session.parentID) } : {}),
-        title: session.title ?? "",
-        titleSource: normalizeStoredTitleSource(session.titleSource),
-        phase: "completedSuccess" as const,
-        sessionEnded: true,
-        hasBackgroundWork: false,
-        lastActivityAt: session.time?.updated ?? 0,
-        createdAt: session.time?.created ?? 0,
-      }));
+      return stored
+        .filter((session) => {
+          // 派单工作台会话（D32）：persona.workOrderOnly 不进 sessions-index 冷种子，
+          // 否则 syncer 首帧基线会把它补成任务行、侧栏/归档再次堆积一次性空壳。
+          return session.persona?.workOrderOnly !== true;
+        })
+        .map((session) => ({
+          sessionId: String(session.id),
+          workspaceId,
+          ...(session.parentID ? { parentSessionId: String(session.parentID) } : {}),
+          title: session.title ?? "",
+          titleSource: normalizeStoredTitleSource(session.titleSource),
+          phase: "completedSuccess" as const,
+          sessionEnded: true,
+          hasBackgroundWork: false,
+          lastActivityAt: session.time?.updated ?? 0,
+          createdAt: session.time?.created ?? 0,
+        }));
     } catch (error) {
       context.logger?.warn("sessions-index stored summaries failed", {
         error: error instanceof Error ? error.message : String(error),

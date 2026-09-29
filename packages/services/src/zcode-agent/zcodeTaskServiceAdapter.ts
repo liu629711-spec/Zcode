@@ -1387,6 +1387,8 @@ export function createZCodeTaskServiceAdapter(
     const meta = snapshotToMeta(snapshot);
     // 旧污染标签页的显式恢复不能把只读 child 再次写进主任务索引。
     if (snapshot.session.sessionKind === "subagent_child") return meta;
+    // 派单工作台会话（D32）同规：显式打开（回执链）也不入列，与 syncer 一口径。
+    if (snapshot.session.workOrderOnly === true) return meta;
     return syncTaskIndexMeta(meta);
   }
 
