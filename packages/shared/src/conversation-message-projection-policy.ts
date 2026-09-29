@@ -57,6 +57,9 @@ const PROVIDER_CONTEXT_SYNTHETIC_SOURCES = new Set([
   "agent_call",
   // 派单工单（D29）：provider 可见的 model-only carrier，不进用户气泡。
   "agent_work_order",
+  // 派单回执（D29/D3）：投回发起方会话的完成通知，provider 可见、不进用户气泡
+  // （呈现走回执轮头卡，漏这条会在聊天里冒成用户气泡）。
+  "agent_work_order_receipt",
   "queued_system_notification",
   "resume_goal_state",
   "resume_referenced_session_context",
@@ -79,6 +82,8 @@ const MODEL_ONLY_TURN_TRIGGER_SOURCES = new Set([
   "target_continuation",
   // 派单工单（D29）：落库未跑完的工单在冷恢复时按 model-only 唤醒轮重建（live/cold 同形）。
   "agent_work_order",
+  // 派单回执（D29/D3）：落库未跑完的回执在冷恢复时同样按 model-only 唤醒轮重建。
+  "agent_work_order_receipt",
 ]);
 
 export function getConversationMessageProjectionPolicy(

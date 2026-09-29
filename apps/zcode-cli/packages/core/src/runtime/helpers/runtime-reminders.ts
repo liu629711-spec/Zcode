@@ -101,6 +101,8 @@ export function runtimeMetadataForSyntheticUserMessageSource(
     // 派单工单（D29）：正文自带 <work-order> 信封，与 task-notification 同族
     // （不走 system-reminder 包装）；这里不同步会静默冒成 rewind_notice 兜底。
     source === "agent_work_order" ||
+    // 派单回执（D29/D3）：正文自带 <work-order-receipt> 信封，同一族。
+    source === "agent_work_order_receipt" ||
     source === "shared_context"
   ) {
     return legacySyntheticRuntimeMetadata();

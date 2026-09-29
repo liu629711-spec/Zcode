@@ -65,9 +65,12 @@ export function projectIncomingMessageEntries(
         : content.map((block) => (block.type === "text" ? block.text : "")).join("\n");
     const formatted = formatIncomingMessage(body, presentation);
     // 新轮通知不经过 Attachment 包装；在同一投影边界补齐标签与转义，保持 user 身份和原始历史。
-    // 工单（agent_work_order）与 task_notification 同族：非用户输入 carrier，同样补 system-reminder 标签。
+    // 工单/回执（agent_work_order、agent_work_order_receipt）与 task_notification 同族：
+    // 非用户输入 carrier，同样补 system-reminder 标签。
     const text =
-      presentation === "task_notification" || presentation === "agent_work_order"
+      presentation === "task_notification" ||
+      presentation === "agent_work_order" ||
+      presentation === "agent_work_order_receipt"
         ? wrapSystemReminderForSource("incoming_message", formatted)
         : formatted;
     const projected: RuntimeMessageEntry = isMidTurnInputPresentation(presentation)

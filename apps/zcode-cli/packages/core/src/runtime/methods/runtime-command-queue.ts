@@ -9,6 +9,7 @@ import {
 import { persistSubagentMessageCommand } from "./subagent-messages.js";
 import { runControlOnlyTurnCommand } from "./control-only-turn.js";
 import { runWorkOrderCommand } from "./work-orders.js";
+import { runWorkOrderReceiptCommand } from "./work-order-receipts.js";
 import { createTurnCancelledError } from "../helpers/index.js";
 import { executeTargetContinuationCommand } from "./target.js";
 import { runActiveTargetContinuationLoop } from "./target-continuation-loop.js";
@@ -60,6 +61,11 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
         // 工单独占成轮，不与通知合并批次：轮身份（workOrderId/inputId）与
         // turn denylist（嵌套上限=1）都必须逐单携带。
         await runWorkOrderCommand.call(this, firstCommand);
+        continue;
+      }
+      if (firstCommand.mode === "work-order-receipt") {
+        // 回执同样独占成轮：轮身份（workOrderId/originMeta）必须逐单携带。
+        await runWorkOrderReceiptCommand.call(this, firstCommand);
         continue;
       }
       if (commands.length !== 1) {

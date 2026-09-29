@@ -24,6 +24,8 @@ export const zcodeSyntheticUserMessageSourceSchema = z.enum([
   // 派单（D29）工单 carrier 的来源；与 contracts 的 SYNTHETIC_USER_MESSAGE_SOURCES
   // 保持同一词表，否则 v3 mapper 收窄该 source 会 tsc 失败。
   "agent_work_order",
+  // 派单（D29/D3）回执 carrier 的来源；同上必须与 contracts 同词表。
+  "agent_work_order_receipt",
   "rewind",
   "selection_side_chat",
   "subagent",

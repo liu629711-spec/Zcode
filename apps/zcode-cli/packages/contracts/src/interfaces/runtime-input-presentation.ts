@@ -11,6 +11,8 @@ export const RuntimeInputPresentationSchema = z.enum([
   "task_notification",
   // 派单工单唤醒轮（D29）：目标会话里工单 carrier 的落库形态标记。
   "agent_work_order",
+  // 派单回执轮（D29/D3）：发起方会话里回执 carrier 的落库形态标记。
+  "agent_work_order_receipt",
 ]);
 export type RuntimeInputPresentation = z.infer<typeof RuntimeInputPresentationSchema>;
 

@@ -69,6 +69,7 @@ import type {
 import { installAgentRuntimeMethods } from "./methods/index.js";
 import type { StartSavedWorkflowRunResult } from "./methods/dynamic-workflow-run-start.js";
 import type { EnqueueAgentWorkOrderResult } from "./methods/work-orders.js";
+import type { EnqueueAgentWorkOrderReceiptInput } from "./methods/work-order-receipts.js";
 import type { AgentWorkOrderEnvelope } from "./deps.js";
 import type { AgentProfile } from "../subagent/profile.js";
 import type {
@@ -415,6 +416,12 @@ export interface AgentRuntime {
     envelope: AgentWorkOrderEnvelope;
     traceContext?: TraceContext;
   }): Promise<EnqueueAgentWorkOrderResult>;
+  /**
+   * 派单（D29/D3）窄公共入口：把目标轮的回执投进发起方会话（排队或即刻成轮）。
+   * 完成钩子在 bootstrap 协议端口（目标 record 的 TurnComplete/TurnError）；
+   * core 只负责排队、落库 synthetic notice 与按回执身份成轮。绝不打断进行中回合。
+   */
+  enqueueAgentWorkOrderReceipt(input: EnqueueAgentWorkOrderReceiptInput): void;
   /** Session 常驻池使用的 runtime busy 权威事实，包含 queue/drain/reservation。 */
   hasActiveOrQueuedTurnWork(): boolean;
   /** Session 常驻池使用的后台 Bash/Agent/Workflow running 权威事实。 */

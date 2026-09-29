@@ -30,6 +30,8 @@ export function mapSyntheticSourceToAnchorOrigin(
   switch (source) {
     case "background_task":
     case "subagent":
+    // 派单回执（D29/D3）：与 background_task 同走后台结果轮头链，冷恢复据此取回 originMeta。
+    case "agent_work_order_receipt":
       return "backgroundResult";
     case "goal-continuation":
       return "goalContinuation";

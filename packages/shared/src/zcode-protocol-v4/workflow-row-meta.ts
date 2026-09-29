@@ -75,9 +75,11 @@ export const workflowNotificationMetaSchema = z.discriminatedUnion("kind", [
 export type WorkflowNotificationMeta = z.infer<typeof workflowNotificationMetaSchema>;
 
 export const backgroundResultOriginMetaSchema = z.object({
-  // 三个取值与 contracts 的 BackgroundResultOriginMeta 保持同步。
+  // 取值与 contracts 的 BackgroundResultOriginMeta 保持同步。
   // "workflow" 是 dynamic-workflow run（workId ≡ runId），复用整条后台通知管线。
-  backgroundSource: z.enum(["bash", "subagent", "workflow"]),
+  // "agent_work_order_receipt" 是派单回执轮（D29/D3，workId ≡ workOrderId）；
+  // 漏加该值时新 CLI 的回执轮头在旧桌面 parse 失败被丢（闭集加值同一档偏斜）。
+  backgroundSource: z.enum(["bash", "subagent", "workflow", "agent_work_order_receipt"]),
   workId: z.string().min(1),
   title: z.string().min(1),
   // 只在 backgroundSource === "workflow" 的单条通知轮上在场；zod 剥离未知键，

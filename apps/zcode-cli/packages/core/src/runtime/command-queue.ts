@@ -1,5 +1,10 @@
 import type { TraceContext, TurnState } from "./deps.js";
-import type { AgentWorkOrderEnvelope, BackgroundResultOriginMeta, WorkflowLaunchMeta } from "@zcode/contracts";
+import type {
+  AgentWorkOrderEnvelope,
+  BackgroundResultOriginMeta,
+  WorkflowLaunchMeta,
+} from "@zcode/contracts";
+import type { WorkOrderReceiptOutcome } from "../subagent/work-order.js";
 import type {
   ActiveTurnStartReservation,
   ContinueActiveTargetLoopOptions,
@@ -15,6 +20,7 @@ export type RuntimeCommandMode =
   | "task-notification"
   | "subagent-message"
   | "work-order"
+  | "work-order-receipt"
   | "control-only-turn";
 export type RuntimeCommandId = string & {
   readonly __runtimeCommandId: unique symbol;
@@ -108,6 +114,31 @@ export interface WorkOrderRuntimeCommand extends RuntimeCommandBase {
 }
 
 /**
+ * 派单回执命令（D29/D3）：目标轮结束后投回发起方会话的完成通知。与 work-order
+ * 同家族但独立成轮（不与 task-notification 合并批次——回执必须携带自己的身份
+ * workOrderId/originMeta，混批会让回执轮头退化为无标题行）。
+ */
+export interface WorkOrderReceiptRuntimeCommand extends RuntimeCommandBase {
+  readonly branchGeneration: number;
+  readonly mode: "work-order-receipt";
+  readonly source: "agent_work_order_receipt";
+  /** 回执指回的工单身份。 */
+  readonly workOrderId: string;
+  /** 交活方档案名/工号与其 persona 会话（回执信封署名）。 */
+  readonly targetAgentName: string;
+  readonly targetAgentId?: string;
+  readonly targetSessionId: string;
+  /** 原工单信封（谁派的单/派给谁）。 */
+  readonly envelope: AgentWorkOrderEnvelope;
+  /** 目标轮终态（completed 带最终答案本体；cancelled/failed 如实带原因）。 */
+  readonly outcome: WorkOrderReceiptOutcome;
+  /** 后台结果轮头卡元信息（backgroundSource=agent_work_order_receipt）。 */
+  readonly originMeta: BackgroundResultOriginMeta;
+  /** 信封拼装后的回执正文（<work-order-receipt> 包裹）。 */
+  readonly text: string;
+}
+
+/**
  * 一条排队的 controlOnly 用户轮：GUI「配置」
  * 已经把 run 修订掉了，这条命令只负责把这件事记进会话。它不进模型轮，却要落一条 user 消息，而
  * user 消息插不进一个正在跑的 turn（provider 语法：assistant 的 tool_use 与 tool_result 之间
@@ -133,6 +164,7 @@ export type RuntimeCommand =
   | TaskNotificationRuntimeCommand
   | SubagentMessageRuntimeCommand
   | WorkOrderRuntimeCommand
+  | WorkOrderReceiptRuntimeCommand
   | ControlOnlyTurnRuntimeCommand;
 
 export interface RuntimeCommandQueue {

@@ -62,6 +62,9 @@ export const SYNTHETIC_USER_MESSAGE_SOURCES = [
   // 派单（D29/D2）：投进目标智能体常驻会话的工单 carrier。非用户权威
   // （工单不能替用户批准任何权限），正文带来源信封（来源智能体/来源会话/任务正文）。
   "agent_work_order",
+  // 派单回执（D29/D3）：目标轮结束后投回发起方会话的完成通知，携带最终答案本体
+  // 与来源信封（谁交的活）。同为非用户权威（回执不能替用户批准任何权限）。
+  "agent_work_order_receipt",
   "rewind",
   "selection_side_chat",
   "subagent",
