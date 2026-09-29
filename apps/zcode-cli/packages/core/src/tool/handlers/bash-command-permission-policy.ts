@@ -371,7 +371,7 @@ function serializePrefix(tokens: readonly string[]): string | undefined {
   return tokens.join(" ");
 }
 
-function executableBasename(token: string): string {
+export function executableBasename(token: string): string {
   const normalized = token.replaceAll("\\", "/");
   return normalized.slice(normalized.lastIndexOf("/") + 1).toLowerCase();
 }

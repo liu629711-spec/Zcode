@@ -41,6 +41,7 @@ import type {
 } from "../types.js";
 import { supportsBashBackgroundLifecycle } from "./bash-background-lifecycle.js";
 import { isBashAutoBackgroundEligible } from "./bash-background-policy.js";
+import { isCrossSessionCliInvocation } from "./bash-cross-session-policy.js";
 import { resolveBashPermissionRulePolicy } from "./bash-command-permission-policy.js";
 import { decideBashCwdPolicy } from "./bash-cwd-policy.js";
 import { readStringProperty } from "./bash-metadata.js";
@@ -79,7 +80,14 @@ function resolveBashPermissionCapability(
   context?: ToolRuntimePermissionCapabilityContext,
 ): ToolRuntimePermissionCapability | undefined {
   const command = readStringProperty(input, "command");
-  if (!command || !isRuntimeReadOnlyBashCommand(command, context)) return undefined;
+  if (!command) return undefined;
+  // D32 后门收口：Bash 直呼 zcode CLI 跨会话操作（--resume/--continue 直达别的会话）
+  // 会绕开产品逻辑。声明 alwaysAsk 让确认在任何权限模式下成立（含 yolo 直通、
+  // 项目 allow 规则都压不过它），用户仍可逐次放行。
+  if (isCrossSessionCliInvocation(command)) {
+    return { permission: { alwaysAsk: true } };
+  }
+  if (!isRuntimeReadOnlyBashCommand(command, context)) return undefined;
   return {
     destructive: false,
     needsApproval: false,
