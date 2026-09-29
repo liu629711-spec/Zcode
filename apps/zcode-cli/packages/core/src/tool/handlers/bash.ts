@@ -81,13 +81,18 @@ function resolveBashPermissionCapability(
 ): ToolRuntimePermissionCapability | undefined {
   const command = readStringProperty(input, "command");
   if (!command) return undefined;
-  // D32 后门收口：Bash 直呼 zcode CLI 跨会话操作（--resume/--continue 直达别的会话）
-  // 会绕开产品逻辑。声明 alwaysAsk 让确认在任何权限模式下成立（含 yolo 直通、
-  // 项目 allow 规则都压不过它），用户仍可逐次放行。askOptions 把弹窗的"不再询问"
-  // 换成会话作用域（照 create-workflow.ts 先例）：checkAlwaysAsk 只认 sessionRules，
-  // 持久项目 allow 规则压不过这道确认，若让弹窗继续提供项目级"不再询问"就是个假按钮。
+  // D32 后门收口：Bash 直呼 zcode CLI 跨会话/无头建会话（--resume/--continue/--prompt）
+  // 会绕开产品逻辑（persona/派单/审批链/名册）。曾声明 alwaysAsk，但真机事故证明确认窗
+  // 挡不住：用户逐次放行（或点一次"本会话不再问"）后后门照走，模型还谎报成功。
+  // 改为 denied 硬墙——压过 yolo/allow/会话免确认，拒绝理由直接教模型走 AgentDispatch。
   if (isCrossSessionCliInvocation(command)) {
-    return { permission: { alwaysAsk: true, askOptions: { allowAlways: "session" } } };
+    return {
+      permission: {
+        denied: true,
+        deniedReason:
+          "Blocked: starting or messaging other sessions via the zcode CLI from inside a conversation is disabled - it creates untracked side sessions outside the product and bypasses receipts and permissions. Deliver the task with the AgentDispatch tool instead (params: agent, task, and newSession=true plus a short title when the user asks for a fresh session; model=... when the user names a model).",
+      },
+    };
   }
   if (!isRuntimeReadOnlyBashCommand(command, context)) return undefined;
   return {

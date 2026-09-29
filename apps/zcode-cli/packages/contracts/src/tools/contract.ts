@@ -104,6 +104,16 @@ export interface ToolPermissionSpec {
    */
   alwaysAsk?: true;
   /**
+   * Tool-declared policy wall for calls matching a declared pattern: the call is denied
+   * outright in every permission mode. Stronger than `alwaysAsk` — a confirmation the
+   * user waves through still lets the call run (real-machine incident 2026-09-30: the
+   * model kept using an approved backdoor), while `denied` ends the call and hands
+   * `deniedReason` back to the model so it can take the intended path instead.
+   */
+  denied?: true;
+  /** Model-facing reason carried back on a `denied` call; should name the intended alternative. */
+  deniedReason?: string;
+  /**
    * Narrows the options offered when this tool asks. `allowAlways: false` suppresses the
    * persistent project rule: a tool whose input is different code on every call cannot
    * have a decision remembered without permanently disabling its gate. `"session"` swaps

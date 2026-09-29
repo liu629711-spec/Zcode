@@ -47,6 +47,14 @@ export interface PermissionContext {
 export interface PermissionToolCapability {
   allowedInPlanMode?: boolean;
   alwaysAsk?: boolean;
+  /**
+   * 工具对这一笔调用自报"策略硬墙"（真机事故 2026-09-30：alwaysAsk 的确认窗被
+   * 用户逐次放行后等于亲手递梯子——后门依旧走通）。denied 压过 yolo/ask/allow
+   * 一切分支直接拒绝，且 deny 决定连 PreToolUse hook 都翻不了案（hook-flow 对
+   * deny 原样返回）；deniedReason 会作为拒绝理由回给模型，让它改走正道。
+   */
+  denied?: boolean;
+  deniedReason?: string;
   readOnly?: boolean;
   destructive?: boolean;
   requiresUserInteraction?: boolean;
@@ -102,6 +110,18 @@ export class PermissionService {
   ): PermissionDecisionResult {
     const capability = this.resolveCapability(context, toolCapability);
     const planModeTransition = resolvePlanModeTransitionPermission(context);
+
+    // 工具自报的策略硬墙（denied）压过一切分支——包括 yolo 直通与 alwaysAsk 确认窗
+    // （确认窗被逐次放行后等于后门照走，真机事故 2026-09-30）。deny 决定在 hook-flow
+    // 里对 PreToolUse hook 免疫，墙不会被翻。
+    if (capability.denied) {
+      return this.deny(
+        context,
+        capability,
+        "tool.policyDenied",
+        capability.deniedReason ?? `Tool ${context.toolName} call is denied by tool policy`,
+      );
+    }
 
     if (planModeTransition) {
       return planModeTransition.behavior === "allow"
@@ -585,6 +605,14 @@ export class PermissionService {
     return {
       allowedInPlanMode: toolCapability?.allowedInPlanMode ?? false,
       alwaysAsk: toolCapability?.permission?.alwaysAsk ?? toolCapability?.alwaysAsk ?? false,
+      denied: toolCapability?.permission?.denied ?? toolCapability?.denied ?? false,
+      ...(typeof (toolCapability?.permission?.deniedReason ?? toolCapability?.deniedReason) ===
+      "string"
+        ? {
+            deniedReason:
+              toolCapability?.permission?.deniedReason ?? toolCapability?.deniedReason,
+          }
+        : {}),
       readOnly: toolCapability?.readOnly ?? this.isReadOnlyTool(context.toolName),
       destructive: toolCapability?.destructive ?? this.isDestructiveTool(context.toolName),
       requiresUserInteraction:
@@ -658,6 +686,8 @@ export class PermissionService {
 interface ResolvedPermissionCapability {
   allowedInPlanMode: boolean;
   alwaysAsk: boolean;
+  denied: boolean;
+  deniedReason?: string;
   readOnly: boolean;
   destructive: boolean;
   requiresUserInteraction: boolean;
