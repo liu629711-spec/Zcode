@@ -81,6 +81,7 @@ export function ChatPromptEditor({
   onCancel,
   onFocus,
   onWhiteboardMentionSelected,
+  onDispatchAgentWorkOrder,
   onPaste,
   onDragOver,
   onDragLeave,
@@ -139,6 +140,8 @@ export function ChatPromptEditor({
   onCancel?: () => void;
   onFocus?: () => void;
   onWhiteboardMentionSelected?: (boardId: string) => void | Promise<void>;
+  /** 派单（D30/D5）：@ 菜单智能体行「派单」直达宿主能力（透传 LexicalChatInput）。 */
+  onDispatchAgentWorkOrder?: (agentName: string, task: string) => Promise<"started" | "queued">;
   onPaste?: (event: ChatComposerPasteEvent) => void;
   onDragOver?: DragEventHandler<HTMLDivElement>;
   onDragLeave?: DragEventHandler<HTMLDivElement>;
@@ -380,6 +383,7 @@ export function ChatPromptEditor({
           promptHistory={promptHistory}
           compactPlaceholder={compactPlaceholder}
           onWhiteboardMentionSelected={onWhiteboardMentionSelected}
+          onDispatchAgentWorkOrder={onDispatchAgentWorkOrder}
           onPaste={onPaste}
           excludedSlashCommandNames={excludedSlashCommandNames}
           appSlashCommands={appSlashCommands}

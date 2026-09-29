@@ -2959,6 +2959,51 @@ export function SessionPane({
     timelineScrollToBottomRef.current?.();
   }, []);
 
+  /**
+   * 派单（D29/D5）：@ 菜单「派单」直达宿主能力。走 v4 dispatchAgentWorkOrder 命令
+   * （不经模型绕圈、不往 composer 塞文本——塞了就变点将语义）。受理口径诚实：
+   * resolve 的 delivery 区分 started（空闲即刻成轮）与 queued（目标忙、按既有消息排队），
+   * 投递成功 ≠ 对方已处理。业务拒绝（guard.agentWorkOrder*）在这里翻成人话再抛，
+   * toast 呈现归调用链（MentionPlugin）。
+   */
+  const handleDispatchAgentWorkOrder = useCallback(
+    async (agent: string, task: string): Promise<"started" | "queued"> => {
+      if (!sessionId) {
+        // 草稿还没有归属会话：回执没有归还地址，先发一条消息把会话建起来。
+        throw new Error(intl.formatMessage({ id: "chat.mention.agents.dispatchDraftOnly" }));
+      }
+      const ack = await sendCommand(
+        createCommandEnvelope({
+          type: "dispatchAgentWorkOrder",
+          payload: { agent, task },
+          sessionId,
+        }),
+      );
+      if (ack.status === "accepted" && ack.result?.type === "dispatchAgentWorkOrder") {
+        return ack.result.delivery;
+      }
+      const reasonCode = ack.reasonCode ?? "";
+      const fallback =
+        ack.message ?? intl.formatMessage({ id: "chat.mention.agents.dispatchFailed" });
+      throw new Error(
+        reasonCode === "guard.agentWorkOrderTargetNotFound"
+          ? intl.formatMessage(
+              { id: "chat.mention.agents.dispatchTargetNotFound" },
+              { name: agent },
+            )
+          : reasonCode === "guard.agentWorkOrderTargetAmbiguous"
+            ? intl.formatMessage(
+                { id: "chat.mention.agents.dispatchTargetAmbiguous" },
+                { name: agent },
+              )
+            : reasonCode === "guard.agentWorkOrderNested"
+              ? intl.formatMessage({ id: "chat.mention.agents.dispatchNested" })
+              : fallback,
+      );
+    },
+    [intl, sendCommand, sessionId],
+  );
+
   const handleSendText = useCallback(
     async (
       text: string,
@@ -4410,6 +4455,7 @@ export function SessionPane({
       telemetryVisible={telemetryVisible && conversationTelemetryForegroundEnabled}
       readPlanIdentitySnapshot={readPlanIdentitySnapshot}
       onSendText={handleSendText}
+      onDispatchAgentWorkOrder={handleDispatchAgentWorkOrder}
       onDraftStateChange={handleComposerDraftStateChange}
       composerRestoreRequest={composerRestoreRequest}
       onComposerRestoreApplied={handleComposerRestoreApplied}

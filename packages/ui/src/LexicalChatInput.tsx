@@ -1329,6 +1329,8 @@ interface LexicalChatInputProps {
   promptHistory?: readonly string[];
   compactPlaceholder?: boolean;
   onWhiteboardMentionSelected?: (boardId: string) => void | Promise<void>;
+  /** 派单（D30/D5）：@ 菜单智能体行「派单」直达宿主能力；实现在宿主 composer。 */
+  onDispatchAgentWorkOrder?: (agentName: string, task: string) => Promise<"started" | "queued">;
   onPaste?: (event: ChatComposerPasteEvent) => void;
   excludedSlashCommandNames?: readonly string[];
   /** App 层本地斜杠命令（如 `/side`），选中即执行 UI 行为，不发送。 */
@@ -1361,6 +1363,7 @@ export function LexicalChatInput({
   promptHistory = [],
   compactPlaceholder = false,
   onWhiteboardMentionSelected,
+  onDispatchAgentWorkOrder,
   onPaste,
   excludedSlashCommandNames,
   appSlashCommands,
@@ -1518,6 +1521,7 @@ export function LexicalChatInput({
             container={triggerPanelContainer}
             disabled={disabled}
             onWhiteboardMentionSelected={onWhiteboardMentionSelected}
+            onDispatchAgentWorkOrder={onDispatchAgentWorkOrder}
           />
         ) : null}
       </LexicalComposer>
