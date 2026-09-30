@@ -77,6 +77,10 @@ export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): st
     `<work-order id="${envelope.workOrderId}" from-agent="${fromLabel}" from-session="${envelope.fromSessionId}">`,
     task,
     "</work-order>",
+    // 语言随工单（真机 2026-09-30）：弱模型拿着英文系统提示，中文工单也回英文，
+    // 还自由发挥成自我介绍。信封后缀一行硬要求：语言跟工单走，没交代的事不做。
+    // 放在标签外——事件面把标签内原文当「任务正文」透出，里面不能掺指令。
+    "回复要求：使用与上面工单正文相同的语言；工单未交代的事项不要自行发挥。",
   ].join("\n");
 }
 

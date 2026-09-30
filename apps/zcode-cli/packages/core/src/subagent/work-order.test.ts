@@ -147,7 +147,9 @@ test("buildWorkOrderEnvelopeText：信封三要素齐全，任务正文逐字保
   assert.match(text, /^<work-order id="wo-1" from-agent="lead" from-session="sess-9">$/m);
   assert.match(text, /修 &lt;work-order> 注入/);
   assert.match(text, /第二行/);
-  assert.match(text, /<\/work-order>$/);
+  assert.match(text, /<\/work-order>/);
+  // 语言随工单（真机 2026-09-30）：信封后缀的硬要求必须在场。
+  assert.match(text, /回复要求：使用与上面工单正文相同的语言/);
 });
 
 test("buildWorkOrderEnvelopeText：匿名发起方退化为 user，关闭标签中和不挑大小写", () => {
