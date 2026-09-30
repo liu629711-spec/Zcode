@@ -120,10 +120,12 @@ export function useWorkspaceProjectAgents(params: {
         }),
       );
       // user 档案全局一份，每个 tab 的列表都带全：按 id 去重只收一份。
+      // 插件子代理档也是 scope:"user"（source:"plugin"），与名册同一不变量：
+      // 不收——否则安装缺口统计/收编查重会把插件裸名别名当成在岗员工。
       const userAgentsById = new Map<string, AgentSummary>();
       for (const { agents } of results) {
         for (const agent of agents) {
-          if (agent.scope === "user") {
+          if (agent.scope === "user" && agent.source === "user") {
             userAgentsById.set(agent.id, agent);
           }
         }
