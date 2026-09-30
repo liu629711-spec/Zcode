@@ -118,7 +118,15 @@ export function ReceiptFailureNotice({
         ) : null}
       </div>
       {presentation.detail ? (
-        <span className="min-w-0 break-words text-ui-xs leading-4 text-foreground-subtlest">
+        <span
+          className={
+            // 行内（工地卡失败行）必须截断：根因原文可达 500 字符，不截会把状态板
+            // 撑出十几行（评审 B 的 P2）；单卡有整卡空间，照常全文。
+            inline
+              ? "min-w-0 break-words text-ui-xs leading-4 text-foreground-subtlest line-clamp-2"
+              : "min-w-0 break-words text-ui-xs leading-4 text-foreground-subtlest"
+          }
+        >
           {presentation.detail}
         </span>
       ) : null}

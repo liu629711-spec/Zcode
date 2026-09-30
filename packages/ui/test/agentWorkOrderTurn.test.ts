@@ -110,3 +110,9 @@ test("describeReceiptFailure：没带模型名时走无名短语；未知分类�
 test("describeReceiptFailure：结构化线索全缺席（旧 CLI）返回 undefined，不拿空话占位", () => {
   assert.equal(describeReceiptFailure({}), undefined);
 });
+
+test("describeReceiptFailure：只有 retried 章（无根因）走无插值句式，不印 {reason}", () => {
+  const presentation = describeReceiptFailure({ retried: true });
+  assert.equal(presentation?.messageId, "chat.receipt.failure.genericNoReason");
+  assert.equal(presentation?.values, undefined);
+});

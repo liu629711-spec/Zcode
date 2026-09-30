@@ -97,7 +97,12 @@ export function describeReceiptFailure(
     };
   }
   return {
-    messageId: "chat.receipt.failure.generic",
+    messageId:
+      meta.failureReason
+        ? "chat.receipt.failure.generic"
+        : // retried-only / 畸形半截 originMeta：ICU 插值缺参会原样印 {reason}，
+          // 没有根因就给没有插值的句式（评审 A 的 P3）。
+          "chat.receipt.failure.genericNoReason",
     ...(meta.failureReason ? { values: { reason: meta.failureReason } } : {}),
     retried,
   };

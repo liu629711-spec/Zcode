@@ -93,8 +93,11 @@ export interface DispatchModelResolution {
 }
 
 /**
- * 派单模型三选一：本单指定（requested）→ 环境默认（ambient）→ 主会话当前模型（fallback）。
- * 候选模型必须过可用性判据（注册表现读）才放行；判据缺席时只做「没配 → 回落」，不越权拦人。
+ * 派单模型裁决：候选 = 本单指定（requested，缺席才轮到环境默认 ambient），
+ * 过了可用性判据就放行；候选不在注册表里（已下线/已删/拼错）**直接**回落主会话
+ * 当前模型（fallback）——不再试环境默认（老板拍板口径：「配了已下线模型→回落主
+ * 会话当前模型」，环境默认是「没指定时」的候选来源，不是失效后的下一级）。
+ * 判据缺席时只做「没配 → 回落」，不越权拦人。
  */
 export function resolveDispatchModelSelection(input: {
   /** 本单指定的模型（工单参数 model_selection）；派单方明确点名的那一个。 */
