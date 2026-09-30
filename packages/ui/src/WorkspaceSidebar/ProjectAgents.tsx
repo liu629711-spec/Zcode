@@ -41,7 +41,6 @@ import {
   type ProjectAgentDraftError,
   type ProjectAgentPersona,
 } from "./projectAgentsModel.js";
-import { planProjectAgentRosterInstall, type ProjectAgentRosterInstallResult } from "./projectAgentRoster.js";
 
 /** 驻场智能体操作的目标工作区坐标：创建和开会话都按它定向（照 useSavedWorkflowLauncher 先例）。 */
 export interface ProjectAgentTarget {
@@ -223,45 +222,6 @@ export function useWorkspaceProjectAgents(params: {
     [reload, subagentsService],
   );
 
-  // 请进预置班底（D23；身份轴终局 §九 2026-09-30）：装到**用户级档案目录**——
-  // 一次装好处处可用，不再落进某个项目。走与手工建档同一条 createAgent 链路
-  // （号在建档时发；memory=user，随身本跟着人走），逐个建、失败不中断整批，
-  // 结果回执交给调用方用一句话说清——静默少建一位就等于用户以为班底到齐了。
-  // 名册缺口按全局名册算：同名（大小写不敏感）跳过，用户改过的档案不覆盖。
-  const installPresetRoster = useCallback(
-    async (): Promise<ProjectAgentRosterInstallResult> => {
-      const planned = planProjectAgentRosterInstall(userAgents.map((agent) => agent.name));
-      const result: ProjectAgentRosterInstallResult = { installed: [], failed: [] };
-      if (planned.length === 0) {
-        return result;
-      }
-      setSaving(true);
-      try {
-        for (const member of planned) {
-          try {
-            await subagentsService.createAgent({
-              config: toProjectAgentCreateConfig(member, { memory: "user" }),
-              provider: ZCODE_AGENT_PROVIDER,
-              scope: "user",
-            });
-            result.installed.push(member.name);
-          } catch (error) {
-            logger.warn("[projectAgents] 班底建档失败，继续其余成员", {
-              name: member.name,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            result.failed.push(member.name);
-          }
-        }
-        await reload();
-      } finally {
-        setSaving(false);
-      }
-      return result;
-    },
-    [reload, subagentsService, userAgents],
-  );
-
   // 删除档案（G5/D7）：服务端只删 profile 文件，记事本目录本来就不在删除范围里。
   const deleteAgent = useCallback(
     async (target: ProjectAgentTarget, agent: AgentSummary): Promise<boolean> => {
@@ -325,7 +285,6 @@ export function useWorkspaceProjectAgents(params: {
     loadingAgents,
     createAgent,
     updateAgent,
-    installPresetRoster,
     deleteAgent,
     promoteAgentToUser,
   };
@@ -443,14 +402,11 @@ export function WorkspaceProjectAgentCreateDialog({
   saving,
   loadingAgents,
   agents,
-  /** 全局员工（user 档案）名册：「请进班底」的缺口按它算（安装目标是用户级档案目录）。 */
-  userAgents,
   editingAgent = null,
   onOpenAgent,
   onOpenNewChat,
   onCreate,
   onUpdate,
-  onInstallRoster,
   workspacePath,
   workspaceIdentity,
   workspaceRemoteSessionId,
@@ -460,15 +416,12 @@ export function WorkspaceProjectAgentCreateDialog({
   saving: boolean;
   loadingAgents: boolean;
   agents: AgentSummary[];
-  userAgents: AgentSummary[];
   editingAgent?: AgentSummary | null;
   onOpenAgent: (agent: AgentSummary) => void;
   /** 「开新对话」（D3）：不续接历史、另起一段该员工的会话；缺席时不渲染入口。 */
   onOpenNewChat?: (agent: AgentSummary) => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
   onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
-  /** 请进预置班底（D23）：把产品自带的员工装进用户级档案目录（全局员工）；缺席则不渲染入口。 */
-  onInstallRoster?: () => void;
   /** 记忆区按目标工作区取数（编辑态才需要）；user 档案记事本在用户数据里，服务面自己解析。 */
   workspacePath?: string;
   workspaceIdentity?: string;
@@ -499,11 +452,6 @@ export function WorkspaceProjectAgentCreateDialog({
     });
   }, [intl, modelSelectionView]);
   const isEditing = editingAgent !== null;
-  // 班底缺几位（D23；身份轴 §九）：按全局名册（user 档案）现有名字算，
-  // 同名（含大小写差异）不重复请人——装一次处处可用，不按项目重复装。
-  const rosterMissingCount = onInstallRoster
-    ? planProjectAgentRosterInstall(userAgents.map((agent) => agent.name)).length
-    : 0;
   // 模型选择器（2026-09-29 用户需求）：建档/编辑都指派"这个员工用什么模型"。
   // 清空 = 继承默认；reasoningLevel 取注册表默认档（与设置页同源），界面先不摆档位。
   const INHERIT_MODEL_VALUE = "inherit";
@@ -611,22 +559,6 @@ export function WorkspaceProjectAgentCreateDialog({
             <p className="text-ui-base font-medium text-foreground-subtle">
               {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
             </p>
-            {rosterMissingCount > 0 ? (
-              // 请进预置班底（D23）：一句点齐产品自带的几位员工；已有同名的不动。
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="w-full justify-center"
-                disabled={saving}
-                onClick={onInstallRoster}
-              >
-                {intl.formatMessage(
-                  { id: "workspaceSidebar.projectAgentInstallRoster" },
-                  { count: String(rosterMissingCount) },
-                )}
-              </Button>
-            ) : null}
             {loadingAgents ? (
               <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
                 {intl.formatMessage({ id: "workspaceSidebar.projectAgentsLoading" })}
@@ -650,7 +582,21 @@ export function WorkspaceProjectAgentCreateDialog({
                         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-2.5 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                         onClick={() => onOpenAgent(agent)}
                       >
-                        <span className="truncate text-ui-base text-foreground">{agent.name}</span>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-ui-base text-foreground">
+                            {agent.name}
+                          </span>
+                          {agent.source === "built-in" || agent.source === "plugin" ? (
+                            <span className="shrink-0 rounded border border-border px-1 py-px text-[10px] leading-4 text-foreground-subtle">
+                              {intl.formatMessage({
+                                id:
+                                  agent.source === "built-in"
+                                    ? "workspaceSidebar.agentSource.builtIn"
+                                    : "workspaceSidebar.agentSource.plugin",
+                              })}
+                            </span>
+                          ) : null}
+                        </span>
                         {agent.description ? (
                           <span className="truncate text-ui-sm text-foreground-subtle">
                             {agent.description}
@@ -713,9 +659,10 @@ export function WorkspaceProjectAgentCreateDialog({
             </label>
             <Textarea
               rows={5}
-              // field-sizing-content 会随内容无限长高，长人设把对话框撑出一屏
-              // （真机 2026-09-30：编辑档案时记忆区/保存按钮被顶出屏幕）；限高后内部自滚。
-              className="max-h-[40vh]"
+              // 人设输入区定高：field-sizing-content 随内容无限长高，长人设会把
+              // 对话框撑出一屏（真机 2026-09-30）；定高后超出部分框内自滚，
+              // 对话框本体不滚动。
+              className="h-32 [field-sizing:fixed] overflow-y-auto"
               value={draft.systemPrompt}
               onChange={(event) => setDraft({ ...draft, systemPrompt: event.target.value })}
               placeholder={intl.formatMessage({

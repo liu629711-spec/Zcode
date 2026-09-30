@@ -255,13 +255,15 @@ export function AgentMemorySection({
           {intl.formatMessage({ id: "workspaceSidebar.agentMemory.empty" })}
         </div>
       ) : (
-        <ul className="space-y-0.5">
+        // 记忆条目列表限高内滚：编辑对话框本体不滚动（真机 2026-09-30 破版反馈）。
+        <ul className="max-h-40 space-y-0.5 overflow-y-auto">
           {files.map((file) => (
             <li key={file.name}>
               {editingFile === file.name ? (
                 <div className="space-y-2 rounded-md border border-border px-2.5 py-2">
                   <Textarea
                     rows={8}
+                    className="max-h-60 [field-sizing:fixed] overflow-y-auto"
                     value={editingContent}
                     onChange={(event) => setEditingContent(event.target.value)}
                     aria-label={file.name}

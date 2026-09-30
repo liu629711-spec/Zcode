@@ -12,6 +12,7 @@ import {
   createPluginAgentStateId,
   parsePluginSubagentModelSelectionOverrides,
   modelSelectionSchema,
+  PRESET_CREW_MEMBERS,
   type BuiltInSubagentModelSelectionOverrides,
   type BuiltInSubagentName,
   type PluginSubagentModelSelectionOverrides,
@@ -44,7 +45,13 @@ interface ParsedPluginAgentProfile {
   profile: AgentProfile;
 }
 
-const RESERVED_AGENT_NAMES = new Set(["general-purpose", "Explore"]);
+const RESERVED_AGENT_NAMES = new Set([
+  "general-purpose",
+  "Explore",
+  // 预置班底（D23 改判内置虚拟化 2026-09-30）：内置员工名保留给虚拟档案，
+  // 插件同名 bare name 一律走命名空间，避免点名派单撞名。
+  ...PRESET_CREW_MEMBERS.map((member) => member.name),
+]);
 
 export async function loadZCodeAgentProfiles(
   input: LoadZCodeAgentProfilesInput,
@@ -96,6 +103,24 @@ export async function loadZCodeAgentProfiles(
         profiles.push(profile);
       }
     }
+  }
+
+  // 预置班底（D23 改判内置虚拟化 2026-09-30）：产品出厂自带的样例员工作为虚拟
+  // 内置档案注入运行时——不落盘、不可删；同名用户/项目档案在场时文件优先
+  //（taken 判重跳过），删掉覆盖档案即回到出厂版本。
+  const takenProfileNames = new Set(profiles.map((profile) => profile.name.trim().toLowerCase()));
+  for (const member of PRESET_CREW_MEMBERS) {
+    if (takenProfileNames.has(member.name.toLowerCase())) continue;
+    profiles.push({
+      name: member.name,
+      description: member.description,
+      systemPrompt: member.systemPrompt,
+      color: member.color,
+      injectAgentsMd: true,
+      memory: "user",
+      source: "built-in",
+      path: `built-in:${member.name}`,
+    });
   }
 
   input.logger?.debug("Agent profiles loaded", {

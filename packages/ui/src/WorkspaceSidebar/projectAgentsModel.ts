@@ -75,11 +75,13 @@ export function selectProjectAgentsForWorkspace<T extends Pick<AgentSummary, "sc
 
 /**
  * 工作区名册的合并选择（身份轴终局 §九②）：项目档（原前缀判据，存量照旧）∪
- * 全局员工（用户级身份档，机器上一份、处处可见）。两者互不覆盖——同名的
- * user 档与项目档是两位员工，都显示；插件档（source "plugin"）与禁用的
- * user 档不进名册（runtime getAgentProfiles 不加载它们，列出来会让点名
- * 派单撞 targetNotFound）。合并后按名字重排：service 各 scope 内本就按名
- * 排序，名册不因来源分家而乱序。
+ * 全局员工（用户级身份档，机器上一份、处处可见）∪ 内置班底（D23 改判内置虚拟化
+ * 2026-09-30：产品出厂的样例员工，虚拟在场、runtime 一定加载，名册挂「内置」标；
+ * 同名用户/项目档案在场时 service 的 applyRuntimePrecedence 已让文件胜出，这里
+ * 不会出现双胞胎）。user 档与项目档互不覆盖——同名的 user 档与项目档是两位
+ * 员工，都显示；插件档（source "plugin"）与禁用的 user 档不进名册（runtime
+ * getAgentProfiles 不加载它们，列出来会让点名派单撞 targetNotFound）。
+ * 合并后按名字重排：service 各 scope 内本就按名排序，名册不因来源分家而乱序。
  * 数据只取各 tab 自己的服务解析结果：远程 tab 吃远端进程的名册（远端机器上的
  * 全局员工），本机 user 档没有客户端合并这条捷径，永远不会混进远程工作区。
  */
@@ -91,6 +93,7 @@ export function selectWorkspaceRosterAgents<
     ...agents.filter(
       (agent) => agent.scope === "user" && agent.source === "user" && agent.enabled !== false,
     ),
+    ...agents.filter((agent) => agent.source === "built-in" && agent.enabled !== false),
   ].sort((left, right) => left.name.localeCompare(right.name));
 }
 

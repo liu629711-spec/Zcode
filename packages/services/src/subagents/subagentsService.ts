@@ -25,6 +25,7 @@ import {
   type SubAgentConfig,
   type SubagentsListMode,
   type ZCodeProvider,
+  PRESET_CREW_MEMBERS,
 } from "@zcode/shared";
 import { normalizeSubagentModelSelection } from "./subagentModelSelection.js";
 import { serializeSubagentMarkdown, parseSubagentMarkdown } from "./subagentMarkdown.js";
@@ -140,6 +141,27 @@ function createBuiltInAgents(
       enabled: true,
       readOnly: true,
     },
+    // 预置班底（D23 改判内置虚拟化 2026-09-30）：产品出厂自带的样例员工，虚拟在场，
+    // 不占用户档案；同名用户档案在场时 applyRuntimePrecedence 让文件优先（可覆盖）。
+    ...PRESET_CREW_MEMBERS.map((member) => ({
+      id: createAgentStateId({
+        name: member.name,
+        scope: "built-in" as const,
+        source: "built-in" as const,
+      }),
+      name: member.name,
+      description: member.description,
+      color: member.color,
+      injectAgentsMd: true,
+      systemPrompt: member.systemPrompt,
+      tools: ["*"],
+      memory: "user" as const,
+      path: `built-in:${member.name}`,
+      scope: "built-in" as const,
+      source: "built-in" as const,
+      enabled: true,
+      readOnly: true,
+    })),
   ];
 }
 

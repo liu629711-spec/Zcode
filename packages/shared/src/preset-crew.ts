@@ -1,30 +1,30 @@
-import type { ProjectAgentDraft } from "./projectAgentsModel.js";
-import { validateProjectAgentDraft } from "./projectAgentsModel.js";
+// 预置班底（D23；2026-09-30 拍板改判：内置虚拟化）。
+//
+// 这五位是产品出厂自带的样例员工，**不落盘、不安装**：services 的名册把它们
+// 作为 source "built-in" 虚拟列出（readOnly），bootstrap 的运行时档案装配把它们
+// 直接注入（同名用户档案在场时文件优先，可覆盖）。历史上它们曾被设计成
+// 「请进预置班底」按钮批量安装成用户级档案——安装会失败、会留缺口、会和用户
+// 自建档案混在一起分不清，真机反馈（2026-09-30）判此设计为混乱根源后改判。
+//
+// 自定义方式：想改一位内置员工的行为，就自己建一个同名档案覆盖它（文件优先）；
+// 删掉档案即回到出厂版本。
 
-/**
- * 预置班底（D23）：产品自带、可以直接聊的几位员工。
- *
- * 身份轴终局（对齐稿 §九，2026-09-30 拍板）：班底装到**用户级档案**
- * （<storageRoot>/agents/<name>.md，与设置页子智能体同一套体系）——一次装好，
- * 处处可用，不再每个项目各装一份。不走插件的理由不变：插件成员的档案 scope 写死
- * user、文件在只读缓存目录里，同版本重装会整体重写 md，用户改的「性格说明书」
- * 会被升级抹掉；普通建档这条路（可改可删、号在建档时发）依然是对的，只是落点从
- * 项目目录换成用户目录。记忆 memoryScope=user：一本随身记事本跟着人走；
- * 项目里的事实/约定/决定按每人说明书的分账规矩只留在对话或项目文件里，
- * 项目差异靠会话工作目录的 AGENTS.md 等底盘机制，不做记忆分仓。
- * （侧栏名册按项目筛的显示口径由身份批施工单②统一收口，这里只管档案装在哪。）
- */
+export type PresetCrewColor = "red" | "blue" | "green" | "yellow" | "purple" | "orange" | "pink" | "cyan";
+
+export interface PresetCrewMember {
+  name: string;
+  /** 大白话职业名，供 UI 直接显示。 */
+  role: string;
+  description: string;
+  systemPrompt: string;
+  color: PresetCrewColor;
+}
 
 /** 分账规矩（§八/§九）：随身记忆只收跟人走的事，项目里的事留在对话与项目文件。 */
 const MEMORY_ACCOUNTING_RULE =
   "记账规矩：老板的个人偏好、称呼习惯、跨项目都成立的事，才写进随身记忆；项目里的事实、约定、决定只说在对话里或写进项目文件，不进随身记忆。";
 
-export interface ProjectAgentPresetMember extends ProjectAgentDraft {
-  /** 大白话职业名，供 UI 直接显示。 */
-  role: string;
-}
-
-const PRESET_MEMBERS: readonly ProjectAgentPresetMember[] = [
+export const PRESET_CREW_MEMBERS: readonly PresetCrewMember[] = [
   {
     name: "doc-writer",
     role: "文档文员",
@@ -41,6 +41,7 @@ const PRESET_MEMBERS: readonly ProjectAgentPresetMember[] = [
       "",
       "合格标准：读者不用再问第二轮就能照着做；每句断言都能指到某段代码、某个文件或老板说过的话；不写「我们建议持续优化」这种没有下一步的空话。",
     ].join("\n"),
+    color: "blue",
   },
   {
     name: "slide-writer",
@@ -59,6 +60,7 @@ const PRESET_MEMBERS: readonly ProjectAgentPresetMember[] = [
       "",
       "合格标准：老板照着讲稿念一遍能讲顺；任何一页被问到「这页想说什么」，答案是一句话而不是「看图中」。",
     ].join("\n"),
+    color: "purple",
   },
   {
     name: "sheet-hand",
@@ -77,6 +79,7 @@ const PRESET_MEMBERS: readonly ProjectAgentPresetMember[] = [
       "",
       "合格标准：表里任何一列都能一句话说清含义；换人接手不必来问你；总数能被下钻的行数加起来对上。",
     ].join("\n"),
+    color: "green",
   },
   {
     name: "code-builder",
@@ -95,6 +98,7 @@ const PRESET_MEMBERS: readonly ProjectAgentPresetMember[] = [
       "",
       "合格标准：老板或质检员照着报告能复现每一步；不许出现「应该没问题」这种没有证据的完成声明。",
     ].join("\n"),
+    color: "orange",
   },
   {
     name: "code-reviewer",
@@ -114,35 +118,6 @@ const PRESET_MEMBERS: readonly ProjectAgentPresetMember[] = [
       "",
       "合格标准：施工员照着评审单能直接改；裁定撑得住别人复核，挑不出「你没看就说」。",
     ].join("\n"),
+    color: "red",
   },
 ];
-
-/** 班底名单（顺序即 UI 展示顺序）。 */
-export const PROJECT_AGENT_PRESET_ROSTER: readonly ProjectAgentPresetMember[] = PRESET_MEMBERS;
-
-/** 请进班底的结果（UI 用它拼一句大白话回执，不静默）。 */
-export interface ProjectAgentRosterInstallResult {
-  /** 新建成功的员工名。 */
-  installed: string[];
-  /** 建档失败的员工名（权限/磁盘/同名竞态等，交给用户重试；已有同名不会被覆盖）。 */
-  failed: string[];
-}
-
-/**
- * 请进班底的清单（纯函数）：跳过全局名册里已有同名的档案——**用户改过的档案不覆盖**。
- * 判据与 services 的建档路径同源：档案文件名 = 名字 trim 后小写 + `.md`，
- * 所以同名判定也必须大小写不敏感（『Doc-Writer』与『doc-writer』是同一个文件）。
- */
-export function planProjectAgentRosterInstall(
-  existingNames: readonly string[],
-  roster: readonly ProjectAgentPresetMember[] = PROJECT_AGENT_PRESET_ROSTER,
-): ProjectAgentPresetMember[] {
-  const taken = new Set(
-    existingNames.map((name) => name.trim().toLowerCase()).filter((name) => name.length > 0),
-  );
-  return roster.filter(
-    (member) =>
-      !taken.has(member.name.trim().toLowerCase()) &&
-      validateProjectAgentDraft(member).length === 0,
-  );
-}
