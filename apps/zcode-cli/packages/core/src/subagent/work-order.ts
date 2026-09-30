@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { AgentProfile } from "./profile.js";
+import type { ModelSelection } from "@zcode/shared";
 import { WORK_ORDER_INPUT_ID_PREFIX, type AgentWorkOrderEnvelope } from "@zcode/contracts";
 
 // 前缀单一来源在 contracts（turn-loop state 与 bootstrap 端口自检共用同一词表）。
@@ -69,6 +70,56 @@ export function isSelfDispatch(
     return sourcePersona.agentId === profile.agentId;
   }
   return sourcePersona.name === profile.name;
+}
+
+// ── 员工默认模型护栏（2026-10-01）：派单当场校验，别等跑起来才炸 ─────
+// 真机事故 2026-09-30：员工配的模型已下线，工单轮三连炸 "Provider rejected the
+// model request"（invalid_model_request 在模型层被判不可重试），工单直接死。
+
+/** 模型护栏的裁决：工单实际要跑的模型 + 它从哪来（端口据此决定 per-order 覆盖与日志）。 */
+export interface DispatchModelResolution {
+  /** 模型终值；undefined = 连回落目标都没有，交给会话缺省机制。 */
+  modelSelection: ModelSelection | undefined;
+  /**
+   * 终值来源：requested=本单指定（D32）且有效；ambient=环境默认（新会话=档案默认、
+   * 复用会话=会话常驻）且有效——复用会话据此**不传** per-order 覆盖，让会话自己跑；
+   * fallback=回落主会话当前模型（老板正用它说话，必然可用）。
+   */
+  source: "requested" | "ambient" | "fallback";
+  /** source=fallback 时的原因：unset=谁都没配模型；unavailable=配的模型不在注册表里（下线/已删/拼错）。 */
+  reason?: "unset" | "unavailable";
+  /** true = 候选模型没过校验又没有回落目标——只能带着坏候选上场（端口据此告警）。 */
+  unavailable?: boolean;
+}
+
+/**
+ * 派单模型三选一：本单指定（requested）→ 环境默认（ambient）→ 主会话当前模型（fallback）。
+ * 候选模型必须过可用性判据（注册表现读）才放行；判据缺席时只做「没配 → 回落」，不越权拦人。
+ */
+export function resolveDispatchModelSelection(input: {
+  /** 本单指定的模型（工单参数 model_selection）；派单方明确点名的那一个。 */
+  requested?: ModelSelection;
+  /** 环境默认：新会话=档案默认；复用会话=会话常驻。requested 缺席时才生效。 */
+  ambient?: ModelSelection;
+  /** 回落目标：主会话当前模型。 */
+  fallback?: ModelSelection;
+  /** 模型可用性判据；缺席 = 没法校验。 */
+  isModelAvailable?: (selection: ModelSelection) => boolean;
+}): DispatchModelResolution {
+  const { requested, ambient, fallback, isModelAvailable } = input;
+  const candidate = requested ?? ambient;
+  const source = requested ? ("requested" as const) : ("ambient" as const);
+  if (!candidate) {
+    return fallback
+      ? { modelSelection: fallback, source: "fallback", reason: "unset" }
+      : { modelSelection: undefined, source: "fallback", reason: "unset" };
+  }
+  if (!isModelAvailable || isModelAvailable(candidate)) {
+    return { modelSelection: candidate, source };
+  }
+  return fallback
+    ? { modelSelection: fallback, source: "fallback", reason: "unavailable" }
+    : { modelSelection: candidate, source, unavailable: true };
 }
 
 /**

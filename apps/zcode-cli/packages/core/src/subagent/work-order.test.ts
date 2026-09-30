@@ -12,8 +12,10 @@ import {
   isAgentIdLike,
   isSelfDispatch,
   isWorkOrderInputId,
+  resolveDispatchModelSelection,
   resolveWorkOrderTarget,
 } from "./work-order.ts";
+import type { ModelSelection } from "@zcode/shared";
 import type { AgentProfile } from "./profile.ts";
 
 function profile(
@@ -260,5 +262,94 @@ test("isWorkOrderRestrictedTurn：普通轮与 automation/offPeak 轮不误判�
       minimalState({ automationId: "auto-1", offPeakTaskId: "off-1" }),
     ),
     false,
+  );
+});
+
+// ── 员工默认模型护栏（2026-10-01）：派单当场校验，没配/已下线 → 回落主会话模型 ──
+
+const modelA: ModelSelection = { providerId: "prov-a", modelId: "model-a" };
+const modelB: ModelSelection = { providerId: "prov-b", modelId: "model-b" };
+
+test("resolveDispatchModelSelection：本单指定且可用 → 原样放行（D32 语义不变）", () => {
+  const resolution = resolveDispatchModelSelection({
+    requested: modelA,
+    ambient: modelB,
+    fallback: modelB,
+    isModelAvailable: (m) => m.modelId === "model-a",
+  });
+  assert.deepEqual(
+    { source: resolution.source, model: resolution.modelSelection?.modelId },
+    { source: "requested", model: "model-a" },
+  );
+  assert.equal(resolution.reason, undefined);
+});
+
+test("resolveDispatchModelSelection：本单指定已下线 → 回落主会话当前模型", () => {
+  const resolution = resolveDispatchModelSelection({
+    requested: modelA,
+    fallback: modelB,
+    isModelAvailable: (m) => m.modelId !== "model-a",
+  });
+  assert.deepEqual(
+    { source: resolution.source, reason: resolution.reason, model: resolution.modelSelection?.modelId },
+    { source: "fallback", reason: "unavailable", model: "model-b" },
+  );
+});
+
+test("resolveDispatchModelSelection：本单指定已下线且没有回落目标 → 带坏候选上场并标记", () => {
+  const resolution = resolveDispatchModelSelection({
+    requested: modelA,
+    isModelAvailable: () => false,
+  });
+  assert.equal(resolution.modelSelection?.modelId, "model-a");
+  assert.equal(resolution.unavailable, true);
+});
+
+test("resolveDispatchModelSelection：没指定时档案默认有效 → ambient（复用会话不传覆盖）", () => {
+  const resolution = resolveDispatchModelSelection({
+    ambient: modelB,
+    fallback: modelA,
+    isModelAvailable: () => true,
+  });
+  assert.deepEqual(
+    { source: resolution.source, model: resolution.modelSelection?.modelId },
+    { source: "ambient", model: "model-b" },
+  );
+});
+
+test("resolveDispatchModelSelection：会话常驻模型已下线 → 回落主会话模型（9-30 事故主场景）", () => {
+  const resolution = resolveDispatchModelSelection({
+    ambient: modelA,
+    fallback: modelB,
+    isModelAvailable: (m) => m.modelId !== "model-a",
+  });
+  assert.deepEqual(
+    { source: resolution.source, reason: resolution.reason, model: resolution.modelSelection?.modelId },
+    { source: "fallback", reason: "unavailable", model: "model-b" },
+  );
+});
+
+test("resolveDispatchModelSelection：谁都没配模型 → 回落主会话当前模型", () => {
+  const resolution = resolveDispatchModelSelection({
+    fallback: modelB,
+    isModelAvailable: () => true,
+  });
+  assert.deepEqual(
+    { source: resolution.source, reason: resolution.reason, model: resolution.modelSelection?.modelId },
+    { source: "fallback", reason: "unset", model: "model-b" },
+  );
+});
+
+test("resolveDispatchModelSelection：什么都没有 → 交给会话缺省机制，不造模型", () => {
+  const resolution = resolveDispatchModelSelection({});
+  assert.equal(resolution.modelSelection, undefined);
+  assert.equal(resolution.source, "fallback");
+});
+
+test("resolveDispatchModelSelection：注册表口子缺席 → 不拦人照旧放行", () => {
+  const resolution = resolveDispatchModelSelection({ requested: modelA, fallback: modelB });
+  assert.deepEqual(
+    { source: resolution.source, model: resolution.modelSelection?.modelId },
+    { source: "requested", model: "model-a" },
   );
 });

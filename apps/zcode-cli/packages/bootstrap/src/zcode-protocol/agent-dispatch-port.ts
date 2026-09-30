@@ -22,6 +22,7 @@ import {
 import type { ModelSelection, ZCodeSessionPersona, ZCodeWorkspaceRef } from "@zcode/shared";
 import {
   isSelfDispatch,
+  resolveDispatchModelSelection,
   resolveWorkOrderTarget,
   type AgentProfile,
   type WorkOrderReceiptOutcome,
@@ -248,6 +249,23 @@ export function createProtocolAgentDispatchPort(
       // 无名工位的回执署名都用它——回执卡不再退化成「智能体 交活」（评审低危⑤）。
       const workerTitleSeed = input.title?.trim() || input.task;
 
+      // 员工默认模型护栏（2026-10-01，真机事故 9-30 员工配了下线模型工单三连炸）：
+      // 派单当场校验模型在不在注册表里，没配/已下线 → 回落主会话当前模型（老板
+      // 正用它说话，必然可用），别等工单轮跑起来才被供应商拒收。
+      const fallbackModel = ownRecord.app.runtime.getSessionModelSelection();
+      const getModelOption = ownRecord.app.getModelOption;
+      const isModelAvailable = getModelOption
+        ? (selection: ModelSelection) => getModelOption(selection) !== undefined
+        : undefined;
+      // 新段出生模型：本单指定（D32）→ 档案默认 → 回落。落到 persona 快照/出生
+      // 常驻上的就是工单实际要跑的模型，回执与日志对账同源。
+      const birthModel = resolveDispatchModelSelection({
+        requested: input.modelSelection,
+        ambient: namedProfile?.modelSelection,
+        fallback: fallbackModel,
+        isModelAvailable,
+      });
+
       let targetSessionId: string | undefined;
       let createdSession = false;
       if (namedProfile && input.newSession !== true) {
@@ -277,16 +295,16 @@ export function createProtocolAgentDispatchPort(
                 workspace: ownRecord.workspace,
                 persona: {
                   ...profileToPersona(namedProfile),
-                  ...(input.modelSelection === undefined
+                  ...(birthModel.modelSelection === undefined
                     ? {}
-                    : { modelSelection: input.modelSelection }),
+                    : { modelSelection: birthModel.modelSelection }),
                 },
               }
             : {
                 workspace: ownRecord.workspace,
-                ...(input.modelSelection === undefined
+                ...(birthModel.modelSelection === undefined
                   ? {}
-                  : { model: input.modelSelection }),
+                  : { model: birthModel.modelSelection }),
                 memoryEnabled: false,
               },
         );
@@ -298,6 +316,35 @@ export function createProtocolAgentDispatchPort(
       const targetRecord =
         context.sessions.get(targetSessionId) ??
         (await deps.activateSessionRecord(targetSessionId));
+      // 复用会话的护栏：本单指定 / 会话常驻过了校验才放行。ambient（会话常驻）
+      // 有效时**不传** per-order 覆盖——让会话自己的常驻模型跑，保持既有语义；
+      // 只有指定/回落才带 modelSelection。
+      const dispatchModel = resolveDispatchModelSelection({
+        requested: input.modelSelection,
+        ambient: targetRecord.app.runtime.getSessionModelSelection(),
+        fallback: fallbackModel,
+        isModelAvailable,
+      });
+      const enqueueModelSelection =
+        dispatchModel.source === "ambient" ? undefined : dispatchModel.modelSelection;
+      if (dispatchModel.unavailable) {
+        context.logger?.warn("Agent work order model unavailable and no fallback", {
+          event: "agent_dispatch.model_fallback",
+          module: "bootstrap.zcode_protocol",
+          reason: dispatchModel.reason,
+          targetSessionId,
+          workOrderId: envelope.workOrderId,
+        });
+      } else if (dispatchModel.source === "fallback" && dispatchModel.modelSelection) {
+        context.logger?.info("Agent work order model fell back to dispatcher's current model", {
+          event: "agent_dispatch.model_fallback",
+          module: "bootstrap.zcode_protocol",
+          reason: dispatchModel.reason,
+          targetSessionId,
+          toModel: dispatchModel.modelSelection.modelId,
+          workOrderId: envelope.workOrderId,
+        });
+      }
       // 真机事故修复（2026-09-29）：新建的 persona 会话此前不落行，draft 态不进会话区
       // （侧栏看不见“新开的会话”），且冷恢复按 id 查库落空。工单是外部活动，落行语义
       // 照既有的 ensureSessionPersistedForExternalActivity——首输入用人类短标题
@@ -310,9 +357,9 @@ export function createProtocolAgentDispatchPort(
       const admission = await targetRecord.app.runtime.enqueueAgentWorkOrder({
         envelope,
         traceContext: targetRecord.traceContext,
-        ...(input.modelSelection === undefined
+        ...(enqueueModelSelection === undefined
           ? {}
-          : { modelSelection: input.modelSelection }),
+          : { modelSelection: enqueueModelSelection }),
       });
       // 完成钩子（D29/D3）：目标轮 TurnComplete/TurnError（按 workorder- inputId 对号）
       // 后把携带最终答案的回执投回发起方会话。投递成功 ≠ 已处理；本轮终态见回执。
