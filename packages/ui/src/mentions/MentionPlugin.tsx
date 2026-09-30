@@ -41,6 +41,7 @@ import {
 import {
   buildVisibleMentionGroups,
   hasMentionQuery,
+  MENTION_AGENTS_PREVIEW_LIMIT,
   MENTION_DEFAULT_GROUP_PREVIEW_LIMIT,
   MENTION_FILES_ONLY_DEFAULT_PREVIEW_LIMIT,
   type MentionResultGroup,
@@ -249,7 +250,8 @@ export function MentionPlugin({
   );
 
   // 点将（D24）：@ 项目员工，这条消息的活就固定派给他。候选吃侧栏下发的档案目录，
-  // 与侧栏"项目员工"同一份事实，不再另开一路取数。
+  // 与侧栏"项目员工"同一份事实，不再另开一路取数。上限用名册专用的 10：
+  // 默认 3 条预览会把字母序靠后的班底成员截没（真机 2026-09-30）。
   const agentsResult = useAgentCallMentionProvider({
     workspacePath,
     workspaceIdentity,
@@ -257,7 +259,7 @@ export function MentionPlugin({
     enabled: isOpen && isContextTrigger,
     emptyText: intl.formatMessage({ id: "chat.mention.agents.empty" }),
     title: intl.formatMessage({ id: "chat.mention.agents.title" }),
-    limit: MENTION_DEFAULT_GROUP_PREVIEW_LIMIT,
+    limit: MENTION_AGENTS_PREVIEW_LIMIT,
   });
 
   // 派单（D30/D5）：候选行的第二个动作弹的小输入框。状态在本插件（面板是它的门户），

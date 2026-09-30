@@ -8,6 +8,12 @@ import type { MentionItem } from "@/mentions/mentionTypes.js";
 const MENTION_DISPLAY_CAP = 1000;
 export const MENTION_DEFAULT_GROUP_PREVIEW_LIMIT = 3;
 export const MENTION_FILES_ONLY_DEFAULT_PREVIEW_LIMIT = 10;
+/**
+ * 智能体名册的预览上限（2026-09-30）：名册是个位数的小名单，按默认 3 条截
+ * 会把按字母序排在后面的班底成员截没（真机：frontend-design/prd-engineer
+ * 在 @ 面板里"消失"）。给 10，配合输入过滤兜底。
+ */
+export const MENTION_AGENTS_PREVIEW_LIMIT = 10;
 
 export function hasMentionQuery(query: string): boolean {
   return query.trim().length > 0;
