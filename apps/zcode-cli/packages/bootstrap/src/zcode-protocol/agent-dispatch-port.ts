@@ -363,6 +363,7 @@ export function createProtocolAgentDispatchPort(
       });
       // 完成钩子（D29/D3）：目标轮 TurnComplete/TurnError（按 workorder- inputId 对号）
       // 后把携带最终答案的回执投回发起方会话。投递成功 ≠ 已处理；本轮终态见回执。
+      // 失败先自动重试一次（员工可靠性批），重试沿用本单生效的模型覆盖。
       scheduleWorkOrderReceiptRelay(context, deps, {
         targetRecord,
         inputId: admission.inputId,
@@ -370,6 +371,9 @@ export function createProtocolAgentDispatchPort(
         // 无名工位的回执署名用会话标题（"发个你好 交活"），不再退化成「智能体 交活」。
         agentName: namedProfile?.name ?? workerTitleSeed,
         ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
+        ...(enqueueModelSelection === undefined
+          ? {}
+          : { modelSelection: enqueueModelSelection }),
       });
       context.logger?.info("Agent work order dispatched", {
         createdSession,
@@ -427,11 +431,31 @@ export function receiptOutcomeFromSessionEvent(
   }
   if (event.type === SessionEventType.TurnError) {
     const error = record.error;
+    if (typeof error !== "object" || error === null || Array.isArray(error)) {
+      return { status: "failed", reason: "unknown turn error" };
+    }
+    const errorRecord = error as Record<string, unknown>;
     const reason =
-      typeof error === "object" && error !== null && typeof (error as Record<string, unknown>).message === "string"
-        ? ((error as Record<string, unknown>).message as string)
+      typeof errorRecord.message === "string" && errorRecord.message.trim()
+        ? errorRecord.message
         : "unknown turn error";
-    return { status: "failed", reason };
+    // 结构化失败线索（2026-10-01 员工可靠性批）：TurnError 载荷的 error 是
+    // projectExecutionErrorPayload 的投影——message 已是真根因，code/attribution
+    // 让 UI 讲大白话（如 invalid_model_request + 被拒模型 id），不回退到文本反推。
+    const attribution =
+      typeof errorRecord.attribution === "object" && errorRecord.attribution !== null
+        ? (errorRecord.attribution as Record<string, unknown>)
+        : undefined;
+    return {
+      status: "failed",
+      reason,
+      ...(typeof errorRecord.code === "string" && errorRecord.code.trim()
+        ? { failureCode: errorRecord.code }
+        : {}),
+      ...(typeof attribution?.modelId === "string" && attribution.modelId.trim()
+        ? { failureModelId: attribution.modelId }
+        : {}),
+    };
   }
   return undefined;
 }
@@ -439,8 +463,11 @@ export function receiptOutcomeFromSessionEvent(
 /**
  * 完成钩子：订阅目标 record 的会话事件，目标轮落终态后把回执投回发起方会话
  * （发起方 record 不在场则先 activateSessionForResume 恢复——落库等重开）。
- * 首个终态事件即退订；目标 record 被关闭/进程退出时钩子随 record 消失，
- * 回执与工单同样属于「死会话里不可恢复」的 best-effort 通知（发起方持有受理凭据）。
+ * 失败不判死（2026-10-01 员工可靠性批，真机事故 9-30 工单三连炸只能手动重派）：
+ * 首个 failed 终态先自动重试一次——原信封原模型原 workOrderId 原样再投，第二棒
+ * （retried）落终态才投回执，措辞带「已重试仍失败」。cancelled/completed 照旧直投。
+ * 目标 record 被关闭/进程退出时钩子随 record 消失，回执与工单同样属于「死会话里
+ * 不可恢复」的 best-effort 通知（发起方持有受理凭据）。
  */
 function scheduleWorkOrderReceiptRelay(
   context: ZCodeProtocolAgentServerContext,
@@ -451,6 +478,10 @@ function scheduleWorkOrderReceiptRelay(
     envelope: AgentWorkOrderEnvelope;
     agentName: string;
     agentId?: string;
+    /** 本单生效的 per-order 模型覆盖：enqueue 时带什么，重试就原样带什么。 */
+    modelSelection?: ModelSelection;
+    /** true = 本订阅是自动重试的第二棒：失败不再重试，如实投递。 */
+    retried?: boolean;
   },
 ): void {
   const unsubscribe = input.targetRecord.app.runtime.subscribeEvents({
@@ -458,24 +489,96 @@ function scheduleWorkOrderReceiptRelay(
       const outcome = receiptOutcomeFromSessionEvent(event, input.inputId);
       if (!outcome) return;
       unsubscribe();
+      if (outcome.status === "failed" && !input.retried) {
+        void retryWorkOrderOnce(context, deps, input, outcome).catch((error) => {
+          context.logger?.warn("Failed to schedule agent work order retry", {
+            errorMessage: error instanceof Error ? error.message : String(error),
+            event: "agent_work_order_receipt.retry_schedule_failed",
+            fromSessionId: input.envelope.fromSessionId,
+            module: "bootstrap.zcode_protocol",
+            targetSessionId: input.targetRecord.app.sessionId,
+            workOrderId: input.envelope.workOrderId,
+          });
+        });
+        return;
+      }
+      const finalOutcome =
+        outcome.status === "failed" && input.retried ? { ...outcome, retried: true } : outcome;
       void deliverWorkOrderReceipt(context, deps, {
         envelope: input.envelope,
         agentName: input.agentName,
         ...(input.agentId ? { agentId: input.agentId } : {}),
         targetSessionId: input.targetRecord.app.sessionId,
-        outcome,
+        outcome: finalOutcome,
       }).catch((error) => {
         context.logger?.warn("Failed to deliver agent work order receipt", {
           errorMessage: error instanceof Error ? error.message : String(error),
           event: "agent_work_order_receipt.delivery_failed",
           fromSessionId: input.envelope.fromSessionId,
           module: "bootstrap.zcode_protocol",
-          outcomeStatus: outcome.status,
+          outcomeStatus: finalOutcome.status,
           targetSessionId: input.targetRecord.app.sessionId,
           workOrderId: input.envelope.workOrderId,
         });
       });
     },
+  });
+}
+
+/** 自动重试（只此一次）：原信封原模型原 workOrderId 再投同一目标会话；投不进去就把原失败如实上报。 */
+async function retryWorkOrderOnce(
+  context: ZCodeProtocolAgentServerContext,
+  deps: ProtocolAgentDispatchPortDeps,
+  input: {
+    targetRecord: ZCodeProtocolSessionRecord;
+    envelope: AgentWorkOrderEnvelope;
+    agentName: string;
+    agentId?: string;
+    modelSelection?: ModelSelection;
+  },
+  failedOutcome: WorkOrderReceiptOutcome,
+): Promise<void> {
+  let admission: { delivery: "started" | "queued"; inputId: string; workOrderId: string };
+  try {
+    admission = await input.targetRecord.app.runtime.enqueueAgentWorkOrder({
+      envelope: input.envelope,
+      traceContext: input.targetRecord.traceContext,
+      ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+    });
+    context.logger?.info("Agent work order failed once; auto-retry dispatched", {
+      event: "agent_work_order.auto_retry",
+      fromSessionId: input.envelope.fromSessionId,
+      module: "bootstrap.zcode_protocol",
+      targetSessionId: input.targetRecord.app.sessionId,
+      workOrderId: input.envelope.workOrderId,
+      delivery: admission.delivery,
+    });
+  } catch (error) {
+    context.logger?.warn("Agent work order retry could not be enqueued; delivering original failure", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "agent_work_order.retry_enqueue_failed",
+      fromSessionId: input.envelope.fromSessionId,
+      module: "bootstrap.zcode_protocol",
+      targetSessionId: input.targetRecord.app.sessionId,
+      workOrderId: input.envelope.workOrderId,
+    });
+    await deliverWorkOrderReceipt(context, deps, {
+      envelope: input.envelope,
+      agentName: input.agentName,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+      targetSessionId: input.targetRecord.app.sessionId,
+      outcome: failedOutcome,
+    });
+    return;
+  }
+  scheduleWorkOrderReceiptRelay(context, deps, {
+    targetRecord: input.targetRecord,
+    inputId: admission.inputId,
+    envelope: input.envelope,
+    agentName: input.agentName,
+    ...(input.agentId ? { agentId: input.agentId } : {}),
+    modelSelection: input.modelSelection,
+    retried: true,
   });
 }
 

@@ -12,6 +12,7 @@ import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subage
 import { STATUS_DOT } from "@/components/workflow-graph/run-status-presentation.js";
 import type { WorkOrderBatchModel, WorkOrderBatchOrder } from "@/v4/agentWorkOrderBatch.js";
 import { ReceiptForwardControl } from "@/v4/ReceiptForwardControl.js";
+import { ReceiptFailureNotice } from "@/v4/ReceiptFailureNotice.js";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 
 const STATUS_MESSAGE_ID: Record<WorkOrderBatchOrder["status"], string> = {
@@ -130,7 +131,13 @@ export function AgentWorkOrderBatchCard({
             <span className={cn("shrink-0 text-ui-xs", STATUS_TEXT[order.status])}>
               {intl.formatMessage({ id: STATUS_MESSAGE_ID[order.status] })}
             </span>
-            {order.receiptText ? (
+            {order.receiptText &&
+            !(
+              order.status === "failed" &&
+              (order.failureCode || order.failureReason || order.retried)
+            ) ? (
+              // 失败行有结构化线索时改讲大白话（ReceiptFailureNotice），摘要让位；
+              // 旧 CLI 的失败行没有线索，照旧展示摘要。
               <span className="min-w-0 flex-1 line-clamp-2 whitespace-pre-wrap break-words text-ui-xs leading-4 text-foreground-subtlest">
                 {order.receiptText}
               </span>
@@ -144,6 +151,17 @@ export function AgentWorkOrderBatchCard({
                 inline
                 title={order.receiptTitle}
                 answer={order.receiptAnswer}
+                context={context}
+                unitKey={`batch:${batch.batchId}:${order.key}`}
+              />
+            ) : null}
+            {context && order.status === "failed" && order.receiptTitle ? (
+              // 一键重派（2026-10-01 员工可靠性批）：失败行讲清大白话失败原因，
+              // 原员工 + 原任务一键再派；无结构化线索（旧 CLI）时组件返回 null。
+              <ReceiptFailureNotice
+                inline
+                title={order.receiptTitle}
+                meta={order}
                 context={context}
                 unitKey={`batch:${batch.batchId}:${order.key}`}
               />

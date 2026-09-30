@@ -302,6 +302,19 @@ export interface BackgroundResultOriginMeta {
   batchId?: string;
   /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
   batchTitle?: string;
+  /**
+   * 派单**失败**回执（agent_work_order_receipt）携带：原工单任务原文（有界，
+   * 同 agentWorkOrderMeta 的上限）——失败卡「一键重派」的权威数据源，UI 不从文本反推。
+   */
+  task?: string;
+  /** 失败回执结构化线索：根因分类码（如 invalid_model_request），UI 据此讲大白话。 */
+  failureCode?: string;
+  /** 失败回执结构化线索：被拒的模型 id（模型被供应商拒收时讲人话用）。 */
+  failureModelId?: string;
+  /** 失败回执结构化线索：原始根因短语（≤500 字符，错误投影已消毒）。 */
+  failureReason?: string;
+  /** 失败回执结构化线索：已自动重试过一次仍失败——回执措辞据此升级，不谎报。 */
+  retried?: boolean;
 }
 
 /**

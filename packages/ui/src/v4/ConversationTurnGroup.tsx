@@ -6,7 +6,6 @@ import {
   TID_CHAT_ASSISTANT_HISTORY_CONTENT,
   TID_CHAT_ASSISTANT_HISTORY_TRIGGER,
   TID_CHAT_BACKGROUND_RESULT_TITLE,
-  TID_CHAT_RECEIPT_FORWARD,
   TID_CHAT_LOADING,
   TID_V4_ROW,
   testId,
@@ -43,13 +42,6 @@ import {
   type OffPeakCreateTaskSummary,
 } from "@/ToolCallBlocks/renderers/offpeak-create.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { toast } from "@/components/ui/toast.js";
-import { Button } from "@/components/ui/button.js";
-import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
-import {
-  selectProjectAgentDirectoryForWorkspace,
-  useProjectAgentDirectoryStore,
-} from "@/store/projectAgentDirectoryStore.js";
 import type { AssistantPreviewCard } from "@/lib/assistantPreviewCards.js";
 import { useAssistantCodeCommentFeatureEnabled } from "@/AssistantCodeCommentFeatureProvider.js";
 import {
@@ -77,8 +69,10 @@ import type { WorkOrderBatchRenderInfo } from "@/v4/agentWorkOrderBatch.js";
 import {
   AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE,
   resolveAgentWorkOrderMeta,
+  resolveAgentWorkOrderReceiptMeta,
 } from "@/v4/agentWorkOrderTurn.js";
 import { ReceiptForwardControl } from "@/v4/ReceiptForwardControl.js";
+import { ReceiptFailureNotice } from "@/v4/ReceiptFailureNotice.js";
 import { ConversationWorkflowDigests } from "@/v4/ConversationWorkflowDigests.js";
 import { ConversationWorkflowCompletion } from "@/v4/ConversationWorkflowCompletion.js";
 import { resolveWorkflowTurnDigests } from "@/v4/workflowTurnDigests.js";
@@ -1038,6 +1032,10 @@ function ConversationBackgroundResultWork({
   // workflow run 的 workflow 通知带结构化载荷时改渲染既有工具卡语法的通知行（替换裸标题行）；
   // 载荷缺席（批量轮、旧 transcript、bash/subagent）→ 原样退回标题行。
   const workflowNotification = resolveWorkflowNotification(unit);
+  // 失败回执的结构化线索（一键重派/大白话的数据源；completed/旧 CLI 为 undefined）。
+  const receiptMeta = isAgentWorkOrderReceiptResult(unit)
+    ? resolveAgentWorkOrderReceiptMeta(unit.header)
+    : undefined;
   const workflowRunId = unit.header?.originMeta?.workId;
   // 打开 run 详情：宿主注入 onOpenWorkflowRun + 联查到 toolCallId 才可点；冷恢复查不到时
   // 展开体内不渲染链接。toolCallId 走投影/journal 联查表，与 CreateWorkflow 工具卡同一条打开路径。
@@ -1125,6 +1123,16 @@ function ConversationBackgroundResultWork({
               context={context}
               unitKey={unit.key}
             />
+            {receiptMeta ? (
+              // 失败回执的大白话说明 + 一键重派（2026-10-01 员工可靠性批）：
+              // 结构化线索缺席（completed/旧 CLI）时组件自己返回 null。
+              <ReceiptFailureNotice
+                title={title}
+                meta={receiptMeta}
+                context={context}
+                unitKey={unit.key}
+              />
+            ) : null}
           </div>
         )
       ) : (

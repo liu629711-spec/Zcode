@@ -199,3 +199,55 @@ test("selectWorkOrderBatches：只有回执的批次（无派单行证据）不�
   assert.equal(batch.orders[1]!.status, "failed");
   assert.equal(batch.orders[1]!.agentName, "doc-writer");
 });
+
+// ── 失败回执线索进批次模型（2026-10-01 员工可靠性批）─────────────────
+
+test("selectWorkOrderBatches：失败回执的任务原文与失败线索进单据行（一键重派数据源）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow(
+        "call-1",
+        { agent: "code-builder", task: "拆组件", batch_title: "登录页改造" },
+        { targetSessionId: "s1", agentName: "code-builder", delivery: "started", workOrderId: "wo-1", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+      dispatchRow(
+        "call-2",
+        { agent: "code-reviewer", task: "写测试", batch_title: "登录页改造" },
+        { targetSessionId: "s2", agentName: "code-reviewer", delivery: "queued", workOrderId: "wo-2", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+    ]),
+    unit("receipt-fail", {
+      header: turnHeaderRow({
+        turnId: "receipt-fail",
+        origin: "backgroundResult",
+        state: "completedError",
+        originMeta: {
+          backgroundSource: "agent_work_order_receipt",
+          workId: "wo-1",
+          title: "code-builder 的工单未完成",
+          batchId: "batch-1",
+          batchTitle: "登录页改造",
+          task: "拆组件",
+          failureCode: "invalid_model_request",
+          failureModelId: "glm-5.3-flash-local",
+          failureReason: "Provider rejected the model request.",
+          retried: true,
+        },
+      }),
+    }),
+  ];
+
+  const batches = selectWorkOrderBatches(units);
+  assert.equal(batches.length, 1);
+  const order = batches[0]!.orders.find((candidate) => candidate.key === "wo-1");
+  assert.ok(order);
+  assert.equal(order.status, "failed");
+  assert.equal(order.agentName, "code-builder");
+  assert.equal(order.task, "拆组件");
+  assert.equal(order.failureCode, "invalid_model_request");
+  assert.equal(order.failureModelId, "glm-5.3-flash-local");
+  assert.equal(order.failureReason, "Provider rejected the model request.");
+  assert.equal(order.retried, true);
+  // 失败行没有可转交的成果。
+  assert.equal(order.receiptAnswer, undefined);
+});

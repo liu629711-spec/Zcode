@@ -157,6 +157,16 @@ export interface WorkOrderReceiptOutcome {
   response?: string;
   /** status=failed 的原因（照 Codex 错误指引口径：如实告知，指引下一步）。 */
   reason?: string;
+  /**
+   * status=failed 的结构化线索（2026-10-01 员工可靠性批）：随回执轮头 originMeta
+   * 下发，UI 据此讲大白话/给一键重派，不从回执文本反推。
+   */
+  /** 根因分类码（TurnError 载荷 error.code，如 invalid_model_request）。 */
+  failureCode?: string;
+  /** 被拒的模型 id（error.attribution.modelId——模型被供应商拒收时讲人话用）。 */
+  failureModelId?: string;
+  /** 已自动重试过一次仍失败：信封与回执卡措辞据此升级，不谎报「重试后失败」。 */
+  retried?: boolean;
 }
 
 export type WorkOrderReceiptStatus = WorkOrderReceiptOutcome["status"];
@@ -191,7 +201,13 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
         ? "The target agent's turn was interrupted before it could produce a final answer. No answer was delivered; you may re-dispatch the task or report the interruption to the user."
         : `The target agent's turn failed before producing a final answer${
             input.outcome.reason ? `: ${input.outcome.reason}` : "."
-          } You may re-dispatch the task or report the failure to the user.`;
+          }${
+            // 已自动重试过一次仍失败（2026-10-01 员工可靠性批）：明说，别让派单方
+            // 再用同样的方式盲试——要么换路子，要么如实报告用户。
+            input.outcome.retried
+              ? " An automatic retry was already attempted and failed with the same error; do not blindly re-dispatch the same way."
+              : " You may re-dispatch the task or report the failure to the user."
+          }`;
   const agentLabel = input.agentName.trim() || "agent";
   return [
     `<work-order-receipt id="${input.workOrderId}" from-agent="${agentLabel}" from-session="${input.targetSessionId}" status="${status}">`,

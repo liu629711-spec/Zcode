@@ -26,6 +26,15 @@ export interface AgentWorkOrderReceiptMeta {
   /** 原工单批次（工地卡聚合键）；缺席 = 散单（旧 CLI / 单发）。 */
   batchId?: string;
   batchTitle?: string;
+  /**
+   * 失败回执的结构化线索（2026-10-01 员工可靠性批，CLI 只在 failed 时下发）：
+   * 大白话映射 + 一键重派的权威数据源，UI 不从回执文本反推。
+   */
+  task?: string;
+  failureCode?: string;
+  failureModelId?: string;
+  failureReason?: string;
+  retried?: boolean;
 }
 
 /**
@@ -45,5 +54,51 @@ export function resolveAgentWorkOrderReceiptMeta(
     title: originMeta.title,
     ...(originMeta.batchId ? { batchId: originMeta.batchId } : {}),
     ...(originMeta.batchTitle ? { batchTitle: originMeta.batchTitle } : {}),
+    ...(originMeta.task ? { task: originMeta.task } : {}),
+    ...(originMeta.failureCode ? { failureCode: originMeta.failureCode } : {}),
+    ...(originMeta.failureModelId ? { failureModelId: originMeta.failureModelId } : {}),
+    ...(originMeta.failureReason ? { failureReason: originMeta.failureReason } : {}),
+    ...(originMeta.retried ? { retried: true } : {}),
+  };
+}
+
+/**
+ * 失败回执的大白话呈现（2026-10-01 员工可靠性批）。结构化线索全缺席（旧 CLI）一律
+ * undefined——宁可不说，也不拿空话占位；已知分类码翻译成人话，其余给通用句式带原根因。
+ */
+export interface ReceiptFailurePresentation {
+  /** 主短语的 i18n key（chat.receipt.failure.*）。 */
+  messageId: string;
+  /** 主短语的插值（modelId / reason）。 */
+  values?: Record<string, string>;
+  /** 原始根因（主短语已含 reason 时缺席，避免重复）。 */
+  detail?: string;
+  /** 已自动重试过一次仍失败（UI 在主短语前加一行说明）。 */
+  retried: boolean;
+}
+
+export function describeReceiptFailure(
+  meta: Pick<
+    AgentWorkOrderReceiptMeta,
+    "failureCode" | "failureModelId" | "failureReason" | "retried"
+  >,
+): ReceiptFailurePresentation | undefined {
+  if (!meta.failureCode && !meta.failureReason && !meta.retried) return undefined;
+  const retried = meta.retried === true;
+  const modelId = meta.failureModelId?.trim();
+  if (meta.failureCode === "invalid_model_request") {
+    return {
+      messageId: modelId
+        ? "chat.receipt.failure.invalidModelRequest.named"
+        : "chat.receipt.failure.invalidModelRequest",
+      ...(modelId ? { values: { modelId } } : {}),
+      ...(meta.failureReason ? { detail: meta.failureReason } : {}),
+      retried,
+    };
+  }
+  return {
+    messageId: "chat.receipt.failure.generic",
+    ...(meta.failureReason ? { values: { reason: meta.failureReason } } : {}),
+    retried,
   };
 }

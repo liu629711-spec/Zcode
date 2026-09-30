@@ -31,6 +31,23 @@ export function selectForwardTargets<T extends { name: string }>(
 }
 
 /**
+ * 失败/中断回执标题里的员工名（2026-10-01 员工可靠性批）：failed =「<名字> 的工单
+ * 未完成」，cancelled =「<名字> 的工单被中断」（buildWorkOrderReceiptTitle 权威铸造）。
+ * 一键重派要靠它找到原员工；注意无名工位的标题种子是任务正文，解出的「名字」不一定
+ * 在名册里——调用方必须拿名册对号后再放行重派按钮。
+ */
+export function parseFailedReceiptAgentName(title: string): string | undefined {
+  const trimmed = title.trim();
+  for (const suffix of [" 的工单未完成", " 的工单被中断"] as const) {
+    if (trimmed.endsWith(suffix) && trimmed.length > suffix.length) {
+      const name = trimmed.slice(0, -suffix.length).trim();
+      if (name.length > 0) return name;
+    }
+  }
+  return undefined;
+}
+
+/**
  * 转交任务的正文：成果原文全文进任务（目标会话看不见发起方的回执），老板附言
  * 可选；没有附言时明确「拿不准就问老板」，堵住弱模型自由发挥的口子。
  */

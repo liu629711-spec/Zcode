@@ -1314,12 +1314,32 @@ function backgroundResultOriginMetaOfMessage(
     typeof record.batchTitle === "string" && record.batchTitle.trim()
       ? record.batchTitle.trim()
       : undefined;
+  // 失败回执的结构化线索（2026-10-01 员工可靠性批）同样要过冷恢复：丢了的话重启后
+  // 失败卡讲不出大白话、「一键重派」也没了原任务。同上防御性回读，畸形只丢字段。
+  const task = typeof record.task === "string" && record.task.trim() ? record.task : undefined;
+  const failureCode =
+    typeof record.failureCode === "string" && record.failureCode.trim()
+      ? record.failureCode.trim()
+      : undefined;
+  const failureModelId =
+    typeof record.failureModelId === "string" && record.failureModelId.trim()
+      ? record.failureModelId.trim()
+      : undefined;
+  const failureReason =
+    typeof record.failureReason === "string" && record.failureReason.trim()
+      ? record.failureReason
+      : undefined;
   return {
     backgroundSource,
     title,
     workId,
     ...(batchId ? { batchId } : {}),
     ...(batchTitle ? { batchTitle } : {}),
+    ...(task ? { task } : {}),
+    ...(failureCode ? { failureCode } : {}),
+    ...(failureModelId ? { failureModelId } : {}),
+    ...(failureReason ? { failureReason } : {}),
+    ...(record.retried === true ? { retried: true } : {}),
     ...(workflowNotification ? { workflowNotification } : {}),
   };
 }

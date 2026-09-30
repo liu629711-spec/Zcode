@@ -8,6 +8,7 @@
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { TraceContext } from "../deps.js";
 import type { AgentWorkOrderEnvelope, BackgroundResultOriginMeta } from "@zcode/contracts";
+import { AGENT_WORK_ORDER_TASK_MAX_CHARS } from "@zcode/contracts";
 import { uuidv7 } from "@zcode/shared";
 import {
   createRuntimeCommandId,
@@ -73,6 +74,23 @@ export function enqueueAgentWorkOrderReceipt(
     // 批次（工地卡）随回执轮头下发：发起方 UI 据它把同批回执归进一张工地卡。
     ...(input.envelope.batchId ? { batchId: input.envelope.batchId } : {}),
     ...(input.envelope.batchTitle ? { batchTitle: input.envelope.batchTitle } : {}),
+    // 失败回执的结构化线索（2026-10-01 员工可靠性批）：原工单任务原文（一键重派
+    // 的权威数据源，有界同 agentWorkOrderMeta）+ 根因分类码/被拒模型/已重试——
+    // UI 讲大白话的依据，不从回执文本反推。completed/cancelled 不带。
+    ...(input.outcome.status === "failed"
+      ? {
+          task:
+            input.envelope.task.length > AGENT_WORK_ORDER_TASK_MAX_CHARS
+              ? `${input.envelope.task.slice(0, AGENT_WORK_ORDER_TASK_MAX_CHARS - 1)}…`
+              : input.envelope.task,
+          ...(input.outcome.failureCode ? { failureCode: input.outcome.failureCode } : {}),
+          ...(input.outcome.failureModelId
+            ? { failureModelId: input.outcome.failureModelId }
+            : {}),
+          ...(input.outcome.reason ? { failureReason: input.outcome.reason } : {}),
+          ...(input.outcome.retried ? { retried: true } : {}),
+        }
+      : {}),
   };
   const command: WorkOrderReceiptRuntimeCommand = {
     branchGeneration: this.branchGeneration,

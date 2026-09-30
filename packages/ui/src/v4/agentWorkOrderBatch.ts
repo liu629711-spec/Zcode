@@ -1,6 +1,6 @@
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
 import { resolveAgentWorkOrderReceiptMeta } from "@/v4/agentWorkOrderTurn.js";
-import { parseReceiptDelivererName } from "@/v4/workOrderForward.js";
+import { parseFailedReceiptAgentName, parseReceiptDelivererName } from "@/v4/workOrderForward.js";
 
 // ============================================================
 // 批次派单（工地卡）纯规则：把一轮列表里的散单/回执按 batchId 聚成批次模型。
@@ -26,6 +26,15 @@ export interface WorkOrderBatchOrder {
   /** 行内转交用的成果原文全文（completed 回执才带）+ 来源轮 key（工地卡定位用）。 */
   receiptAnswer?: string;
   receiptUnitKey?: string;
+  /**
+   * 失败回执的结构化线索（2026-10-01 员工可靠性批，随回执证据进批次模型）：
+   * 行内大白话 + 一键重派（task = 原工单任务原文）。
+   */
+  task?: string;
+  failureCode?: string;
+  failureModelId?: string;
+  failureReason?: string;
+  retried?: boolean;
 }
 
 export interface WorkOrderBatchModel {
@@ -49,9 +58,6 @@ export interface WorkOrderBatchRenderInfo {
 
 /** 回执摘要在工地卡上的字符上界（整篇正文仍在回执轮内照常渲染，这里只截展示行）。 */
 const WORK_ORDER_BATCH_SNIPPET_MAX_CHARS = 240;
-
-/** 失败/中断回执标题的 CLI 权威后缀（buildWorkOrderReceiptTitle 的两种非完成终态）。 */
-const RECEIPT_FAILED_TITLE_SUFFIXES = [" 的工单被中断", " 的工单未完成"] as const;
 
 function parseRecord(value: unknown): Record<string, unknown> | undefined {
   let candidate = value;
@@ -82,14 +88,7 @@ function readString(record: Record<string, unknown> | undefined, key: string): s
 
 /** 回执标题里的交活方名字：completed 直接解；失败/中断按 CLI 后缀解，解不出留空。 */
 function receiptAgentNameFromTitle(title: string): string {
-  const deliverer = parseReceiptDelivererName(title);
-  if (deliverer) return deliverer;
-  for (const suffix of RECEIPT_FAILED_TITLE_SUFFIXES) {
-    if (title.endsWith(suffix)) {
-      return title.slice(0, title.length - suffix.length).trim();
-    }
-  }
-  return "";
+  return parseReceiptDelivererName(title) ?? parseFailedReceiptAgentName(title) ?? "";
 }
 
 function receiptFullText(unit: ConversationTurnRenderUnit): string | undefined {
@@ -168,6 +167,12 @@ export function selectWorkOrderBatches(
           ...(parseReceiptDelivererName(receipt.title) && receiptFullText(unit)
             ? { receiptAnswer: receiptFullText(unit), receiptUnitKey: unit.key }
             : {}),
+          // 失败线索与原任务（一键重派）只在 failed 回执上在场（CLI 权威下发）。
+          ...(receipt.task ? { task: receipt.task } : {}),
+          ...(receipt.failureCode ? { failureCode: receipt.failureCode } : {}),
+          ...(receipt.failureModelId ? { failureModelId: receipt.failureModelId } : {}),
+          ...(receipt.failureReason ? { failureReason: receipt.failureReason } : {}),
+          ...(receipt.retried ? { retried: true } : {}),
         },
         unit.key,
       );
