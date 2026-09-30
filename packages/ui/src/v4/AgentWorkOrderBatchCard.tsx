@@ -11,6 +11,8 @@ import { WorkflowIcon } from "lucide-react";
 import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import { STATUS_DOT } from "@/components/workflow-graph/run-status-presentation.js";
 import type { WorkOrderBatchModel, WorkOrderBatchOrder } from "@/v4/agentWorkOrderBatch.js";
+import { ReceiptForwardControl } from "@/v4/ReceiptForwardControl.js";
+import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 
 const STATUS_MESSAGE_ID: Record<WorkOrderBatchOrder["status"], string> = {
   dispatched: "chat.workOrderBatch.status.dispatched",
@@ -35,7 +37,14 @@ const STATUS_DOT_KEY: Record<WorkOrderBatchOrder["status"], keyof typeof STATUS_
   failed: "failed",
 };
 
-export function AgentWorkOrderBatchCard({ batch }: { batch: WorkOrderBatchModel }) {
+export function AgentWorkOrderBatchCard({
+  batch,
+  context,
+}: {
+  batch: WorkOrderBatchModel;
+  /** 行内转交（接力收口）：宿主轮的派单能力与名册都从这里来；缺席=不渲染转交。 */
+  context?: ConversationRowRenderContext;
+}) {
   const { intl } = useZCodeIntl();
   const title = batch.title?.trim();
   const completed = batch.orders.filter((order) => order.status === "completed").length;
@@ -83,7 +92,10 @@ export function AgentWorkOrderBatchCard({ batch }: { batch: WorkOrderBatchModel 
             role="listitem"
             key={order.key}
             data-order-key={order.key}
-            className="relative flex min-w-0 items-center gap-2 py-1.5"
+            className="flex min-w-0 flex-col"
+          >
+          <div
+            className="relative flex min-w-0 flex-wrap items-center gap-2 py-1.5"
           >
             <span aria-hidden="true" className="relative flex w-3 shrink-0 self-stretch">
               <span
@@ -125,6 +137,18 @@ export function AgentWorkOrderBatchCard({ batch }: { batch: WorkOrderBatchModel 
             ) : (
               <span className="min-w-0 flex-1" />
             )}
+            {context && order.status === "completed" && order.receiptTitle && order.receiptAnswer ? (
+              // 接力收口：批次成员的散回执卡已被工地卡代言，转交入口跟着搬进行内
+              // （inline 变体：收起=行尾按钮，展开=flex-wrap 换行占满整行）。
+              <ReceiptForwardControl
+                inline
+                title={order.receiptTitle}
+                answer={order.receiptAnswer}
+                context={context}
+                unitKey={`batch:${batch.batchId}:${order.key}`}
+              />
+            ) : null}
+          </div>
           </div>
         ))}
       </div>

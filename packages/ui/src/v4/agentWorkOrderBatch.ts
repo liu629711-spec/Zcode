@@ -21,7 +21,11 @@ export interface WorkOrderBatchOrder {
   kind: "work-order" | "receipt";
   status: WorkOrderBatchOrderStatus;
   receiptTitle?: string;
+  /** 展示用摘要（有界）。 */
   receiptText?: string;
+  /** 行内转交用的成果原文全文（completed 回执才带）+ 来源轮 key（工地卡定位用）。 */
+  receiptAnswer?: string;
+  receiptUnitKey?: string;
 }
 
 export interface WorkOrderBatchModel {
@@ -88,9 +92,13 @@ function receiptAgentNameFromTitle(title: string): string {
   return "";
 }
 
-function receiptSnippet(unit: ConversationTurnRenderUnit): string | undefined {
+function receiptFullText(unit: ConversationTurnRenderUnit): string | undefined {
   const text = unit.latestAssistantTextRow?.text ?? unit.assistantTextRows.at(-1)?.text;
-  const trimmed = text?.trim();
+  return text?.trim() || undefined;
+}
+
+function receiptSnippet(unit: ConversationTurnRenderUnit): string | undefined {
+  const trimmed = receiptFullText(unit);
   if (!trimmed) return undefined;
   return trimmed.length > WORK_ORDER_BATCH_SNIPPET_MAX_CHARS
     ? `${trimmed.slice(0, WORK_ORDER_BATCH_SNIPPET_MAX_CHARS - 1)}…`
@@ -156,6 +164,10 @@ export function selectWorkOrderBatches(
           status: parseReceiptDelivererName(receipt.title) ? "completed" : "failed",
           receiptTitle: receipt.title,
           ...(receiptSnippet(unit) ? { receiptText: receiptSnippet(unit) } : {}),
+          // 全文只在 completed（转交语义=成果已交付）时挂：失败/中断没有可转交的成果。
+          ...(parseReceiptDelivererName(receipt.title) && receiptFullText(unit)
+            ? { receiptAnswer: receiptFullText(unit), receiptUnitKey: unit.key }
+            : {}),
         },
         unit.key,
       );

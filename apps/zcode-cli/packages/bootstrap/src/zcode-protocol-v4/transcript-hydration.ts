@@ -1307,10 +1307,19 @@ function backgroundResultOriginMetaOfMessage(
   // 载荷就丢了——manifest 条目退回裸标题行。用 shared 的 zod schema 校验，畸形就**只丢载荷**
   // 保基字段，绝不抛：这是投影重建路径，一个坏载荷不该打挂整条冷恢复。
   const workflowNotification = parseWorkflowNotificationMeta(record.workflowNotification);
+  // 批次（工地卡）随轮头冷恢复：账本/活会话里同批回执靠 batchId 聚拢，这里丢了
+  // 冷恢复后就散回单卡（数据无恙、聚合断链）。同 manifest 一样防御性回读，畸形只丢字段。
+  const batchId = typeof record.batchId === "string" && record.batchId.trim() ? record.batchId.trim() : undefined;
+  const batchTitle =
+    typeof record.batchTitle === "string" && record.batchTitle.trim()
+      ? record.batchTitle.trim()
+      : undefined;
   return {
     backgroundSource,
     title,
     workId,
+    ...(batchId ? { batchId } : {}),
+    ...(batchTitle ? { batchTitle } : {}),
     ...(workflowNotification ? { workflowNotification } : {}),
   };
 }

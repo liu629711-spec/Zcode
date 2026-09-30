@@ -50,11 +50,6 @@ import {
   selectProjectAgentDirectoryForWorkspace,
   useProjectAgentDirectoryStore,
 } from "@/store/projectAgentDirectoryStore.js";
-import {
-  buildWorkOrderForwardTask,
-  parseReceiptDelivererName,
-  selectForwardTargets,
-} from "@/v4/workOrderForward.js";
 import type { AssistantPreviewCard } from "@/lib/assistantPreviewCards.js";
 import { useAssistantCodeCommentFeatureEnabled } from "@/AssistantCodeCommentFeatureProvider.js";
 import {
@@ -83,6 +78,7 @@ import {
   AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE,
   resolveAgentWorkOrderMeta,
 } from "@/v4/agentWorkOrderTurn.js";
+import { ReceiptForwardControl } from "@/v4/ReceiptForwardControl.js";
 import { ConversationWorkflowDigests } from "@/v4/ConversationWorkflowDigests.js";
 import { ConversationWorkflowCompletion } from "@/v4/ConversationWorkflowCompletion.js";
 import { resolveWorkflowTurnDigests } from "@/v4/workflowTurnDigests.js";
@@ -980,121 +976,6 @@ function resolveWorkflowNotification(
  * （目标会话看不见发起方的回执）。仅 completed（标题以「交活」结尾）的回执可转；
  * 宿主回调缺席（只读会话）或名册里没有别人时整体不渲染。
  */
-function ReceiptForwardControl({
-  title,
-  answer,
-  context,
-  unitKey,
-}: {
-  title: string;
-  answer: string;
-  context: ConversationRowRenderContext;
-  unitKey: string;
-}) {
-  const { intl } = useZCodeIntl();
-  const [open, setOpen] = useState(false);
-  const [target, setTarget] = useState("");
-  const [note, setNote] = useState("");
-  const [pending, setPending] = useState(false);
-  const delivererName = parseReceiptDelivererName(title);
-  const directory = useProjectAgentDirectoryStore((state) =>
-    selectProjectAgentDirectoryForWorkspace(
-      state,
-      buildTaskWorkspaceKey(context.workspacePath, context.workspaceIdentity),
-    ),
-  );
-  const targets = selectForwardTargets(directory, delivererName);
-  const dispatchWorkOrder = context.onDispatchAgentWorkOrder;
-  if (!delivererName || !dispatchWorkOrder || targets.length === 0) {
-    return null;
-  }
-  const submit = async () => {
-    const agent = target.trim();
-    if (!agent || pending) return;
-    setPending(true);
-    try {
-      const delivery = await dispatchWorkOrder(
-        agent,
-        buildWorkOrderForwardTask({ delivererName, answer, note }),
-      );
-      toast(
-        intl.formatMessage(
-          {
-            id:
-              delivery === "queued"
-                ? "chat.mention.agents.dispatchQueued"
-                : "chat.mention.agents.dispatchAccepted",
-          },
-          { name: agent },
-        ),
-      );
-      setOpen(false);
-      setNote("");
-      setTarget("");
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error));
-    } finally {
-      setPending(false);
-    }
-  };
-  return open ? (
-    <div
-      data-testid={testId(TID_CHAT_RECEIPT_FORWARD, unitKey)}
-      className="flex w-full flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2"
-    >
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 text-ui-sm text-foreground-subtle">
-          {intl.formatMessage({ id: "chat.receipt.forward.target" })}
-        </span>
-        <select
-          className="h-7 min-w-0 flex-1 rounded-md border border-input-border bg-input px-2 text-ui-sm text-foreground outline-none"
-          value={target}
-          onChange={(event) => setTarget(event.target.value)}
-        >
-          <option value="">…</option>
-          {targets.map((agent) => (
-            <option key={agent.name} value={agent.name}>
-              {agent.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <textarea
-        rows={2}
-        className="w-full resize-none rounded-md border border-input-border bg-input/20 px-2 py-1.5 text-ui-sm text-foreground outline-none placeholder:text-muted-foreground"
-        placeholder={intl.formatMessage({ id: "chat.receipt.forward.note" })}
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
-      />
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
-          {intl.formatMessage({ id: "common.cancel" })}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={pending || target.trim().length === 0}
-          onClick={() => void submit()}
-        >
-          {intl.formatMessage({ id: "chat.receipt.forward.confirm" })}
-        </Button>
-      </div>
-    </div>
-  ) : (
-    <div className="flex w-full justify-end">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        data-testid={testId(TID_CHAT_RECEIPT_FORWARD, unitKey)}
-        onClick={() => setOpen(true)}
-      >
-        {intl.formatMessage({ id: "chat.receipt.forward" })}
-      </Button>
-    </div>
-  );
-}
-
 function isAgentWorkOrderReceiptResult(unit: ConversationTurnRenderUnit): boolean {
   return (
     unit.header?.origin === "backgroundResult" &&
@@ -1673,7 +1554,7 @@ function ConversationTurnGroupImpl({
           // 同批 2+ 张工单聚合为一张卡，散卡随之压制（回执头卡），进度实时更新。
           // 挂在轮首会把卡片顶到老板消息前面（真机验收教训：状态板属于轮的结尾）。
           workOrderBatchCards.map((batch) => (
-            <AgentWorkOrderBatchCard key={batch.batchId} batch={batch} />
+            <AgentWorkOrderBatchCard key={batch.batchId} batch={batch} context={context} />
           ))
         : null}
     </section>
