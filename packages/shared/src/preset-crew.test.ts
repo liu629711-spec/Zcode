@@ -11,14 +11,11 @@ import { test } from "node:test";
 
 import { PRESET_CREW_MEMBERS } from "./preset-crew.js";
 
-test("预置班底五人齐全且名字唯一（大小写不敏感）", () => {
-  assert.equal(PRESET_CREW_MEMBERS.length, 5);
-  const seen = new Set<string>();
-  for (const member of PRESET_CREW_MEMBERS) {
-    const key = member.name.toLowerCase();
-    assert.ok(!seen.has(key), `duplicate preset name: ${member.name}`);
-    seen.add(key);
-  }
+test("预置班底名单与拍板一致（2026-09-30：就看 Claude 和 Codex）", () => {
+  assert.deepEqual(
+    PRESET_CREW_MEMBERS.map((member) => member.name),
+    ["code-builder", "code-reviewer", "frontend-design"],
+  );
 });
 
 test("每个成员都满足建档校验（名字 3-50 且仅字母数字连字符、描述与人设非空）", () => {
