@@ -2996,9 +2996,11 @@ export function SessionPane({
                 { id: "chat.mention.agents.dispatchTargetAmbiguous" },
                 { name: agent },
               )
-            : reasonCode === "guard.agentWorkOrderNested"
-              ? intl.formatMessage({ id: "chat.mention.agents.dispatchNested" })
-              : fallback,
+            : reasonCode === "guard.agentWorkOrderSelfTarget"
+              ? intl.formatMessage({ id: "chat.mention.agents.dispatchSelfTarget" })
+              : reasonCode === "guard.agentWorkOrderNested"
+                ? intl.formatMessage({ id: "chat.mention.agents.dispatchNested" })
+                : fallback,
       );
     },
     [intl, sendCommand, sessionId],

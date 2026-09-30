@@ -5549,6 +5549,7 @@ const zhCN: Record<string, string> = {
   "chat.mention.agents.dispatchTargetNotFound": "这个项目里没有叫「{name}」的智能体",
   "chat.mention.agents.dispatchTargetAmbiguous": "有多个叫「{name}」的智能体，换个唯一的名字再试",
   "chat.mention.agents.dispatchNested": "对方正在处理一个转交任务，稍后再试",
+  "chat.mention.agents.dispatchSelfTarget": "不能给自己派活：你就是当前对话。要换人请直接点名。",
   "chat.agentWorkOrder.card.fromTitle": "来自 {name} 的任务",
   "chat.agentWorkOrder.card.fromUserName": "用户",
   "chat.agentWorkOrder.card.fromUserTitle": "来自用户的任务",

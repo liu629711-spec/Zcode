@@ -110,3 +110,25 @@ test("点名员工路径不回归：agent 原样透传，message 报受理对象
   assert.equal(output.agentName, "code-plus");
   assert.ok(String(output.message).includes("Work order accepted by code-plus."));
 });
+
+test("说明书规则表覆盖 §三总表（2026-09-30 重写）：自派禁令、未点名普通会话、具名默认最近一段等", () => {
+  const rules = agentDispatchToolEntry.metadata.modelInstructions.join("\n");
+  // §三 #6：自派禁令（端口 guard.agentWorkOrderSelfTarget 的提示词先教）。
+  assert.match(rules, /NEVER dispatch a work order to yourself/);
+  // §三 #2/#5：未点名 + 要新会话 = 无 agent 的无工牌普通会话，回话说明开好了什么。
+  assert.match(rules, /WITHOUT naming which agent/);
+  assert.match(rules, /omit agent entirely and pass newSession=true/);
+  assert.match(rules, /unbadged ordinary session/);
+  assert.match(rules, /say in one sentence what was opened/);
+  // §三 #3/D1：具名员工默认落最近一段，仅用户明说新的一段才 newSession=true。
+  assert.match(rules, /For a NAMED agent, set newSession=true only when/);
+  assert.match(rules, /latest persona session/);
+  // ask-first：没点名也没要新会话的活，问清楚而不是猜。
+  assert.match(rules, /the request has no doer/);
+  // 既有正确条目不丢：点名必派单、task 独立成文、model 逐字传、回执语义、嵌套禁令。
+  assert.match(rules, /names another agent of this workspace as the doer/);
+  assert.match(rules, /complete standalone instructions/);
+  assert.match(rules, /pass the user's words verbatim as model/);
+  assert.match(rules, /arrives as a separate receipt/);
+  assert.match(rules, /nesting is not allowed/);
+});

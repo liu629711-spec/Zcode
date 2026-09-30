@@ -5797,6 +5797,8 @@ const enUS: Record<string, string> = {
   "chat.mention.agents.dispatchTargetNotFound": "No agent named “{name}” in this project",
   "chat.mention.agents.dispatchTargetAmbiguous": "Multiple agents are named “{name}” — pick a unique name and try again",
   "chat.mention.agents.dispatchNested": "That agent is already running a task — try again shortly",
+  "chat.mention.agents.dispatchSelfTarget":
+    "You cannot assign a task to yourself — this conversation is you. Name another agent to hand it off.",
   "chat.agentWorkOrder.card.fromTitle": "Task from {name}",
   "chat.agentWorkOrder.card.fromUserName": "You",
   "chat.agentWorkOrder.card.fromUserTitle": "Task from you",
