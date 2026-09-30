@@ -3401,7 +3401,18 @@ async function createRecord(
       modelContextBudgetStrategy: startupPreferences.modelContextBudgetStrategy,
       // Memory Settings 是现有 CLI features.memory/use 之外的总开关。只在关闭时
       // 写入 override，避免开启值反向覆盖用户已有的 CLI 禁用配置。
-      ...(startupPreferences.memoryEnabled ? {} : { memory: { enabled: false } }),
+      // 员工（persona）会话另关老板的项目记忆（projectMemoryEnabled=false）：员工只
+      // 用自己的记事本柜，不吃老板在 memories/projects/ 的自动记忆——否则老板的待办、
+      // 以及"某员工=某昵称"这类索引会漏进员工上下文，员工把自己当成别人
+      // （真机实证：UI-agent 打招呼自称"小龙"，因为索引里写着 UI-plus=小龙）。
+      ...(!startupPreferences.memoryEnabled || persona !== undefined
+        ? {
+            memory: {
+              ...(startupPreferences.memoryEnabled ? {} : { enabled: false }),
+              ...(persona !== undefined ? { projectMemoryEnabled: false } : {}),
+            },
+          }
+        : {}),
       // desktop-continuous session/create 由 UI 先解析 ~/.zcode/.agents 的 enabled MCP，
       // 但 protocol app-server 自己不会读取 UI/main 侧的 MCP store；之前 createRecord 没把
       // params.mcpServers 注入 runtimeConfig，导致日志里 runtimeHasMcpConfig=false，工具永远不启动。

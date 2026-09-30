@@ -7,6 +7,8 @@ export function resolveEnabledProjectMemoryRoot(
 ): string | undefined {
   const memory = config.memory;
   if (!memory?.enabled || memory.use === false || !memory.cliStorageRoot) return undefined;
+  // 员工（persona）会话显式关掉老板项目记忆：只保留自家记事本柜（storageRoot 分支）。
+  if (memory.projectMemoryEnabled === false) return undefined;
   if (!isMainMemoryTaskType(config.taskType)) return undefined;
 
   return resolveProjectMemoryRoot({

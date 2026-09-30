@@ -179,6 +179,9 @@ export function resolveAppRuntimeConfig(input: {
       ...(options.runtimeConfig?.memory?.extractionEnabled === undefined
         ? {}
         : { extractionEnabled: options.runtimeConfig.memory.extractionEnabled }),
+      ...(options.runtimeConfig?.memory?.projectMemoryEnabled === undefined
+        ? {}
+        : { projectMemoryEnabled: options.runtimeConfig.memory.projectMemoryEnabled }),
       ...(input.storageRoot ? { storageRoot: input.storageRoot } : {}),
       use: options.runtimeConfig?.memory?.use ?? configResult.config.memory.use,
       workspaceIdentity: workspaceIdentity?.trim() || undefined,

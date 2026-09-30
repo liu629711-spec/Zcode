@@ -323,6 +323,10 @@ export interface MemoryRuntimeConfig {
   enabled?: boolean;
   /** 是否调度成功 Main turn 后的自动 Extraction；缺省按 true 处理。 */
   extractionEnabled?: boolean;
+  /** 老板的项目记忆（cliStorageRoot/memories/projects/…）总闸；缺省按 true 处理。
+   *  与 enabled 分开：员工（persona）会话传 false——只关老板记忆的索引注入/提炼/记忆工具，
+   *  自家记事本柜（storageRoot/agent-memory/<工号>/）不受影响。 */
+  projectMemoryEnabled?: boolean;
   storageRoot?: string;
   use?: boolean;
   workspaceIdentity?: string;
