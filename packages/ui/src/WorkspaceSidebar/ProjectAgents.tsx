@@ -32,7 +32,7 @@ import { acquireWorkspaceConnection } from "@/v4/workspaceConnectionRegistry.js"
 import { launchWorkspaceId } from "@/settings/saved-workflows/useSavedWorkflowLauncher.js";
 import { AgentMemorySection } from "@/WorkspaceSidebar/AgentMemorySection.js";
 import {
-  selectProjectAgentsForWorkspace,
+  selectWorkspaceRosterAgents,
   toProjectAgentCreateConfig,
   toProjectAgentUpdateConfig,
   validateProjectAgentDraft,
@@ -132,7 +132,10 @@ export function useWorkspaceProjectAgents(params: {
         new Map(
           results.map(({ key, workspacePath, agents }) => [
             key,
-            selectProjectAgentsForWorkspace(agents, workspacePath),
+            // 名册合并（身份轴终局 §九②）：项目档 ∪ 全局员工（user 档），每个
+            // 本地 tab 都见得到同一批员工；数据取自各 tab 自己的服务解析，
+            // 远程 tab 吃远端进程的名册，本机全局员工不会混进远程工作区。
+            selectWorkspaceRosterAgents(agents, workspacePath),
           ]),
         ),
       );
@@ -180,6 +183,8 @@ export function useWorkspaceProjectAgents(params: {
 
   // 编辑档案（G5/D4）：侧栏只露 名字/介绍/人设 三框，其余字段由 toProjectAgentUpdateConfig
   // 原样带回（updateAgent 整文件重写）；oldFilePath 让改名场景能删旧文件。
+  // 全局员工（user 档）也在名册里可编辑：scope 按被编辑档案走——user 档写回
+  // 用户级目录，绝不能按 workspace 落盘（那会在项目里复制出第二份同名档案）。
   const updateAgent = useCallback(
     async (
       target: ProjectAgentTarget,
@@ -188,14 +193,19 @@ export function useWorkspaceProjectAgents(params: {
     ): Promise<AgentSummary | null> => {
       setSaving(true);
       try {
+        const isUserAgent = agent.scope === "user";
         const { agent: saved } = await subagentsService.updateAgent({
           agentId: agent.id,
           config: toProjectAgentUpdateConfig(agent, draft),
           oldFilePath: agent.path,
           provider: ZCODE_AGENT_PROVIDER,
-          scope: "workspace",
-          workspacePath: target.workspacePath,
-          workspaceIdentity: target.workspaceIdentity,
+          scope: isUserAgent ? "user" : "workspace",
+          ...(isUserAgent
+            ? {}
+            : {
+                workspacePath: target.workspacePath,
+                workspaceIdentity: target.workspaceIdentity,
+              }),
         });
         await reload();
         // 回传写盘后的档案本体：老档案这次才补上号（D26），调用方改名跟走要用它。

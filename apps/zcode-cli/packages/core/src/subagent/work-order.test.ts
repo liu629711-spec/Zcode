@@ -65,19 +65,34 @@ test("resolveWorkOrderTarget：工号命中 0 个或多个都拒绝", () => {
   );
 });
 
-test("resolveWorkOrderTarget：名字兜底精确匹配且仅限项目作用域", () => {
+test("resolveWorkOrderTarget：名字兜底精确匹配，项目档与用户级身份档都算数", () => {
   const profiles = [
     profile("code-plus", { agentId: UUID_A }),
-    profile("code-plus", { source: "user" }),
+    profile("code-plus", { source: "user", agentId: UUID_B }),
   ];
-  const resolved = resolveWorkOrderTarget("CODE-plus", profiles);
-  assert.equal(resolved.kind, "resolved");
-  assert.equal(resolved.kind === "resolved" ? resolved.profile.agentId : "", UUID_A);
-
-  // 用户作用域同名档案不在名字解析范围：工号才是跨作用域的身份。
+  // 项目档与用户级档同名：两条都命中 → 既有 ambiguous 守卫接管（教模型改用工号）。
+  const ambiguous = resolveWorkOrderTarget("CODE-plus", profiles);
+  assert.equal(ambiguous.kind, "ambiguous");
+  assert.deepEqual(
+    ambiguous.kind === "ambiguous" ? ambiguous.matchedNames.sort() : [],
+    ["code-plus", "code-plus"],
+  );
+  // 用户级全局员工没有同名项目档时按名字直接命中（身份轴终局 §九③）。
   const userOnly = resolveWorkOrderTarget("ghost-name", [profile("ghost-name", { source: "user" })]);
-  assert.equal(userOnly.kind, "not_found");
+  assert.equal(userOnly.kind, "resolved");
+  assert.equal(
+    userOnly.kind === "resolved" ? userOnly.profile.source : "",
+    "user",
+  );
   assert.equal(resolveWorkOrderTarget("  ", profiles).kind, "not_found");
+});
+
+test("resolveWorkOrderTarget：插件档（source plugin）不是身份，按名字不命中", () => {
+  const plugin = resolveWorkOrderTarget("pptx", [profile("pptx", { source: "plugin" })]);
+  assert.equal(plugin.kind, "not_found");
+  // 工号分支不受来源影响：有号的档案按号仍可唯一命中。
+  const byId = resolveWorkOrderTarget(UUID_A, [profile("pptx", { source: "plugin", agentId: UUID_A })]);
+  assert.equal(byId.kind, "resolved");
 });
 
 test("resolveWorkOrderTarget：项目作用域内同名多档拒绝解析", () => {

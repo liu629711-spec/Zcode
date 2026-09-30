@@ -21,6 +21,7 @@ import {
   restorePersonaTitlePrefix,
   refreshPersonaChatBadgeFromDirectory,
   selectProjectAgentsForWorkspace,
+  selectWorkspaceRosterAgents,
   stripPersonaTitlePrefix,
   toProjectAgentCreateConfig,
   toProjectAgentPersona,
@@ -104,6 +105,92 @@ test("selectProjectAgentsForWorkspace：他工作区的 agent 不归本工作区
   assert.deepEqual(
     selectProjectAgentsForWorkspace(agents, "D:/repo").map((agent) => agent.id),
     ["3"],
+  );
+});
+
+// ── 名册合并（身份轴终局 §九②）：项目档 ∪ 全局员工，处处可见 ──────────────
+
+function rosterAgent(id: string, overrides: Partial<AgentSummary>): AgentSummary {
+  return {
+    id,
+    name: id,
+    description: `${id} 的活`,
+    systemPrompt: "p",
+    path: `D:/machine/${id}.md`,
+    scope: "user",
+    source: "user",
+    enabled: true,
+    ...overrides,
+  } as AgentSummary;
+}
+
+test("selectWorkspaceRosterAgents：全局员工并入每个工作区名册，项目档存量照旧", () => {
+  const agents = [
+    rosterAgent("global-doc-writer", { path: "C:/Users/me/.zcode/agents/doc-writer.md" }),
+    rosterAgent("proj-reviewer", {
+      scope: "workspace",
+      source: "user",
+      path: "D:/repo/.zcode/agents/reviewer.md",
+    }),
+    rosterAgent("proj-planner", {
+      scope: "workspace",
+      source: "user",
+      path: "D:/other/.zcode/agents/planner.md",
+    }),
+  ];
+  const roster = selectWorkspaceRosterAgents(agents, "D:/repo");
+  // 本工作区项目档 + 全局员工；他工作区的项目档不进。
+  assert.deepEqual(roster.map((agent) => agent.id).sort(), ["global-doc-writer", "proj-reviewer"]);
+});
+
+test("selectWorkspaceRosterAgents：同名 user 档与项目档是两位员工，互不覆盖", () => {
+  const agents = [
+    rosterAgent("user:doc-writer", {
+      name: "doc-writer",
+      path: "C:/Users/me/.zcode/agents/doc-writer.md",
+    }),
+    rosterAgent("ws:doc-writer", {
+      name: "doc-writer",
+      scope: "workspace",
+      source: "user",
+      path: "D:/repo/.zcode/agents/doc-writer.md",
+    }),
+  ];
+  const roster = selectWorkspaceRosterAgents(agents, "D:/repo");
+  assert.equal(roster.length, 2);
+});
+
+test("selectWorkspaceRosterAgents：插件档与禁用的 user 档不进名册", () => {
+  const agents = [
+    rosterAgent("plugin-pptx", { source: "plugin" }),
+    rosterAgent("disabled-worker", { enabled: false }),
+    rosterAgent("live-worker"),
+  ];
+  assert.deepEqual(
+    selectWorkspaceRosterAgents(agents, "D:/repo").map((agent) => agent.id),
+    ["live-worker"],
+  );
+});
+
+test("selectWorkspaceRosterAgents：合并后按名字重排，不因来源分家而乱序", () => {
+  const agents = [
+    rosterAgent("ws-zeta", {
+      name: "zeta",
+      scope: "workspace",
+      source: "user",
+      path: "D:/repo/.zcode/agents/zeta.md",
+    }),
+    rosterAgent("global-alpha", { name: "alpha" }),
+    rosterAgent("ws-mike", {
+      name: "mike",
+      scope: "workspace",
+      source: "user",
+      path: "D:/repo/.zcode/agents/mike.md",
+    }),
+  ];
+  assert.deepEqual(
+    selectWorkspaceRosterAgents(agents, "D:/repo").map((agent) => agent.name),
+    ["alpha", "mike", "zeta"],
   );
 });
 

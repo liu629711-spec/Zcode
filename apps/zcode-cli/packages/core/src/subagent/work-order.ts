@@ -10,7 +10,8 @@ export { WORK_ORDER_INPUT_ID_PREFIX };
 
 // 目标解析判据（与点将的宽容匹配刻意不同——工单永不落错人）：
 // - uuid 形状 → 按工号（agentId）在全量现役档案里唯一匹配；
-// - 其余 → 精确名匹配，且仅限项目作用域档案（source === "project"）；
+// - 其余 → 精确名匹配，限驻场身份档（项目档 + 用户级档，身份轴终局 §九③——
+//   全局员工在每个工作区都可按名字接单；插件档 source "plugin" 不是身份，不参与）；
 // - 命中 0 个或多个一律拒绝（Hermes 教训：歧义名字拒绝解析）。
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -35,7 +36,8 @@ export function resolveWorkOrderTarget(
     ? profiles.filter((profile) => profile.agentId?.toLowerCase() === candidate.toLowerCase())
     : profiles.filter(
         (profile) =>
-          profile.source === "project" && profile.name.trim().toLowerCase() === candidate.toLowerCase(),
+          (profile.source === "project" || profile.source === "user") &&
+          profile.name.trim().toLowerCase() === candidate.toLowerCase(),
       );
   if (matches.length === 1) {
     return { kind: "resolved", profile: matches[0]! };

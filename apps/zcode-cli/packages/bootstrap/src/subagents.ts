@@ -235,6 +235,9 @@ function namespacePluginAgentProfile(parsed: ParsedPluginAgentProfile): AgentPro
   return {
     ...parsed.profile,
     name: `${parsed.plugin.name}:${parsed.bareName}`,
+    // 解析器只有 user/project 两档；插件子代理档改标 "plugin"，与用户级身份档
+    // （source "user"）分开——派单解析与派遣改判按名字只认身份档，不吞插件工。
+    source: "plugin",
   };
 }
 

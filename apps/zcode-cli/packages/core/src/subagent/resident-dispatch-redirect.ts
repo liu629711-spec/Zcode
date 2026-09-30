@@ -8,8 +8,9 @@
 //
 // 判据（互补于点将，不重叠）：
 // - 本轮 @ 点将名单非空 → 放行（用户明确要在本会话搭把手，点将语义优先）；
-// - 目标 subagent_type 命中本工作区项目作用域档案（.zcode/agents/*.md）
-//   且本轮没有 @ → 改判为 AgentDispatch。
+// - 目标 subagent_type 命中驻场身份档（.zcode/agents/*.md 项目档，或用户级
+//   全局员工档——身份轴终局 §九③；插件档 source "plugin" 不算身份）且本轮
+//   没有 @ → 改判为 AgentDispatch。
 // 其余一切（Explore/general-purpose/插件档案…）逐字原样转发，行为不变。
 //
 // 兜底：dispatch 被拒（工单轮嵌套上限的端口自检抛错等）→ 回落到原派遣，
@@ -32,7 +33,9 @@ export function resolveResidentDispatchRedirect(
   const candidate = agentType.trim().toLowerCase();
   if (candidate.length === 0) return { kind: "pass" };
   const match = profiles.find(
-    (profile) => profile.source === "project" && profile.name.trim().toLowerCase() === candidate,
+    (profile) =>
+      (profile.source === "project" || profile.source === "user") &&
+      profile.name.trim().toLowerCase() === candidate,
   );
   return match ? { kind: "redirect", profile: match } : { kind: "pass" };
 }

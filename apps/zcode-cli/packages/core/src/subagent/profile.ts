@@ -15,7 +15,10 @@ export type BuiltInSubagentModelSelectionOverrides = Partial<
 
 export type AgentPermissionMode = "auto" | "plan";
 
-export type AgentProfileSource = "built-in" | "project" | "user";
+// "user" 只指用户级身份档（<storageRoot>/agents，身份轴终局 §九）；插件自带的
+// 子代理档在装配处（bootstrap loadPluginAgentProfiles）单独标 "plugin"——它们是
+// 会话内可派遣的临时工，不是驻场员工，派单解析/派遣改判都不得按名字命中它们。
+export type AgentProfileSource = "built-in" | "plugin" | "project" | "user";
 export type AgentMemoryScope = "user" | "project" | "local";
 
 export interface AgentProfile {
