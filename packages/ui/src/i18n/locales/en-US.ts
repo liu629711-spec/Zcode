@@ -2305,7 +2305,11 @@ const enUS: Record<string, string> = {
   "settings.messageStreamShowReasoning": "Show reasoning",
   "settings.messageStreamShowReasoningDescription":
     "Show full reasoning inside the message stream. When off, the first reasoning item in each turn remains visible.",
-  "settings.messageStreamShowTodos": "Show todos",
+  "settings.contextHandoverThreshold": "Context handover warning",
+  "settings.contextHandoverThresholdDescription":
+    "Warn inside a session when context usage reaches the chosen share of the window so you can continue in a fresh session; defaults to 40%.",
+  "settings.contextHandoverThreshold.option.off": "Off",
+  "settings.contextHandoverThreshold.option.percent": "{percent}%",  "settings.messageStreamShowTodos": "Show todos",
   "settings.messageStreamShowTodosDescription": "Show Todo tool cards inside the message stream. ",
   "settings.toolGroupingExplore": "Group exploration tools",
   "settings.toolGroupingExploreDescription":
@@ -5891,7 +5895,11 @@ const enUS: Record<string, string> = {
     'No ZCode MCP "{server}" quota. Sign in or get a Coding Plan to use it.',
   "chat.quota.providerLimited":
     "The current account quota or plan limit has been reached. Upgrade or adjust the plan to continue.",
-  "chat.quota.action.upgrade": "Upgrade",
+  "chat.contextBanner.message":
+    "Context is {percent}% full ({used} / {total} tokens) — continuing gets pricier and the agent gets muddled. Start a fresh session to keep going.",
+  "chat.contextBanner.action.handover": "Start a fresh session",
+  "chat.contextBanner.handover.failed": "Failed to create the successor session; this session is untouched.",
+  "chat.contextBanner.handover.unavailable": "Session handover is unavailable right now. Try again later.",  "chat.quota.action.upgrade": "Upgrade",
   "chat.quota.action.renew": "Renew",
   "chat.quota.action.switchModel": "Switch model",
   "chat.quota.action.switchProvider": "Switch provider",
@@ -6977,6 +6985,14 @@ const enUS: Record<string, string> = {
   "assetLibrary.detail.writeFailedReason":
     "Failed to write blueprints ({error}). If it says not_supported, fully restart the app; full code attached this time.",
   "assetLibrary.backToTop": "Back to top",
+  // Batch work orders (job-site card): 2+ orders of one batch aggregate into one card,
+  // replacing the scattered per-receipt cards.
+  "chat.workOrderBatch.title": "Job site",
+  "chat.workOrderBatch.progress": "{completed}/{total} completed",
+  "chat.workOrderBatch.status.dispatched": "Dispatched",
+  "chat.workOrderBatch.status.queued": "Queued",
+  "chat.workOrderBatch.status.completed": "Completed",
+  "chat.workOrderBatch.status.failed": "Failed",
 };
 
 export default enUS;

@@ -294,6 +294,12 @@ export interface AppSettings {
   desktopChromiumHardwareAccelerationEnabled?: boolean;
   /** 是否在消息流中展示模型思考过程 */
   messageStreamShowReasoning?: boolean;
+  /**
+   * 上下文换班预警阈值（占上下文窗口的百分比）：用量达到它就在会话内横幅建议
+   * 「换个新会话继续」。0 = 关闭预警；缺席 = 产品默认 40%。必须远低于自动压缩线，
+   * 否则横幅永远轮不到出场（压缩在七八成左右就静默接管了）。
+   */
+  contextHandoverThresholdPercent?: number;
   // TODO(settings-schema-version): 能证明所有受支持升级路径都已执行本次迁移后，改用统一 settings schema version，并一起删除此 marker、迁移函数和持久化判断。
   /** 显示模型思考过程的默认值是否已执行过一次性迁移；只用于设置迁移，不参与消息渲染判断。 */
   messageStreamShowReasoningMigrationInitialized?: boolean;

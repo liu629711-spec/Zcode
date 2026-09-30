@@ -45,6 +45,10 @@ export { createSettingsPageConfig, resolveSettingsSectionForPlatform };
 const TASK_AUTO_ARCHIVE_DAY_OPTIONS = [3, 7, 14, 30] as const;
 const ZCODE_INTERACTION_BEHAVIOR_OPTIONS: readonly ZCodeInteractionBehavior[] = ["queue", "guide"];
 
+// 换班预警阈值候选项（对齐稿 §2.2，D4 拍板默认 40）：0=关闭；上限压在 75，
+// 再往上就撞自动压缩线（约七八成），横幅永远轮不到出场。
+const CONTEXT_HANDOVER_THRESHOLD_OPTIONS: readonly number[] = [0, 20, 30, 40, 50, 60, 75];
+
 export function GeneralSectionContent({
   localePreference,
   interfaceMode = "coding",
@@ -76,6 +80,7 @@ export function GeneralSectionContent({
   taskAutoArchiveOlderThanDays,
   messageStreamShowReasoning,
   messageStreamShowTodos,
+  contextHandoverThresholdPercent,
   toolGroupingExploreEnabled,
   toolGroupingTerminalEnabled,
   toolGroupingChangesEnabled,
@@ -100,6 +105,7 @@ export function GeneralSectionContent({
   onAutoDownloadAndInstallUpdatesChange,
   onMessageStreamShowReasoningChange,
   onMessageStreamShowTodosChange,
+  onContextHandoverThresholdPercentChange,
   onToolGroupingExploreEnabledChange,
   onToolGroupingTerminalEnabledChange,
   onToolGroupingChangesEnabledChange,
@@ -139,6 +145,7 @@ export function GeneralSectionContent({
   taskAutoArchiveOlderThanDays: number;
   messageStreamShowReasoning: boolean;
   messageStreamShowTodos: boolean;
+  contextHandoverThresholdPercent: number;
   toolGroupingExploreEnabled: boolean;
   toolGroupingTerminalEnabled: boolean;
   toolGroupingChangesEnabled: boolean;
@@ -163,6 +170,7 @@ export function GeneralSectionContent({
   onAutoDownloadAndInstallUpdatesChange: (enabled: boolean) => Promise<void>;
   onMessageStreamShowReasoningChange: (enabled: boolean) => Promise<void>;
   onMessageStreamShowTodosChange: (enabled: boolean) => Promise<void>;
+  onContextHandoverThresholdPercentChange: (percent: number) => Promise<void>;
   onToolGroupingExploreEnabledChange: (enabled: boolean) => Promise<void>;
   onToolGroupingTerminalEnabledChange: (enabled: boolean) => Promise<void>;
   onToolGroupingChangesEnabledChange: (enabled: boolean) => Promise<void>;
@@ -745,6 +753,36 @@ export function GeneralSectionContent({
                 void onMessageStreamShowReasoningChange(checked);
               }}
             />
+          }
+        />
+        <SettingsRow
+          label={intl.formatMessage({ id: "settings.contextHandoverThreshold" })}
+          description={intl.formatMessage({
+            id: "settings.contextHandoverThresholdDescription",
+          })}
+          control={
+            <Select
+              value={String(contextHandoverThresholdPercent)}
+              onValueChange={(value) => {
+                void onContextHandoverThresholdPercentChange(Number(value));
+              }}
+            >
+              <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTEXT_HANDOVER_THRESHOLD_OPTIONS.map((percent) => (
+                  <SelectItem key={percent} value={String(percent)}>
+                    {percent === 0
+                      ? intl.formatMessage({ id: "settings.contextHandoverThreshold.option.off" })
+                      : intl.formatMessage(
+                          { id: "settings.contextHandoverThreshold.option.percent" },
+                          { percent },
+                        )}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           }
         />
         <SettingsRow

@@ -127,6 +127,17 @@ import { ConversationHeader, type PaneWorkspaceBadge } from "@/v4/ConversationHe
 import { ConversationQueuePanel } from "@/v4/ConversationQueuePanel.js";
 import { projectPendingGuideQueue } from "@/v4/pendingGuideProjection.js";
 import { ConversationQuotaBanner } from "@/v4/ConversationQuotaBanner.js";
+import { ConversationContextBanner } from "@/v4/ConversationContextBanner.js";
+import { buildSessionContextBannerState } from "@/v4/sessionContextBannerState.js";
+import {
+  sessionContextBannerDismissalStore,
+  useSessionContextBannerSuppressed,
+} from "@/v4/sessionContextBannerDismissalStore.js";
+import { buildHandoverGenerationInstruction } from "@/v4/sessionHandoverInstruction.js";
+import {
+  requestSessionHandover,
+  useSessionHandoverStore,
+} from "@/store/sessionHandoverRequestStore.js";
 import { PendingCommandRecoveryBanner } from "@/v4/PendingCommandRecoveryBanner.js";
 import { WorkspaceHookPendingBanner } from "@/v4/WorkspaceHookPendingBanner.js";
 import { ConversationStatusPanel } from "@/v4/ConversationStatusPanel.js";
@@ -4006,6 +4017,83 @@ export function SessionPane({
     usageStatsService: baseWorkspaceServices.usageStatsService,
     mcpUnavailableNotice,
   });
+  // 上下文换班横幅（对齐稿 §2.2）：用量过阈值 + 会话空闲才出现；只读会话（分享/回放）
+  // 不给换班入口。免打扰节奏归 dismissalStore，这里只拼"用量 × 阈值 × 忽略"三事实。
+  const contextWindowUsage = snapshot?.usage?.contextWindow;
+  const contextBannerState = useMemo(
+    () =>
+      buildSessionContextBannerState({
+        usedTokens: contextWindowUsage?.usedTokens ?? 0,
+        maxTokens: contextWindowUsage?.maxTokens ?? 0,
+        thresholdPercent: sharedSettings?.contextHandoverThresholdPercent,
+      }),
+    [
+      contextWindowUsage?.usedTokens,
+      contextWindowUsage?.maxTokens,
+      sharedSettings?.contextHandoverThresholdPercent,
+    ],
+  );
+  const contextBannerSuppressed = useSessionContextBannerSuppressed(
+    sessionId,
+    contextBannerState,
+  );
+  // 换班执行器住在侧栏（导航/名册/档案都在它手里）；侧栏未挂载就不渲染横幅，
+  // 不留点了没反应的死入口（照 requestProjectAgentProfileAction 的降级口径）。
+  const handoverRequestAvailable = useSessionHandoverStore(
+    (state) => state.handlers !== null,
+  );
+  const [handoverPending, setHandoverPending] = useState(false);
+  const handoverFlowRef = useRef<"idle" | "sent" | "generating">("idle");
+  const contextBannerPhase = snapshot?.control.phase ?? null;
+  const handoverTitleRef = useRef<string>("");
+  useEffect(() => {
+    // 换班第二步：生成轮收尾（phase 离开 running/prewarming）就把接力棒交给侧栏
+    // 执行器（读交接单文件 → 开接班会话 → 归档旧会话 → 跳转）。
+    if (handoverFlowRef.current === "sent") {
+      if (contextBannerPhase === "running" || contextBannerPhase === "prewarming") {
+        handoverFlowRef.current = "generating";
+      }
+      return;
+    }
+    if (handoverFlowRef.current === "generating") {
+      if (contextBannerPhase === "running" || contextBannerPhase === "prewarming") {
+        return;
+      }
+      handoverFlowRef.current = "idle";
+      setHandoverPending(false);
+      const currentSessionId = snapshot?.sessionId ?? sessionId;
+      if (!currentSessionId) return;
+      const dispatched = requestSessionHandover({
+        sessionId: currentSessionId,
+        workspacePath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        title: handoverTitleRef.current,
+      });
+      if (!dispatched) {
+        // 侧栏能力缺席（理论上门卫已挡）：口头失败，不静默。
+        toast(intl.formatMessage({ id: "chat.contextBanner.handover.unavailable" }));
+      }
+    }
+  }, [contextBannerPhase, snapshot?.sessionId, sessionId, workspacePath, workspaceIdentity, intl]);
+  const handleContextHandover = useCallback(() => {
+    if (!sessionId || !workspacePath || handoverPending) return;
+    if (handoverFlowRef.current !== "idle") return;
+    handoverTitleRef.current = snapshot?.meta.title ?? "";
+    handoverFlowRef.current = "sent";
+    setHandoverPending(true);
+    void dispatchSendText(buildHandoverGenerationInstruction(workspacePath, sessionId))
+      .then((sendResult) => {
+        if (sendResult === "blocked" || sendResult === "confirmationRequired") {
+          // 发送被挡（admission 拒绝/需确认）：换班流程作废，横幅恢复可点。
+          handoverFlowRef.current = "idle";
+          setHandoverPending(false);
+        }
+      })
+      .catch(() => {
+        handoverFlowRef.current = "idle";
+        setHandoverPending(false);
+      });
+  }, [dispatchSendText, handoverPending, sessionId, snapshot?.meta.title, workspacePath]);
   const composerError =
     draftModelReadinessError ??
     sendSubmissionError ??
@@ -4561,6 +4649,22 @@ export function SessionPane({
               : undefined
           }
           onDismiss={quotaBanner.dismiss}
+        />
+      ) : null}
+      {contextBannerState.visible &&
+      !contextBannerSuppressed &&
+      handoverRequestAvailable &&
+      (contextBannerPhase === null ||
+        (contextBannerPhase !== "running" && contextBannerPhase !== "prewarming")) ? (
+        <ConversationContextBanner
+          state={contextBannerState}
+          pending={handoverPending}
+          onHandover={handleContextHandover}
+          onDismiss={() => {
+            if (sessionId) {
+              sessionContextBannerDismissalStore.dismiss(sessionId, contextBannerState.percent ?? 0);
+            }
+          }}
         />
       ) : null}
       {recoverableCommand ? (

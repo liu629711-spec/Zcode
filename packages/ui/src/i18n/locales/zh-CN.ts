@@ -2171,6 +2171,11 @@ const zhCN: Record<string, string> = {
   "settings.messageStreamShowReasoning": "显示思考过程",
   "settings.messageStreamShowReasoningDescription":
     "在消息流中展示完整的模型思考内容；关闭时每轮仍展示第一次思考。",
+  "settings.contextHandoverThreshold": "上下文换班预警",
+  "settings.contextHandoverThresholdDescription":
+    "上下文用量达到所选比例时，会话内提醒你换个新会话继续；默认 40%，选择关闭则不提醒。",
+  "settings.contextHandoverThreshold.option.off": "关闭",
+  "settings.contextHandoverThreshold.option.percent": "{percent}%",
   "settings.messageStreamShowTodos": "显示待办",
   "settings.messageStreamShowTodosDescription": "在消息流中展示 Todo 工具卡片。",
   "settings.toolGroupingExplore": "分组探索工具",
@@ -5634,6 +5639,11 @@ const zhCN: Record<string, string> = {
   "chat.quota.mcp.codingPlanRequired":
     "当前无 ZCode MCP「{server}」额度，请登录或开通 Coding Plan 使用。",
   "chat.quota.providerLimited": "当前账户额度或套餐已达到使用限制。请升级或调整套餐后继续。",
+  "chat.contextBanner.message":
+    "上下文已用 {percent}%（{used} / {total} tokens），继续下去消耗更大、智能体也容易犯迷糊。可以换个新会话接着干。",
+  "chat.contextBanner.action.handover": "换个新会话继续",
+  "chat.contextBanner.handover.failed": "接班会话创建失败，当前会话未受影响。",
+  "chat.contextBanner.handover.unavailable": "换班入口暂不可用，请稍后再试。",
   "chat.quota.action.upgrade": "升级",
   "chat.quota.action.renew": "续期",
   "chat.quota.action.switchModel": "切换模型",
@@ -6650,6 +6660,13 @@ const zhCN: Record<string, string> = {
   "assetLibrary.detail.writeFailedFallback": "图纸落盘失败，已改为附带完整代码。",
   "assetLibrary.detail.writeFailedReason": "图纸落盘失败（{error}）。若是 not_supported 请完全重启应用后重试；本次已附带完整代码。",
   "assetLibrary.backToTop": "回到顶部",
+  // 批次派单（工地卡）：同批 2+ 张工单聚合为一张卡，替代散落的单张回执卡。
+  "chat.workOrderBatch.title": "工地",
+  "chat.workOrderBatch.progress": "{completed}/{total} 完成",
+  "chat.workOrderBatch.status.dispatched": "已派单",
+  "chat.workOrderBatch.status.queued": "排队中",
+  "chat.workOrderBatch.status.completed": "已完成",
+  "chat.workOrderBatch.status.failed": "未完成",
 };
 
 export default zhCN;

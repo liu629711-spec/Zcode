@@ -302,7 +302,11 @@ export function useOpenProjectAgentChat(params: {
   workspacePath: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
-  onSessionCreated: (sessionId: string, target: ProjectAgentTarget, persona: ProjectAgentPersona) => void;
+  onSessionCreated: (
+    sessionId: string,
+    target: ProjectAgentTarget,
+    persona: ProjectAgentPersona | undefined,
+  ) => void;
 }) {
   const { workspacePath, workspaceIdentity, workspaceRemoteSessionId, onSessionCreated } = params;
   const resolution = useWorkspaceServicesResolution(
@@ -315,7 +319,13 @@ export function useOpenProjectAgentChat(params: {
   const openingRef = useRef(false);
 
   const openAgentChat = useCallback(
-    async (persona: ProjectAgentPersona, target: ProjectAgentTarget) => {
+    async (
+      persona: ProjectAgentPersona | undefined,
+      target: ProjectAgentTarget,
+      // 换班（对齐稿 §2.2）：首条消息随 createSession 播种（原生 prompt-turn 同一条
+      // 写路径），接班会话出生即在读交接单，不需要导航后再补发。
+      opts?: { firstInputText?: string },
+    ) => {
       if (openingRef.current || !resolution.rpcReady) {
         return;
       }
@@ -339,7 +349,10 @@ export function useOpenProjectAgentChat(params: {
                 workspacePath: target.workspacePath,
                 workspaceIdentity: target.workspaceIdentity,
               }),
-              persona,
+              ...(persona ? { persona } : {}),
+              ...(opts?.firstInputText
+                ? { firstInput: { text: opts.firstInputText } }
+                : {}),
             },
             sessionId: null,
           }),

@@ -26,6 +26,7 @@ import {
   testId,
 } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
+import { DEFAULT_CONTEXT_HANDOVER_THRESHOLD_PERCENT } from "@/v4/sessionContextBannerState.js";
 import { toast } from "@/components/ui/toast.js";
 import { DesktopWindowFrame } from "@/DesktopWindowFrame.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -706,6 +707,9 @@ export function SettingsPage({
   const [receivePreviewUpdates, setReceivePreviewUpdates] = useState(false);
   const [autoDownloadAndInstallUpdates, setAutoDownloadAndInstallUpdates] = useState(false);
   const [messageStreamShowReasoning, setMessageStreamShowReasoning] = useState(true);
+  const [contextHandoverThresholdPercent, setContextHandoverThresholdPercent] = useState(
+    DEFAULT_CONTEXT_HANDOVER_THRESHOLD_PERCENT,
+  );
   const [messageStreamShowTodos, setMessageStreamShowTodos] = useState(false);
   const [toolGroupingExploreEnabled, setToolGroupingExploreEnabled] = useState(true);
   const [toolGroupingTerminalEnabled, setToolGroupingTerminalEnabled] = useState(true);
@@ -790,6 +794,9 @@ export function SettingsPage({
         setReceivePreviewUpdates(settings.receivePreviewUpdates ?? false);
         setAutoDownloadAndInstallUpdates(settings.autoDownloadAndInstallUpdates ?? false);
         setMessageStreamShowReasoning(settings.messageStreamShowReasoning ?? true);
+        setContextHandoverThresholdPercent(
+          settings.contextHandoverThresholdPercent ?? DEFAULT_CONTEXT_HANDOVER_THRESHOLD_PERCENT,
+        );
         setMessageStreamShowTodos(settings.messageStreamShowTodos ?? false);
         setToolGroupingExploreEnabled(settings.toolGroupingExploreEnabled ?? true);
         setToolGroupingTerminalEnabled(settings.toolGroupingTerminalEnabled ?? true);
@@ -823,6 +830,9 @@ export function SettingsPage({
       return;
     }
     setMessageStreamShowReasoning(sharedSettings.messageStreamShowReasoning ?? true);
+    setContextHandoverThresholdPercent(
+      sharedSettings.contextHandoverThresholdPercent ?? DEFAULT_CONTEXT_HANDOVER_THRESHOLD_PERCENT,
+    );
     setMessageStreamShowTodos(sharedSettings.messageStreamShowTodos ?? false);
     setToolGroupingExploreEnabled(sharedSettings.toolGroupingExploreEnabled ?? true);
     setToolGroupingTerminalEnabled(sharedSettings.toolGroupingTerminalEnabled ?? true);
@@ -1184,6 +1194,22 @@ export function SettingsPage({
         },
       });
       setMessageStreamShowReasoning(enabled);
+    },
+    [updateSharedSettings],
+  );
+  const handleContextHandoverThresholdPercentChange = useCallback(
+    async (percent: number) => {
+      await runSettingsActionAsync({
+        featureId: "settings.conversation",
+        action: "set_context_handover_threshold",
+        trigger: "select",
+        operation: () => updateSharedSettings({ contextHandoverThresholdPercent: percent }),
+        completed: {
+          resultSource: "shared_settings",
+          stateAfter: percent === 0 ? "disabled" : "enabled",
+        },
+      });
+      setContextHandoverThresholdPercent(percent);
     },
     [updateSharedSettings],
   );
@@ -1755,6 +1781,10 @@ export function SettingsPage({
                               handleMessageStreamShowReasoningChange
                             }
                             onMessageStreamShowTodosChange={handleMessageStreamShowTodosChange}
+                            contextHandoverThresholdPercent={contextHandoverThresholdPercent}
+                            onContextHandoverThresholdPercentChange={
+                              handleContextHandoverThresholdPercentChange
+                            }
                             onToolGroupingExploreEnabledChange={
                               handleToolGroupingExploreEnabledChange
                             }

@@ -168,6 +168,8 @@ import {
 } from "@/store/personaChatBadgeStore.js";
 import { useProjectAgentDirectoryStore } from "@/store/projectAgentDirectoryStore.js";
 import { useProjectAgentProfileActionStore } from "@/store/projectAgentProfileActionStore.js";
+import { useSessionHandoverStore } from "@/store/sessionHandoverRequestStore.js";
+import { buildHandoverFirstInput } from "@/v4/sessionHandoverInstruction.js";
 import { cn } from "@/components/lib/utils.js";
 import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import {
@@ -499,14 +501,17 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     workspaceIdentity,
     workspaceRemoteSessionId,
     onSessionCreated: useCallback(
-      (sessionId: string, target: ProjectAgentTarget, persona: ProjectAgentPersona) => {
-        registerPersonaChatBadge({
-          workspacePath: target.workspacePath,
-          workspaceIdentity: target.workspaceIdentity,
-          taskId: sessionId,
-          // persona 载荷带号就登记号（D26）：会话与档案从此按号互认，改名不断链。
-          badge: toPersonaChatBadge(persona),
-        });
+      (sessionId: string, target: ProjectAgentTarget, persona: ProjectAgentPersona | undefined) => {
+        // 换班接班普通会话（无 persona）也走这里导航；只有真员工才登记工牌。
+        if (persona) {
+          registerPersonaChatBadge({
+            workspacePath: target.workspacePath,
+            workspaceIdentity: target.workspaceIdentity,
+            taskId: sessionId,
+            // persona 载荷带号就登记号（D26）：会话与档案从此按号互认，改名不断链。
+            badge: toPersonaChatBadge(persona),
+          });
+        }
         // 驻场智能体建的会话都在目标工作区本地，targetRemoteSessionId 不传。
         onSelectTask(target.workspacePath, sessionId, target.workspaceIdentity);
       },
@@ -1057,6 +1062,78 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     handlePromoteProjectAgent,
     relinkRenamedAgentChats,
     setProjectAgentProfileActionHandlers,
+  ]);
+  // 换班执行器（对齐稿 §2.2）：SessionPane 横幅发请求，这里执行
+  // 对号档案 → 建接班会话（firstInput 指向交接单文件）→ 归档旧会话；
+  // 跳转由 openAgentChat 的 onSessionCreated 统一走任务行导航。
+  // 归档失败不连坐（接班会话已就位，旧会话留待手动清理）；档案对不上号就
+  // 开普通会话接班——交接单文件本身仍在，身份降级但工作不丢。
+  const setSessionHandoverHandlers = useSessionHandoverStore((state) => state.setHandlers);
+  useEffect(() => {
+    setSessionHandoverHandlers({
+      handover: (request) => {
+        void (async () => {
+          const workspaceKey = buildTaskWorkspaceKey(
+            request.workspacePath,
+            request.workspaceIdentity,
+          );
+          const agents = projectAgents.agentsByWorkspaceKey.get(workspaceKey);
+          const badge = resolvePersonaChatBadgeForTask(
+            { taskId: request.sessionId, title: request.title },
+            usePersonaChatBadgeStore.getState().badgeByWorkspaceKey[workspaceKey],
+            agents,
+          );
+          const agent = badge
+            ? badge.agentId
+              ? agents?.find((candidate) => candidate.agentId === badge.agentId)
+              : agents?.find((candidate) => candidate.name === badge.name)
+            : undefined;
+          try {
+            await openProjectAgentChat(
+              agent ? toProjectAgentPersona(agent) : undefined,
+              {
+                workspacePath: request.workspacePath,
+                ...(request.workspaceIdentity
+                  ? { workspaceIdentity: request.workspaceIdentity }
+                  : {}),
+              },
+              {
+                firstInputText: buildHandoverFirstInput(
+                  request.workspacePath,
+                  request.sessionId,
+                ),
+              },
+            );
+          } catch (error) {
+            logger.warn("[sessionHandover] 接班会话创建失败", error);
+            toast(intl.formatMessage({ id: "chat.contextBanner.handover.failed" }));
+            return;
+          }
+          const taskService = boundServicesResolution.services.zcodeTaskService;
+          if (!taskService) {
+            return;
+          }
+          try {
+            await taskService.archiveTask({
+              taskId: request.sessionId,
+              workspacePath: request.workspacePath,
+              ...(request.workspaceIdentity
+                ? { workspaceIdentity: request.workspaceIdentity }
+                : {}),
+            });
+          } catch (error) {
+            logger.warn("[sessionHandover] 旧会话归档失败（不影响换班）", error);
+          }
+        })();
+      },
+    });
+    return () => setSessionHandoverHandlers(null);
+  }, [
+    boundServicesResolution.services.zcodeTaskService,
+    intl,
+    openProjectAgentChat,
+    projectAgents.agentsByWorkspaceKey,
+    setSessionHandoverHandlers,
   ]);
   const handleShowMoreWorkspaceTasks = useCallback((workspaceKey: string) => {
     setWorkspaceTaskVisibleLimitByKey((current) =>
