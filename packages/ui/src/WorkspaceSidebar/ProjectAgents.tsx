@@ -73,6 +73,9 @@ export function useWorkspaceProjectAgents(params: {
   const [agentsByWorkspaceKey, setAgentsByWorkspaceKey] = useState<Map<string, AgentSummary[]>>(
     () => new Map(),
   );
+  // 全局员工（user 级档案）机器上只有一份，每个本地 tab 的列表都会带回：
+  // 「请进预置班底」的缺口按这份名册算（安装目标是用户级档案目录，不是项目目录）。
+  const [userAgents, setUserAgents] = useState<AgentSummary[]>([]);
   const [saving, setSaving] = useState(false);
   // 列表首拉/重载进行中：对话框的选择器要区分"还没有智能体"和"正在取数"。
   const [loadingAgents, setLoadingAgents] = useState(false);
@@ -101,23 +104,42 @@ export function useWorkspaceProjectAgents(params: {
     }
     setLoadingAgents(true);
     try {
-      const entries = await Promise.all(
+      const results = await Promise.all(
         fetchTargetsRef.current.map(async (tab) => {
           const result = await subagentsService.list({
             workspacePath: tab.workspacePath,
             workspaceIdentity: tab.workspaceIdentity,
             provider: ZCODE_AGENT_PROVIDER,
           });
-          return [
-            buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
-            selectProjectAgentsForWorkspace(result.agents, tab.workspacePath),
-          ] as const;
+          return {
+            key: buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
+            workspacePath: tab.workspacePath,
+            agents: result.agents,
+          };
         }),
       );
-      setAgentsByWorkspaceKey(new Map(entries));
+      // user 档案全局一份，每个 tab 的列表都带全：按 id 去重只收一份。
+      const userAgentsById = new Map<string, AgentSummary>();
+      for (const { agents } of results) {
+        for (const agent of agents) {
+          if (agent.scope === "user") {
+            userAgentsById.set(agent.id, agent);
+          }
+        }
+      }
+      setUserAgents([...userAgentsById.values()]);
+      setAgentsByWorkspaceKey(
+        new Map(
+          results.map(({ key, workspacePath, agents }) => [
+            key,
+            selectProjectAgentsForWorkspace(agents, workspacePath),
+          ]),
+        ),
+      );
     } catch (error) {
       // 远程断连等场景下列表取数退化为空集，不阻塞侧栏其余内容。
       setAgentsByWorkspaceKey(new Map());
+      setUserAgents([]);
       logger.warn("[projectAgents] 列表加载失败", error);
     } finally {
       setLoadingAgents(false);
@@ -188,14 +210,14 @@ export function useWorkspaceProjectAgents(params: {
     [reload, subagentsService],
   );
 
-  // 请进预置班底（D23）：把产品自带的几位员工建成本项目的驻场档案。
-  // 走与手工建档同一条 createAgent 链路（号在建档时发），逐个建、失败不中断整批，
+  // 请进预置班底（D23；身份轴终局 §九 2026-09-30）：装到**用户级档案目录**——
+  // 一次装好处处可用，不再落进某个项目。走与手工建档同一条 createAgent 链路
+  // （号在建档时发；memory=user，随身本跟着人走），逐个建、失败不中断整批，
   // 结果回执交给调用方用一句话说清——静默少建一位就等于用户以为班底到齐了。
+  // 名册缺口按全局名册算：同名（大小写不敏感）跳过，用户改过的档案不覆盖。
   const installPresetRoster = useCallback(
-    async (target: ProjectAgentTarget): Promise<ProjectAgentRosterInstallResult> => {
-      const workspaceKey = buildTaskWorkspaceKey(target.workspacePath, target.workspaceIdentity);
-      const existing = agentsByWorkspaceKey.get(workspaceKey) ?? [];
-      const planned = planProjectAgentRosterInstall(existing.map((agent) => agent.name));
+    async (): Promise<ProjectAgentRosterInstallResult> => {
+      const planned = planProjectAgentRosterInstall(userAgents.map((agent) => agent.name));
       const result: ProjectAgentRosterInstallResult = { installed: [], failed: [] };
       if (planned.length === 0) {
         return result;
@@ -205,11 +227,9 @@ export function useWorkspaceProjectAgents(params: {
         for (const member of planned) {
           try {
             await subagentsService.createAgent({
-              config: toProjectAgentCreateConfig(member),
+              config: toProjectAgentCreateConfig(member, { memory: "user" }),
               provider: ZCODE_AGENT_PROVIDER,
-              scope: "workspace",
-              workspacePath: target.workspacePath,
-              workspaceIdentity: target.workspaceIdentity,
+              scope: "user",
             });
             result.installed.push(member.name);
           } catch (error) {
@@ -226,7 +246,7 @@ export function useWorkspaceProjectAgents(params: {
       }
       return result;
     },
-    [agentsByWorkspaceKey, reload, subagentsService],
+    [reload, subagentsService, userAgents],
   );
 
   // 删除档案（G5/D7）：服务端只删 profile 文件，记事本目录本来就不在删除范围里。
@@ -249,6 +269,7 @@ export function useWorkspaceProjectAgents(params: {
 
   return {
     agentsByWorkspaceKey,
+    userAgents,
     saving,
     loadingAgents,
     createAgent,
@@ -370,6 +391,8 @@ export function WorkspaceProjectAgentCreateDialog({
   saving,
   loadingAgents,
   agents,
+  /** 全局员工（user 档案）名册：「请进班底」的缺口按它算（安装目标是用户级档案目录）。 */
+  userAgents,
   editingAgent = null,
   onOpenAgent,
   onOpenNewChat,
@@ -385,13 +408,14 @@ export function WorkspaceProjectAgentCreateDialog({
   saving: boolean;
   loadingAgents: boolean;
   agents: AgentSummary[];
+  userAgents: AgentSummary[];
   editingAgent?: AgentSummary | null;
   onOpenAgent: (agent: AgentSummary) => void;
   /** 「开新对话」（D3）：不续接历史、另起一段该员工的会话；缺席时不渲染入口。 */
   onOpenNewChat?: (agent: AgentSummary) => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
   onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
-  /** 请进预置班底（D23）：把产品自带的员工建成本项目的驻场档案；缺席则不渲染入口。 */
+  /** 请进预置班底（D23）：把产品自带的员工装进用户级档案目录（全局员工）；缺席则不渲染入口。 */
   onInstallRoster?: () => void;
   /** 记忆区按目标工作区取数（编辑态才需要）；user 档案记事本在用户数据里，服务面自己解析。 */
   workspacePath?: string;
@@ -423,9 +447,10 @@ export function WorkspaceProjectAgentCreateDialog({
     });
   }, [intl, modelSelectionView]);
   const isEditing = editingAgent !== null;
-  // 班底缺几位（D23）：按项目现有档案名算，同名（含大小写差异）不重复请人。
+  // 班底缺几位（D23；身份轴 §九）：按全局名册（user 档案）现有名字算，
+  // 同名（含大小写差异）不重复请人——装一次处处可用，不按项目重复装。
   const rosterMissingCount = onInstallRoster
-    ? planProjectAgentRosterInstall(agents.map((agent) => agent.name)).length
+    ? planProjectAgentRosterInstall(userAgents.map((agent) => agent.name)).length
     : 0;
   // 模型选择器（2026-09-29 用户需求）：建档/编辑都指派"这个员工用什么模型"。
   // 清空 = 继承默认；reasoningLevel 取注册表默认档（与设置页同源），界面先不摆档位。

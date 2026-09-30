@@ -107,7 +107,7 @@ test("selectProjectAgentsForWorkspace：他工作区的 agent 不归本工作区
   );
 });
 
-test("toProjectAgentCreateConfig：trim 字段并固定 memory=project", () => {
+test("toProjectAgentCreateConfig：trim 字段并缺省 memory=project", () => {
   const config = toProjectAgentCreateConfig({
     name: "  reviewer  ",
     description: " desc ",
@@ -116,8 +116,25 @@ test("toProjectAgentCreateConfig：trim 字段并固定 memory=project", () => {
   assert.equal(config.name, "reviewer");
   assert.equal(config.description, "desc");
   assert.equal(config.systemPrompt, "prompt");
-  // 驻场语义钉在这里：片 1 的 memory 序列化落地后即按此值写入 markdown。
+  // 驻场语义钉在这里：手工建档仍走项目档案（收编另有通道）。
   assert.equal((config as { memory?: string }).memory, "project");
+});
+
+test("toProjectAgentCreateConfig：显式 memory 覆盖缺省（预置班底装用户级=随身本）", () => {
+  // 身份轴终局 §九：班底装进用户级档案目录，memory=user 随身本跟着人走。
+  const config = toProjectAgentCreateConfig(
+    { name: "doc-writer", description: "文档文员", systemPrompt: "p" },
+    { memory: "user" },
+  );
+  assert.equal((config as { memory?: string }).memory, "user");
+  assert.equal((config as { memory?: string }).name, "doc-writer");
+  // 非法 scope 编译期就被 AgentMemoryScope 拦住；缺省路径必须不受影响。
+  assert.equal(
+    (toProjectAgentCreateConfig({ name: "doc-writer", description: "d", systemPrompt: "p" }) as {
+      memory?: string;
+    }).memory,
+    "project",
+  );
 });
 
 test("toProjectAgentPersona：persona 载荷带名称/提示词/记忆 scope，档案缺 memory 缺省 project", () => {

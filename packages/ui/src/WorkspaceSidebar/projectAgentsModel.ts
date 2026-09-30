@@ -73,13 +73,23 @@ export function selectProjectAgentsForWorkspace<T extends Pick<AgentSummary, "sc
   );
 }
 
-export function toProjectAgentCreateConfig(draft: ProjectAgentDraft): SubAgentConfig {
-  // memory 固定 project：驻场智能体只服务本项目（AgentMemoryScope 由 services 侧定义）。
+/** 建档的口径选项：目前只有记忆作用域；缺席一律回落 project（既有调用零改动）。 */
+export interface ProjectAgentCreateOptions {
+  memory?: SubAgentConfig["memory"];
+}
+
+export function toProjectAgentCreateConfig(
+  draft: ProjectAgentDraft,
+  options?: ProjectAgentCreateOptions,
+): SubAgentConfig {
   return {
     name: draft.name.trim(),
     description: draft.description.trim(),
     systemPrompt: draft.systemPrompt.trim(),
-    memory: "project",
+    // 记忆作用域建档时定：缺省 project（驻场智能体只服务本项目）；预置班底装的是
+    // 用户级档案（身份轴终局 §九），传 user 让随身本跟着人走，项目差异靠会话
+    // 工作目录的 AGENTS.md 等底盘机制，不做记忆分仓。
+    memory: options?.memory ?? "project",
     ...(draft.modelSelection ? { modelSelection: draft.modelSelection } : {}),
   };
 }

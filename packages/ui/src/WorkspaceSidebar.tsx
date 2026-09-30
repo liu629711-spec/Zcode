@@ -2069,6 +2069,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                   ) ?? EMPTY_PROJECT_AGENTS)
                 : EMPTY_PROJECT_AGENTS
             }
+            // 班底缺口按全局名册（user 档案）算：装进用户级目录的是同一批人。
+            userAgents={projectAgents.userAgents}
             onOpenAgent={(agent) => {
               const target = projectAgentCreateTarget;
               if (!target) {
@@ -2188,31 +2190,33 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               }
               return Boolean(updated);
             }}
-            onInstallRoster={async () => {
-              // 请进预置班底（D23）：建档落在本项目 .zcode/agents，每位都是普通驻场档案。
-              const target = projectAgentCreateTarget ?? projectAgentEditTarget?.target;
-              if (!target) {
-                return;
-              }
-              const result = await projectAgents.installPresetRoster(target);
-              if (result.installed.length > 0) {
-                toast(
-                  intl.formatMessage(
-                    { id: "workspaceSidebar.projectAgentRosterInstalled" },
-                    { count: String(result.installed.length) },
-                  ),
-                );
-              }
-              if (result.failed.length > 0) {
-                // 失败的明确说出来：静默少建一位 = 用户以为班底到齐了。
-                toast(
-                  intl.formatMessage(
-                    { id: "workspaceSidebar.projectAgentRosterFailed" },
-                    { count: String(result.failed.length) },
-                  ),
-                );
-              }
-            }}
+            onInstallRoster={
+              // 请进班底装的是**本机的用户级档案**（身份轴 §九）：bound 远程时会话服务
+              // 在远端机器上，不能把全局员工装错机器——只在 bound 本地提供入口
+              //（bound 本地下，建档入口已被 resolveWorkspaceProjectAgentReachability 收敛到本地 tab）。
+              workspaceRemoteSessionId
+                ? undefined
+                : async () => {
+                    const result = await projectAgents.installPresetRoster();
+                    if (result.installed.length > 0) {
+                      toast(
+                        intl.formatMessage(
+                          { id: "workspaceSidebar.projectAgentRosterInstalled" },
+                          { count: String(result.installed.length) },
+                        ),
+                      );
+                    }
+                    if (result.failed.length > 0) {
+                      // 失败的明确说出来：静默少建一位 = 用户以为班底到齐了。
+                      toast(
+                        intl.formatMessage(
+                          { id: "workspaceSidebar.projectAgentRosterFailed" },
+                          { count: String(result.failed.length) },
+                        ),
+                      );
+                    }
+                  }
+            }
           />
 
           <WorkspaceSidebarFooter

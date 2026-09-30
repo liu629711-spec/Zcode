@@ -10,8 +10,9 @@ import {
 } from "../src/WorkspaceSidebar/projectAgentsModel.js";
 
 // ============================================================
-// D23 预置班底：名单本身的合法性 + "请进项目"的清单纯函数。
-// 班底档案会真的落进用户项目（<ws>/.zcode/agents/*.md），所以名单里任何一条
+// D23 预置班底：名单本身的合法性 + "请进班底"的清单纯函数。
+// 身份轴终局（§九，2026-09-30）后班底档案真的落进**用户级档案目录**
+// （<storageRoot>/agents/*.md，memory=user 随身本），所以名单里任何一条
 // 不合法都会被建档时的校验弹回来——这里提前炸，别等用户点按钮。
 //
 // 运行：npx tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/test/projectAgentRoster.test.ts
@@ -46,9 +47,36 @@ test("班底名单：不撞 ZCode 内置子代理名（建档会被 assertNotBui
   }
 });
 
-test("班底建档配置：记忆一律跟项目走（每个项目各一本记事本）", () => {
+test("班底建档配置：装用户级档案时记忆 scope=user（随身本），缺省仍 project（手工建档不随本片改）", () => {
   for (const member of PROJECT_AGENT_PRESET_ROSTER) {
-    assert.equal(toProjectAgentCreateConfig(member).memory, "project", member.name);
+    // 安装链路（installPresetRoster）显式传 user：一本随身记事本跟着人走。
+    assert.equal(
+      toProjectAgentCreateConfig(member, { memory: "user" }).memory,
+      "user",
+      member.name,
+    );
+  }
+  // 缺省回落不动：手工建档的驻场语义（project）仍由 projectAgentsModel 的用例钉住。
+  assert.equal(toProjectAgentCreateConfig(PROJECT_AGENT_PRESET_ROSTER[0]).memory, "project");
+});
+
+test("班底人设口径：职业身份随身（不钉在某个项目上），分账规矩逐位在场", () => {
+  for (const member of PROJECT_AGENT_PRESET_ROSTER) {
+    // 装的是用户级档案、服务所有项目：「这个项目」的字样会把身份错钉到一个项目上。
+    assert.equal(
+      member.systemPrompt.includes("这个项目"),
+      false,
+      `${member.name} 的人设还写着「这个项目」（身份轴 §九：说明书=身份，项目差异靠工作目录 AGENTS.md）`,
+    );
+    // 分账规矩（§八）：随身记忆只收跟人走的事；项目里的事留在对话与项目文件。
+    assert.ok(
+      member.systemPrompt.includes("才写进随身记忆"),
+      `${member.name} 的人设缺「随身记忆收什么」的半句`,
+    );
+    assert.ok(
+      member.systemPrompt.includes("不进随身记忆"),
+      `${member.name} 的人设缺「项目的事不进随身记忆」的半句`,
+    );
   }
 });
 
