@@ -3,6 +3,11 @@
  * 搜索 + 分类 chips + 计数 + 2 列网格演示卡流（2xl 屏 3 列、max-w-7xl 居中），
  * 原「点卡开详情弹层」入口退役——演示区真 iframe 直接内嵌进卡片。
  *
+ * V5 备货扩容：静态目录（ASSET_CATALOG，~400 件）先渲染立即可逛；UIverse 自动
+ * 收录的 3,793 件（~12MB）走动态 import 按需拉取（chunk 独立，不进主包），
+ * 拉取中显示加载态；网格只渲染前 renderLimit 张，其余由「加载更多」递增——
+ * 4,000+ 件全量渲染 DOM 会把滚动拖死（每卡带视口监听）。
+ *
  * 工具栏（标题+搜索+chips+计数）sticky 吸附滚动容器顶（毛玻璃底），下滑全程可达；
  * 滚动超过 ~600px 右下角出现「回到顶部」（sticky bottom 悬浮条，平滑滚回）。
  * 滚动容器是 shell 层的 overflow-y-auto 主面板（WorkspaceShellLayout），
@@ -13,12 +18,13 @@
  * 搜索无结果空态沿用；本组件不动 catalog 契约与 assetTryPrompt 语义。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpIcon, SearchIcon, SearchXIcon } from "lucide-react";
+import { ArrowUpIcon, LoaderCircleIcon, SearchIcon, SearchXIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { ASSET_CATALOG } from "./catalog/index.js";
+import type { AssetManifest } from "./catalog/types.js";
 import type { AssetCategory } from "./catalog/types.js";
 import { filterAssets, type AssetFilterCategory } from "./assetFilter.js";
 import { AssetDemoCard, type AssetCardActions } from "./AssetDemoCard.js";
@@ -31,6 +37,9 @@ const CATEGORY_ORDER: readonly AssetCategory[] = [
   "prompt",
   "design-style",
 ];
+
+/** 网格每次递增渲染的张数；首屏只渲染 PAGE 张，其余交给「加载更多」。 */
+const PAGE_SIZE = 48;
 
 /** 递活接线（S4）：workspacePath/identity 供「发到当前会话」，onCreateTask 供「发到新会话」。 */
 type AssetLibrarySectionProps = AssetCardActions;
@@ -46,10 +55,33 @@ export function AssetLibrarySection({
   const { intl, locale } = useZCodeIntl();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<AssetFilterCategory>("all");
-  const visibleAssets = useMemo(
-    () => filterAssets(ASSET_CATALOG, { query, category }),
-    [query, category],
+  // UIverse 自动收录大袋：进入展厅才开始拉（chunk 独立）；null = 拉取中。
+  const [bulk, setBulk] = useState<AssetManifest[] | null>(null);
+  const [renderLimit, setRenderLimit] = useState(PAGE_SIZE);
+  const catalog = useMemo(
+    () => (bulk ? [...ASSET_CATALOG, ...bulk] : ASSET_CATALOG),
+    [bulk],
   );
+  const visibleAssets = useMemo(
+    () => filterAssets(catalog, { query, category }),
+    [catalog, query, category],
+  );
+  useEffect(() => setRenderLimit(PAGE_SIZE), [query, category]);
+  useEffect(() => {
+    let alive = true;
+    void import("./catalog/generated/index.js").then(
+      (module) => {
+        if (alive) setBulk(module.BULK_AUTO_ASSETS);
+      },
+      () => {
+        // 拉取失败不拦静态货架：保留 400 件可逛，控制台留痕即可。
+        if (alive) setBulk([]);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // 回到顶部（V3-1）：滚动容器在 shell 层，向上找最近滚动祖先；
   // 找不到（jsdom / 其他宿主）就静默不启用，按钮不出现。
@@ -185,25 +217,54 @@ export function AssetLibrarySection({
           </Button>
         </div>
       ) : (
-        <div
-          className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3"
-          data-testid="asset-library-list"
-        >
-          {visibleAssets.map((manifest, index) => (
-            <AssetDemoCard
-              key={manifest.id}
-              manifest={manifest}
-              index={index}
-              locale={locale}
-              workspacePath={workspacePath}
-              workspaceIdentity={workspaceIdentity}
-              hasActiveChat={hasActiveChat}
-              readOnly={readOnly}
-              onOpenChat={onOpenChat}
-              onCreateTask={onCreateTask}
-            />
-          ))}
-        </div>
+        <>
+          <div
+            className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3"
+            data-testid="asset-library-list"
+          >
+            {visibleAssets.slice(0, renderLimit).map((manifest, index) => (
+              <AssetDemoCard
+                key={manifest.id}
+                manifest={manifest}
+                index={index}
+                locale={locale}
+                workspacePath={workspacePath}
+                workspaceIdentity={workspaceIdentity}
+                hasActiveChat={hasActiveChat}
+                readOnly={readOnly}
+                onOpenChat={onOpenChat}
+                onCreateTask={onCreateTask}
+              />
+            ))}
+          </div>
+          {renderLimit < visibleAssets.length ? (
+            <div className="flex justify-center pb-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="rounded-full"
+                data-testid="asset-library-load-more"
+                onClick={() => setRenderLimit((limit) => limit + PAGE_SIZE)}
+              >
+                {intl.formatMessage(
+                  { id: "assetLibrary.loadMore" },
+                  { count: visibleAssets.length - renderLimit },
+                )}
+              </Button>
+            </div>
+          ) : null}
+          {bulk === null ? (
+            <p
+              className="flex items-center justify-center gap-2 pb-2 text-ui-sm text-foreground-subtlest"
+              role="status"
+              data-testid="asset-library-bulk-loading"
+            >
+              <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden="true" />
+              {intl.formatMessage({ id: "assetLibrary.loading" })}
+            </p>
+          ) : null}
+        </>
       )}
     </div>
   );

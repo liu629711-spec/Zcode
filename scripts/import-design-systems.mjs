@@ -3,15 +3,15 @@
  * 一次性生成器：把 open-design 的设计风格库（143 个 DESIGN.md）
  * 转成素材库的「设计风格」货（prompt 类：说明书就是货）。
  *
- * 来源：github.com/nexu-io/open-design · plugins/_official/design-systems/
+ * 来源：github.com/nexu-io/open-design · design-systems/（顶层权威目录，官方插件目录是其镜像）
  * 许可：仓库 Apache-2.0，每份风格 open-design.json 标 MIT（见各卡 source 字段）。
  *
- * 用法：node scripts/import-design-systems.mjs <open-design插件目录> [输出目录]
+ * 用法：node scripts/import-design-systems.mjs <open-design 的 design-systems 目录> [输出目录]
  * 产物：<输出目录>/assets/design-*.ts（每风格一卡）+ 打印 index 注册片段。
  * 只在备货时跑一次，产物随代码提交（与 build-asset-previews 同模式）。
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 
 const sourceRoot = process.argv[2];
 const outDir = process.argv[3] ?? "packages/ui/src/asset-library/catalog/assets";
@@ -28,15 +28,36 @@ const dirs = readdirSync(sourceRoot, { withFileTypes: true })
 
 mkdirSync(outDir, { recursive: true });
 
-/** 从 DESCRIPTION 里取一句话（json 的 description）。 */
-function readMeta(dir) {
-  const metaPath = join(sourceRoot, dir, "open-design.json");
-  const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+/** 从 DESIGN.md 头部引语里取一句话描述（跳过 "> Category:" 行）。 */
+function descriptionFromDesignMd(designMd) {
+  const lines = (designMd.match(/^> .+$/gm) ?? [])
+    .map((line) => line.replace(/^> /, "").trim())
+    .filter((line) => !/^Category:/i.test(line));
+  return lines.slice(0, 2).join(" ");
+}
+
+/**
+ * 风格元数据：优先 open-design.json（plugins/_official 旧布局），
+ * 回退 manifest.json + DESIGN.md 引语（仓库顶层 design-systems/ 新布局）。
+ */
+function readMeta(dir, designMd) {
+  const jsonPath = join(sourceRoot, dir, "open-design.json");
+  if (existsSync(jsonPath)) {
+    const meta = JSON.parse(readFileSync(jsonPath, "utf8"));
+    return {
+      title: meta.title ?? dir,
+      description: meta.description ?? "",
+      license: meta.license ?? "MIT",
+      tags: (meta.tags ?? []).filter((tag) => tag !== "design-system"),
+    };
+  }
+  const manifestPath = join(sourceRoot, dir, "manifest.json");
+  const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : {};
   return {
-    title: meta.title ?? dir,
-    description: meta.description ?? "",
-    license: meta.license ?? "MIT",
-    tags: (meta.tags ?? []).filter((tag) => tag !== "design-system"),
+    title: manifest.name ?? dir,
+    description: descriptionFromDesignMd(designMd) || manifest.description || "",
+    license: "MIT",
+    tags: manifest.category ? [manifest.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")] : [],
   };
 }
 
@@ -85,7 +106,7 @@ for (const dir of dirs) {
   const designPath = join(sourceRoot, dir, "DESIGN.md");
   if (!existsSync(designPath)) continue;
   const designMd = readFileSync(designPath, "utf8").trim();
-  const meta = readMeta(dir);
+  const meta = readMeta(dir, designMd);
   const id = `design-${dir}`;
   let varName = `${dir.replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, "")}DesignAsset`;
   if (/^\d/.test(varName)) varName = `s${varName}`;
@@ -98,22 +119,22 @@ for (const dir of dirs) {
 /**
  * 「${meta.title}」设计风格卡（V3-3 收录）。
  *
- * 来源：nexu-io/open-design · plugins/_official/design-systems/${dir}
- * 许可：Apache-2.0（仓库）/ ${meta.license}（本风格 open-design.json 声明）
+ * 来源：nexu-io/open-design · design-systems/${dir}
+ * 许可：Apache-2.0（仓库）/ ${meta.license}（本风格声明）
  * 本卡为逐字收录的设计规范文本（DESIGN.md），口令让智能体照它改造用户界面。
  */
 export const ${varName}: AssetManifest = {
   id: ${ts(id)},
   title: ${ts(`${meta.title} · 设计风格`)},
   description: ${ts(meta.description ? `设计风格：${meta.description}` : "整套设计规范，照它改造你的界面。")},
-  category: "prompt",
+  category: "design-style",
   tags: ${ts(["设计风格", "design-system", ...meta.tags.slice(0, 3)])},
   previewHtml: ${ts(renderPreview(meta.title, meta.description, designMd))},
   files: [{ name: "DESIGN.md", language: "md", content: ${ts(designMd)} }],
   prompt: ${ts(prompt)},
   source: {
     site: "open-design",
-    url: ${ts(`https://github.com/nexu-io/open-design/tree/main/plugins/_official/design-systems/${dir}`)},
+    url: ${ts(`https://github.com/nexu-io/open-design/tree/main/design-systems/${dir}`)},
     license: ${ts(`Apache-2.0 / ${meta.license}`)},
   },
 };

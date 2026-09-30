@@ -6945,6 +6945,7 @@ const enUS: Record<string, string> = {
   "assetLibrary.search.placeholder": "Search by name, tag, or description",
   "assetLibrary.search.label": "Search assets",
   "assetLibrary.count": "{count, plural, one {# asset} other {# assets}}",
+  "assetLibrary.loadMore": "Load more ({count} more)",
   "assetLibrary.category.ariaLabel": "Filter by category",
   "assetLibrary.category.all": "All",
   "assetLibrary.category.text-animation": "Text animation",

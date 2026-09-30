@@ -19,6 +19,14 @@
       "rules": {
         "max-lines": "off"
       }
+    },
+    {
+      // 素材库的生成数据文件（uiverse-io/galaxy 批量收录，3,800+ 件、单件一条长字符串
+      // 字面量）与 locales 同理是生成产物，行数上限不适用；口径见同目录 uiverseRuntime.ts。
+      "files": ["**/asset-library/catalog/generated/**"],
+      "rules": {
+        "max-lines": "off"
+      }
     }
   ],
   "settings": {

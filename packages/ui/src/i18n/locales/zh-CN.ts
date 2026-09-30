@@ -6624,6 +6624,7 @@ const zhCN: Record<string, string> = {
   "assetLibrary.search.placeholder": "搜索名称、标签或描述",
   "assetLibrary.search.label": "搜索素材",
   "assetLibrary.count": "共 {count} 件素材",
+  "assetLibrary.loadMore": "加载更多（还有 {count} 件）",
   "assetLibrary.category.ariaLabel": "按分类筛选",
   "assetLibrary.category.all": "全部",
   "assetLibrary.category.text-animation": "文字动效",

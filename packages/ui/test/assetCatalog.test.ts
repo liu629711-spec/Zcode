@@ -130,3 +130,52 @@ test("V2-4 四站首批 20 件：逐件 source 三字段齐全（许可台账）
     assert.match(manifest.source.url, /^https:\/\//, `${id}: source.url 应为 https`);
   }
 });
+
+// ============================================================
+// V5 备货扩容：UIverse 自动收录大袋（动态 chunk）+ React Bits 灵感批次
+// ============================================================
+
+test("UIverse 自动收录大袋：3,000+ 件全绿且与静态货架 id 不撞", async () => {
+  const { BULK_AUTO_ASSETS } = await import("../src/asset-library/catalog/generated/index.js");
+  assert.ok(BULK_AUTO_ASSETS.length >= 3_000, `大袋应 ≥3000 件，实际 ${BULK_AUTO_ASSETS.length}`);
+  assert.deepEqual(validateCatalog(BULK_AUTO_ASSETS), []);
+
+  const staticIds = new Set(ASSET_CATALOG.map((manifest) => manifest.id));
+  const bulkIds = BULK_AUTO_ASSETS.map((manifest) => manifest.id);
+  assert.equal(new Set(bulkIds).size, bulkIds.length, "大袋内 id 必须唯一");
+  for (const id of bulkIds) {
+    assert.ok(!staticIds.has(id), `大袋 id 与静态货架撞车：${id}`);
+  }
+});
+
+test("UIverse 自动收录大袋：预览惰性可算且沙箱清洗生效", async () => {
+  const { BULK_AUTO_ASSETS } = await import("../src/asset-library/catalog/generated/index.js");
+  // 惰性 getter：首读能算出完整预览文档
+  const sample = BULK_AUTO_ASSETS[0];
+  assert.ok(sample.previewHtml.startsWith("<!doctype html>"), "预览应为完整文档");
+  assert.ok(sample.previewHtml.includes(sample.files[0].content), "预览应内嵌图纸原文");
+  // 抽查全袋：预览（清洗后）不再有外链 src，图纸保持上游逐字
+  for (const manifest of BULK_AUTO_ASSETS) {
+    assert.ok(
+      !/src\s*=\s*["']https?:/i.test(manifest.previewHtml),
+      `${manifest.id}: 预览仍含外链 src`,
+    );
+  }
+});
+
+test("React Bits 灵感批次：效果自实现口径逐件带 source", async () => {
+  const reactBits = ASSET_CATALOG.filter((manifest) => manifest.id.startsWith("reactbits-"));
+  assert.ok(reactBits.length >= 20, `React Bits 批次应 ≥20 件，实际 ${reactBits.length}`);
+  for (const manifest of reactBits) {
+    assert.ok(manifest.source, `${manifest.id}: 缺 source`);
+    assert.match(manifest.source.license, /效果自实现/, `${manifest.id}: 许可字段应标注自实现口径`);
+    assert.match(manifest.source.url, /^https:\/\/reactbits\.dev/, `${manifest.id}: 出处应为 reactbits.dev`);
+  }
+});
+
+test("设计风格卡全量：152 张齐且全为 design-style 类", () => {
+  const styles = ASSET_CATALOG.filter((manifest) => manifest.category === "design-style");
+  assert.ok(styles.length >= 152, `设计风格应 ≥152 张，实际 ${styles.length}`);
+  const ids = ASSET_CATALOG.map((manifest) => manifest.id);
+  assert.equal(new Set(ids).size, ids.length, "全目录 id 必须全局唯一");
+});
