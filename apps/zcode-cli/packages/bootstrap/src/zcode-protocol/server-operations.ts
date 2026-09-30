@@ -146,6 +146,9 @@ type ZCodeSessionRecordParams = (
       // registerForkedSession），不进 zcodeSessionResumeParamsSchema——调用方传陈旧
       // persona 的通道不开放。模型同样只由 entry 恢复，不随快照回灌。
       persona?: ZCodeSessionCreateParams["persona"];
+      // memoryEnabled 同 persona：服务端内部覆盖通道（派生工位传 false），
+      // resume 线上协议不开放该键；声明仅为 create/resume 联合类型字段可达。
+      memoryEnabled?: ZCodeSessionCreateParams["memoryEnabled"];
     })
 ) & { taskType?: SessionTaskType };
 
@@ -3307,7 +3310,14 @@ async function materializeSessionRecord(
     source,
     trace,
   );
-  return createRecord(context, params, sessionId, resume, startupPreferences, trace);
+  // 派生工位覆盖（对齐稿 §六）：create 显式带 memoryEnabled=false 时压过全局记忆
+  // 开关——派单开的普通会话不读工作区记忆笔记，否则 worker 开口就是老板的待办
+  // （真机事故 2026-09-30）。resume 兼容分支声明同名字段仅为联合类型可达，无人传。
+  const effectivePreferences =
+    params.memoryEnabled === undefined
+      ? startupPreferences
+      : { ...startupPreferences, memoryEnabled: params.memoryEnabled };
+  return createRecord(context, params, sessionId, resume, effectivePreferences, trace);
 }
 
 async function createRecord(
@@ -3422,12 +3432,13 @@ async function createRecord(
     agentDispatchPort: createProtocolAgentDispatchPort(context, {
       resolveOwnSession: () => ownSessionRecord,
       // persona 缺省 = 派生无 persona 普通会话（对齐稿 §三 #2/#5）；model 是它的出生常驻模型。
-      createPersonaSessionRecord: async ({ workspace, persona, model }) =>
+      createPersonaSessionRecord: async ({ workspace, persona, model, memoryEnabled }) =>
         await createSessionRecordForV4(context, {
           workspace,
           persistence: "immediate",
           ...(persona ? { persona } : {}),
           ...(model ? { model } : {}),
+          ...(memoryEnabled === undefined ? {} : { memoryEnabled }),
         }),
       activateSessionRecord: async (sessionId) =>
         (await activateSessionForResume(context, { sessionId })).record,

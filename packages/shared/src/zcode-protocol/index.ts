@@ -1604,6 +1604,10 @@ export const zcodeSessionCreateParamsSchema = z
     // 模式——host 裁决后下发，缺省不下发 = 不注册工作流工具簇（fail-closed）。
     dynamicWorkflowEnabled: z.boolean().optional(),
     persona: zcodeSessionPersonaSchema.optional(),
+    // 派生工位（对齐稿 §六）：派单开的普通会话不吃工作区记忆——干净工位不读
+    // 老板的记忆笔记（真机事故 2026-09-30：worker 开口就是"对齐稿就差你点头"）。
+    // 缺省不下发 = 跟随全局记忆开关；仅服务端内部通道显式传 false。
+    memoryEnabled: z.boolean().optional(),
   })
   .strict();
 export type ZCodeSessionCreateParams = z.infer<typeof zcodeSessionCreateParamsSchema>;

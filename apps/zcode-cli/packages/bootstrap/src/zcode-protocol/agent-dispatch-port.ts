@@ -39,11 +39,13 @@ export interface ProtocolAgentDispatchPortDeps {
    * 既有 createSession 链（createSessionRecordForV4 包装）；由 server-operations 注入。
    * persona 缺省 = 派生无 persona 的普通会话（对齐稿 §三 #2/#5，无工牌/档案/记忆）；
    * model 是普通会话的出生常驻模型（createSession 的 model 参数），员工新段不经过它。
+   * memoryEnabled=false 只由普通工位传（干净工位不读工作区记忆笔记，对齐稿 §六）。
    */
   createPersonaSessionRecord: (input: {
     workspace: ZCodeWorkspaceRef;
     persona?: ZCodeSessionPersona;
     model?: ModelSelection;
+    memoryEnabled?: boolean;
   }) => Promise<{ sessionId: string }>;
   /** 冷会话恢复（activateSessionForResume 包装）；由 server-operations 注入。 */
   activateSessionRecord: (sessionId: string) => Promise<ZCodeProtocolSessionRecord>;
@@ -208,6 +210,10 @@ export function createProtocolAgentDispatchPort(
         task: input.task,
       };
 
+      // 人类短标题（模型派单时给的 title；缺席回落任务正文）：工位落行首输入、
+      // 无名工位的回执署名都用它——回执卡不再退化成「智能体 交活」（评审低危⑤）。
+      const workerTitleSeed = input.title?.trim() || input.task;
+
       let targetSessionId: string | undefined;
       let createdSession = false;
       if (namedProfile && input.newSession !== true) {
@@ -228,7 +234,9 @@ export function createProtocolAgentDispatchPort(
         // 会话——不盖 workOrderOnly（隐藏机制保留备用）；派单堆积的真正解法是
         // 复用最近会话（不带 newSession 的派单永远不新增行）+ 守住 CLI 后门。
         // 未点名（对齐稿 §三 #2/#5）：不带 persona 开普通会话——无工牌/档案/记忆，
-        // 不占任何员工身份；指定模型经 createSession 的 model 参数成为出生常驻模型。
+        // 不占任何员工身份；指定模型经 createSession 的 model 参数成为出生常驻模型；
+        // memoryEnabled=false 是工位隔离（真机事故：worker 读到老板记忆笔记，
+        // 把"发你好"干成了"今天想干点啥"）——干净工位不读老板的记忆。
         const created = await deps.createPersonaSessionRecord(
           namedProfile
             ? {
@@ -245,6 +253,7 @@ export function createProtocolAgentDispatchPort(
                 ...(input.modelSelection === undefined
                   ? {}
                   : { model: input.modelSelection }),
+                memoryEnabled: false,
               },
         );
         targetSessionId = created.sessionId;
@@ -261,7 +270,7 @@ export function createProtocolAgentDispatchPort(
       // （模型派单时给的 title；缺席回落任务正文），标题因此是「智能体名 · 短标题」。
       // 投递前后都幂等（sessionPersisted 置位即返回）。
       await targetRecord.app.runtime.ensureSessionPersistedForExternalActivity(
-        input.title?.trim() || input.task,
+        workerTitleSeed,
         { traceContext: targetRecord.traceContext },
       );
       const admission = await targetRecord.app.runtime.enqueueAgentWorkOrder({
@@ -277,7 +286,8 @@ export function createProtocolAgentDispatchPort(
         targetRecord,
         inputId: admission.inputId,
         envelope,
-        agentName: namedProfile?.name ?? "",
+        // 无名工位的回执署名用会话标题（"发个你好 交活"），不再退化成「智能体 交活」。
+        agentName: namedProfile?.name ?? workerTitleSeed,
         ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
       });
       context.logger?.info("Agent work order dispatched", {
