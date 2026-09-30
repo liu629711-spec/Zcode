@@ -3924,29 +3924,29 @@ const enUS: Record<string, string> = {
   "settings.skills.diagnostics.code.skill_duplicate_name": "Duplicate skill name ignored",
   "settings.skills.diagnostics.code.skill_too_large": "SKILL.md too large; content truncated",
   "settings.skills.diagnostics.code.skill_not_found": "Skill not found",
-  "settings.subagents.title": "Subagents",
+  "settings.subagents.title": "Agents",
   "settings.subagents.description":
-    "Manage user-level subagent Markdown files consumed by ZCode Agent.",
+    "Manage user-level agent Markdown files consumed by ZCode Agent.",
   "settings.subagents.workspaceScopeUnsupported":
     "Workspace-level creation or editing is unsupported",
-  "settings.subagents.searchPlaceholder": "Search subagents...",
-  "settings.subagents.empty": "No subagents found",
-  "settings.subagents.addNew": "New subagent",
+  "settings.subagents.searchPlaceholder": "Search agents...",
+  "settings.subagents.empty": "No agents found",
+  "settings.subagents.addNew": "New agent",
   "settings.subagents.addDescription":
-    "Fill in the subagent name, tools, and system prompt, then save to return to the list.",
-  "settings.subagents.edit": "Edit subagent",
+    "Fill in the agent name, tools, and system prompt, then save to return to the list.",
+  "settings.subagents.edit": "Edit agent",
   "settings.subagents.editDescription":
-    "Modify the subagent configuration, then save to return to the list.",
+    "Modify the agent configuration, then save to return to the list.",
   "settings.subagents.backToList": "Back",
-  "settings.subagents.openUserAgentsFolder": "Open user subagents folder",
+  "settings.subagents.openUserAgentsFolder": "Open user agents folder",
   "settings.subagents.noDescription": "No description",
   "settings.subagents.userScopeDesktopOnly":
-    "User-level subagents are currently available on desktop only.",
+    "User-level agents are currently available on desktop only.",
   "settings.subagents.group.user": "Installed",
-  "settings.subagents.group.plugin": "Plugin subagents",
+  "settings.subagents.group.plugin": "Plugin agents",
   "settings.subagents.group.plugin.hint":
     "Plugin profiles are loaded from enabled plugins; only the model and reasoning effort can be overridden here.",
-  "settings.subagents.group.builtIn": "Built-in subagents",
+  "settings.subagents.group.builtIn": "Built-in agents",
   "settings.subagents.group.builtIn.hint":
     "Built-in profiles are runtime defaults and cannot be edited here.",
   "settings.subagents.scope.builtIn": "Built-in",
