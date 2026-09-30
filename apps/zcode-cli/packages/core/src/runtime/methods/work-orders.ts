@@ -128,6 +128,9 @@ export async function runWorkOrderCommand(
       ...(command.envelope.fromAgentId ? { fromAgentId: command.envelope.fromAgentId } : {}),
       fromSessionId: command.envelope.fromSessionId,
       task: command.envelope.task,
+      // 批次（工地卡）随活投影/落库下发；信封文本不掺批次，事件面任务正文不变。
+      ...(command.envelope.batchId ? { batchId: command.envelope.batchId } : {}),
+      ...(command.envelope.batchTitle ? { batchTitle: command.envelope.batchTitle } : {}),
     });
     // 内存历史与持久化同一份原文（<work-order> 信封）；执行期投影再补
     // 「非用户权威」框架（provider-entry-origins 的 agent_work_order 分支）。

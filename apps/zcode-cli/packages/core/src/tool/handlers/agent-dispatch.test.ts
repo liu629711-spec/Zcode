@@ -111,6 +111,51 @@ test("点名员工路径不回归：agent 原样透传，message 报受理对象
   assert.ok(String(output.message).includes("Work order accepted by code-plus."));
 });
 
+test("批次派单（工地卡）：batch_title/batch_id 透传端口，结果回显供模型续批", async () => {
+  const { port, calls } = recordingPort({
+    targetSessionId: "sess_target",
+    agentName: "code-plus",
+    delivery: "started",
+    createdSession: false,
+    workOrderId: "wo-1",
+    batchId: "batch-1",
+    batchTitle: "登录页改造",
+  });
+  const output = (await agentDispatchToolEntry.handler(
+    { agent: "code-plus", task: "干活", batch_title: "登录页改造", batch_id: "batch-1" },
+    contextWith(port),
+  )) as Record<string, unknown>;
+  assert.equal(calls[0]!.batchTitle, "登录页改造");
+  assert.equal(calls[0]!.batchId, "batch-1");
+  // 工具面字段名是 snake_case（batch_title/batch_id），端口面是 camelCase。
+  assert.equal(output.workOrderId, "wo-1");
+  assert.equal(output.batchId, "batch-1");
+  assert.equal(output.batchTitle, "登录页改造");
+  // 放宽后的 Output 契约收下批次回显（additive 不打回）。
+  assert.equal(AgentDispatchOutputSchema.safeParse(output).success, true);
+});
+
+test("批次派单：不带 batch_title 是散单（batch_id 孤立出现也不开批）", async () => {
+  const { port, calls } = recordingPort({
+    targetSessionId: "sess_target",
+    agentName: "code-plus",
+    delivery: "started",
+    createdSession: false,
+  });
+  await agentDispatchToolEntry.handler(
+    { agent: "code-plus", task: "干活", batch_id: "batch-9" },
+    contextWith(port),
+  );
+  assert.equal(calls[0]!.batchTitle, undefined);
+  assert.equal(calls[0]!.batchId, undefined);
+});
+
+test("工具说明书：批次用法写进 description（同批同 batch_title，工地卡聚合）", () => {
+  assert.match(agentDispatchToolEntry.metadata.description, /batch_title/);
+  assert.match(agentDispatchToolEntry.metadata.description, /batch_id/);
+  assert.match(agentDispatchToolEntry.metadata.description, /job-site card/);
+});
+
 test("说明书规则表覆盖 §三总表（2026-09-30 重写）：自派禁令、未点名普通会话、具名默认最近一段等", () => {
   const rules = agentDispatchToolEntry.metadata.modelInstructions.join("\n");
   // §三 #6：自派禁令（端口 guard.agentWorkOrderSelfTarget 的提示词先教）。

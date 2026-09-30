@@ -156,6 +156,16 @@ export async function findLatestPersonaSessionId(
   return latest?.sessionId;
 }
 
+/**
+ * 批次（工地卡）身份的进程内登记：同一发起轮内并发多张工单彼此拿不到对方的
+ * 派单结果（scheduler 并行跑），batch_id 传不回去——同轮同 batch_title 必须在这里
+ * 领到同一个 batchId，跨轮续批则靠模型回传 batch_id（结果回显）。键以发起轮
+ * turnId 定界：新的一轮同名单独开批，绝不静默并入旧批。
+ * ponytail: 登记项进程生命周期内不清（上界 ≈ 带批次的派单轮数 × 批名数，CLI 进程
+ * 体量下可忽略）；若将来长驻进程要控内存，按 record 关 teardown 时清空即可。
+ */
+const batchMintPerTurn = new Map<string, string>();
+
 export function createProtocolAgentDispatchPort(
   context: ZCodeProtocolAgentServerContext,
   deps: ProtocolAgentDispatchPortDeps,
@@ -205,12 +215,33 @@ export function createProtocolAgentDispatchPort(
           }), or do the task directly in this conversation.`,
         );
       }
+      // 批次（工地卡）身份：模型回传 batch_id（上次结果的 batchId）即并批；只有
+      // batch_title 时按「发起轮 × 批名」领号——同轮并派的多张工单共享一批，跨轮
+      // 续批必须显式回传 batch_id（新轮同名单独开批）。不带 batch_title 是散单。
+      const batchTitle = input.batchTitle?.trim();
+      const activeTurnId = ownRecord.app.runtime.getActiveTurnInfo()?.turnId;
+      let batchId: string | undefined;
+      if (batchTitle) {
+        if (input.batchId?.trim()) {
+          batchId = input.batchId.trim();
+        } else {
+          const mintKey = `${ownRecord.app.sessionId}|${activeTurnId ?? "no-turn"}|${batchTitle}`;
+          let minted = activeTurnId ? batchMintPerTurn.get(mintKey) : undefined;
+          if (!minted) {
+            minted = crypto.randomUUID();
+            if (activeTurnId) batchMintPerTurn.set(mintKey, minted);
+          }
+          batchId = minted;
+        }
+      }
       const envelope: AgentWorkOrderEnvelope = {
         workOrderId: crypto.randomUUID(),
         ...(sourcePersona?.agentId ? { fromAgentId: sourcePersona.agentId } : {}),
         fromAgentName: sourcePersona?.name ?? "",
         fromSessionId: ownRecord.app.sessionId,
         task: input.task,
+        ...(batchId ? { batchId } : {}),
+        ...(batchTitle ? { batchTitle } : {}),
       };
 
       // 人类短标题（模型派单时给的 title；缺席回落任务正文）：工位落行首输入、
@@ -312,6 +343,10 @@ export function createProtocolAgentDispatchPort(
         ...(input.modelSelection
           ? { model: input.modelSelection.modelId }
           : {}),
+        // 批次回显（core 工具原样透传给模型）：batch_id 回传即往同一工地续派。
+        workOrderId: envelope.workOrderId,
+        ...(batchId ? { batchId } : {}),
+        ...(batchTitle ? { batchTitle } : {}),
       };
     },
   };

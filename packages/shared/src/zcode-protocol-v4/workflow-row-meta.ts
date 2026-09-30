@@ -82,6 +82,9 @@ export const backgroundResultOriginMetaSchema = z.object({
   backgroundSource: z.enum(["bash", "subagent", "workflow", "agent_work_order_receipt"]),
   workId: z.string().min(1),
   title: z.string().min(1),
+  // 派单回执轮（agent_work_order_receipt）携带：原工单批次（工地卡聚合键）；缺席 = 散单。
+  batchId: z.string().min(1).max(128).optional(),
+  batchTitle: z.string().max(200).optional(),
   // 只在 backgroundSource === "workflow" 的单条通知轮上在场；zod 剥离未知键，
   // 这里不加即整条链路静默丢——本字段是 manifest 渲染的唯一数据源。
   workflowNotification: workflowNotificationMetaSchema.optional(),
@@ -181,5 +184,9 @@ export const agentWorkOrderMetaSchema = z.object({
   fromSessionId: z.string().min(1).max(128),
   // 任务正文（工单 carrier 里 <work-order> 标签内的原文）。
   task: z.string().max(8192),
+  // 批次（工地卡）身份；缺席 = 散单。冷恢复按 schema 解析 metadata.envelope，缺这两项
+  // 会被 zod 剥掉——同批工单重启后就散了；与 contracts 的 AgentWorkOrderMeta 保持同形。
+  batchId: z.string().min(1).max(128).optional(),
+  batchTitle: z.string().max(200).optional(),
 });
 export type AgentWorkOrderMeta = z.infer<typeof agentWorkOrderMetaSchema>;

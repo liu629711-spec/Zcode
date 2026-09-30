@@ -99,6 +99,8 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
 
   // 发起方署名由执行器注入（当前会话），模型不可伪造来源信封。
   // agent 缺省（对齐稿 §三 #2/#5）= 派生无 persona 普通会话：不解析目标，直接透传端口。
+  // 批次（工地卡）：batch_title 开批、batch_id 回传续批；schema 已 trim，这里只去掉空批名。
+  const batchTitle = parsed.batch_title?.trim() || undefined;
   const unbadged = parsed.agent === undefined;
   const result = await context.agentDispatchPort.dispatch({
     ...(parsed.agent === undefined ? {} : { agent: parsed.agent }),
@@ -106,6 +108,9 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     ...(parsed.title === undefined ? {} : { title: parsed.title }),
     ...(parsed.newSession === undefined ? {} : { newSession: parsed.newSession }),
     ...(modelSelection === undefined ? {} : { modelSelection }),
+    ...(batchTitle === undefined
+      ? {}
+      : { batchTitle, ...(parsed.batch_id === undefined ? {} : { batchId: parsed.batch_id }) }),
     sourceSessionId: context.sessionId,
   });
   const deliveryNote =
@@ -124,6 +129,10 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     delivery: result.delivery,
     createdSession: result.createdSession,
     ...(result.model ? { model: result.model } : {}),
+    // 批次回显：模型拿 batch_id 往同一工地续派（ receipts 后补单的场景）。
+    ...(result.workOrderId ? { workOrderId: result.workOrderId } : {}),
+    ...(result.batchId ? { batchId: result.batchId } : {}),
+    ...(result.batchTitle ? { batchTitle: result.batchTitle } : {}),
     message: result.model ? `${acceptance} Running on model ${result.model}.` : acceptance,
   } satisfies AgentDispatchOutput;
 };
@@ -163,7 +172,7 @@ export const agentDispatchToolEntry: ToolEntry = {
     // 选择的默认取向（2026-09-29 真机教训）：用户点名让某个智能体做任何事（哪怕一句你好）
     // 都必须走本工具——临时工豁免会把"让 X 给我发个你好"这类主场景吞给 Agent 工具。
     description:
-      "Hand a task to another agent available in this workspace (a user-level identity, a project agent, or one of the built-in crew members that ships with the product): the task is delivered into that agent's own resident session, runs there with that agent's identity, memory and permissions, and leaves a permanent record in that session; a receipt carrying the final answer is delivered back to this conversation afterwards. This is the right tool whenever the user asks another agent BY NAME to do something or to send something - e.g. 'have UI-plus send me a greeting', '让 UI-plus 给我发个你好', 'ask code-plus to fix the login page', 'open a new session for code-plus and have it ...' - no matter how small the task is: the user expects it to land in that agent's own session, not this one. When the user asks for a NEW session without naming any agent, call this tool with newSession=true and no agent: it spawns an unbadged ordinary session with the task as its first work order. Do not confuse it with the Agent tool's in-conversation helpers: a helper runs inside THIS conversation, leaves nothing in the named agent's session, and that agent never learns about the task. Only keep a named agent's task inside this conversation when the user explicitly asks to handle it right here without involving that agent's session.",
+      "Hand a task to another agent available in this workspace (a user-level identity, a project agent, or one of the built-in crew members that ships with the product): the task is delivered into that agent's own resident session, runs there with that agent's identity, memory and permissions, and leaves a permanent record in that session; a receipt carrying the final answer is delivered back to this conversation afterwards. This is the right tool whenever the user asks another agent BY NAME to do something or to send something - e.g. 'have UI-plus send me a greeting', '让 UI-plus 给我发个你好', 'ask code-plus to fix the login page', 'open a new session for code-plus and have it ...' - no matter how small the task is: the user expects it to land in that agent's own session, not this one. When the user asks for a NEW session without naming any agent, call this tool with newSession=true and no agent: it spawns an unbadged ordinary session with the task as its first work order. Do not confuse it with the Agent tool's in-conversation helpers: a helper runs inside THIS conversation, leaves nothing in the named agent's session, and that agent never learns about the task. Only keep a named agent's task inside this conversation when the user explicitly asks to handle it right here without involving that agent's session. To work one big task as a team, dispatch several work orders with the same batch_title (optionally passing back the previous result's batch_id to add more orders to the same batch later) - they run in parallel and the conversation shows them as one aggregated job-site card; each receipt still reports back to you.",
     // 派发规则总表（对齐稿 §三，2026-09-30 重写）：点名谁就进谁的桌子；没点名就开
     // 一张无工牌的新桌子；谁也不许给自己派活。既有正确条目（点名必派单、task 独立
     // 成文、model 逐字传、回执语义、嵌套禁令、CLI 硬墙）原样保留。

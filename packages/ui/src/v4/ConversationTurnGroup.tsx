@@ -77,6 +77,8 @@ import { ConversationAgentToolCallRow } from "@/v4/ConversationAgentToolCallRow.
 import { ConversationFileSummaryPanel } from "@/v4/ConversationFileSummaryPanel.js";
 import { WorkflowNotificationToolRow } from "@/v4/WorkflowNotificationToolRow.js";
 import { AgentWorkOrderTurnCard } from "@/v4/AgentWorkOrderTurnCard.js";
+import { AgentWorkOrderBatchCard } from "@/v4/AgentWorkOrderBatchCard.js";
+import type { WorkOrderBatchRenderInfo } from "@/v4/agentWorkOrderBatch.js";
 import {
   AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE,
   resolveAgentWorkOrderMeta,
@@ -108,6 +110,12 @@ import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
 
 interface ConversationTurnGroupProps {
   unit: ConversationTurnRenderUnit;
+  /**
+   * 本轮所属的批次派单（工地卡）信息，由 Timeline 用 selectWorkOrderBatchRenderInfo
+   * 对全轮列表算出（单轮只见证据，聚不拢批次）：host 轮挂工地卡，member 轮压掉
+   * 自己的散卡（工单卡/回执卡）。缺席 = 散单或单张批次，一切照旧。
+   */
+  workOrderBatch?: WorkOrderBatchRenderInfo[];
   /** 仅由 Timeline 注入给当前 live turn；历史 turn 永远不携带运行时 retry。 */
   apiRetry?: ApiRetryState | null;
   context: ConversationRowRenderContext;
@@ -1105,6 +1113,7 @@ function ConversationBackgroundResultWork({
   assistantCodeCommentCards,
   assistantCodeCommentProjectionEnabled,
   assistantPreviewCardsAutoOpenKey,
+  suppressAgentWorkOrderReceiptCard,
 }: {
   unit: ConversationTurnRenderUnit;
   apiRetry: ApiRetryState | null;
@@ -1116,6 +1125,8 @@ function ConversationBackgroundResultWork({
   assistantCodeCommentCards: AssistantCodeCommentCard[];
   assistantCodeCommentProjectionEnabled: boolean;
   assistantPreviewCardsAutoOpenKey?: string;
+  /** 批次派单（工地卡）成员：散的回执头卡压掉（答案本体照常渲染），由工地卡代言。 */
+  suppressAgentWorkOrderReceiptCard?: boolean;
 }) {
   const hasHistory = unit.assistantHistoryRows.length > 0;
   const hasFollowing = unit.assistantFollowingRows.length > 0;
@@ -1210,28 +1221,31 @@ function ConversationBackgroundResultWork({
         // 派单回执（D29/D5）：收据头带 Bot 名牌，与 bash/subagent 的裸标题行区分开；
         // 答案本体就是本轮的 assistant 正文，紧随其后照常渲染。头部行下挂「转交」：
         // 施工交活 → 转质检评审、PRD 定稿 → 转施工开工（2026-09-30 接力协作第一刀）。
-        <div className="flex w-full flex-col gap-1 border-b border-[var(--color-border)]/50 pb-2">
-          <div className="flex w-full items-center gap-2">
-            <span
-              className="flex h-5 shrink-0 items-center rounded-[4px] bg-muted px-1.5 leading-none text-foreground-subtle"
-              aria-hidden="true"
-            >
-              <Bot className="size-3" />
-            </span>
-            <div
-              data-testid={testId(TID_CHAT_BACKGROUND_RESULT_TITLE, unit.key)}
-              className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
-            >
-              {title}
+        // 批次派单成员（工地卡在场时）：散的收据头整体压掉（含转交），由工地卡代言。
+        suppressAgentWorkOrderReceiptCard ? null : (
+          <div className="flex w-full flex-col gap-1 border-b border-[var(--color-border)]/50 pb-2">
+            <div className="flex w-full items-center gap-2">
+              <span
+                className="flex h-5 shrink-0 items-center rounded-[4px] bg-muted px-1.5 leading-none text-foreground-subtle"
+                aria-hidden="true"
+              >
+                <Bot className="size-3" />
+              </span>
+              <div
+                data-testid={testId(TID_CHAT_BACKGROUND_RESULT_TITLE, unit.key)}
+                className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
+              >
+                {title}
+              </div>
             </div>
+            <ReceiptForwardControl
+              title={title}
+              answer={assistantCopyText ?? ""}
+              context={context}
+              unitKey={unit.key}
+            />
           </div>
-          <ReceiptForwardControl
-            title={title}
-            answer={assistantCopyText ?? ""}
-            context={context}
-            unitKey={unit.key}
-          />
-        </div>
+        )
       ) : (
         <div className="flex w-full border-b border-[var(--color-border)]/50 pb-2">
           <div
@@ -1280,6 +1294,7 @@ function ConversationBackgroundResultWork({
 
 function ConversationTurnGroupImpl({
   unit,
+  workOrderBatch,
   apiRetry = null,
   context,
   onFork,
@@ -1290,6 +1305,13 @@ function ConversationTurnGroupImpl({
 }: ConversationTurnGroupProps) {
   const isOfficeMode = useIsOfficeMode();
   const { intl } = useZCodeIntl();
+  // 批次派单（工地卡）：host 轮挂卡；member 轮压掉自己的散卡（工单卡/回执头卡）。
+  const workOrderBatchCards = useMemo(
+    () => workOrderBatch?.filter((info) => info.isHost).map((info) => info.batch) ?? [],
+    [workOrderBatch],
+  );
+  const suppressAgentWorkOrderReceiptCard =
+    workOrderBatch?.some((info) => info.isMember) === true;
   const visibleUserRows = useMemo(() => unit.visibleUserInputs, [unit.visibleUserInputs]);
   const firstReasoningRowId = useMemo(
     () => unit.assistantWorkRows.find((row) => row.kind === "reasoning")?.rowId,
@@ -1496,6 +1518,13 @@ function ConversationTurnGroupImpl({
           context={context}
         />
       ))}
+      {workOrderBatchCards.length > 0
+        ? // 工地卡挂在批次证据首现的轮（host）位置：同批 2+ 张工单聚合为一张卡，
+          // 散卡随之压制（回执卡/工单卡），回执到达与续派时进度实时更新。
+          workOrderBatchCards.map((batch) => (
+            <AgentWorkOrderBatchCard key={batch.batchId} batch={batch} />
+          ))
+        : null}
       {agentWorkOrderMeta ? (
         // 工单卡（D29/D5）：工单唤醒轮没有可见用户行，这张卡是它在目标会话的
         // 全部呈现——来源标注 + 任务正文，缩进/边框防对方输出冒充本会话指令。
@@ -1545,6 +1574,7 @@ function ConversationTurnGroupImpl({
                     ? assistantPreviewPptxAutoOpenTarget.key
                     : undefined
                 }
+                suppressAgentWorkOrderReceiptCard={suppressAgentWorkOrderReceiptCard}
               />
             </>
           ) : (

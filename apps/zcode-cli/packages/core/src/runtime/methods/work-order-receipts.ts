@@ -70,6 +70,9 @@ export function enqueueAgentWorkOrderReceipt(
     backgroundSource: "agent_work_order_receipt",
     workId: input.workOrderId,
     title: buildWorkOrderReceiptTitle(input.agentName, input.outcome.status),
+    // 批次（工地卡）随回执轮头下发：发起方 UI 据它把同批回执归进一张工地卡。
+    ...(input.envelope.batchId ? { batchId: input.envelope.batchId } : {}),
+    ...(input.envelope.batchTitle ? { batchTitle: input.envelope.batchTitle } : {}),
   };
   const command: WorkOrderReceiptRuntimeCommand = {
     branchGeneration: this.branchGeneration,

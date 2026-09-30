@@ -298,6 +298,10 @@ export interface BackgroundResultOriginMeta {
   title: string;
   /** 只在 backgroundSource === "workflow" 的单条通知轮上在场；manifest 渲染的唯一数据源。 */
   workflowNotification?: WorkflowNotificationMeta;
+  /** 派单回执轮（agent_work_order_receipt）携带：原工单批次，UI 据此聚合工地卡。 */
+  batchId?: string;
+  /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
+  batchTitle?: string;
 }
 
 /**
@@ -453,6 +457,10 @@ export interface AgentWorkOrderMeta {
   fromSessionId: string;
   /** 任务正文（工单 carrier 里 <work-order> 标签内的原文）；有界见 {@link boundAgentWorkOrderMeta}。 */
   task: string;
+  /** 批次身份（缺席 = 散单）：同批工单在发起方会话聚合为一张工地卡。 */
+  batchId?: string;
+  /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
+  batchTitle?: string;
 }
 
 /** {@link AgentWorkOrderMeta.task} 的字符上界；超界截断加省略号（卡片要完整可读，不能丢行）。 */
@@ -473,6 +481,8 @@ export function boundAgentWorkOrderMeta(input: AgentWorkOrderMeta): AgentWorkOrd
       input.task.length > AGENT_WORK_ORDER_TASK_MAX_CHARS
         ? `${input.task.slice(0, AGENT_WORK_ORDER_TASK_MAX_CHARS - 1)}…`
         : input.task,
+    ...(input.batchId === undefined ? {} : { batchId: input.batchId }),
+    ...(input.batchTitle === undefined ? {} : { batchTitle: input.batchTitle }),
   };
 }
 

@@ -21,6 +21,13 @@ export interface AgentWorkOrderEnvelope {
   fromSessionId: string;
   /** 任务正文（与工单 carrier 的 text 相同，元数据里再带一份供 UI 卡片用）。 */
   task: string;
+  /**
+   * 批次身份（uuid，缺席 = 散单）：同批多张工单在发起方会话聚合为一张工地卡。
+   * 跨派单调用稳定——模型回传上次结果里的 batchId 即并入同批，缺席才新铸。
+   */
+  batchId?: string;
+  /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
+  batchTitle?: string;
 }
 
 export interface AgentDispatchRequest {
@@ -47,6 +54,10 @@ export interface AgentDispatchRequest {
   };
   /** 发起方会话（信封的 fromSessionId 由执行器注入，不来自模型输入）。 */
   sourceSessionId: string;
+  /** 批次标题（工具输入 batch_title 逐字透传）；缺席 = 散单。 */
+  batchTitle?: string;
+  /** 批次身份（工具输入 batch_id 回传）；有 batchTitle 缺它时端口新铸。 */
+  batchId?: string;
   /** 发起方档案名/工号（信封署名；执行器注入）。 */
   sourceAgentId?: string;
   sourceAgentName?: string;
@@ -63,6 +74,12 @@ export interface AgentDispatchResult {
   createdSession: boolean;
   /** 本单实际使用的模型 modelId；指定模型时必在。 */
   model?: string;
+  /** 本单工单 id（回执对账键）；结果里回显，供派单方把后续工单并进同批/对账。 */
+  workOrderId?: string;
+  /** 批次身份回显（本次派单带批次时必在）：模型回传它即可往同一工地续派。 */
+  batchId?: string;
+  /** 批次标题回显（与 batchId 同进退）。 */
+  batchTitle?: string;
 }
 
 /**

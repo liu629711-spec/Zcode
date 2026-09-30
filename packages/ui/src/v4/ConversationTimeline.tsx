@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { ConversationTurnGroup } from "@/v4/ConversationTurnGroup.js";
+import { selectWorkOrderBatchRenderInfo } from "@/v4/agentWorkOrderBatch.js";
 import { ConversationPendingGuideList } from "@/v4/ConversationPendingGuideList.js";
 import type { AssistantFeedbackHandler } from "@/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
@@ -424,6 +425,12 @@ function ConversationTimelineImpl({
   );
   const { virtualizedUnits, liveUnit, liveUnitIndex } = useMemo(
     () => splitConversationTimelineLiveTail(renderUnits),
+    [renderUnits],
+  );
+  // 批次派单（工地卡）：批次要跨轮聚拢（派单轮 + 各回执轮），只有这里看得见全轮
+  // 列表——算好每轮的挂载/抑制信息传给 ConversationTurnGroup，散单/单张批次为空表。
+  const workOrderBatchInfoByUnitKey = useMemo(
+    () => selectWorkOrderBatchRenderInfo(renderUnits),
     [renderUnits],
   );
   const hasRunningUnit = useMemo(() => renderUnits.some((unit) => unit.isRunning), [renderUnits]);
@@ -1840,6 +1847,7 @@ function ConversationTimelineImpl({
                     >
                       <ConversationTurnGroup
                         unit={unit}
+                        workOrderBatch={workOrderBatchInfoByUnitKey.get(unit.key)}
                         apiRetry={null}
                         context={rowContext}
                         onFork={onFork}
@@ -1870,6 +1878,7 @@ function ConversationTimelineImpl({
                 >
                   <ConversationTurnGroup
                     unit={liveUnit}
+                    workOrderBatch={workOrderBatchInfoByUnitKey.get(liveUnit.key)}
                     apiRetry={apiRetry}
                     context={rowContext}
                     onFork={onFork}

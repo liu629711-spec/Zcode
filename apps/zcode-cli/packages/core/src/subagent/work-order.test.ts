@@ -173,6 +173,20 @@ test("buildWorkOrderEnvelopeText：匿名发起方退化为 user，关闭标签�
   assert.equal(text.split("</work-order>").length - 1, 1);
 });
 
+test("buildWorkOrderEnvelopeText：批次字段只走信封对象，wire 文本逐字不变（批次工地卡，2026-09-30）", () => {
+  const base = {
+    workOrderId: "wo-3",
+    fromAgentName: "lead",
+    fromSessionId: "s",
+    task: "干活",
+  };
+  const plain = buildWorkOrderEnvelopeText(base);
+  const batched = buildWorkOrderEnvelopeText({ ...base, batchId: "batch-1", batchTitle: "登录页改造" });
+  // 事件面把 <work-order> 标签内原文当任务正文透出：批次（工地卡）只能进元数据，
+  // 掺进 carrier 会污染目标会话的任务正文与发起方的工单卡。
+  assert.equal(batched, plain);
+});
+
 test("isWorkOrderInputId：只认 workorder- 前缀", () => {
   assert.equal(isWorkOrderInputId(`${WORK_ORDER_INPUT_ID_PREFIX}abc`), true);
   assert.equal(isWorkOrderInputId("automation-abc"), false);

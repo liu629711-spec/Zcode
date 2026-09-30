@@ -35,6 +35,26 @@ export const AgentDispatchInputSchema = z
       .describe(
         "Model this task runs on, e.g. 'deepseek-v4.1'. Omit to use the agent's own model. Unavailable or ambiguous names are rejected with the available options listed. In a spawned ordinary session (no agent) the model becomes that session's resident model from birth.",
       ),
+    // 批次派单（工地卡）：batch_title 开批，batch_id 把后续工单并进同一批。
+    // 模型面用 snake_case（工单批次是模型的新概念，名字与说明书逐字对齐，别混 camelCase）。
+    batch_title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        "Short job-site title for a BATCH of work orders (e.g. 登录页改造, in the user's language). Pass the SAME batch_title on every dispatch of one big task - they run in parallel and the conversation shows them as one aggregated job-site card. Omit for a standalone task.",
+      ),
+    batch_id: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .optional()
+      .describe(
+        "Batch identity: pass back the batch_id from a previous dispatch result to add more work orders to the same job site later (e.g. after reading a receipt). Only honored together with batch_title; omit to start a new batch.",
+      ),
   })
   .strict()
   // 未点名（对齐稿 §三 #2/#5）：不点名员工只允许派生新普通会话；否则无落点。
@@ -54,6 +74,10 @@ export const AgentDispatchOutputSchema = z
     delivery: z.enum(["started", "queued"]),
     createdSession: z.boolean(),
     model: nonEmptyString.optional(),
+    // 批次回显（带 batch_title 派单时必在）：模型回传 batch_id 即可往同一工地续派。
+    workOrderId: nonEmptyString.optional(),
+    batchId: nonEmptyString.optional(),
+    batchTitle: nonEmptyString.optional(),
     message: nonEmptyString,
   })
   .strict();

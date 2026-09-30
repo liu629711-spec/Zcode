@@ -1,0 +1,247 @@
+import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
+import { resolveAgentWorkOrderReceiptMeta } from "@/v4/agentWorkOrderTurn.js";
+import { parseReceiptDelivererName } from "@/v4/workOrderForward.js";
+
+// ============================================================
+// 批次派单（工地卡）纯规则：把一轮列表里的散单/回执按 batchId 聚成批次模型。
+//
+// 证据只有两处（都不从文本反推，与工单卡同一纪律）：
+// 1. 发起方会话里成功的 AgentDispatch 工具行——输入带 batch_title，结果回显
+//    workOrderId/batchId/batchTitle/agentName/delivery（CLI 权威铸造）；
+// 2. 回执轮头 originMeta——backgroundSource === agent_work_order_receipt 且带批次。
+// 纯函数无 React：Timeline 处算好，ConversationTurnGroup 只认渲染信息。
+// ============================================================
+
+export type WorkOrderBatchOrderStatus = "dispatched" | "queued" | "completed" | "failed";
+
+/** 批次里的一张工单：先由派单行给出台账（dispatched/queued），回执到了更新终态。 */
+export interface WorkOrderBatchOrder {
+  key: string;
+  agentName: string;
+  kind: "work-order" | "receipt";
+  status: WorkOrderBatchOrderStatus;
+  receiptTitle?: string;
+  receiptText?: string;
+}
+
+export interface WorkOrderBatchModel {
+  batchId: string;
+  /** 批次人类短标题（模型给 batch_title）；缺席时卡片退回通用标题。 */
+  title?: string;
+  orders: WorkOrderBatchOrder[];
+  /** 批次卡挂载位：批次证据首次出现的轮。 */
+  firstUnitKey: string;
+}
+
+/** ConversationTurnGroup 的挂载/抑制信息：批次卡挂在 host，member 的散卡被压掉。 */
+export interface WorkOrderBatchRenderInfo {
+  batch: WorkOrderBatchModel;
+  isHost: boolean;
+  isMember: boolean;
+}
+
+/** 回执摘要在工地卡上的字符上界（整篇正文仍在回执轮内照常渲染，这里只截展示行）。 */
+const WORK_ORDER_BATCH_SNIPPET_MAX_CHARS = 240;
+
+/** 失败/中断回执标题的 CLI 权威后缀（buildWorkOrderReceiptTitle 的两种非完成终态）。 */
+const RECEIPT_FAILED_TITLE_SUFFIXES = [" 的工单被中断", " 的工单未完成"] as const;
+
+function parseRecord(value: unknown): Record<string, unknown> | undefined {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try {
+      candidate = JSON.parse(candidate) as unknown;
+    } catch {
+      return undefined;
+    }
+  }
+  return typeof candidate === "object" && candidate !== null && !Array.isArray(candidate)
+    ? (candidate as Record<string, unknown>)
+    : undefined;
+}
+
+function firstRecord(candidates: readonly unknown[]): Record<string, unknown> | undefined {
+  for (const candidate of candidates) {
+    const record = parseRecord(candidate);
+    if (record) return record;
+  }
+  return undefined;
+}
+
+function readString(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+/** 回执标题里的交活方名字：completed 直接解；失败/中断按 CLI 后缀解，解不出留空。 */
+function receiptAgentNameFromTitle(title: string): string {
+  const deliverer = parseReceiptDelivererName(title);
+  if (deliverer) return deliverer;
+  for (const suffix of RECEIPT_FAILED_TITLE_SUFFIXES) {
+    if (title.endsWith(suffix)) {
+      return title.slice(0, title.length - suffix.length).trim();
+    }
+  }
+  return "";
+}
+
+function receiptSnippet(unit: ConversationTurnRenderUnit): string | undefined {
+  const text = unit.latestAssistantTextRow?.text ?? unit.assistantTextRows.at(-1)?.text;
+  const trimmed = text?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > WORK_ORDER_BATCH_SNIPPET_MAX_CHARS
+    ? `${trimmed.slice(0, WORK_ORDER_BATCH_SNIPPET_MAX_CHARS - 1)}…`
+    : trimmed;
+}
+
+interface BatchDraft {
+  title?: string;
+  orders: Map<string, WorkOrderBatchOrder>;
+  memberUnitKeys: Set<string>;
+  firstUnitKey: string;
+}
+
+function mergeOrder(draft: BatchDraft, order: WorkOrderBatchOrder, unitKey: string): void {
+  draft.memberUnitKeys.add(unitKey);
+  const existing = draft.orders.get(order.key);
+  if (!existing) {
+    draft.orders.set(order.key, order);
+    return;
+  }
+  // 回执是终态证据：状态/回执字段以它为准；派单行只在缺署名时补——
+  // 反过来（派单行覆盖回执）会把已交的活打回"在跑"。
+  draft.orders.set(order.key, {
+    ...existing,
+    ...order,
+    ...(existing.kind === "work-order" && order.kind === "receipt" && !order.agentName
+      ? { agentName: existing.agentName }
+      : {}),
+  });
+}
+
+/** 批次最少要 2 张工单才聚合（单张照旧画散卡，聚合没有收益）。 */
+const WORK_ORDER_BATCH_MIN_ORDERS = 2;
+
+export function selectWorkOrderBatches(
+  units: readonly ConversationTurnRenderUnit[],
+): WorkOrderBatchModel[] {
+  const drafts = new Map<string, BatchDraft>();
+  const ensureDraft = (batchId: string, unitKey: string): BatchDraft => {
+    let draft = drafts.get(batchId);
+    if (!draft) {
+      draft = { orders: new Map(), memberUnitKeys: new Set(), firstUnitKey: unitKey };
+      drafts.set(batchId, draft);
+    }
+    return draft;
+  };
+
+  for (const unit of units) {
+    // 证据一：回执轮头（发起方会话）。终态权威，先到先记账也行——合并规则让回执赢。
+    const receipt = resolveAgentWorkOrderReceiptMeta(unit.header);
+    if (receipt?.batchId) {
+      const draft = ensureDraft(receipt.batchId, unit.key);
+      draft.title ??= receipt.batchTitle;
+      mergeOrder(
+        draft,
+        {
+          key: receipt.workOrderId,
+          agentName: receiptAgentNameFromTitle(receipt.title),
+          kind: "receipt",
+          status: parseReceiptDelivererName(receipt.title) ? "completed" : "failed",
+          receiptTitle: receipt.title,
+          ...(receiptSnippet(unit) ? { receiptText: receiptSnippet(unit) } : {}),
+        },
+        unit.key,
+      );
+      continue;
+    }
+
+    // 证据二：本轮成功的 AgentDispatch 工具行（同轮可并发多张，逐行收）。
+    for (const row of unit.assistantWorkRows) {
+      if (row.kind !== "toolCall" || row.status !== "success") continue;
+      if (row.toolName.toLowerCase().replace(/[^a-z0-9]/gu, "") !== "agentdispatch") continue;
+      const input = firstRecord([row.input, row.inputText]);
+      const output = firstRecord([row.output?.text]);
+      const batchId = readString(output, "batchId") ?? readString(input, "batch_id");
+      const title = readString(output, "batchTitle") ?? readString(input, "batch_title");
+      if (!batchId) continue;
+      const draft = ensureDraft(batchId, unit.key);
+      draft.title ??= title;
+      const workOrderId = readString(output, "workOrderId");
+      mergeOrder(
+        draft,
+        {
+          key: workOrderId ?? `tc:${row.toolCallId}`,
+          agentName: readString(output, "agentName") ?? readString(input, "agent") ?? "",
+          kind: "work-order",
+          status: readString(output, "delivery") === "queued" ? "queued" : "dispatched",
+        },
+        unit.key,
+      );
+    }
+  }
+
+  const models: WorkOrderBatchModel[] = [];
+  for (const [batchId, draft] of drafts) {
+    if (draft.orders.size < WORK_ORDER_BATCH_MIN_ORDERS) continue;
+    models.push({
+      batchId,
+      ...(draft.title ? { title: draft.title } : {}),
+      orders: [...draft.orders.values()],
+      firstUnitKey: draft.firstUnitKey,
+    });
+  }
+  return models;
+}
+
+/** 每轮的挂载/抑制信息（Timeline 算一次，ConversationTurnGroup 查表）。 */
+export function selectWorkOrderBatchRenderInfo(
+  units: readonly ConversationTurnRenderUnit[],
+): Map<string, WorkOrderBatchRenderInfo[]> {
+  const infoByUnitKey = new Map<string, WorkOrderBatchRenderInfo[]>();
+  for (const batch of selectWorkOrderBatches(units)) {
+    for (const unitKey of collectMemberUnitKeys(units, batch)) {
+      const infos = infoByUnitKey.get(unitKey) ?? [];
+      infos.push({
+        batch,
+        isHost: unitKey === batch.firstUnitKey,
+        isMember: true,
+      });
+      infoByUnitKey.set(unitKey, infos);
+    }
+  }
+  return infoByUnitKey;
+}
+
+function collectMemberUnitKeys(
+  units: readonly ConversationTurnRenderUnit[],
+  batch: WorkOrderBatchModel,
+): Set<string> {
+  // member = 该轮为批次贡献过证据。重扫一遍比在 draft 里多存一份更省心：
+  // 批次总数小（同会话同批的轮寥寥），O(batches × units) 只在批次存在时发生。
+  const memberUnitKeys = new Set<string>();
+  const orderKeys = new Set(batch.orders.map((order) => order.key));
+  for (const unit of units) {
+    const receipt = resolveAgentWorkOrderReceiptMeta(unit.header);
+    if (receipt?.batchId === batch.batchId && orderKeys.has(receipt.workOrderId)) {
+      memberUnitKeys.add(unit.key);
+      continue;
+    }
+    for (const row of unit.assistantWorkRows) {
+      if (row.kind !== "toolCall" || row.status !== "success") continue;
+      if (row.toolName.toLowerCase().replace(/[^a-z0-9]/gu, "") !== "agentdispatch") continue;
+      const input = firstRecord([row.input, row.inputText]);
+      const output = firstRecord([row.output?.text]);
+      const workOrderId = readString(output, "workOrderId");
+      const key = workOrderId ?? `tc:${row.toolCallId}`;
+      if (
+        (readString(output, "batchId") ?? readString(input, "batch_id")) === batch.batchId &&
+        orderKeys.has(key)
+      ) {
+        memberUnitKeys.add(unit.key);
+        break;
+      }
+    }
+  }
+  return memberUnitKeys;
+}
