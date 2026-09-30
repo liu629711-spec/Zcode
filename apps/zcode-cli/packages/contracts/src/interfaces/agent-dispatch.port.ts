@@ -24,12 +24,17 @@ export interface AgentWorkOrderEnvelope {
 }
 
 export interface AgentDispatchRequest {
-  /** 目标档案：agentId（uuid）优先，其次精确名（仅限本项目作用域）。歧义即拒绝。 */
-  agent: string;
+  /**
+   * 目标档案：agentId（uuid）优先，其次精确名（仅限本项目作用域）。歧义即拒绝。
+   * 缺省 = 不点名员工：必须配合 newSession=true，派生一段【无 persona 的普通会话】
+   * （无工牌/无档案/无记忆，对齐稿 §三 #2/#5），task 作为它的第一条工单；
+   * 缺 agent 且 newSession!==true 时端口拒绝。
+   */
+  agent?: string;
   task: string;
   /** 新会话的人类短标题（会话列表展示用）；仅在新建会话时作为首输入标题种子。 */
   title?: string;
-  /** true 强制开新 persona 会话；默认投目标最新一段 persona 会话（无则自动开）。 */
+  /** true 强制开新会话：带 agent 开员工新段；缺 agent 开无 persona 普通会话。默认投目标最新一段 persona 会话（无则自动开）。 */
   newSession?: boolean;
   /**
    * 本单指定模型（发起方目录里解析出的注册表拼写）。缺席 = 用目标智能体自己的模型；
@@ -49,11 +54,12 @@ export interface AgentDispatchRequest {
 
 export interface AgentDispatchResult {
   targetSessionId: string;
+  /** 目标档案名；无 persona 普通会话（agent 缺省派生）为空串占位。 */
   agentName: string;
   agentId?: string;
   /** started = 已开跑（或已入队即刻可跑）；queued = 目标忙，已按既有消息排队。投递成功 ≠ 已处理。 */
   delivery: "started" | "queued";
-  /** 目标 persona 会话是本次新建的。 */
+  /** 目标会话是本次新建的（员工新段或无 persona 普通会话）。 */
   createdSession: boolean;
   /** 本单实际使用的模型 modelId；指定模型时必在。 */
   model?: string;

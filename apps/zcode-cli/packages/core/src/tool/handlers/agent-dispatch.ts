@@ -93,8 +93,10 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
   }
 
   // 发起方署名由执行器注入（当前会话），模型不可伪造来源信封。
+  // agent 缺省（对齐稿 §三 #2/#5）= 派生无 persona 普通会话：不解析目标，直接透传端口。
+  const unbadged = parsed.agent === undefined;
   const result = await context.agentDispatchPort.dispatch({
-    agent: parsed.agent,
+    ...(parsed.agent === undefined ? {} : { agent: parsed.agent }),
     task: parsed.task,
     ...(parsed.title === undefined ? {} : { title: parsed.title }),
     ...(parsed.newSession === undefined ? {} : { newSession: parsed.newSession }),
@@ -105,10 +107,14 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     result.delivery === "queued"
       ? "The target session is busy; the work order is queued and will run at the next turn boundary."
       : "The work order has been delivered into the target session.";
-  const acceptance = `Work order accepted by ${result.agentName}. ${deliveryNote} This only confirms delivery; the answer will arrive later as a receipt in this session.`;
+  const acceptance = unbadged
+    ? `Opened a new ordinary session${
+        parsed.title?.trim() ? ` "${parsed.title.trim()}"` : ""
+      } (no agent named; it has no badge, identity or memory); the task runs there as its first work order. ${deliveryNote} This only confirms delivery; the answer will arrive later as a receipt in this session.`
+    : `Work order accepted by ${result.agentName}. ${deliveryNote} This only confirms delivery; the answer will arrive later as a receipt in this session.`;
   return {
     targetSessionId: result.targetSessionId,
-    agentName: result.agentName,
+    ...(result.agentName ? { agentName: result.agentName } : {}),
     ...(result.agentId ? { agentId: result.agentId } : {}),
     delivery: result.delivery,
     createdSession: result.createdSession,
@@ -152,14 +158,14 @@ export const agentDispatchToolEntry: ToolEntry = {
     // 选择的默认取向（2026-09-29 真机教训）：用户点名让某个智能体做任何事（哪怕一句你好）
     // 都必须走本工具——临时工豁免会把"让 X 给我发个你好"这类主场景吞给 Agent 工具。
     description:
-      "Hand a task to another agent of this workspace: the task is delivered into that agent's own resident session, runs there with that agent's identity, memory and permissions, and leaves a permanent record in that session; a receipt carrying the final answer is delivered back to this conversation afterwards. This is the right tool whenever the user asks another agent BY NAME to do something or to send something - e.g. 'have UI-plus send me a greeting', '让 UI-plus 给我发个你好', 'ask code-plus to fix the login page', 'open a new session for code-plus and have it ...' - no matter how small the task is: the user expects it to land in that agent's own session, not this one. Do not confuse it with the Agent tool's in-conversation helpers: a helper runs inside THIS conversation, leaves nothing in the named agent's session, and that agent never learns about the task. Only keep a named agent's task inside this conversation when the user explicitly asks to handle it right here without involving that agent's session.",
+      "Hand a task to another agent of this workspace: the task is delivered into that agent's own resident session, runs there with that agent's identity, memory and permissions, and leaves a permanent record in that session; a receipt carrying the final answer is delivered back to this conversation afterwards. This is the right tool whenever the user asks another agent BY NAME to do something or to send something - e.g. 'have UI-plus send me a greeting', '让 UI-plus 给我发个你好', 'ask code-plus to fix the login page', 'open a new session for code-plus and have it ...' - no matter how small the task is: the user expects it to land in that agent's own session, not this one. When the user asks for a NEW session without naming any agent, call this tool with newSession=true and no agent: it spawns an unbadged ordinary session with the task as its first work order. Do not confuse it with the Agent tool's in-conversation helpers: a helper runs inside THIS conversation, leaves nothing in the named agent's session, and that agent never learns about the task. Only keep a named agent's task inside this conversation when the user explicitly asks to handle it right here without involving that agent's session.",
     modelInstructions: [
       "Default to this tool whenever the user's message names another agent of this workspace as the doer - 让/叫/请/交给/转交/给 <name> 发…做…, have <name> ..., ask <name> to ..., open a new session for <name> - INCLUDING greetings and other one-line asks. The named agent must receive the task in its own session; do NOT answer with an in-conversation subagent for these.",
       "Handle the request inside this conversation only when the user explicitly wants it handled here without involving the other agent's session, or is asking about the agents rather than tasking them.",
       "Pass the agent's agentId when it is known; otherwise pass the agent's exact name. Ambiguous or unknown names are rejected - never guess an id.",
       "Write the task as complete standalone instructions; the target agent cannot see this conversation.",
       "Set newSession=true only when the user asks for a fresh session; by default the task goes to the agent's latest persona session. When a new session is requested, also pass a short human title (title) in the user's language - it becomes the session's name in the list.",
-      "If the user asks for a new session WITHOUT naming which agent should work in it, prefer the agent this conversation has already established as the doer (dispatch to it and SAY who you picked in one short sentence); ask a clarifying question only when there is genuinely no established doer and no obvious candidate - do not let the unnamed-agent case block the task.",
+      "If the user asks for a new session WITHOUT naming which agent should work in it (e.g. '新建一个会话给我发个你好'), omit agent and pass newSession=true: this spawns an unbadged ordinary session - no agent identity, memory or badge is involved - with the task as its first work order, and the receipt still comes back here. NEVER pick an agent on the user's behalf when none was named; only pass agent when the user (or the established task owner) names one.",
       "When the user names a model for the task ('用 deepseek 回复我', 'use deepseek-v4.1'), pass the user's words verbatim as model - the system resolves the name against the model catalog. NEVER research model identifiers first (no grepping dist bundles, no reading session databases): pass the name and if it cannot be resolved the error lists the available models - relay them to the user instead of investigating.",
       "Starting or messaging other sessions is ONLY this tool. Never spawn the zcode CLI in Bash (--prompt/-p/--resume/...) to run a task in another or a fresh session - that creates an untracked side session outside the product, the command is blocked for confirmation, and reporting it as success is wrong.",
       "A successful call only means the work order was accepted (queued if the target is busy). The final answer arrives as a separate receipt; do not claim the task is done.",

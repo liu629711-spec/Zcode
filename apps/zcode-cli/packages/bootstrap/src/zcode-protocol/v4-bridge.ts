@@ -1356,8 +1356,14 @@ export function createConversationV4Gateway(
     dispatchAgentWorkOrder: async (sessionId, input) => {
       const port = createProtocolAgentDispatchPort(context, {
         resolveOwnSession: () => context.sessions.get(sessionId),
-        createPersonaSessionRecord: async ({ workspace, persona }) =>
-          await createSessionRecordForV4(context, { workspace, persona, persistence: "immediate" }),
+        // persona 缺省 = 派生无 persona 普通会话（对齐稿 §三 #2/#5）；model 是它的出生常驻模型。
+        createPersonaSessionRecord: async ({ workspace, persona, model }) =>
+          await createSessionRecordForV4(context, {
+            workspace,
+            persistence: "immediate",
+            ...(persona ? { persona } : {}),
+            ...(model ? { model } : {}),
+          }),
         activateSessionRecord: async (targetSessionId) =>
           (await activateSessionForResume(context, { sessionId: targetSessionId })).record,
       });

@@ -19,7 +19,7 @@ import {
   type AgentWorkOrderEnvelope,
   type SessionEvent,
 } from "@zcode/contracts";
-import type { ZCodeSessionPersona, ZCodeWorkspaceRef } from "@zcode/shared";
+import type { ModelSelection, ZCodeSessionPersona, ZCodeWorkspaceRef } from "@zcode/shared";
 import {
   isSelfDispatch,
   resolveWorkOrderTarget,
@@ -35,10 +35,15 @@ import type {
 export interface ProtocolAgentDispatchPortDeps {
   /** 归属会话解析器（automation-port 同款惰性绑定）：本端口所服务的 session record。 */
   resolveOwnSession?: () => ZCodeProtocolSessionRecord | undefined;
-  /** 既有 createSession persona 链（createSessionRecordForV4 包装）；由 server-operations 注入。 */
+  /**
+   * 既有 createSession 链（createSessionRecordForV4 包装）；由 server-operations 注入。
+   * persona 缺省 = 派生无 persona 的普通会话（对齐稿 §三 #2/#5，无工牌/档案/记忆）；
+   * model 是普通会话的出生常驻模型（createSession 的 model 参数），员工新段不经过它。
+   */
   createPersonaSessionRecord: (input: {
     workspace: ZCodeWorkspaceRef;
-    persona: ZCodeSessionPersona;
+    persona?: ZCodeSessionPersona;
+    model?: ModelSelection;
   }) => Promise<{ sessionId: string }>;
   /** 冷会话恢复（activateSessionForResume 包装）；由 server-operations 注入。 */
   activateSessionRecord: (sessionId: string) => Promise<ZCodeProtocolSessionRecord>;
@@ -53,6 +58,8 @@ export const AGENT_WORK_ORDER_GUARDS = {
   targetNotFound: "guard.agentWorkOrderTargetNotFound",
   targetAmbiguous: "guard.agentWorkOrderTargetAmbiguous",
   selfTarget: "guard.agentWorkOrderSelfTarget",
+  /** 未点名派单缺 newSession=true（core 工具 schema refine 之外的第二道墙，端口级执法）。 */
+  input: "guard.agentWorkOrderInput",
 } as const;
 
 function agentWorkOrderGuardError(reasonCode: string, message: string): Error {
@@ -94,6 +101,27 @@ function profileToPersona(profile: AgentProfile): ZCodeSessionPersona {
     ...(profile.disallowedTools?.length ? { disallowedTools: [...profile.disallowedTools] } : {}),
     ...(profile.color ? { color: profile.color } : {}),
   };
+}
+
+/**
+ * 点名派单的目标解析终审：not_found/ambiguous 在这里带 guard 词表抛出，
+ * resolved 直接回档案（调用方因此拿到非空类型，无需断言）。
+ */
+function requireWorkOrderTarget(agent: string, profiles: readonly AgentProfile[]): AgentProfile {
+  const resolution = resolveWorkOrderTarget(agent, profiles);
+  if (resolution.kind === "not_found") {
+    throw agentWorkOrderGuardError(
+      AGENT_WORK_ORDER_GUARDS.targetNotFound,
+      `No agent profile matches "${resolution.agent}" in this workspace. Ask the user to check the agent name or id.`,
+    );
+  }
+  if (resolution.kind === "ambiguous") {
+    throw agentWorkOrderGuardError(
+      AGENT_WORK_ORDER_GUARDS.targetAmbiguous,
+      `Agent "${resolution.agent}" matches multiple profiles (${resolution.matchedNames.join(", ")}). Dispatch by the agent's unique agentId instead.`,
+    );
+  }
+  return resolution.profile;
 }
 
 /**
@@ -146,31 +174,28 @@ export function createProtocolAgentDispatchPort(
       }
 
       const profiles = ownRecord.app.runtime.getAgentProfiles();
-      const resolution = resolveWorkOrderTarget(input.agent, profiles);
-      if (resolution.kind === "not_found") {
+      // 未点名派单（对齐稿 §三 #2/#5）：不带 agent 只允许 newSession=true —— 派生
+      // 无 persona 普通会话；否则无落点。core 工具 schema refine 之外的端口级第二道墙。
+      if (input.agent === undefined && input.newSession !== true) {
         throw agentWorkOrderGuardError(
-          AGENT_WORK_ORDER_GUARDS.targetNotFound,
-          `No agent profile matches "${resolution.agent}" in this workspace. Ask the user to check the agent name or id.`,
+          AGENT_WORK_ORDER_GUARDS.input,
+          "Dispatching without an agent requires newSession=true: name a target agent to deliver into its resident session, or set newSession=true to spawn an unbadged ordinary session.",
         );
       }
-      if (resolution.kind === "ambiguous") {
-        throw agentWorkOrderGuardError(
-          AGENT_WORK_ORDER_GUARDS.targetAmbiguous,
-          `Agent "${resolution.agent}" matches multiple profiles (${resolution.matchedNames.join(", ")}). Dispatch by the agent's unique agentId instead.`,
-        );
-      }
-      const profile = resolution.profile;
+      const namedProfile =
+        input.agent === undefined ? undefined : requireWorkOrderTarget(input.agent, profiles);
 
       const sourcePersona = ownRecord.app.runtime.getProjectAgentPersona();
       // 自派拒绝（对齐稿 §三规则 6）：员工给自己派工单只会复制自己的对话，
       // 构造信封前端口级硬墙。错误信息教会模型改道：换人/直接干。
-      if (isSelfDispatch(sourcePersona, profile)) {
+      // 仅点名员工的派单有「自派」可言；无 persona 普通会话没有目标档案。
+      if (namedProfile && isSelfDispatch(sourcePersona, namedProfile)) {
         const otherNames = profiles
-          .filter((candidate) => candidate !== profile)
+          .filter((candidate) => candidate !== namedProfile)
           .map((candidate) => candidate.name);
         throw agentWorkOrderGuardError(
           AGENT_WORK_ORDER_GUARDS.selfTarget,
-          `You cannot dispatch a work order to yourself ("${profile.name}") — that would just copy your own conversation. Dispatch to another agent instead (available: ${
+          `You cannot dispatch a work order to yourself ("${namedProfile.name}") — that would just copy your own conversation. Dispatch to another agent instead (available: ${
             otherNames.join(", ") || "none - ask the user"
           }), or do the task directly in this conversation.`,
         );
@@ -185,32 +210,43 @@ export function createProtocolAgentDispatchPort(
 
       let targetSessionId: string | undefined;
       let createdSession = false;
-      if (input.newSession !== true) {
+      if (namedProfile && input.newSession !== true) {
         targetSessionId = context.deps.sessionStore
           ? await findLatestPersonaSessionId(
               context.deps.sessionStore,
               ownRecord.workspace.workspacePath,
-              profile,
+              namedProfile,
             )
           : undefined;
       }
       if (!targetSessionId) {
         // 既有 createSession persona 链开新段；工作区用发起方自己的 workspace ref
         // （一个 CLI 进程一个 workspace，跨 workspace 目标在这里就不存在）。
-        // 本单指定模型（D32）覆盖档案默认：新会话从出生就带着它（persona
+        // 本单指定模型（D32）覆盖档案默认：员工新段从出生就带着它（persona
         // modelSelection 走 create 路径落会话常驻选择），后续轮不回退。
-        // 可见性（真机反馈 2026-09-30）：用户点名"新建一个会话"就是要看得见的新
+        // 可见性（真机反馈 2026-09-30）：用户点名“新建一个会话”就是要看得见的新
         // 会话——不盖 workOrderOnly（隐藏机制保留备用）；派单堆积的真正解法是
         // 复用最近会话（不带 newSession 的派单永远不新增行）+ 守住 CLI 后门。
-        const created = await deps.createPersonaSessionRecord({
-          workspace: ownRecord.workspace,
-          persona: {
-            ...profileToPersona(profile),
-            ...(input.modelSelection === undefined
-              ? {}
-              : { modelSelection: input.modelSelection }),
-          },
-        });
+        // 未点名（对齐稿 §三 #2/#5）：不带 persona 开普通会话——无工牌/档案/记忆，
+        // 不占任何员工身份；指定模型经 createSession 的 model 参数成为出生常驻模型。
+        const created = await deps.createPersonaSessionRecord(
+          namedProfile
+            ? {
+                workspace: ownRecord.workspace,
+                persona: {
+                  ...profileToPersona(namedProfile),
+                  ...(input.modelSelection === undefined
+                    ? {}
+                    : { modelSelection: input.modelSelection }),
+                },
+              }
+            : {
+                workspace: ownRecord.workspace,
+                ...(input.modelSelection === undefined
+                  ? {}
+                  : { model: input.modelSelection }),
+              },
+        );
         targetSessionId = created.sessionId;
         createdSession = true;
       }
@@ -241,8 +277,8 @@ export function createProtocolAgentDispatchPort(
         targetRecord,
         inputId: admission.inputId,
         envelope,
-        agentName: profile.name,
-        ...(profile.agentId ? { agentId: profile.agentId } : {}),
+        agentName: namedProfile?.name ?? "",
+        ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
       });
       context.logger?.info("Agent work order dispatched", {
         createdSession,
@@ -251,12 +287,13 @@ export function createProtocolAgentDispatchPort(
         fromSessionId: envelope.fromSessionId,
         module: "bootstrap.zcode_protocol",
         targetSessionId,
+        unbadged: namedProfile === undefined,
         workOrderId: envelope.workOrderId,
       });
       return {
         targetSessionId,
-        agentName: profile.name,
-        ...(profile.agentId ? { agentId: profile.agentId } : {}),
+        agentName: namedProfile?.name ?? "",
+        ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
         delivery: admission.delivery,
         createdSession,
         ...(input.modelSelection

@@ -3421,8 +3421,14 @@ async function createRecord(
     // 派单（D29/D2）：跨会话工单端口；record 建立后经 ownSessionRecord 惰性绑定归属会话。
     agentDispatchPort: createProtocolAgentDispatchPort(context, {
       resolveOwnSession: () => ownSessionRecord,
-      createPersonaSessionRecord: async ({ workspace, persona }) =>
-        await createSessionRecordForV4(context, { workspace, persona, persistence: "immediate" }),
+      // persona 缺省 = 派生无 persona 普通会话（对齐稿 §三 #2/#5）；model 是它的出生常驻模型。
+      createPersonaSessionRecord: async ({ workspace, persona, model }) =>
+        await createSessionRecordForV4(context, {
+          workspace,
+          persistence: "immediate",
+          ...(persona ? { persona } : {}),
+          ...(model ? { model } : {}),
+        }),
       activateSessionRecord: async (sessionId) =>
         (await activateSessionForResume(context, { sessionId })).record,
     }),
