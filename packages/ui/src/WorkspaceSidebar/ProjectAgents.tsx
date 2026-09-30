@@ -595,7 +595,10 @@ export function WorkspaceProjectAgentCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(520px,calc(100vw-2rem))] max-w-none" data-testid={TID_PROJECT_AGENT_CREATE_DIALOG}>
+      <DialogContent
+        className="w-[min(520px,calc(100vw-2rem))] max-w-none max-h-[calc(100dvh-4rem)] overflow-y-auto"
+        data-testid={TID_PROJECT_AGENT_CREATE_DIALOG}
+      >
         <DialogTitle className="text-ui-lg font-medium text-foreground">
           {intl.formatMessage({
             id: isEditing
@@ -710,6 +713,9 @@ export function WorkspaceProjectAgentCreateDialog({
             </label>
             <Textarea
               rows={5}
+              // field-sizing-content 会随内容无限长高，长人设把对话框撑出一屏
+              // （真机 2026-09-30：编辑档案时记忆区/保存按钮被顶出屏幕）；限高后内部自滚。
+              className="max-h-[40vh]"
               value={draft.systemPrompt}
               onChange={(event) => setDraft({ ...draft, systemPrompt: event.target.value })}
               placeholder={intl.formatMessage({

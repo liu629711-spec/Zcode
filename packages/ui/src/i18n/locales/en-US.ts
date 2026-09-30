@@ -1629,7 +1629,7 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.projectAgentsEmpty": "No agents in this project yet",
   "workspaceSidebar.projectAgentInstallRoster": "Add the built-in crew ({count} missing)",
   "workspaceSidebar.projectAgentRosterInstalled": "{count} agents joined the user-level roster — one identity and memory shared across projects",
-  "workspaceSidebar.projectAgentRosterFailed": "{count} agents could not be created; check the user agents folder is writable",
+  "workspaceSidebar.projectAgentRosterFailed": "These agents could not be created: {names}. Click the preset crew button to retry; if it keeps failing, check that the user agents folder is writable",
   "workspaceSidebar.projectAgentOpenFailed": "Failed to open agent chat",
   "workspaceSidebar.projectAgentScopeHint": "This agent only serves the current project",
   "workspaceSidebar.projectAgentEditMenu": "Edit profile",

@@ -2280,10 +2280,14 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                     }
                     if (result.failed.length > 0) {
                       // 失败的明确说出来：静默少建一位 = 用户以为班底到齐了。
+                      // 点名（真机 2026-09-30：只报"1 位失败"用户对不上是谁）。
                       toast(
                         intl.formatMessage(
                           { id: "workspaceSidebar.projectAgentRosterFailed" },
-                          { count: String(result.failed.length) },
+                          {
+                            count: String(result.failed.length),
+                            names: result.failed.join(", "),
+                          },
                         ),
                       );
                     }

@@ -1513,7 +1513,7 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.projectAgentsEmpty": "这个项目还没有智能体",
   "workspaceSidebar.projectAgentInstallRoster": "请进预置班底（还差 {count} 位）",
   "workspaceSidebar.projectAgentRosterInstalled": "班底已到岗 {count} 位，装进全局员工名册（所有项目共用一份身份与记忆）",
-  "workspaceSidebar.projectAgentRosterFailed": "{count} 位没能建档，请确认用户员工目录可写",
+  "workspaceSidebar.projectAgentRosterFailed": "这几位没能建档：{names}。可再点一次「请进预置班底」重试；反复失败请确认用户员工目录可写",
   "workspaceSidebar.projectAgentOpenFailed": "无法打开与智能体的对话",
   "workspaceSidebar.projectAgentScopeHint": "该智能体只服务本项目",
   "workspaceSidebar.projectAgentEditMenu": "编辑档案",
