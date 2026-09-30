@@ -2227,6 +2227,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               // 「开新对话」：想聊新话题（不续接历史）时的入口，失败由 openAgentChat toast。
               void openProjectAgentChat(toProjectAgentPersona(agent), target);
             }}
+            onRefresh={projectAgents.reload}
             onCreate={async (draft) => {
               const target = projectAgentCreateTarget;
               if (!target) {

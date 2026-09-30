@@ -283,6 +283,7 @@ export function useWorkspaceProjectAgents(params: {
     userAgents,
     saving,
     loadingAgents,
+    reload,
     createAgent,
     updateAgent,
     deleteAgent,
@@ -405,6 +406,7 @@ export function WorkspaceProjectAgentCreateDialog({
   editingAgent = null,
   onOpenAgent,
   onOpenNewChat,
+  onRefresh,
   onCreate,
   onUpdate,
   workspacePath,
@@ -420,8 +422,12 @@ export function WorkspaceProjectAgentCreateDialog({
   onOpenAgent: (agent: AgentSummary) => void;
   /** 「开新对话」（D3）：不续接历史、另起一段该员工的会话；缺席时不渲染入口。 */
   onOpenNewChat?: (agent: AgentSummary) => void;
+  /** 打开对话框时刷新名册（设置页的增删不改这里的缓存，开门拿一次新账）。 */
+  onRefresh?: () => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
   onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
+  /** 打开对话框时刷新名册（设置页的增删不改这里的缓存，开门拿一次新账）。 */
+  onRefresh?: () => void;
   /** 记忆区按目标工作区取数（编辑态才需要）；user 档案记事本在用户数据里，服务面自己解析。 */
   workspacePath?: string;
   workspaceIdentity?: string;
@@ -452,6 +458,13 @@ export function WorkspaceProjectAgentCreateDialog({
     });
   }, [intl, modelSelectionView]);
   const isEditing = editingAgent !== null;
+  // 打开即刷新名册（真机 2026-09-30）：设置页删了员工，这个对话框若还端着
+  // 打开前的快照，就会出现「我都删掉了怎么他还在」。reload 是稳定 useCallback。
+  useEffect(() => {
+    if (open) {
+      onRefresh?.();
+    }
+  }, [open, onRefresh]);
   // 模型选择器（2026-09-29 用户需求）：建档/编辑都指派"这个员工用什么模型"。
   // 清空 = 继承默认；reasoningLevel 取注册表默认档（与设置页同源），界面先不摆档位。
   const INHERIT_MODEL_VALUE = "inherit";
@@ -544,7 +557,7 @@ export function WorkspaceProjectAgentCreateDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[min(520px,calc(100vw-2rem))] max-w-none max-h-[calc(100dvh-4rem)] overflow-y-auto"
+        className="w-[min(520px,calc(100vw-2rem))] max-w-none max-h-[calc(100dvh-4rem)] overflow-x-hidden overflow-y-auto"
         data-testid={TID_PROJECT_AGENT_CREATE_DIALOG}
       >
         <DialogTitle className="text-ui-lg font-medium text-foreground">
@@ -700,7 +713,8 @@ export function WorkspaceProjectAgentCreateDialog({
               {intl.formatMessage({ id: "workspaceSidebar.projectAgentScopeHint" })}
             </p>
           )}
-          <div className="flex justify-end gap-2 pt-1">
+          {/* 保存/取消钉在滚动容器底部：表单再长也不用滚动找按钮（真机 2026-09-30）。 */}
+          <div className="sticky bottom-0 z-10 -mx-4 mt-2 flex justify-end gap-2 border-t border-border bg-popover px-4 pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {intl.formatMessage({ id: "common.cancel" })}
             </Button>
