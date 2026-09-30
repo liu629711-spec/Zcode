@@ -6662,7 +6662,7 @@ const zhCN: Record<string, string> = {
   "assetLibrary.backToTop": "回到顶部",
   // 批次派单（工地卡）：同批 2+ 张工单聚合为一张卡，替代散落的单张回执卡。
   "chat.workOrderBatch.title": "工地",
-  "chat.workOrderBatch.progress": "{completed}/{total} 完成",
+  "chat.workOrderBatch.progress": "完成",
   "chat.workOrderBatch.status.dispatched": "已派单",
   "chat.workOrderBatch.status.queued": "排队中",
   "chat.workOrderBatch.status.completed": "已完成",

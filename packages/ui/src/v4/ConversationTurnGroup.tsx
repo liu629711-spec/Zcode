@@ -1518,13 +1518,6 @@ function ConversationTurnGroupImpl({
           context={context}
         />
       ))}
-      {workOrderBatchCards.length > 0
-        ? // 工地卡挂在批次证据首现的轮（host）位置：同批 2+ 张工单聚合为一张卡，
-          // 散卡随之压制（回执卡/工单卡），回执到达与续派时进度实时更新。
-          workOrderBatchCards.map((batch) => (
-            <AgentWorkOrderBatchCard key={batch.batchId} batch={batch} />
-          ))
-        : null}
       {agentWorkOrderMeta ? (
         // 工单卡（D29/D5）：工单唤醒轮没有可见用户行，这张卡是它在目标会话的
         // 全部呈现——来源标注 + 任务正文，缩进/边框防对方输出冒充本会话指令。
@@ -1675,6 +1668,14 @@ function ConversationTurnGroupImpl({
           assistantCodeCommentProjectionEnabled={assistantCodeCommentProjectionEnabled}
         />
       )}
+      {workOrderBatchCards.length > 0
+        ? // 工地卡（批次派单）挂在本轮内容**收尾**：host 跟着最新回执轮走（活边），
+          // 同批 2+ 张工单聚合为一张卡，散卡随之压制（回执头卡），进度实时更新。
+          // 挂在轮首会把卡片顶到老板消息前面（真机验收教训：状态板属于轮的结尾）。
+          workOrderBatchCards.map((batch) => (
+            <AgentWorkOrderBatchCard key={batch.batchId} batch={batch} />
+          ))
+        : null}
     </section>
   );
 }

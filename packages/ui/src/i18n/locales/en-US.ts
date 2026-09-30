@@ -6988,7 +6988,7 @@ const enUS: Record<string, string> = {
   // Batch work orders (job-site card): 2+ orders of one batch aggregate into one card,
   // replacing the scattered per-receipt cards.
   "chat.workOrderBatch.title": "Job site",
-  "chat.workOrderBatch.progress": "{completed}/{total} completed",
+  "chat.workOrderBatch.progress": "done",
   "chat.workOrderBatch.status.dispatched": "Dispatched",
   "chat.workOrderBatch.status.queued": "Queued",
   "chat.workOrderBatch.status.completed": "Completed",

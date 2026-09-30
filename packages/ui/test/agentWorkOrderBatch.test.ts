@@ -124,7 +124,8 @@ test("selectWorkOrderBatches：同轮两张派单 + 后续一张回执补单聚�
   const batch = batches[0]!;
   assert.equal(batch.batchId, "batch-1");
   assert.equal(batch.title, "登录页改造");
-  assert.equal(batch.firstUnitKey, "dispatch-turn");
+  // host 跟最新证据走：工地卡贴活边（最新回执轮），不钉在派单轮上。
+  assert.equal(batch.hostUnitKey, "receipt-3");
   assert.deepEqual(
     batch.orders.map((order) => [order.agentName, order.status]),
     [
@@ -161,11 +162,12 @@ test("selectWorkOrderBatches：回执把派单行记的 dispatched 更新成 com
   assert.equal(first.receiptText, "改完了");
   assert.equal(first.agentName, "code-plus");
   assert.equal(batch.orders.find((order) => order.key === "wo-2")!.status, "dispatched");
-  // 回执轮是 member（散卡压制），派单轮是 host（工地卡挂这里）。
+  // 回执轮既是 member（散卡压制）也是 host（工地卡贴最新回执轮）；
+  // 派单轮只是 member——卡片不再钉在派单轮上被后续内容越顶越远。
   const info = selectWorkOrderBatchRenderInfo(units);
-  assert.equal(info.get("dispatch-turn")![0]!.isHost, true);
+  assert.equal(info.get("receipt-1")![0]!.isHost, true);
   assert.equal(info.get("receipt-1")![0]!.isMember, true);
-  assert.equal(info.get("receipt-1")![0]!.isHost, false);
+  assert.equal(info.get("dispatch-turn")![0]!.isHost, false);
 });
 
 test("selectWorkOrderBatches：单张工单不成批（派单行与回执对上是同一单）", () => {
@@ -192,7 +194,7 @@ test("selectWorkOrderBatches：只有回执的批次（无派单行证据）不�
 
   const batch = selectWorkOrderBatches(units)[0]!;
   assert.equal(batch.batchId, "batch-1");
-  assert.equal(batch.firstUnitKey, "receipt-1");
+  assert.equal(batch.hostUnitKey, "receipt-2");
   assert.equal(batch.orders[0]!.status, "completed");
   assert.equal(batch.orders[1]!.status, "failed");
   assert.equal(batch.orders[1]!.agentName, "doc-writer");

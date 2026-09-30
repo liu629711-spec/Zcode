@@ -29,8 +29,11 @@ export interface WorkOrderBatchModel {
   /** 批次人类短标题（模型给 batch_title）；缺席时卡片退回通用标题。 */
   title?: string;
   orders: WorkOrderBatchOrder[];
-  /** 批次卡挂载位：批次证据首次出现的轮。 */
-  firstUnitKey: string;
+  /**
+   * 批次卡挂载轮 = 批次证据**最后**出现的轮（最新回执）：工地卡是一块活状态板，
+   * 永远贴在批次活动的前沿，而不是钉在派单轮上被后续内容越顶越远。
+   */
+  hostUnitKey: string;
 }
 
 /** ConversationTurnGroup 的挂载/抑制信息：批次卡挂在 host，member 的散卡被压掉。 */
@@ -98,7 +101,7 @@ interface BatchDraft {
   title?: string;
   orders: Map<string, WorkOrderBatchOrder>;
   memberUnitKeys: Set<string>;
-  firstUnitKey: string;
+  hostUnitKey: string;
 }
 
 function mergeOrder(draft: BatchDraft, order: WorkOrderBatchOrder, unitKey: string): void {
@@ -129,9 +132,12 @@ export function selectWorkOrderBatches(
   const ensureDraft = (batchId: string, unitKey: string): BatchDraft => {
     let draft = drafts.get(batchId);
     if (!draft) {
-      draft = { orders: new Map(), memberUnitKeys: new Set(), firstUnitKey: unitKey };
+      draft = { orders: new Map(), memberUnitKeys: new Set(), hostUnitKey: unitKey };
       drafts.set(batchId, draft);
+      return draft;
     }
+    // host 跟着最新证据走：回执每到一轮，工地卡就搬一轮——状态板贴活边。
+    draft.hostUnitKey = unitKey;
     return draft;
   };
 
@@ -188,7 +194,7 @@ export function selectWorkOrderBatches(
       batchId,
       ...(draft.title ? { title: draft.title } : {}),
       orders: [...draft.orders.values()],
-      firstUnitKey: draft.firstUnitKey,
+      hostUnitKey: draft.hostUnitKey,
     });
   }
   return models;
@@ -204,7 +210,7 @@ export function selectWorkOrderBatchRenderInfo(
       const infos = infoByUnitKey.get(unitKey) ?? [];
       infos.push({
         batch,
-        isHost: unitKey === batch.firstUnitKey,
+        isHost: unitKey === batch.hostUnitKey,
         isMember: true,
       });
       infoByUnitKey.set(unitKey, infos);
