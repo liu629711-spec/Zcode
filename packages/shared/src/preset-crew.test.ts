@@ -11,10 +11,10 @@ import { test } from "node:test";
 
 import { PRESET_CREW_MEMBERS } from "./preset-crew.js";
 
-test("预置班底名单与拍板一致（2026-09-30：就看 Claude 和 Codex）", () => {
+test("预置班底名单与拍板一致（2026-09-30：Claude/Codex 对齐 + 老板令加 PRD 工程师）", () => {
   assert.deepEqual(
     PRESET_CREW_MEMBERS.map((member) => member.name),
-    ["code-builder", "code-reviewer", "frontend-design"],
+    ["code-builder", "code-reviewer", "frontend-design", "prd-engineer"],
   );
 });
 
