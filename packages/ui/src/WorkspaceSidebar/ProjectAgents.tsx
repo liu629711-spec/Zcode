@@ -426,8 +426,6 @@ export function WorkspaceProjectAgentCreateDialog({
   onRefresh?: () => void;
   onCreate: (draft: ProjectAgentDraft) => Promise<boolean>;
   onUpdate?: (agent: AgentSummary, draft: ProjectAgentDraft) => Promise<boolean>;
-  /** 打开对话框时刷新名册（设置页的增删不改这里的缓存，开门拿一次新账）。 */
-  onRefresh?: () => void;
   /** 记忆区按目标工作区取数（编辑态才需要）；user 档案记事本在用户数据里，服务面自己解析。 */
   workspacePath?: string;
   workspaceIdentity?: string;
