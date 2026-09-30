@@ -47,6 +47,23 @@ export function resolveWorkOrderTarget(
 }
 
 /**
+ * 自派拒绝（对齐稿 §三规则 6：员工点名自己 → 拒绝）：给自己派工单只会复制
+ * 自己的对话，端口在构造信封前用这道纯判据拦下。判据与 personaMatchesProfile
+ * 同纪律：两边都有工号只认号；任一侧无号才比名字。发起方缺席（用户会话、
+ * 无 persona 快照）不算自派。
+ */
+export function isSelfDispatch(
+  sourcePersona: { name: string; agentId?: string } | undefined,
+  profile: { name: string; agentId?: string },
+): boolean {
+  if (!sourcePersona) return false;
+  if (sourcePersona.agentId !== undefined && profile.agentId !== undefined) {
+    return sourcePersona.agentId === profile.agentId;
+  }
+  return sourcePersona.name === profile.name;
+}
+
+/**
  * 工单正文（目标会话的模型输入 carrier）。自带结构化信封标签（谁派的单），
  * 与 task-notification 同一家族：不走 <system-reminder> 包装，正文自证来源。
  * 任务正文里出现的同形关闭标签一律中和，防伪造信封边界。

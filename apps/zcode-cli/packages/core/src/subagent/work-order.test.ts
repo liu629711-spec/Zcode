@@ -10,6 +10,7 @@ import {
   WORK_ORDER_INPUT_ID_PREFIX,
   buildWorkOrderEnvelopeText,
   isAgentIdLike,
+  isSelfDispatch,
   isWorkOrderInputId,
   resolveWorkOrderTarget,
 } from "./work-order.ts";
@@ -85,6 +86,39 @@ test("resolveWorkOrderTarget：项目作用域内同名多档拒绝解析", () =
     profile("CODE-PLUS"),
   ]);
   assert.equal(ambiguous.kind, "ambiguous");
+});
+
+// ── 自派拒绝（对齐稿 §三规则 6：员工点名自己 → 端口级硬墙）─────────────
+
+test("isSelfDispatch：两边都有工号只认号（同号=自派，不同号不算）", () => {
+  assert.equal(
+    isSelfDispatch({ name: "lead", agentId: UUID_A }, profile("lead", { agentId: UUID_A })),
+    true,
+  );
+  // 号不同：即使名字撞了也不算自派（工号才是跨作用域的身份）。
+  assert.equal(
+    isSelfDispatch({ name: "lead", agentId: UUID_A }, profile("lead", { agentId: UUID_B })),
+    false,
+  );
+});
+
+test("isSelfDispatch：任一侧无号才比名字（同名=自派，不同名不算）", () => {
+  assert.equal(isSelfDispatch({ name: "code-plus" }, profile("code-plus")), true);
+  assert.equal(isSelfDispatch({ name: "code-plus" }, profile("doc-writer")), false);
+  // 混合情形：一边有号一边无号，号不参与，名字定夺。
+  assert.equal(
+    isSelfDispatch({ name: "doc-writer", agentId: UUID_A }, profile("doc-writer")),
+    true,
+  );
+  assert.equal(
+    isSelfDispatch({ name: "doc-writer" }, profile("doc-writer", { agentId: UUID_A })),
+    true,
+  );
+});
+
+test("isSelfDispatch：发起方缺席（用户会话/无 persona 快照）不算自派", () => {
+  assert.equal(isSelfDispatch(undefined, profile("code-plus")), false);
+  assert.equal(isSelfDispatch(undefined, profile("code-plus", { agentId: UUID_A })), false);
 });
 
 test("buildWorkOrderEnvelopeText：信封三要素齐全，任务正文逐字保留", () => {

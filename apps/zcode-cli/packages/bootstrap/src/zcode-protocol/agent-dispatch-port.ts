@@ -21,6 +21,7 @@ import {
 } from "@zcode/contracts";
 import type { ZCodeSessionPersona, ZCodeWorkspaceRef } from "@zcode/shared";
 import {
+  isSelfDispatch,
   resolveWorkOrderTarget,
   type AgentProfile,
   type WorkOrderReceiptOutcome,
@@ -51,6 +52,7 @@ export const AGENT_WORK_ORDER_GUARDS = {
   nested: "guard.agentWorkOrderNested",
   targetNotFound: "guard.agentWorkOrderTargetNotFound",
   targetAmbiguous: "guard.agentWorkOrderTargetAmbiguous",
+  selfTarget: "guard.agentWorkOrderSelfTarget",
 } as const;
 
 function agentWorkOrderGuardError(reasonCode: string, message: string): Error {
@@ -160,6 +162,19 @@ export function createProtocolAgentDispatchPort(
       const profile = resolution.profile;
 
       const sourcePersona = ownRecord.app.runtime.getProjectAgentPersona();
+      // 自派拒绝（对齐稿 §三规则 6）：员工给自己派工单只会复制自己的对话，
+      // 构造信封前端口级硬墙。错误信息教会模型改道：换人/直接干。
+      if (isSelfDispatch(sourcePersona, profile)) {
+        const otherNames = profiles
+          .filter((candidate) => candidate !== profile)
+          .map((candidate) => candidate.name);
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.selfTarget,
+          `You cannot dispatch a work order to yourself ("${profile.name}") — that would just copy your own conversation. Dispatch to another agent instead (available: ${
+            otherNames.join(", ") || "none - ask the user"
+          }), or do the task directly in this conversation.`,
+        );
+      }
       const envelope: AgentWorkOrderEnvelope = {
         workOrderId: crypto.randomUUID(),
         ...(sourcePersona?.agentId ? { fromAgentId: sourcePersona.agentId } : {}),
