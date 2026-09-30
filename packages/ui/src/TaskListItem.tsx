@@ -38,6 +38,10 @@ import { useModelTrajectoryStore } from "@/store/modelTrajectoryStore.js";
 import { buildTaskFeedbackDescription } from "@/lib/taskFeedbackDraft.js";
 import { toast } from "@/components/ui/toast.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
+import {
+  selectProjectAgentDirectoryForWorkspace,
+  useProjectAgentDirectoryStore,
+} from "@/store/projectAgentDirectoryStore.js";
 import { useV4SplitPaneEntry } from "@/v4/splitPaneEntryContext.js";
 import { buildWorkbenchSessionKey, useWorkbenchGroupStore } from "@/v4/workbenchGroupStore.js";
 import { useTaskInteractionAutoResolutionSnooze } from "@/hooks/useTaskInteractionAutoResolutionSnooze.js";
@@ -871,6 +875,7 @@ export function TaskListItemContextMenuContent({
   onArchiveTask,
   onMarkTaskAsUnread,
   onEditProjectAgent,
+  onPromoteProjectAgent,
   onDeleteProjectAgent,
   disableTaskActions = false,
   disabledReason,
@@ -886,15 +891,35 @@ export function TaskListItemContextMenuContent({
   onMarkTaskAsUnread: (taskId: string) => void;
   /** 驻场智能体行的档案操作（G5/D4）：只对带徽章的行出现，处理器由侧栏提供。 */
   onEditProjectAgent?: (task: ZCodeTaskMeta) => void;
+  /** 收编（身份轴终局 §九④）：项目档案升级为用户级全局员工；只对项目档案的行出现。 */
+  onPromoteProjectAgent?: (task: ZCodeTaskMeta) => void;
   onDeleteProjectAgent?: (task: ZCodeTaskMeta) => void;
   disableTaskActions?: boolean;
   disabledReason?: string;
 }) {
   // 档案操作只对驻场智能体会话行出现；处理器缺席（未接线）时同样不渲染。
   const personaAgentBadge = getPersonaChatBadge(task);
+  // 收编入口（身份轴终局 §九④）按档案作用域分流：目录里能对上号且是项目档案
+  // （workspace scope）才渲染——全局员工的行不给（已是全局，点了也是拒绝），
+  // 对不上档案的行也不给。对号规则与侧栏 resolveProjectAgentForRow 同序：先号后名。
+  // 菜单内容只在菜单打开时挂载（列表级单例），这里的 store 订阅成本可忽略。
+  const projectAgentDirectory = useProjectAgentDirectoryStore((state) =>
+    selectProjectAgentDirectoryForWorkspace(
+      state,
+      buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity),
+    ),
+  );
+  const promotableProjectAgent = personaAgentBadge
+    ? personaAgentBadge.agentId
+      ? projectAgentDirectory.find((agent) => agent.agentId === personaAgentBadge.agentId)
+      : projectAgentDirectory.find((agent) => agent.name === personaAgentBadge.name)
+    : undefined;
   const personaAgentMenu = {
     ...(onEditProjectAgent && personaAgentBadge
       ? { onEditProjectAgent: () => onEditProjectAgent(task) }
+      : {}),
+    ...(onPromoteProjectAgent && promotableProjectAgent?.scope === "workspace"
+      ? { onPromoteProjectAgent: () => onPromoteProjectAgent(task) }
       : {}),
     ...(onDeleteProjectAgent && personaAgentBadge
       ? { onDeleteProjectAgent: () => onDeleteProjectAgent(task) }

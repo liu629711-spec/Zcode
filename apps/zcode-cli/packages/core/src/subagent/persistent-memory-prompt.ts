@@ -140,7 +140,11 @@ const PERSISTENT_AGENT_MEMORY_PROMPT_TEMPLATE = [
 ].join("\n");
 
 const SCOPE_GUIDANCE: Record<AgentMemoryScope, string> = {
-  user: "- Since this memory is user-scope, keep learnings general since they apply across all projects",
+  // user 档的分账规矩（身份轴终局 §九⑤，与预置班底说明书的 MEMORY_ACCOUNTING_RULE
+  // 同一口径）：随身本只收跟人走的事，项目里的事留在对话与项目文件——缓解「项目特定
+  // 事实写进随身记忆造成跨项目串味」的已知天花板。
+  user:
+    "- Since this memory is user-scope, keep learnings general since they apply across all projects. Accounting rule: this notebook travels with you across projects, so only save what follows the user — personal preferences, forms of address, and things true across projects; facts, conventions, and decisions specific to the current project stay in the conversation or in project files, never in this memory.",
   project:
     "- Since this memory is project-scope and shared with your team via version control, tailor your memories to this project",
   local:

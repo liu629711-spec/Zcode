@@ -16,6 +16,7 @@ import {
   isPersonaChatRowOfRenamedAgent,
   groupPersonaBadgedTaskItems,
   personaChatRenameDraft,
+  planProjectAgentPromotion,
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   restorePersonaTitlePrefix,
@@ -410,6 +411,88 @@ test("toProjectAgentUpdateConfig：空列表与缺席字段不落盘，记忆范
   assert.equal("tools" in config, false);
   assert.equal("disallowedTools" in config, false);
   assert.equal("mcpServers" in config, false);
+});
+
+// ── 收编（身份轴终局 §九④）：项目档案一键升级为用户级全局员工 ──────────────
+
+function projectAgentFixture(overrides: Partial<AgentSummary>): AgentSummary {
+  return {
+    id: "user:workspace:reviewer",
+    name: "reviewer",
+    description: "质检员",
+    systemPrompt: "你是质检员",
+    agentId: "0f6a2c1e-77db-4a1b-9c3d-5e2f8b1a4c9d",
+    color: "purple",
+    modelSelection: { providerId: "provider-a", modelId: "glm-4.7" },
+    tools: ["Read", "Grep"],
+    skills: ["review"],
+    permissionMode: "plan",
+    memory: "project",
+    path: "D:/repo/.zcode/agents/reviewer.md",
+    scope: "workspace",
+    source: "user",
+    enabled: true,
+    ...overrides,
+  } as AgentSummary;
+}
+
+test("planProjectAgentPromotion：项目档案通过，整档字段带回、memory=user、工号随迁", () => {
+  const plan = planProjectAgentPromotion(projectAgentFixture({}), []);
+  assert.ok(plan.ok);
+  if (!plan.ok) return;
+  // 整档重写口径：模型/工具/颜色/技能/权限模式一样不落；两处例外——
+  // memory 改 user（随身本跟人走，§九⑤），agentId 随迁（同号跨 scope 不断链）。
+  assert.deepEqual(plan.config, {
+    name: "reviewer",
+    description: "质检员",
+    systemPrompt: "你是质检员",
+    agentId: "0f6a2c1e-77db-4a1b-9c3d-5e2f8b1a4c9d",
+    color: "purple",
+    modelSelection: { providerId: "provider-a", modelId: "glm-4.7" },
+    tools: ["Read", "Grep"],
+    skills: ["review"],
+    permissionMode: "plan",
+    memory: "user",
+  });
+});
+
+test("planProjectAgentPromotion：用户级已有同名（大小写不敏感）→ duplicateName", () => {
+  // services 落盘文件名 = 名字小写 + .md，大小写差异会撞同一个文件，必须在此拦下。
+  const plan = planProjectAgentPromotion(projectAgentFixture({}), [
+    { name: "REVIEWER", agentId: "3f0d1c2b-8a9e-4f0b-b1c2-d3e4f5a6b7c8" },
+  ]);
+  assert.deepEqual(plan, { ok: false, reason: "duplicateName" });
+});
+
+test("planProjectAgentPromotion：用户级已有同一工号 → duplicateAgentId（记事本 key 撞号）", () => {
+  const plan = planProjectAgentPromotion(
+    projectAgentFixture({ name: "renamed-reviewer" }),
+    [{ name: "someone-else", agentId: "0f6a2c1e-77db-4a1b-9c3d-5e2f8b1a4c9d" }],
+  );
+  assert.deepEqual(plan, { ok: false, reason: "duplicateAgentId" });
+});
+
+test("planProjectAgentPromotion：非项目档案（user 档/built-in）→ notWorkspaceProfile", () => {
+  assert.deepEqual(
+    planProjectAgentPromotion(projectAgentFixture({ scope: "user" }), []),
+    { ok: false, reason: "notWorkspaceProfile" },
+  );
+  assert.deepEqual(
+    planProjectAgentPromotion(projectAgentFixture({ scope: "built-in" }), []),
+    { ok: false, reason: "notWorkspaceProfile" },
+  );
+});
+
+test("planProjectAgentPromotion：无号老档案也能收编（config 不带 agentId 键，建档时发号）", () => {
+  const plan = planProjectAgentPromotion(
+    projectAgentFixture({ agentId: undefined, memory: undefined }),
+    [],
+  );
+  assert.ok(plan.ok);
+  if (!plan.ok) return;
+  assert.equal("agentId" in plan.config, false);
+  // 档案缺 memory 字段回落 project 的口径不改：收编一律显式改 user。
+  assert.equal(plan.config.memory, "user");
 });
 
 test("toProjectAgentUpdateConfig：模型选择随表单走——带了就替换，键在场为空=清回继承（2026-09-29 指派模型）", () => {

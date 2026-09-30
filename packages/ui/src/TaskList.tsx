@@ -47,6 +47,7 @@ export const TaskList = memo(function TaskList({
   onArchiveTask,
   onSetTaskUnread,
   onEditProjectAgent,
+  onPromoteProjectAgent,
   onDeleteProjectAgent,
   readOnlyReason,
 }: {
@@ -71,6 +72,8 @@ export const TaskList = memo(function TaskList({
   onSetTaskUnread: (taskId: string, unread: boolean) => Promise<ZCodeTaskMeta | null>;
   /** 驻场智能体行的档案操作（G5/D4）：只对带徽章的行出现，缺席时菜单不渲染对应项。 */
   onEditProjectAgent?: (task: ZCodeTaskMeta) => void;
+  /** 收编（身份轴终局 §九④）：项目档案升级为用户级全局员工，透传给任务列表右键菜单。 */
+  onPromoteProjectAgent?: (task: ZCodeTaskMeta) => void;
   onDeleteProjectAgent?: (task: ZCodeTaskMeta) => void;
   readOnlyReason?: string;
 }) {
@@ -466,6 +469,7 @@ export const TaskList = memo(function TaskList({
                   onArchiveTask={handleArchiveTask}
                   onMarkTaskAsUnread={handleMarkTaskAsUnread}
                   onEditProjectAgent={onEditProjectAgent}
+                  onPromoteProjectAgent={onPromoteProjectAgent}
                   onDeleteProjectAgent={onDeleteProjectAgent}
                   disableTaskActions={Boolean(readOnlyReason)}
                   disabledReason={readOnlyReason}

@@ -150,6 +150,7 @@ import {
   findLatestPersonaChatRow,
   getPersonaChatBadge,
   isPersonaChatRowOfRenamedAgent,
+  planProjectAgentPromotion,
   resolvePersonaChatBadgeForTask,
   resolveWorkspaceProjectAgentReachability,
   applyDerivedPersonaChatBadges,
@@ -605,6 +606,72 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       resolveProjectAgentForRow,
     ],
   );
+  // 收编（身份轴终局 §九④）：任务行右键/Header 菜单 → 把项目档案升级为用户级全局员工。
+  // 查重（同名/同号拒绝，纯函数判）、确认弹窗说真话（档案搬家、工号不变、项目里的
+  // 记事本原地保留当历史——D3 存量会话仍按快照 scope 读写它），两步落盘的半成品
+  // 状态如实回执，全程不静默。
+  const handlePromoteProjectAgent = useCallback(
+    async (task: ZCodeTaskMeta) => {
+      const resolved = resolveProjectAgentForRow(task);
+      if (!resolved) {
+        toast(intl.formatMessage({ id: "workspaceSidebar.projectAgentMissing" }));
+        return;
+      }
+      const { target, agent } = resolved;
+      const plan = planProjectAgentPromotion(agent, projectAgents.userAgents);
+      if (!plan.ok) {
+        const rejectionMessageId =
+          plan.reason === "duplicateName"
+            ? "workspaceSidebar.projectAgentPromoteDuplicateName"
+            : plan.reason === "duplicateAgentId"
+              ? "workspaceSidebar.projectAgentPromoteDuplicateAgentId"
+              : "workspaceSidebar.projectAgentPromoteNotProject";
+        toast(intl.formatMessage({ id: rejectionMessageId }, { name: agent.name }));
+        return;
+      }
+      // 删档案同款真话路径：记事本按档案真实的记忆范围说（user 记事本不在本项目里）。
+      const memoryPath = buildAgentMemoryDirectoryHint(agent, target.workspacePath);
+      const confirmed = await confirmDialog({
+        title: intl.formatMessage({ id: "workspaceSidebar.projectAgentPromoteTitle" }),
+        description: intl.formatMessage(
+          {
+            id: memoryPath
+              ? "workspaceSidebar.projectAgentPromoteDescription"
+              : "workspaceSidebar.projectAgentPromoteDescriptionUserMemory",
+          },
+          { name: agent.name, path: memoryPath ?? "" },
+        ),
+        confirmLabel: intl.formatMessage({ id: "workspaceSidebar.projectAgentPromoteConfirm" }),
+      });
+      if (!confirmed) {
+        return;
+      }
+      const result = await projectAgents.promoteAgentToUser(agent, plan.config);
+      if (result.status === "promoted") {
+        toast(
+          intl.formatMessage({ id: "workspaceSidebar.projectAgentPromoted" }, { name: agent.name }),
+        );
+        return;
+      }
+      const baseMessage = intl.formatMessage(
+        {
+          id:
+            result.status === "cleanupFailed"
+              ? "workspaceSidebar.projectAgentPromoteCleanupFailed"
+              : "workspaceSidebar.projectAgentPromoteFailed",
+        },
+        { name: agent.name },
+      );
+      toast(result.error ? `${baseMessage} (${result.error})` : baseMessage);
+    },
+    [
+      confirmDialog,
+      intl,
+      projectAgents.promoteAgentToUser,
+      projectAgents.userAgents,
+      resolveProjectAgentForRow,
+    ],
+  );
   // Header「···」菜单与设置页借用侧栏档案链路的处理器注册在 relinkRenamedAgentChats
   // 之后（同一个 effect 挂三件处理器，补链要按声明顺序取引用）。
   const [workspaceTaskOrganizeBy, setWorkspaceTaskOrganizeBy] = useState<
@@ -965,6 +1032,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       remove: (task) => {
         void handleDeleteProjectAgent(task);
       },
+      promote: (task) => {
+        void handlePromoteProjectAgent(task);
+      },
       renameRelink: (request) => {
         void relinkRenamedAgentChats({
           target: {
@@ -984,6 +1054,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   }, [
     handleDeleteProjectAgent,
     handleEditProjectAgent,
+    handlePromoteProjectAgent,
     relinkRenamedAgentChats,
     setProjectAgentProfileActionHandlers,
   ]);
@@ -1954,6 +2025,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                             )}
                                             onCreateProjectAgent={handleOpenProjectAgentCreate}
                                             onEditProjectAgent={handleEditProjectAgent}
+                                            onPromoteProjectAgent={handlePromoteProjectAgent}
                                             onDeleteProjectAgent={handleDeleteProjectAgent}
                                           />
                                         );

@@ -166,6 +166,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   canCreateProjectAgent = false,
   onCreateProjectAgent,
   onEditProjectAgent,
+  onPromoteProjectAgent,
   onDeleteProjectAgent,
   itemRef,
   itemStyle,
@@ -209,6 +210,8 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
   }) => void;
   /** 驻场智能体行的档案操作（G5/D4），透传给任务列表右键菜单。 */
   onEditProjectAgent?: (task: ZCodeTaskMeta) => void;
+  /** 收编（身份轴终局 §九④）：项目档案升级为用户级全局员工，透传给任务列表右键菜单。 */
+  onPromoteProjectAgent?: (task: ZCodeTaskMeta) => void;
   onDeleteProjectAgent?: (task: ZCodeTaskMeta) => void;
   itemRef?: (node: HTMLLIElement | null) => void;
   itemStyle?: CSSProperties;
@@ -1210,6 +1213,7 @@ export const WorkspaceSidebarItem = memo(function WorkspaceSidebarItem({
             onArchiveTask={handleArchiveTask}
             onSetTaskUnread={handleSetTaskUnread}
             onEditProjectAgent={onEditProjectAgent}
+            onPromoteProjectAgent={onPromoteProjectAgent}
             onDeleteProjectAgent={onDeleteProjectAgent}
             readOnlyReason={readOnlyReason}
           />

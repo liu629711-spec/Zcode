@@ -26,6 +26,7 @@ export function TaskListItemContextMenu({
   onCopySessionId,
   onViewModelTrajectory,
   onEditProjectAgent,
+  onPromoteProjectAgent,
   onDeleteProjectAgent,
   disableTaskActions = false,
   disabledReason,
@@ -59,6 +60,8 @@ export function TaskListItemContextMenu({
   onViewModelTrajectory?: () => void;
   /** 驻场智能体行的档案操作（G5/D4）：由调用方按徽章判定后传入，缺席不渲染。 */
   onEditProjectAgent?: () => void;
+  /** 收编（身份轴终局 §九④）：项目档案升级为用户级全局员工，调用方按 scope 判定后传入。 */
+  onPromoteProjectAgent?: () => void;
   onDeleteProjectAgent?: () => void;
   disableTaskActions?: boolean;
   disabledReason?: string;
@@ -90,12 +93,17 @@ export function TaskListItemContextMenu({
         disableTaskActions={disableTaskActions}
         disabledReason={disabledReason}
       />
-      {onEditProjectAgent || onDeleteProjectAgent ? (
+      {onEditProjectAgent || onPromoteProjectAgent || onDeleteProjectAgent ? (
         <>
           <ContextMenuSeparator />
           {onEditProjectAgent ? (
             <ContextMenuItem onSelect={onEditProjectAgent}>
               {intl.formatMessage({ id: "workspaceSidebar.projectAgentEditMenu" })}
+            </ContextMenuItem>
+          ) : null}
+          {onPromoteProjectAgent ? (
+            <ContextMenuItem onSelect={onPromoteProjectAgent}>
+              {intl.formatMessage({ id: "workspaceSidebar.projectAgentPromoteMenu" })}
             </ContextMenuItem>
           ) : null}
           {onDeleteProjectAgent ? (

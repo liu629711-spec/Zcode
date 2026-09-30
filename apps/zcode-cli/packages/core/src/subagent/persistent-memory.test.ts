@@ -196,6 +196,22 @@ test("驻场记忆注入：user scope 走 storageRoot 分支，不再被写死�
   assert.ok(prompt.includes("user-scope"), "prompt 应按 user scope 给指引");
 });
 
+test("驻场记忆注入（§九⑤分账规矩）：user 说明书带「项目事实不进随身本」，project/local 不带", async () => {
+  const { port } = createMemoryFileSystem(new Map());
+  const userPrompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: "user" });
+  assert.ok(userPrompt?.includes("Accounting rule"), "user scope 应带分账规矩");
+  assert.ok(
+    userPrompt?.includes("stay in the conversation or in project files"),
+    "分账规矩要点名项目事实的去处",
+  );
+  // 分账规矩只对随身本（user）：project/local 本就按项目落位，项目事实进项目记忆是设计内。
+  for (const scope of ["project", "local"] as const) {
+    const prompt = await loadPrompt({ port, memory: MEMORY_ON, memoryScope: scope });
+    assert.ok(prompt);
+    assert.ok(!prompt.includes("Accounting rule"), `${scope} scope 不带随身本分账规矩`);
+  }
+});
+
 test("驻场记忆注入：local scope 读 <ws>/.zcode/agent-memory-local/<key>/", async () => {
   const indexDir = join(WORKSPACE_ROOT, ".zcode", "agent-memory-local", "code-reviewer");
   const { port, readPaths } = createMemoryFileSystem(

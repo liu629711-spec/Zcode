@@ -116,6 +116,54 @@ export function toProjectAgentCreateConfig(
 }
 
 /**
+ * 收编计划（身份轴终局 §九④）：项目档案一键升级为用户级全局员工的纯检查与配置组装。
+ * 门禁三条，全部在这里判、可单测：
+ * - 只有项目档案（scope workspace）能收编——user 档已是全局员工，built-in 不是文件档案；
+ * - 用户级已有同名档案（大小写不敏感，与 services 落盘文件名「名字小写.md」同一口径）
+ *   → 拒绝：收编不覆盖别人，硬建会让派单 resolveWorkOrderTarget 变 ambiguous；
+ * - 用户级已有同一工号 → 拒绝：号是记事本目录 key，两份档案同号会共用一本随身记忆。
+ * 通过时给出 createAgent(scope:"user") 的完整 config：档案字段按 toProjectAgentUpdateConfig
+ * 的整文件重写口径原样带回，两处例外——memoryScope 改 user（随身本跟人走，§九⑤）；
+ * 工号随迁（同号跨 scope 不变，存量会话认号续接不断链）。目标文件名 = 名字小写
+ * （services createAgent 规则），与项目档同规则推导，调用方无需关心路径。
+ */
+export type ProjectAgentPromotionRejection =
+  | "notWorkspaceProfile"
+  | "duplicateName"
+  | "duplicateAgentId";
+
+export type ProjectAgentPromotionPlan =
+  | { ok: true; config: SubAgentConfig }
+  | { ok: false; reason: ProjectAgentPromotionRejection };
+
+export function planProjectAgentPromotion(
+  agent: AgentSummary,
+  existingUserAgents: readonly Pick<AgentSummary, "name" | "agentId">[],
+): ProjectAgentPromotionPlan {
+  if (agent.scope !== "workspace") {
+    return { ok: false, reason: "notWorkspaceProfile" };
+  }
+  const loweredName = agent.name.trim().toLowerCase();
+  if (existingUserAgents.some((candidate) => candidate.name.trim().toLowerCase() === loweredName)) {
+    return { ok: false, reason: "duplicateName" };
+  }
+  if (agent.agentId && existingUserAgents.some((candidate) => candidate.agentId === agent.agentId)) {
+    return { ok: false, reason: "duplicateAgentId" };
+  }
+  return {
+    ok: true,
+    config: {
+      ...toProjectAgentUpdateConfig(agent, {
+        name: agent.name,
+        description: agent.description,
+        systemPrompt: agent.systemPrompt,
+      }),
+      memory: "user",
+    },
+  };
+}
+
+/**
  * 任务行上的徽章标记读取（D2 内联标记）：徽章渲染与 G5 编辑/删除入口同源，避免第二处读法漂移。
  * 形参放宽为 object：ZCodeTaskMeta 不带该可选字段的声明，弱类型判定会拒绝直传（调用方都是 meta 实值）。
  */

@@ -187,6 +187,25 @@ export function WorkspaceHeaderTitleSection({
       projectAgentDirectoryByWorkspaceKey[workspaceKey],
     );
   }, [activeTaskMeta, personaBadgeByWorkspaceKey, projectAgentDirectoryByWorkspaceKey]);
+  // 收编入口（身份轴终局 §九④）按档案作用域分流：目录里能对上徽章且是项目档案
+  // （workspace scope）才给「升级为全局员工」——全局员工的行不给（已是全局），
+  // 对不上档案的行也不给。对号规则与侧栏 resolveProjectAgentForRow 同序：先号后名。
+  const promotableProjectAgent = useMemo(() => {
+    if (!activeTaskMeta || !personaChatBadge) {
+      return undefined;
+    }
+    const workspaceKey = buildTaskWorkspaceKey(
+      activeTaskMeta.workspacePath,
+      activeTaskMeta.workspaceIdentity,
+    );
+    const agents = projectAgentDirectoryByWorkspaceKey[workspaceKey];
+    if (!agents) {
+      return undefined;
+    }
+    return personaChatBadge.agentId
+      ? agents.find((agent) => agent.agentId === personaChatBadge.agentId)
+      : agents.find((agent) => agent.name === personaChatBadge.name);
+  }, [activeTaskMeta, personaChatBadge, projectAgentDirectoryByWorkspaceKey]);
   // 显示层去前缀（D4）：工牌在旁承担身份表达，标题不再重复「员工名 · 」；
   // 存储标题原样保留（冷重启的标题反推徽章仍靠前缀）。
   const personaDisplayTitle = personaChatBadge
@@ -783,6 +802,17 @@ export function WorkspaceHeaderTitleSection({
                   >
                     {intl.formatMessage({ id: "workspaceSidebar.projectAgentEditMenu" })}
                   </DropdownMenuItem>
+                  {promotableProjectAgent?.scope === "workspace" ? (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        if (activeTaskMeta) {
+                          requestProjectAgentProfileAction("promote", activeTaskMeta);
+                        }
+                      }}
+                    >
+                      {intl.formatMessage({ id: "workspaceSidebar.projectAgentPromoteMenu" })}
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem
                     onSelect={() => {
                       if (activeTaskMeta) {

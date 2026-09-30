@@ -7,6 +7,7 @@ import {
   ZCODE_AGENT_PROVIDER,
   testId,
   type AgentSummary,
+  type SubAgentConfig,
 } from "@zcode/shared";
 import {
   ModelConfigSelect,
@@ -277,6 +278,44 @@ export function useWorkspaceProjectAgents(params: {
     [reload, subagentsService],
   );
 
+  // 收编（身份轴终局 §九④）：项目档案升级为用户级全局员工。config 由
+  // planProjectAgentPromotion 组装（工号随迁、memory=user、整档字段原样带回），
+  // 这里只管两步落盘：先在用户级建档，成功后再删项目档。create 成功而 delete
+  // 失败会两边各留一份——返回 cleanupFailed 让调用方把半成品状态说清楚
+  // （重试时同名建档会被 services 拦下，需手动清旧档），绝不静默。
+  // 服务报错原文交调用方拼进回执（这里不 toast，一条回执说全）。
+  const promoteAgentToUser = useCallback(
+    async (
+      agent: AgentSummary,
+      config: SubAgentConfig,
+    ): Promise<{ status: "promoted" | "cleanupFailed" | "failed"; error?: string }> => {
+      try {
+        await subagentsService.createAgent({
+          config,
+          provider: ZCODE_AGENT_PROVIDER,
+          scope: "user",
+        });
+      } catch (error) {
+        return { status: "failed", error: error instanceof Error ? error.message : String(error) };
+      }
+      try {
+        await subagentsService.deleteAgent({
+          agentId: agent.id,
+          filePath: agent.path,
+        });
+      } catch (error) {
+        await reload();
+        return {
+          status: "cleanupFailed",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      await reload();
+      return { status: "promoted" };
+    },
+    [reload, subagentsService],
+  );
+
   return {
     agentsByWorkspaceKey,
     userAgents,
@@ -286,6 +325,7 @@ export function useWorkspaceProjectAgents(params: {
     updateAgent,
     installPresetRoster,
     deleteAgent,
+    promoteAgentToUser,
   };
 }
 

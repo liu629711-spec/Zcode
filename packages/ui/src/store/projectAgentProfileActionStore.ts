@@ -19,6 +19,8 @@ export interface ProjectAgentRenameRelinkRequest {
 export interface ProjectAgentProfileActionHandlers {
   edit: (task: ZCodeTaskMeta) => void;
   remove: (task: ZCodeTaskMeta) => void;
+  /** 收编（身份轴终局 §九④）：把项目档案升级为用户级全局员工（工号随迁）。 */
+  promote: (task: ZCodeTaskMeta) => void;
   /** 改名补链（D27）：设置页改过名后请侧栏把该员工的历史会话标题一起换牌。 */
   renameRelink: (request: ProjectAgentRenameRelinkRequest) => void;
 }
@@ -35,14 +37,16 @@ export const useProjectAgentProfileActionStore = create<ProjectAgentProfileActio
 
 /** 发一条档案操作请求；处理器缺席返回 false（调用方据此降级）。 */
 export function requestProjectAgentProfileAction(
-  kind: "edit" | "remove",
+  kind: "edit" | "remove" | "promote",
   task: ZCodeTaskMeta,
 ): boolean {
   const handlers = useProjectAgentProfileActionStore.getState().handlers;
   if (!handlers) {
     return false;
   }
-  (kind === "edit" ? handlers.edit : handlers.remove)(task);
+  const handler =
+    kind === "edit" ? handlers.edit : kind === "remove" ? handlers.remove : handlers.promote;
+  handler(task);
   return true;
 }
 
