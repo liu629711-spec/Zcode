@@ -16,8 +16,7 @@ import {
   selectProjectAgentDirectoryForWorkspace,
   useProjectAgentDirectoryStore,
 } from "@/store/projectAgentDirectoryStore.js";
-import { testId } from "@/lib/testId.js";
-import { TID_CHAT_RECEIPT_FORWARD } from "@zcode/shared";
+import { TID_CHAT_RECEIPT_FORWARD, testId } from "@zcode/shared";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import {
   buildWorkOrderForwardTask,
