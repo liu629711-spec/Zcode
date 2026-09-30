@@ -302,6 +302,8 @@ export const TID_CHAT_ASSISTANT_HISTORY_TRIGGER = "chat-assistant-history-trigge
 export const TID_CHAT_ASSISTANT_HISTORY_CONTENT = "chat-assistant-history-content";
 /** 独立后台结果轮的任务标题（动态后缀为 turn key） */
 export const TID_CHAT_BACKGROUND_RESULT_TITLE = "chat-background-result-title";
+/** 派单回执卡的「转交」控件（动态后缀为 turn key）：按钮与展开的转交条共用 */
+export const TID_CHAT_RECEIPT_FORWARD = "chat-receipt-forward";
 /** 聊天工具调用块容器（动态后缀为 toolCallId） */
 export const TID_CHAT_TOOL_CALL_BLOCK = "chat-tool-call-block";
 /** 聊天用户消息编辑按钮（动态后缀为 messageId） */

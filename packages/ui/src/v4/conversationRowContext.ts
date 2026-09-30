@@ -89,6 +89,12 @@ export interface ConversationRowRenderContext {
   onOpenPlanDetail?: (request: OpenPlanDetailSideTabRequest) => void;
   onOpenWorkflowRun?: (request: OpenWorkflowRunSideTabRequest) => void;
   /**
+   * 派单回执卡的「转交」（2026-09-30 接力协作第一刀）：行只发意图（目标智能体 + 任务），
+   * 宿主绑定 dispatchAgentWorkOrder 命令（与 @ 面板快捷派单同一能力）；缺席（只读会话）
+   * 时转交入口整体不渲染。
+   */
+  onDispatchAgentWorkOrder?: (agent: string, task: string) => Promise<"started" | "queued">;
+  /**
    * 产物的全尺寸查看 tab 入口。
    *
    * ⚠ 术语：这里的 artifact 是脚本经 `artifact.*` 发布给用户看的产出，不是引擎内部那个

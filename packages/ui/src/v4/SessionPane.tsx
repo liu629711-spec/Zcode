@@ -2192,6 +2192,8 @@ export function SessionPane({
       onOpenWorkflowWorkspace: onOpenWorkflowWorkspace ? handleOpenWorkflowWorkspace : undefined,
       onOpenWorkflowArtifact: onOpenWorkflowArtifact ? handleOpenWorkflowArtifact : undefined,
       onCancelBackgroundWork: readOnly ? undefined : handleCancelBackgroundWork,
+      // 回执卡「转交」：与 @ 面板快捷派单同一宿主能力；只读会话不给入口。
+      onDispatchAgentWorkOrder: readOnly ? undefined : handleDispatchAgentWorkOrder,
       // Resume 进入会话上下文的唯一供给点；灰度与只读两道门都在 resolveWorkflowResumeHandler 里，
       // 断在这里等于工具卡页脚与摘要卡的按钮一起消失。
       onResumeWorkflowRun: resolveWorkflowResumeHandler({

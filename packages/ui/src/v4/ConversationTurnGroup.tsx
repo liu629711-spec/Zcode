@@ -6,6 +6,7 @@ import {
   TID_CHAT_ASSISTANT_HISTORY_CONTENT,
   TID_CHAT_ASSISTANT_HISTORY_TRIGGER,
   TID_CHAT_BACKGROUND_RESULT_TITLE,
+  TID_CHAT_RECEIPT_FORWARD,
   TID_CHAT_LOADING,
   TID_V4_ROW,
   testId,
@@ -42,6 +43,18 @@ import {
   type OffPeakCreateTaskSummary,
 } from "@/ToolCallBlocks/renderers/offpeak-create.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { toast } from "@/components/ui/toast.js";
+import { Button } from "@/components/ui/button.js";
+import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
+import {
+  selectProjectAgentDirectoryForWorkspace,
+  useProjectAgentDirectoryStore,
+} from "@/store/projectAgentDirectoryStore.js";
+import {
+  buildWorkOrderForwardTask,
+  parseReceiptDelivererName,
+  selectForwardTargets,
+} from "@/v4/workOrderForward.js";
 import type { AssistantPreviewCard } from "@/lib/assistantPreviewCards.js";
 import { useAssistantCodeCommentFeatureEnabled } from "@/AssistantCodeCommentFeatureProvider.js";
 import {
@@ -953,6 +966,127 @@ function resolveWorkflowNotification(
  * 标题由 CLI 权威铸造（completed =「<交活方> 交活」，失败/中断按终态改口，不假报完成），
  * 这里只判定要不要画收据头（Bot 名牌），答案本体走轮内既有 assistant 流程。
  */
+/**
+ * 派单回执卡的「转交」控件（2026-09-30 接力协作第一刀）：施工交活 → 转质检评审、
+ * PRD 定稿 → 转施工开工。老板当调度员：选人 + 一句要求，成果原文全文进新工单
+ * （目标会话看不见发起方的回执）。仅 completed（标题以「交活」结尾）的回执可转；
+ * 宿主回调缺席（只读会话）或名册里没有别人时整体不渲染。
+ */
+function ReceiptForwardControl({
+  title,
+  answer,
+  context,
+  unitKey,
+}: {
+  title: string;
+  answer: string;
+  context: ConversationRowRenderContext;
+  unitKey: string;
+}) {
+  const { intl } = useZCodeIntl();
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState("");
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState(false);
+  const delivererName = parseReceiptDelivererName(title);
+  const directory = useProjectAgentDirectoryStore((state) =>
+    selectProjectAgentDirectoryForWorkspace(
+      state,
+      buildTaskWorkspaceKey(context.workspacePath, context.workspaceIdentity),
+    ),
+  );
+  const targets = selectForwardTargets(directory, delivererName);
+  const dispatchWorkOrder = context.onDispatchAgentWorkOrder;
+  if (!delivererName || !dispatchWorkOrder || targets.length === 0) {
+    return null;
+  }
+  const submit = async () => {
+    const agent = target.trim();
+    if (!agent || pending) return;
+    setPending(true);
+    try {
+      const delivery = await dispatchWorkOrder(
+        agent,
+        buildWorkOrderForwardTask({ delivererName, answer, note }),
+      );
+      toast(
+        intl.formatMessage(
+          {
+            id:
+              delivery === "queued"
+                ? "chat.mention.agents.dispatchQueued"
+                : "chat.mention.agents.dispatchAccepted",
+          },
+          { name: agent },
+        ),
+      );
+      setOpen(false);
+      setNote("");
+      setTarget("");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  };
+  return open ? (
+    <div
+      data-testid={testId(TID_CHAT_RECEIPT_FORWARD, unitKey)}
+      className="flex w-full flex-col gap-1.5 rounded-md border border-border bg-background px-2.5 py-2"
+    >
+      <div className="flex items-center gap-2">
+        <span className="shrink-0 text-ui-sm text-foreground-subtle">
+          {intl.formatMessage({ id: "chat.receipt.forward.target" })}
+        </span>
+        <select
+          className="h-7 min-w-0 flex-1 rounded-md border border-input-border bg-input px-2 text-ui-sm text-foreground outline-none"
+          value={target}
+          onChange={(event) => setTarget(event.target.value)}
+        >
+          <option value="">…</option>
+          {targets.map((agent) => (
+            <option key={agent.name} value={agent.name}>
+              {agent.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <textarea
+        rows={2}
+        className="w-full resize-none rounded-md border border-input-border bg-input/20 px-2 py-1.5 text-ui-sm text-foreground outline-none placeholder:text-muted-foreground"
+        placeholder={intl.formatMessage({ id: "chat.receipt.forward.note" })}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+      />
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+          {intl.formatMessage({ id: "common.cancel" })}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={pending || target.trim().length === 0}
+          onClick={() => void submit()}
+        >
+          {intl.formatMessage({ id: "chat.receipt.forward.confirm" })}
+        </Button>
+      </div>
+    </div>
+  ) : (
+    <div className="flex w-full justify-end">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        data-testid={testId(TID_CHAT_RECEIPT_FORWARD, unitKey)}
+        onClick={() => setOpen(true)}
+      >
+        {intl.formatMessage({ id: "chat.receipt.forward" })}
+      </Button>
+    </div>
+  );
+}
+
 function isAgentWorkOrderReceiptResult(unit: ConversationTurnRenderUnit): boolean {
   return (
     unit.header?.origin === "backgroundResult" &&
@@ -1074,20 +1208,29 @@ function ConversationBackgroundResultWork({
         />
       ) : isAgentWorkOrderReceiptResult(unit) ? (
         // 派单回执（D29/D5）：收据头带 Bot 名牌，与 bash/subagent 的裸标题行区分开；
-        // 答案本体就是本轮的 assistant 正文，紧随其后照常渲染。
-        <div className="flex w-full items-center gap-2 border-b border-[var(--color-border)]/50 pb-2">
-          <span
-            className="flex h-5 shrink-0 items-center rounded-[4px] bg-muted px-1.5 leading-none text-foreground-subtle"
-            aria-hidden="true"
-          >
-            <Bot className="size-3" />
-          </span>
-          <div
-            data-testid={testId(TID_CHAT_BACKGROUND_RESULT_TITLE, unit.key)}
-            className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
-          >
-            {title}
+        // 答案本体就是本轮的 assistant 正文，紧随其后照常渲染。头部行下挂「转交」：
+        // 施工交活 → 转质检评审、PRD 定稿 → 转施工开工（2026-09-30 接力协作第一刀）。
+        <div className="flex w-full flex-col gap-1 border-b border-[var(--color-border)]/50 pb-2">
+          <div className="flex w-full items-center gap-2">
+            <span
+              className="flex h-5 shrink-0 items-center rounded-[4px] bg-muted px-1.5 leading-none text-foreground-subtle"
+              aria-hidden="true"
+            >
+              <Bot className="size-3" />
+            </span>
+            <div
+              data-testid={testId(TID_CHAT_BACKGROUND_RESULT_TITLE, unit.key)}
+              className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
+            >
+              {title}
+            </div>
           </div>
+          <ReceiptForwardControl
+            title={title}
+            answer={assistantCopyText ?? ""}
+            context={context}
+            unitKey={unit.key}
+          />
         </div>
       ) : (
         <div className="flex w-full border-b border-[var(--color-border)]/50 pb-2">
