@@ -95,6 +95,14 @@ test("resolveWorkOrderTarget：插件档（source plugin）不是身份，按名
   assert.equal(byId.kind, "resolved");
 });
 
+test("resolveWorkOrderTarget：内置班底（source built-in）按名字命中（2026-09-30 真机：漏掉它让派单方谎称没注册）", () => {
+  const resolved = resolveWorkOrderTarget("prd-engineer", [
+    profile("prd-engineer", { source: "built-in" }),
+  ]);
+  assert.equal(resolved.kind, "resolved");
+  assert.equal(resolved.kind === "resolved" ? resolved.profile.source : "", "built-in");
+});
+
 test("resolveWorkOrderTarget：项目作用域内同名多档拒绝解析", () => {
   const ambiguous = resolveWorkOrderTarget("code-plus", [
     profile("code-plus"),

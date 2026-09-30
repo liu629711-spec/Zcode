@@ -36,7 +36,13 @@ export function resolveWorkOrderTarget(
     ? profiles.filter((profile) => profile.agentId?.toLowerCase() === candidate.toLowerCase())
     : profiles.filter(
         (profile) =>
-          (profile.source === "project" || profile.source === "user") &&
+          // 身份档 = project + user + 内置班底（2026-09-30 内置虚拟化）：三者都有
+          // 工牌、会话与记忆，按名字都可命中。真机事故：漏掉 built-in 让派单方
+          // 拿到「没有注册 prd-engineer」，转头抓了个临时工冒名顶替。
+          // 插件档不是身份（升级会覆写），维持排除。
+          (profile.source === "project" ||
+            profile.source === "user" ||
+            profile.source === "built-in") &&
           profile.name.trim().toLowerCase() === candidate.toLowerCase(),
       );
   if (matches.length === 1) {

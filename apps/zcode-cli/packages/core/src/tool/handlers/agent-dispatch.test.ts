@@ -126,7 +126,13 @@ test("说明书规则表覆盖 §三总表（2026-09-30 重写）：自派禁令
   // ask-first：没点名也没要新会话的活，问清楚而不是猜。
   assert.match(rules, /the request has no doer/);
   // 既有正确条目不丢：点名必派单、task 独立成文、model 逐字传、回执语义、嵌套禁令。
-  assert.match(rules, /names another agent available in this workspace \(project agent or user-level identity\) as the doer/);
+  // 内置班底进名册口径（2026-09-30 真机：派单方看不见班底就冒名顶替）。
+  assert.match(
+    rules,
+    /names another agent available in this workspace \(project agent, user-level identity, or the built-in crew: code-builder, code-reviewer, frontend-design, prd-engineer\) as the doer/,
+  );
+  assert.match(rules, /NEVER claim an agent "is not registered"/);
+  assert.match(rules, /a rejected dispatch lists the available agents/);
   assert.match(rules, /complete standalone instructions/);
   assert.match(rules, /pass the user's words verbatim as model/);
   assert.match(rules, /arrives as a separate receipt/);

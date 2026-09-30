@@ -13,8 +13,13 @@ import {
   type AgentDispatchOutput,
   type ToolPermissionSpec,
 } from "@zcode/contracts";
+import { PRESET_CREW_MEMBERS } from "@zcode/shared";
 import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
 import { resolveModelReference } from "./model-reference.js";
+
+// 内置班底名单进派单说明书（真机 2026-09-30）：派单方看不见班底，就会谎称
+// 「工作区里没有注册 prd-engineer」然后抓临时工冒名——名字在这里给足。
+const BUILT_IN_CREW_NAMES = PRESET_CREW_MEMBERS.map((member) => member.name).join(", ");
 
 const AGENT_DISPATCH_TOOL_TIMEOUT_MS = 30_000;
 const AGENT_DISPATCH_MODEL_BYTES = 16_000;
@@ -158,18 +163,22 @@ export const agentDispatchToolEntry: ToolEntry = {
     // 选择的默认取向（2026-09-29 真机教训）：用户点名让某个智能体做任何事（哪怕一句你好）
     // 都必须走本工具——临时工豁免会把"让 X 给我发个你好"这类主场景吞给 Agent 工具。
     description:
-      "Hand a task to another agent available in this workspace (a user-level identity or a project agent): the task is delivered into that agent's own resident session, runs there with that agent's identity, memory and permissions, and leaves a permanent record in that session; a receipt carrying the final answer is delivered back to this conversation afterwards. This is the right tool whenever the user asks another agent BY NAME to do something or to send something - e.g. 'have UI-plus send me a greeting', '让 UI-plus 给我发个你好', 'ask code-plus to fix the login page', 'open a new session for code-plus and have it ...' - no matter how small the task is: the user expects it to land in that agent's own session, not this one. When the user asks for a NEW session without naming any agent, call this tool with newSession=true and no agent: it spawns an unbadged ordinary session with the task as its first work order. Do not confuse it with the Agent tool's in-conversation helpers: a helper runs inside THIS conversation, leaves nothing in the named agent's session, and that agent never learns about the task. Only keep a named agent's task inside this conversation when the user explicitly asks to handle it right here without involving that agent's session.",
+      "Hand a task to another agent available in this workspace (a user-level identity, a project agent, or one of the built-in crew members that ships with the product): the task is delivered into that agent's own resident session, runs there with that agent's identity, memory and permissions, and leaves a permanent record in that session; a receipt carrying the final answer is delivered back to this conversation afterwards. This is the right tool whenever the user asks another agent BY NAME to do something or to send something - e.g. 'have UI-plus send me a greeting', '让 UI-plus 给我发个你好', 'ask code-plus to fix the login page', 'open a new session for code-plus and have it ...' - no matter how small the task is: the user expects it to land in that agent's own session, not this one. When the user asks for a NEW session without naming any agent, call this tool with newSession=true and no agent: it spawns an unbadged ordinary session with the task as its first work order. Do not confuse it with the Agent tool's in-conversation helpers: a helper runs inside THIS conversation, leaves nothing in the named agent's session, and that agent never learns about the task. Only keep a named agent's task inside this conversation when the user explicitly asks to handle it right here without involving that agent's session.",
     // 派发规则总表（对齐稿 §三，2026-09-30 重写）：点名谁就进谁的桌子；没点名就开
     // 一张无工牌的新桌子；谁也不许给自己派活。既有正确条目（点名必派单、task 独立
     // 成文、model 逐字传、回执语义、嵌套禁令、CLI 硬墙）原样保留。
     modelInstructions: [
-      // §三 #1/#4：点名必派单，含一句你好。名册含用户级全局员工（身份轴 §九③）：
-      // 「本工作区可见」= 项目档 + 全局员工档，不限于本项目的档案。
-      "Default to this tool whenever the user's message names another agent available in this workspace (project agent or user-level identity) as the doer - 让/叫/请/交给/转交/给 <name> 发…做…, have <name> ..., ask <name> to ..., open a new session for <name> - INCLUDING greetings and other one-line asks. The named agent must receive the task in its own session; do NOT answer with an in-conversation subagent for these.",
+      // §三 #1/#4：点名必派单，含一句你好。名册含用户级全局员工（身份轴 §九③）
+      // 与内置班底（2026-09-30 内置虚拟化）：「本工作区可见」= 项目档 + 全局员工档
+      // + 内置班底，不限于本项目的档案——派单方看不见班底就会冒名顶替。
+      `Default to this tool whenever the user's message names another agent available in this workspace (project agent, user-level identity, or the built-in crew: ${BUILT_IN_CREW_NAMES}) as the doer - 让/叫/请/交给/转交/给 <name> 发…做…, have <name> ..., ask <name> to ..., open a new session for <name> - INCLUDING greetings and other one-line asks. The named agent must receive the task in its own session; do NOT answer with an in-conversation subagent for these.`,
       // ask-first 边界：用户明确要就地干才本对话干；没点名也没要新会话的活没有干
       // 活人，问清楚而不是猜（端口对无 agent 派单也只放行 newSession=true）。
       "Handle the request inside this conversation only when the user explicitly wants it handled here without involving the other agent's session, or is asking about the agents rather than tasking them. When NO agent is named and the user did not ask for a new session, the request has no doer: ask the user who should do it (or whether to open a fresh session) instead of dispatching.",
-      "Pass the agent's agentId when it is known; otherwise pass the agent's exact name. Ambiguous or unknown names are rejected - never guess an id.",
+      "Pass the agent's agentId when it is known; otherwise pass the agent's exact name. Ambiguous or unknown names are rejected - never guess an id; a rejected dispatch lists the available agents, so retry with one of those exact names instead of improvising.",
+      // 真机 2026-09-30：派单方看不见内置班底，谎称「工作区里没有注册」然后抓
+      // 临时工冒名顶替。名册事实钉死：内置班底永远在册；用户建的员工以名册为准。
+      `NEVER claim an agent "is not registered" and NEVER improvise a stand-in helper wearing its name: the built-in crew (${BUILT_IN_CREW_NAMES}) is always available, and user/project agents exist exactly as the user created them. If the user names an agent you cannot see, dispatch by that exact name anyway - a failed dispatch lists the valid names.`,
       "Write the task as complete standalone instructions; the target agent cannot see this conversation.",
       // §三 #3/D1：具名员工默认落他最近一段；只有用户明说「新的一段」才 newSession=true。
       "For a NAMED agent, set newSession=true only when the user explicitly asks for a new/separate session of that agent (「给 <name> 开个新会话」/ 'open a new session for <name>'); by default the task lands in the agent's latest persona session - never open a second session for a named agent on your own initiative. When a new session is requested, also pass a short human title (title) in the user's language - it becomes the session's name in the list.",

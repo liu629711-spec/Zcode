@@ -112,9 +112,12 @@ function profileToPersona(profile: AgentProfile): ZCodeSessionPersona {
 function requireWorkOrderTarget(agent: string, profiles: readonly AgentProfile[]): AgentProfile {
   const resolution = resolveWorkOrderTarget(agent, profiles);
   if (resolution.kind === "not_found") {
+    // 报错带全名单（照 selfTarget 先例）：派单方看不见名册时，这一行是它唯一
+    // 能拿到正确名字的地方——拿到后重试，而不是抓个临时工冒名。
+    const availableNames = profiles.map((profile) => profile.name).join(", ") || "none";
     throw agentWorkOrderGuardError(
       AGENT_WORK_ORDER_GUARDS.targetNotFound,
-      `No agent profile matches "${resolution.agent}" in this workspace. Ask the user to check the agent name or id.`,
+      `No agent profile matches "${resolution.agent}" here. Available agents: ${availableNames}. Retry with one of these exact names, or ask the user who should do the task.`,
     );
   }
   if (resolution.kind === "ambiguous") {
