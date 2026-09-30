@@ -96,6 +96,13 @@ export function receiptOutcomeFromSessionEvent(
  * （retried）落终态才投回执，措辞带「已重试仍失败」。cancelled/completed 照旧直投。
  * 目标 record 被关闭/进程退出时钩子随 record 消失，回执与工单同样属于「死会话里
  * 不可恢复」的 best-effort 通知（发起方持有受理凭据）。
+ *
+ * 重试的订阅时点纪律（评审 A 的 P1）：重试整体推迟到**下一个宏任务**——本回调
+ * 正跑在 notifyEventSinks 的 Set 迭代中途，此刻挂新订阅会被同一次迭代访问到，
+ * 收到正在分发的那条 TurnError（两次 attempt 的 inputId 确定性相同），回执提前
+ * 盖章、重试结果被丢。分发循环是微任务链，必然在任何宏任务前跑完，所以推迟到
+ * `setTimeout(0)` 后的订阅/enqueue 都在干净时点（queueMicrotask 不行，仍排在
+ * 迭代恢复之前）。之后第一棒再没有在飞事件，同 inputId 的终态只可能来自重试轮。
  */
 export function scheduleWorkOrderReceiptRelay(
   context: ZCodeProtocolAgentServerContext,
@@ -118,16 +125,20 @@ export function scheduleWorkOrderReceiptRelay(
       if (!outcome) return;
       unsubscribe();
       if (outcome.status === "failed" && !input.retried) {
-        void retryWorkOrderOnce(context, deps, input, outcome).catch((error) => {
-          context.logger?.warn("Failed to schedule agent work order retry", {
-            errorMessage: error instanceof Error ? error.message : String(error),
-            event: "agent_work_order_receipt.retry_schedule_failed",
-            fromSessionId: input.envelope.fromSessionId,
-            module: "bootstrap.zcode_protocol",
-            targetSessionId: input.targetRecord.app.sessionId,
-            workOrderId: input.envelope.workOrderId,
+        // 重试推迟到下一个宏任务（本函数头注：Set 迭代中途挂订阅会收到正在
+        // 分发的这条终态事件）。catch 兜 retryWorkOrderOnce 的投递失败。
+        setTimeout(() => {
+          void retryWorkOrderOnce(context, deps, input, outcome).catch((error) => {
+            context.logger?.warn("Failed to schedule agent work order retry", {
+              errorMessage: error instanceof Error ? error.message : String(error),
+              event: "agent_work_order_receipt.retry_schedule_failed",
+              fromSessionId: input.envelope.fromSessionId,
+              module: "bootstrap.zcode_protocol",
+              targetSessionId: input.targetRecord.app.sessionId,
+              workOrderId: input.envelope.workOrderId,
+            });
           });
-        });
+        }, 0);
         return;
       }
       const finalOutcome =
@@ -156,11 +167,8 @@ export function scheduleWorkOrderReceiptRelay(
 
 /**
  * 自动重试（只此一次）：原信封原模型原 workOrderId 再投同一目标会话；投不进去就把原失败如实上报。
- * 刻意**先订阅后投递**（评审 A 的 P1）：本回调正跑在第一棒 TurnError 的事件分发迭代里，
- * enqueue 是零 await 的同步投递——若先 enqueue 后订阅，第二棒订阅会作为微任务挤进同一轮
- * Set 迭代，收到第一棒的终态事件（两次 attempt 的 inputId 确定性相同），回执提前盖章、
- * 重试真实结果被丢。先订阅无串线：第一棒终态已发完，同 inputId 不会再有别的轮；
- * enqueue 抛错就退订并把原失败如实送达。
+ * 调用方（宏任务推迟后）保证本函数不在事件分发迭代中跑：先订阅后 enqueue 都在
+ * 干净时点，第一棒没有在飞事件，同 inputId 的终态只可能来自重试轮。
  */
 async function retryWorkOrderOnce(
   context: ZCodeProtocolAgentServerContext,
