@@ -1,11 +1,13 @@
 import type { ZCodeProvider } from "./zcode-task-types-core.js";
 import { modelSelectionSchema, type ModelSelection } from "./model-selection.js";
+import type { PresetCrewName } from "./preset-crew.js";
 
 export type AgentScope = "built-in" | "workspace" | "user";
 
 export type AgentSource = "built-in" | "user" | "plugin";
 
-export type BuiltInSubagentName = "general-purpose" | "Explore";
+/** 内置子智能体名：运行时通用工种 + 预置班底（虚拟内置档案，2026-09-30）。 */
+export type BuiltInSubagentName = "general-purpose" | "Explore" | PresetCrewName;
 
 export type BuiltInSubagentModelSelectionOverrides = Partial<
   Record<BuiltInSubagentName, ModelSelection>

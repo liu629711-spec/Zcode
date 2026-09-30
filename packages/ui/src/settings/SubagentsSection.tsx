@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Bot, Check, Plus, Trash2 } from "lucide-react";
 import { completeNewModelSelection } from "@zcode/provider";
 import {
+  PRESET_CREW_MEMBERS,
   TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER,
   TID_SUBAGENT_ROW,
   ZCODE_AGENT_PROVIDER,
@@ -162,7 +163,14 @@ function getBuiltInSubagentName(agent: AgentSummary): BuiltInSubagentName | null
   if (!isBuiltInAgent(agent)) {
     return null;
   }
-  return agent.name === "general-purpose" || agent.name === "Explore" ? agent.name : null;
+  // 预置班底改判内置虚拟化（2026-09-30）：班底成员与 general-purpose/Explore
+  // 同享行内模型覆盖下拉（名字都在 BuiltInSubagentName 联合里）。
+  const known = new Set<string>([
+    "general-purpose",
+    "Explore",
+    ...PRESET_CREW_MEMBERS.map((member) => member.name),
+  ]);
+  return known.has(agent.name) ? (agent.name as BuiltInSubagentName) : null;
 }
 
 function getKnownTools(values: readonly string[] | undefined): string[] {

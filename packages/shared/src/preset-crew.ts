@@ -24,7 +24,7 @@ export interface PresetCrewMember {
 const MEMORY_ACCOUNTING_RULE =
   "记账规矩：老板的个人偏好、称呼习惯、跨项目都成立的事，才写进随身记忆；项目里的事实、约定、决定只说在对话里或写进项目文件，不进随身记忆。";
 
-export const PRESET_CREW_MEMBERS: readonly PresetCrewMember[] = [
+export const PRESET_CREW_MEMBERS = [
   {
     name: "doc-writer",
     role: "文档文员",
@@ -120,4 +120,7 @@ export const PRESET_CREW_MEMBERS: readonly PresetCrewMember[] = [
     ].join("\n"),
     color: "red",
   },
-];
+] as const satisfies readonly PresetCrewMember[];
+
+/** 内置班底成员名（字面量联合）：给内置模型覆盖、运行时装配做键。 */
+export type PresetCrewName = (typeof PRESET_CREW_MEMBERS)[number]["name"];

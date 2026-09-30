@@ -143,25 +143,32 @@ function createBuiltInAgents(
     },
     // 预置班底（D23 改判内置虚拟化 2026-09-30）：产品出厂自带的样例员工，虚拟在场，
     // 不占用户档案；同名用户档案在场时 applyRuntimePrecedence 让文件优先（可覆盖）。
-    ...PRESET_CREW_MEMBERS.map((member) => ({
-      id: createAgentStateId({
+    // 与 general-purpose/Explore 同一套内置模型覆盖（设置页行内下拉）。
+    ...PRESET_CREW_MEMBERS.map((member) => {
+      const override = modelSelectionOverrides[member.name];
+      return {
+        id: createAgentStateId({
+          name: member.name,
+          scope: "built-in" as const,
+          source: "built-in" as const,
+        }),
         name: member.name,
+        description: member.description,
+        color: member.color,
+        injectAgentsMd: true,
+        systemPrompt: member.systemPrompt,
+        tools: ["*"],
+        memory: "user" as const,
+        ...(override
+          ? { modelSelection: override, modelSelectionOverride: override }
+          : {}),
+        path: `built-in:${member.name}`,
         scope: "built-in" as const,
         source: "built-in" as const,
-      }),
-      name: member.name,
-      description: member.description,
-      color: member.color,
-      injectAgentsMd: true,
-      systemPrompt: member.systemPrompt,
-      tools: ["*"],
-      memory: "user" as const,
-      path: `built-in:${member.name}`,
-      scope: "built-in" as const,
-      source: "built-in" as const,
-      enabled: true,
-      readOnly: true,
-    })),
+        enabled: true,
+        readOnly: true,
+      };
+    }),
   ];
 }
 

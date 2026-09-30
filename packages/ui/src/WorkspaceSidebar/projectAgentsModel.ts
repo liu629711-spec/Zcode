@@ -5,6 +5,7 @@ import type {
   SubAgentConfig,
   ZCodeSessionPersona,
 } from "@zcode/shared";
+import { PRESET_CREW_MEMBERS } from "@zcode/shared";
 
 export interface ProjectAgentDraft {
   name: string;
@@ -88,12 +89,21 @@ export function selectProjectAgentsForWorkspace<T extends Pick<AgentSummary, "sc
 export function selectWorkspaceRosterAgents<
   T extends Pick<AgentSummary, "name" | "scope" | "source" | "path" | "enabled">,
 >(agents: readonly T[], workspacePath: string): T[] {
+  // 内置桶只收班底成员（doc-writer 等五位）：general-purpose/Explore 是运行时
+  // 通用工种（无身份、无记事本），列进可聊天名册只会制造"这是什么员工"的困惑，
+  // 它们在设置页的内置组里管理。文件覆盖内置时（同名）service 已让文件胜出，
+  // 不会出现双胞胎。
+  const crewNames = new Set(PRESET_CREW_MEMBERS.map((member) => member.name.toLowerCase()));
   return [
     ...selectProjectAgentsForWorkspace(agents, workspacePath),
     ...agents.filter(
       (agent) => agent.scope === "user" && agent.source === "user" && agent.enabled !== false,
     ),
-    ...agents.filter((agent) => agent.source === "built-in" && agent.enabled !== false),
+    ...agents.filter(
+      (agent) =>
+        agent.source === "built-in" && crewNames.has(agent.name.toLowerCase()) &&
+        agent.enabled !== false,
+    ),
   ].sort((left, right) => left.name.localeCompare(right.name));
 }
 

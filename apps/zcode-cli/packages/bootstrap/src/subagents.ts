@@ -111,6 +111,8 @@ export async function loadZCodeAgentProfiles(
   const takenProfileNames = new Set(profiles.map((profile) => profile.name.trim().toLowerCase()));
   for (const member of PRESET_CREW_MEMBERS) {
     if (takenProfileNames.has(member.name.toLowerCase())) continue;
+    // 内置模型覆盖（设置页行内下拉）与 general-purpose/Explore 同一 state 键。
+    const override = agentState.builtInModelSelectionOverrides[member.name];
     profiles.push({
       name: member.name,
       description: member.description,
@@ -118,6 +120,7 @@ export async function loadZCodeAgentProfiles(
       color: member.color,
       injectAgentsMd: true,
       memory: "user",
+      ...(override ? { modelSelection: override } : {}),
       source: "built-in",
       path: `built-in:${member.name}`,
     });
@@ -322,10 +325,16 @@ function normalizeBuiltInSelectionOverrides(
 ): BuiltInSubagentModelSelectionOverrides {
   const result: BuiltInSubagentModelSelectionOverrides = {};
   const structuredRecord = isRecord(structured) ? structured : {};
-  const generalPurpose = modelSelectionSchema.safeParse(structuredRecord["general-purpose"]);
-  const explore = modelSelectionSchema.safeParse(structuredRecord.Explore);
-  if (generalPurpose.success) result["general-purpose"] = generalPurpose.data;
-  if (explore.success) result.Explore = explore.data;
+  // 预置班底改判内置虚拟化（2026-09-30）：内置模型覆盖键随班底名单一起扩。
+  const builtinNames: BuiltInSubagentName[] = [
+    "general-purpose",
+    "Explore",
+    ...PRESET_CREW_MEMBERS.map((member) => member.name),
+  ];
+  for (const name of builtinNames) {
+    const parsed = modelSelectionSchema.safeParse(structuredRecord[name]);
+    if (parsed.success) result[name] = parsed.data;
+  }
   return result;
 }
 
