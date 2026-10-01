@@ -7000,6 +7000,7 @@ const enUS: Record<string, string> = {
   "chat.workOrderBatch.status.dispatched": "Dispatched",
   "chat.workOrderBatch.status.queued": "Queued",
   "chat.workOrderBatch.status.completed": "Completed",
+  "chat.workOrderBatch.status.cancelled": "Interrupted",
   "chat.workOrderBatch.status.failed": "Failed",
 };
 

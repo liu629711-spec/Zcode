@@ -253,3 +253,34 @@ test("selectWorkOrderBatches：失败回执的任务原文与失败线索进单�
   // 失败行没有可转交的成果。
   assert.equal(order.receiptAnswer, undefined);
 });
+
+test("selectWorkOrderBatches：被中断的回执是 cancelled，不再画成红色失败（audit D P2-4）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow(
+        "call-1",
+        { agent: "code-plus", task: "拆组件", batch_title: "登录页改造" },
+        { targetSessionId: "s1", agentName: "code-plus", delivery: "started", workOrderId: "wo-1", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+      dispatchRow(
+        "call-2",
+        { agent: "doc-writer", task: "写文档", batch_title: "登录页改造" },
+        { targetSessionId: "s2", agentName: "doc-writer", delivery: "started", workOrderId: "wo-2", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+      dispatchRow(
+        "call-3",
+        { agent: "code-reviewer", task: "写测试", batch_title: "登录页改造" },
+        { targetSessionId: "s3", agentName: "code-reviewer", delivery: "started", workOrderId: "wo-3", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+    ]),
+    receiptTurn("receipt-1", BATCH, "wo-1", "code-plus 交活", "完成"),
+    receiptTurn("receipt-2", BATCH, "wo-2", "doc-writer 的工单被中断"),
+    receiptTurn("receipt-3", BATCH, "wo-3", "code-reviewer 的工单未完成"),
+  ];
+
+  const batch = selectWorkOrderBatches(units)[0]!;
+  const byId = (key: string) => batch.orders.find((order) => order.key === key)!;
+  assert.equal(byId("wo-1").status, "completed");
+  assert.equal(byId("wo-2").status, "cancelled", "被中断 ≠ 干砸");
+  assert.equal(byId("wo-3").status, "failed");
+});

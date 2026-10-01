@@ -45,3 +45,10 @@ test("first input tells the successor to read the file, not carry the text", () 
   assert.ok(firstInput.includes("Read"));
   assert.ok(!firstInput.includes("三句话老板版"));
 });
+
+test("接班首条消息带两条铁规矩：交接单缺失即停 + 在跑单勿默认重做（audit 2026-10-01）", () => {
+  const firstInput = buildHandoverFirstInput("D:/work/demo", "sess_abc");
+  assert.ok(firstInput.includes("换班没有完成"), "交接单缺失必须停下上报");
+  assert.ok(firstInput.includes("不要默认重做"), "在跑的派单不得默认重做");
+  assert.ok(firstInput.includes(".zcode/handovers/sess_abc.md"), "交接单路径仍然指向旧会话");
+});

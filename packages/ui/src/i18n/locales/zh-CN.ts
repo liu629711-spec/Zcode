@@ -6674,6 +6674,7 @@ const zhCN: Record<string, string> = {
   "chat.workOrderBatch.status.dispatched": "已派单",
   "chat.workOrderBatch.status.queued": "排队中",
   "chat.workOrderBatch.status.completed": "已完成",
+  "chat.workOrderBatch.status.cancelled": "已中断",
   "chat.workOrderBatch.status.failed": "未完成",
 };
 

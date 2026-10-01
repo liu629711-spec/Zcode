@@ -12,7 +12,12 @@ import { parseFailedReceiptAgentName, parseReceiptDelivererName } from "@/v4/wor
 // 纯函数无 React：Timeline 处算好，ConversationTurnGroup 只认渲染信息。
 // ============================================================
 
-export type WorkOrderBatchOrderStatus = "dispatched" | "queued" | "completed" | "failed";
+export type WorkOrderBatchOrderStatus =
+  | "dispatched"
+  | "queued"
+  | "completed"
+  | "cancelled"
+  | "failed";
 
 /** 批次里的一张工单：先由派单行给出台账（dispatched/queued），回执到了更新终态。 */
 export interface WorkOrderBatchOrder {
@@ -162,7 +167,13 @@ export function selectWorkOrderBatches(
           key: receipt.workOrderId,
           agentName: receiptAgentNameFromTitle(receipt.title),
           kind: "receipt",
-          status: parseReceiptDelivererName(receipt.title) ? "completed" : "failed",
+          // 终态三分：交活=completed；被中断=cancelled（老板自己叫停的，不算干砸）；
+          // 其余=failed。cancelled 曾被画成红色"未完成"，误导老板（audit D P2-4）。
+          status: parseReceiptDelivererName(receipt.title)
+            ? "completed"
+            : receipt.title.includes("被中断")
+              ? "cancelled"
+              : "failed",
           receiptTitle: receipt.title,
           ...(receiptSnippet(unit) ? { receiptText: receiptSnippet(unit) } : {}),
           // 全文只在 completed（转交语义=成果已交付）时挂：失败/中断没有可转交的成果。

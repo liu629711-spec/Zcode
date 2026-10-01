@@ -19,6 +19,7 @@ const STATUS_MESSAGE_ID: Record<WorkOrderBatchOrder["status"], string> = {
   dispatched: "chat.workOrderBatch.status.dispatched",
   queued: "chat.workOrderBatch.status.queued",
   completed: "chat.workOrderBatch.status.completed",
+  cancelled: "chat.workOrderBatch.status.cancelled",
   failed: "chat.workOrderBatch.status.failed",
 };
 
@@ -27,6 +28,8 @@ const STATUS_TEXT: Record<WorkOrderBatchOrder["status"], string> = {
   dispatched: "text-warning",
   queued: "text-foreground-subtle",
   completed: "text-success",
+  // 被中断是中性事实（老板叫停），不用失败红。
+  cancelled: "text-foreground-subtle",
   failed: "text-destructive",
 };
 
@@ -35,6 +38,7 @@ const STATUS_DOT_KEY: Record<WorkOrderBatchOrder["status"], keyof typeof STATUS_
   dispatched: "running",
   queued: "pending",
   completed: "done",
+  cancelled: "pending",
   failed: "failed",
 };
 
@@ -50,7 +54,10 @@ export function AgentWorkOrderBatchCard({
   const title = batch.title?.trim();
   const completed = batch.orders.filter((order) => order.status === "completed").length;
   const failed = batch.orders.some((order) => order.status === "failed");
-  const allSettled = completed + batch.orders.filter((o) => o.status === "failed").length === batch.orders.length;
+  const settled = batch.orders.filter(
+    (o) => o.status === "completed" || o.status === "cancelled" || o.status === "failed",
+  ).length;
+  const allSettled = settled === batch.orders.length;
   // 整卡状态灯：有失败且全部收口 → failed；全部收口 → done；否则在跑。
   const overallDot = allSettled && failed ? "failed" : allSettled ? "done" : "running";
 
