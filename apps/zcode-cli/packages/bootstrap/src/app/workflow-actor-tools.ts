@@ -20,9 +20,22 @@ import {
   RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
 } from "@zcode/contracts";
 
+/**
+ * 员工岗位限制的窄视图（AgentProfile.tools/disallowedTools 的结构切片，
+ * 不引 core 类型保持本模块轻）。
+ */
+export interface WorkflowActorProfileToolLimits {
+  tools?: readonly string[];
+  disallowedTools?: readonly string[];
+}
+
 /** AgentRuntimeConfig 的工具面切片。 */
-interface WorkflowActorToolPolicy {
+export interface WorkflowActorToolPolicy {
   toolDisallowlist: readonly string[];
+  /** 员工岗位白名单（班底进图纸）：在场 = actor 只能用这份清单减安全底线。 */
+  toolAllowlist?: readonly string[];
+  /** true = 岗位规矩真的收窄了工具面（调用方据此留一条「为什么变窄」的日志）。 */
+  narrowed: boolean;
 }
 
 /**
@@ -51,6 +64,32 @@ const ACTOR_DISALLOWED_TOOLS: readonly string[] = [
  *
  * 只覆盖内建工具；MCP / plugin 工具的过滤留待生产接线时处理（同一个工厂 seam）。
  */
-export function workflowActorToolPolicy(): WorkflowActorToolPolicy {
-  return { toolDisallowlist: ACTOR_DISALLOWED_TOOLS };
+/**
+ * 班底进图纸（2026-10-01 拍板）：点名员工的**岗位禁令随行**——员工被限定"只读"
+ * 是岗位属性，进图纸不失效。合成规则（与派单路径的 profileToPersona 同源）：
+ * - 岗位白名单（profile.tools）在场 → actor 只能用「白名单 − 安全底线」：
+ *   底线（不许问人/不许递归编排/不许越界读）压过任何岗位白名单；
+ * - 岗位禁令（profile.disallowedTools）→ 并进减法表；
+ * - 都缺席 → 行为与从前逐字节一致（narrowed=false）。
+ * 只覆盖内建工具；MCP / plugin 工具的过滤留待生产接线时处理（同一个工厂 seam）。
+ */
+export function workflowActorToolPolicy(
+  profileLimits?: WorkflowActorProfileToolLimits,
+): WorkflowActorToolPolicy {
+  const profileAllowlist = profileLimits?.tools;
+  const profileDisallowed = profileLimits?.disallowedTools ?? [];
+  const narrowed =
+    (profileAllowlist !== undefined && profileAllowlist.length > 0) ||
+    profileDisallowed.length > 0;
+  const toolDisallowlist = [...new Set([...ACTOR_DISALLOWED_TOOLS, ...profileDisallowed])];
+  // 岗位白名单在场：actor 只能用「白名单 − 安全底线」。白名单里混进底线工具时，
+  // 底线赢——岗位规矩再宽也请不回"问人/递归编排/越界读"这三类。
+  const toolAllowlist = profileAllowlist?.length
+    ? profileAllowlist.filter((tool) => !ACTOR_DISALLOWED_TOOLS.includes(tool))
+    : undefined;
+  return {
+    toolDisallowlist,
+    ...(toolAllowlist === undefined ? {} : { toolAllowlist }),
+    narrowed,
+  };
 }

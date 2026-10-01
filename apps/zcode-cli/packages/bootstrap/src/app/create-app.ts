@@ -617,6 +617,27 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
               const actorSystem = actorProfile
                 ? composeWorkflowActorPersona(actorProfile, persona)
                 : persona.system;
+              // 岗位禁令随行（2026-10-01 拍板）：员工被限定"只读"是岗位属性，进图纸
+              // 不失效——限制与图纸安全底线取交集。收窄发生时留一条日志：图纸作者
+              // 排查"我点的工人怎么不能改文件"有据可查，不会怪到脚本头上。
+              const toolPolicy = workflowActorToolPolicy(
+                actorProfile === undefined
+                  ? undefined
+                  : {
+                      ...(actorProfile.tools === undefined ? {} : { tools: actorProfile.tools }),
+                      ...(actorProfile.disallowedTools === undefined
+                        ? {}
+                        : { disallowedTools: actorProfile.disallowedTools }),
+                    },
+              );
+              if (toolPolicy.narrowed) {
+                logger?.info("Workflow actor tools narrowed by employee profile", {
+                  actorProfileName: actorProfile?.name,
+                  event: "workflow_actor.tools_narrowed",
+                  module: "bootstrap.app",
+                  sessionId,
+                });
+              }
               // 派单侧同款护栏（评审 B1/A5）：员工档案配的模型已下线/不在注册表时
               // 不覆盖（actor 继承父会话当前模型，与派单回落老板当前模型同口径）+
               // 告警留痕；别等第一次 ask 才以 invalid_model_request 炸穿整个 run。
@@ -654,9 +675,12 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                     ...(persona.name === undefined ? {} : { name: persona.name }),
                     ...(actorSystem === undefined ? {} : { persona: actorSystem }),
                   },
-                  // actor 的工具面是减法（全集减去会悬挂/越权的交互工具），只能经 configOverrides
-                  // 表达（request.opts.tools 只有 allowlist）。
-                  ...workflowActorToolPolicy(),
+                  // actor 的工具面 = 全集减法（会悬挂/越权的交互工具）∪ 员工岗位禁令
+                  // （班底进图纸）；员工岗位白名单在场时整个面收紧成「白名单 − 底线」。
+                  toolDisallowlist: toolPolicy.toolDisallowlist,
+                  ...(toolPolicy.toolAllowlist === undefined
+                    ? {}
+                    : { toolAllowlist: toolPolicy.toolAllowlist }),
                   // 模型面：`runSubagentModel` 是本 run 自己的选择（`subagent_model`），在场时整条
                   // 覆盖，排在 pin 之上——主代理不受它影响。员工档案模型（班底进图纸）插在 run
                   // 选择之下、pin 之上——它是员工身份的一部分。没有它也没有 pin 就不覆盖——child
