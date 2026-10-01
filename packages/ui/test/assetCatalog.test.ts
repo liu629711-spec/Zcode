@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ASSET_SANDBOX } from "../src/asset-library/AssetPreviewFrame.js";
 import { ASSET_CATALOG } from "../src/asset-library/catalog/index.js";
-import { assertSandboxSafe, validateCatalog } from "../src/asset-library/catalog/catalogCheck.js";
+import {
+  assertSandboxSafe,
+  countDeliverableExternalRefs,
+  validateCatalog,
+} from "../src/asset-library/catalog/catalogCheck.js";
 import type { AssetCategory, AssetManifest } from "../src/asset-library/catalog/types.js";
 
 // ============================================================
@@ -190,4 +194,18 @@ test("设计风格卡全量：152 张齐且全为 design-style 类", () => {
   assert.ok(styles.length >= 152, `设计风格应 ≥152 张，实际 ${styles.length}`);
   const ids = ASSET_CATALOG.map((manifest) => manifest.id);
   assert.equal(new Set(ids).size, ids.length, "全目录 id 必须全局唯一");
+});
+
+test("countDeliverableExternalRefs：数真实服务外链，SVG 命名空间不算（复验拍板）", () => {
+  assert.equal(
+    countDeliverableExternalRefs(
+      '<svg xmlns="http://www.w3.org/2000/svg"></svg>' +
+        '<img src="https://api.dicebear.com/9/x/svg?seed=a">' +
+        '<a href="https://github.com/uiverse-io/galaxy">署名</a>' +
+        '<a href="/relative/path">站内</a>',
+    ),
+    2,
+  );
+  assert.equal(countDeliverableExternalRefs(""), 0);
+  assert.equal(countDeliverableExternalRefs("<div>没有外链的图纸</div>"), 0);
 });

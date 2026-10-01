@@ -41,6 +41,17 @@ const REDIRECT_AND_PROTOCOL_REF =
   /(?:<meta[^>]*http-equiv\s*=\s*["']?refresh)|(?:<form[^>]*\baction\s*=\s*["']?(?:https?:)?\/\/)|(?:\b(?:href|src|action)\s*=\s*["']?\s*javascript:)/i;
 
 /**
+ * 交付原文的外链计数（复验拍板 2026-10-01）：复制图纸时的那一行提示用。
+ * 台账口径是「图纸保持上游逐字，清洗只在预览副本」，所以不清洗、只数数——
+ * 数的是真正会发起外部加载的绝对地址；www.w3.org 是 SVG 命名空间标识符
+ * （标识符不是请求），剔除以免把每个带 SVG 的图纸都误报成带外链。
+ */
+export function countDeliverableExternalRefs(content: string): number {
+  const matches = content.match(/https?:\/\/[^\s"'`)>]+/gi) ?? [];
+  return matches.filter((url) => !/^https?:\/\/(?:[^/]*\.)?w3\.org(?:\/|$)/i.test(url)).length;
+}
+
+/**
  * 对整份目录逐件体检，返回全部问题（人可读，含 id 定位）；空数组 = 全绿。
  */
 export function validateCatalog(manifests: readonly AssetManifest[]): string[] {

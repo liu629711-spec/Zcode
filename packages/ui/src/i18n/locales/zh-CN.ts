@@ -6661,6 +6661,7 @@ const zhCN: Record<string, string> = {
   "assetLibrary.detail.copyAria": "复制当前文件内容",
   "assetLibrary.detail.copied": "已复制",
   "assetLibrary.detail.copyFailed": "复制失败：{error}。请手动选中代码复制。",
+  "assetLibrary.detail.externalRefs": "原文含 {count} 处外链：离线预览看不到，署名链接请保留。",
   "assetLibrary.detail.sendToNewChat": "发到新会话",
   "assetLibrary.detail.sendToNewChatAria": "把素材需求消息预填到新会话输入框，不自动发送",
   "assetLibrary.detail.sendToCurrentChat": "发到当前会话",

@@ -41,6 +41,7 @@ import {
 } from "@/components/ai-elements/code-block.js";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
+import { countDeliverableExternalRefs } from "@/asset-library/catalog/catalogCheck.js";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -189,6 +190,17 @@ export function AssetDemoCard({
       await navigator.clipboard.writeText(activeFile.content);
       setCopied(true);
       toast(intl.formatMessage({ id: "assetLibrary.detail.copied" }));
+      // 复验拍板（2026-10-01）：原文保持上游逐字（署名必须保留、占位服务本要联网），
+      // 但复制那一刻把「有外链、离线看不到」用一行说破——痛点是不知道，不是有外链。
+      const externalRefCount = countDeliverableExternalRefs(activeFile.content);
+      if (externalRefCount > 0) {
+        toast(
+          intl.formatMessage(
+            { id: "assetLibrary.detail.externalRefs" },
+            { count: externalRefCount },
+          ),
+        );
+      }
     } catch (error) {
       toast(
         intl.formatMessage({ id: "assetLibrary.detail.copyFailed" }, {
