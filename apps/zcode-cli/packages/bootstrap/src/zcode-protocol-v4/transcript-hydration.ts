@@ -1317,6 +1317,9 @@ function backgroundResultOriginMetaOfMessage(
     typeof record.batchTitle === "string" && record.batchTitle.trim()
       ? record.batchTitle.trim()
       : undefined;
+  // 合议口味（评审会批）同样过冷恢复：丢了的话重启后合议卡退化回「质检」词表
+  // （数据无恙、标签说谎）。防御性回读，畸形只丢字段。
+  const qcKind = record.qcKind === "review" ? "review" : undefined;
   // 失败回执的结构化线索（2026-10-01 员工可靠性批）同样要过冷恢复：丢了的话重启后
   // 失败卡讲不出大白话、「一键重派」也没了原任务。同上防御性回读，畸形只丢字段。
   const task = typeof record.task === "string" && record.task.trim() ? record.task : undefined;
@@ -1340,6 +1343,7 @@ function backgroundResultOriginMetaOfMessage(
     workId,
     ...(batchId ? { batchId } : {}),
     ...(batchTitle ? { batchTitle } : {}),
+    ...(qcKind ? { qcKind } : {}),
     ...(task ? { task } : {}),
     ...(failureCode ? { failureCode } : {}),
     ...(failureModelId ? { failureModelId } : {}),

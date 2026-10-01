@@ -309,6 +309,12 @@ export interface BackgroundResultOriginMeta {
   /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
   batchTitle?: string;
   /**
+   * 批次收口自动轮的口味（评审会批，2026-10-02）："review" = 合议轮（本批是评审会，
+   * UI 词表换合议）；缺席 = 批次质检轮（词表不变）。取值与 shared 的
+   * backgroundResultOriginMetaSchema.qcKind 闭集保持同步。
+   */
+  qcKind?: "review";
+  /**
    * 派单**失败**回执（agent_work_order_receipt）携带：原工单任务原文（有界，
    * 同 agentWorkOrderMeta 的上限）——失败卡「一键重派」的权威数据源，UI 不从文本反推。
    */

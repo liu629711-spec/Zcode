@@ -18,6 +18,7 @@ import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js"
 import {
   buildBatchQcEnvelopeText,
   buildBatchQcTitle,
+  WORK_ORDER_RESTRICTED_TOOL_NAMES,
   type BatchQcOrder,
 } from "../../subagent/work-order.js";
 import type { AgentRuntimeInternal } from "../internal.js";
@@ -37,6 +38,12 @@ export function batchQcLedgerId(sessionId: string, batchId: string): string {
 export interface EnqueueAgentWorkOrderBatchQcInput {
   batchId: string;
   batchTitle?: string;
+  /**
+   * 合议口味（评审会批 2026-10-02）：本批工单全是评审单 → 收口轮是合议轮
+   * （合议要求随信封、AgentDispatch 进 denylist、originMeta.qcKind="review"），
+   * 缺席 = 批次质检轮。
+   */
+  review?: boolean;
   orders: readonly BatchQcOrder[];
   traceContext?: TraceContext;
 }
@@ -69,14 +76,17 @@ export async function enqueueAgentWorkOrderBatchQc(
   const text = buildBatchQcEnvelopeText({
     batchId: input.batchId,
     ...(input.batchTitle === undefined ? {} : { batchTitle: input.batchTitle }),
+    ...(input.review === true ? { review: true } : {}),
     orders: input.orders,
   });
   const originMeta: BackgroundResultOriginMeta = {
     backgroundSource: "agent_work_order_batch_qc",
     workId: input.batchId,
-    title: buildBatchQcTitle(input.batchTitle),
+    title: buildBatchQcTitle(input.batchTitle, { review: input.review === true }),
     batchId: input.batchId,
     ...(input.batchTitle === undefined ? {} : { batchTitle: input.batchTitle }),
+    // 合议口味随轮头下发：UI 据此换合议词表（不从标题文本反推）。
+    ...(input.review === true ? { qcKind: "review" as const } : {}),
   };
   const command: WorkOrderBatchQcRuntimeCommand = {
     branchGeneration: this.branchGeneration,
@@ -87,6 +97,7 @@ export async function enqueueAgentWorkOrderBatchQc(
     orders: input.orders,
     batchId: input.batchId,
     ...(input.batchTitle === undefined ? {} : { batchTitle: input.batchTitle }),
+    ...(input.review === true ? { review: true } : {}),
     priority: "next",
     source: "agent_work_order_batch_qc",
     text,
@@ -203,9 +214,19 @@ async function startBatchQcIfComplete(
   const orders = batchQcOrdersFromDispatchRows(batchRows, input.batchId);
   if (orders.length === 0) return;
   const batchTitle = readBatchTitleFromDispatchRows(batchRows);
+  // 口味判定（评审会批）：同批派单行的信封**全是** review=true → 合议轮；混批或
+  // 普通批都走质检轮（旧批次无 review 字段 → false，口径不变）。混批在此收敛为
+  // 质检——派单侧的 schema refine 已把「评审单必须挂 batch_title」钉死，这里只是
+  // 对畸形台账的兜底裁决，不为它再加一道有竞态的端口守卫。
+  const review = batchRows.every(
+    (record) =>
+      (record.payload as { envelope?: { review?: unknown } } | undefined)?.envelope !== undefined &&
+      (record.payload as { envelope?: { review?: unknown } }).envelope?.review === true,
+  );
   await this.enqueueAgentWorkOrderBatchQc({
     batchId: input.batchId,
     ...(batchTitle === undefined ? {} : { batchTitle }),
+    ...(review ? { review: true } : {}),
     orders,
     ...(input.traceContext === undefined ? {} : { traceContext: input.traceContext }),
   });
@@ -336,6 +357,12 @@ export async function runWorkOrderBatchQcCommand(
       skipInputRecord: true,
       skipUserPromptSubmitHooks: true,
       traceContext: command.traceContext,
+      // 合议轮禁派单（评审会批）：合议的产出是意见不是工单，机制层掐死
+      // 「评审→重派→再评审」的循环，决定权留在用户手里。质检轮仍不带 denylist
+      // ——打回重派靠发起方自己的 AgentDispatch。
+      ...(command.review === true
+        ? { toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES] }
+        : {}),
     });
   } catch (error) {
     this.logger?.warn("Agent work order batch QC turn failed", {

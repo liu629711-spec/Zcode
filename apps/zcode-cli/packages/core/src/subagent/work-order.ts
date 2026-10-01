@@ -161,15 +161,29 @@ function escapeEnvelopeAttribute(value: string): string {
 export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): string {
   const task = neutralizeEnvelopeTags(envelope.task);
   const fromLabel = escapeEnvelopeAttribute(envelope.fromAgentName.trim() || "user");
-  return [
+  const lines = [
     `<work-order id="${envelope.workOrderId}" from-agent="${fromLabel}" from-session="${envelope.fromSessionId}">`,
     task,
     "</work-order>",
+  ];
+  // 评审单（评审会批 2026-10-02）：评审要求跟在标签外——事件面把标签内原文当
+  // 「任务正文」透出，里面不能掺指令（与下面的语言硬要求同一纪律）。
+  if (envelope.review === true) {
+    lines.push(
+      "评审要求（本单是评审单：你是评审人，不是施工人）：",
+      "1. 只评审，不动手：不要修改文件、不要动手修复发现的问题。",
+      "2. 结论先行：先给总体结论——通过 / 不通过 / 有条件通过，三选一。",
+      "3. 理由分条讲事实（指出具体文件、行为或复现步骤），不写空评。",
+      "4. 必须给一条「最不放心的地方」：哪怕结论是通过，也要说出你最担心的一点。",
+    );
+  }
+  lines.push(
     // 语言随工单（真机 2026-09-30）：弱模型拿着英文系统提示，中文工单也回英文，
     // 还自由发挥成自我介绍。信封后缀一行硬要求：语言跟工单走，没交代的事不做。
     // 放在标签外——事件面把标签内原文当「任务正文」透出，里面不能掺指令。
     "回复要求：使用与上面工单正文相同的语言；工单未交代的事项不要自行发挥。",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 /** 工单唤醒轮禁用的工具（嵌套上限=1 的 denylist 哨兵）。 */
@@ -265,11 +279,13 @@ export interface BatchQcOrder {
 }
 
 /**
- * 质检轮头卡标题（后台结果轮头链按 originMeta.title 原样透传）。
- * 质检是发起方自己的动作，标题不署任何员工名。
+ * 批次收口自动轮头卡标题（后台结果轮头链按 originMeta.title 原样透传，标题由 CLI
+ * 权威给出）。质检是发起方自己的动作，标题不署任何员工名；评审会批（review）
+ * 同一轮链换合议词表——「合议 · 批名」。
  */
-export function buildBatchQcTitle(batchTitle?: string): string {
+export function buildBatchQcTitle(batchTitle?: string, options?: { review?: boolean }): string {
   const title = batchTitle?.trim();
+  if (options?.review === true) return title ? `合议 · ${title}` : "评审合议";
   return title ? `质检 · ${title}` : "批次质检";
 }
 
@@ -277,9 +293,10 @@ export function buildBatchQcTitle(batchTitle?: string): string {
 const BATCH_QC_TASK_MAX_CHARS = 8_192;
 
 /**
- * 质检正文（发起方会话的模型输入 carrier）。自带 <batch-qc> 信封（批次身份 +
- * 待验货清单），验货要求随信封走。回执答案不进信封——它们本就在发起方历史里，
- * 按 receipt 信封的 workOrderId 对号；质检指令要求以工作区实际产物为准复核。
+ * 批次收口自动轮正文（发起方会话的模型输入 carrier）。自带 <batch-qc> 信封（批次
+ * 身份 + 逐单清单）；要求块按口味二选一：普通批 = 质检要求（可打回重派），评审会批
+ * （review）= 合议要求（只出大白话结论，禁派单，决定权交还用户）。回执答案不进信封
+ * ——它们本就在发起方历史里，按 receipt 信封的 workOrderId 对号。
  * ponytail: 清单来自老板自己派的单（同批派单台账行），不设单数上限；单条任务
  * 有界。真出现超大批次（几十单 × 8192 字）再谈分页。
  */
@@ -287,6 +304,8 @@ export function buildBatchQcEnvelopeText(input: {
   batchId: string;
   batchTitle?: string;
   orders: readonly BatchQcOrder[];
+  /** 评审会批：本批工单全是评审单，收口轮是合议而不是质检。 */
+  review?: boolean;
 }): string {
   const title = neutralizeEnvelopeTags(neutralizeBatchQcTags(input.batchTitle?.trim() ?? ""));
   const orderLines = input.orders.map((order) => {
@@ -300,6 +319,25 @@ export function buildBatchQcEnvelopeText(input: {
       order.agentId ? ` agent-id="${escapeEnvelopeAttribute(order.agentId)}"` : ""
     }>${clipped}</order>`;
   });
+  const requirements = input.review
+    ? [
+        "合议要求（自动合议，不是用户发言）：",
+        "1. 本批是评审会：上列每张工单都是评审单，各评审人的意见就在本会话历史里（<work-order-receipt> 信封，信封 id 与上列 order 的 id 一一对应）。先逐单找到意见。",
+        "2. 你只合议、不动手：不要改文件、不要重派工单（AgentDispatch 对你禁用）、不要替用户做决定——结论交给用户裁决。",
+        "3. 结论分四段：①总体结论（全体通过 / 有分歧 / 全体不通过）②每位评审一行：名字 + 结论 + 一句话立场 ③分歧点：谁与谁不一致、差在哪（没有就写「无」）④你的建议：一句话，供用户拍板。",
+        "4. 有评审缺席（找不到回执 / 失败 / 被中断）就如实标注缺席，其余人照常合议；评审意见与工作区实际产物对不上号的，如实指出。",
+        "5. 全程用本会话用户的语言，大白话，不贴大段原文。",
+      ]
+    : [
+        "质检要求（自动验货，不是用户发言）：",
+        "1. 上列每张工单的回执都在本会话历史里（<work-order-receipt> 信封，信封 id 与上列 order 的 id 一一对应）。先逐单找到回执。",
+        "2. 逐单验货：对照工单任务核对回执答案；凡能落到工作区的（代码/文件改动），以实际文件为准复核，不轻信员工的自我报告。",
+        "3. 回执缺失、答案与任务对不上号、或答案自相矛盾的，如实标注「无法核实」，不要猜、不要补。",
+        "4. 被中断（cancelled）的单是用户自己叫停的，不参与打回，结论里如实说明即可。",
+        "5. 不合格的单（打回）：用 AgentDispatch 工具重派给同一位员工——agent 参数优先用清单里的 agent-id（工号，员工改名也能找到人），没有工号才用 agent 名；batch_id 与 batch_title 必须原样沿用本批次，任务正文 = 原任务全文 + 换行 + 「【质检打回】」+ 具体不合格原因与修改要求。整个批次最多打回这一轮，重派的单不再自动质检。",
+        "6. 没有问题就什么都不重派；拿不准的不要打回，写进结论里留给用户判断。",
+        "7. 最后用本会话用户的语言给一段大白话验收结论：每单一行（通过 / 已打回重派 / 无法核实 + 一句原因），最后一句总评。不要贴大段代码或长篇复述。",
+      ];
   return [
     // batchId 是模型回传的任意字符串（AgentDispatch 工具 batch_id，端口只 trim）——
     // 与 title 同样过属性转义，员工答案里种 batch_id 也伪造不了信封结构（评审 B2）。
@@ -307,13 +345,6 @@ export function buildBatchQcEnvelopeText(input: {
     ...orderLines,
     "</batch-qc>",
     "",
-    "质检要求（自动验货，不是用户发言）：",
-    "1. 上列每张工单的回执都在本会话历史里（<work-order-receipt> 信封，信封 id 与上列 order 的 id 一一对应）。先逐单找到回执。",
-    "2. 逐单验货：对照工单任务核对回执答案；凡能落到工作区的（代码/文件改动），以实际文件为准复核，不轻信员工的自我报告。",
-    "3. 回执缺失、答案与任务对不上号、或答案自相矛盾的，如实标注「无法核实」，不要猜、不要补。",
-    "4. 被中断（cancelled）的单是用户自己叫停的，不参与打回，结论里如实说明即可。",
-    "5. 不合格的单（打回）：用 AgentDispatch 工具重派给同一位员工——agent 参数优先用清单里的 agent-id（工号，员工改名也能找到人），没有工号才用 agent 名；batch_id 与 batch_title 必须原样沿用本批次，任务正文 = 原任务全文 + 换行 + 「【质检打回】」+ 具体不合格原因与修改要求。整个批次最多打回这一轮，重派的单不再自动质检。",
-    "6. 没有问题就什么都不重派；拿不准的不要打回，写进结论里留给用户判断。",
-    "7. 最后用本会话用户的语言给一段大白话验收结论：每单一行（通过 / 已打回重派 / 无法核实 + 一句原因），最后一句总评。不要贴大段代码或长篇复述。",
+    ...requirements,
   ].join("\n");
 }

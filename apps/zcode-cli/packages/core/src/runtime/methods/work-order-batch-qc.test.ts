@@ -36,7 +36,11 @@ interface LedgerRow {
 }
 
 /** 与 agent-dispatch-port.ts 落账的真实 payload 形状一致（员工名在顶层、信封里是发起方署名）。 */
-function dispatchRow(workOrderId: string, status: "admitted" | "discarded"): LedgerRow {
+function dispatchRow(
+  workOrderId: string,
+  status: "admitted" | "discarded",
+  options?: { review?: boolean },
+): LedgerRow {
   return {
     id: `agentWorkOrderDispatch:${workOrderId}`,
     sessionID: SESSION,
@@ -55,6 +59,7 @@ function dispatchRow(workOrderId: string, status: "admitted" | "discarded"): Led
         task: `任务${workOrderId}`,
         batchId: BATCH_ID,
         batchTitle: "登录页整改",
+        ...(options?.review ? { review: true } : {}),
       },
     },
     admittedSequence: 1,
@@ -183,4 +188,36 @@ test("落闸失败：放弃开轮（fail-closed，评审 R1）", async () => {
   };
   await trigger(runtime);
   assert.equal(runtime.qcCommands.length, 0, "闸门写不进就不能开轮");
+});
+
+test("评审会批：同批全是评审单 → 合议口味（review 命令 + qcKind + 合议正文）", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded", { review: true }),
+    dispatchRow("wo-2", "discarded", { review: true }),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 1);
+  const command = runtime.qcCommands[0]!;
+  assert.equal(command.review, true);
+  assert.equal(command.originMeta.qcKind, "review");
+  assert.equal(command.originMeta.title, "合议 · 登录页整改");
+  assert.match(command.text, /合议要求/);
+  assert.ok(!command.text.includes("打回"), "合议没有打回权");
+});
+
+test("混批（评审单 + 施工单）收敛为质检口味：旧批次与畸形台账口径不变", async () => {
+  const mixed = makeRuntime([
+    dispatchRow("wo-1", "discarded", { review: true }),
+    dispatchRow("wo-2", "discarded"),
+  ]);
+  await trigger(mixed);
+  assert.equal(mixed.qcCommands.length, 1);
+  assert.equal(mixed.qcCommands[0]!.review, undefined);
+  assert.equal(mixed.qcCommands[0]!.originMeta.qcKind, undefined);
+  assert.match(mixed.qcCommands[0]!.text, /质检要求/);
+
+  const legacy = makeRuntime([dispatchRow("wo-1", "discarded")]);
+  await trigger(legacy);
+  assert.equal(legacy.qcCommands[0]!.review, undefined);
+  assert.match(legacy.qcCommands[0]!.text, /质检要求/);
 });

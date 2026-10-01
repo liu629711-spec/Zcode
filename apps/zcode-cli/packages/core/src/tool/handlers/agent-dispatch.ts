@@ -111,6 +111,7 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     ...(batchTitle === undefined
       ? {}
       : { batchTitle, ...(parsed.batch_id === undefined ? {} : { batchId: parsed.batch_id }) }),
+    ...(parsed.review === true ? { review: true } : {}),
     sourceSessionId: context.sessionId,
   });
   const deliveryNote =
@@ -199,6 +200,10 @@ export const agentDispatchToolEntry: ToolEntry = {
       "Starting or messaging other sessions is ONLY this tool. Never spawn the zcode CLI in Bash (--prompt/-p/--resume/...) to run a task in another or a fresh session - that creates an untracked side session outside the product, the command is blocked for confirmation, and reporting it as success is wrong.",
       "A successful call only means the work order was accepted (queued if the target is busy). The final answer arrives as a separate receipt; do not claim the task is done.",
       "Never call AgentDispatch from a turn that was itself started by an agent work order; nesting is not allowed.",
+      // 评审会（2026-10-02）：用户要多人评/把关 → 同批 2~3 张评审单，评审人不能是
+      // 做活的人本人；合议由系统自动开，派单方只对单张回执简短回应，别抢在合议前
+      // 自己写总结。
+      `When the user asks for a review meeting or a cross-check by several agents (评审会 / 几个人评一下 / 让大家把把关 / "have a few agents review this"), dispatch 2-3 REVIEW orders in ONE batch: set review=true, batch_title is a short topic in the user's language, and each task tells ONE reviewer exactly what to review and where the deliverable lives. Pick reviewers that fit the work (e.g. code-reviewer for code, frontend-design for UI) and NEVER the agent who did the work being reviewed. When the review receipts arrive, reply to each with at most a one-line acknowledgment - the structured council synthesis is produced automatically by the system's council turn; do not write the full synthesis yourself.`,
     ],
     readOnly: false,
     destructive: false,

@@ -241,6 +241,8 @@ export function createProtocolAgentDispatchPort(
         task: input.task,
         ...(batchId ? { batchId } : {}),
         ...(batchTitle ? { batchTitle } : {}),
+        // 评审单标记（评审会批）：随信封落台账——批次收口时触发侧据它判合议口味。
+        ...(input.review === true ? { review: true } : {}),
       };
 
       // 人类短标题（模型派单时给的 title；缺席回落任务正文）：工位落行首输入、

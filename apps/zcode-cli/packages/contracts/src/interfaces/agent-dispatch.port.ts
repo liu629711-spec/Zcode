@@ -28,6 +28,12 @@ export interface AgentWorkOrderEnvelope {
   batchId?: string;
   /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
   batchTitle?: string;
+  /**
+   * 评审单标记（评审会批，2026-10-02）：review=true 的工单是评审单——评审人只
+   * 评审不动手，工单正文随评审要求块；同批全为评审单时批次收口触发合议轮而非
+   * 质检轮。缺席 = 普通施工单。
+   */
+  review?: boolean;
 }
 
 export interface AgentDispatchRequest {
@@ -58,6 +64,8 @@ export interface AgentDispatchRequest {
   batchTitle?: string;
   /** 批次身份（工具输入 batch_id 回传）；有 batchTitle 缺它时端口新铸。 */
   batchId?: string;
+  /** 评审单标记（工具输入 review 逐字透传）；缺席 = 普通施工单。 */
+  review?: boolean;
   /** 发起方档案名/工号（信封署名；执行器注入）。 */
   sourceAgentId?: string;
   sourceAgentName?: string;

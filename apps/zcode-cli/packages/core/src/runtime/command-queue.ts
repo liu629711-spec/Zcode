@@ -153,6 +153,8 @@ export interface WorkOrderReceiptRuntimeCommand extends RuntimeCommandBase {
  * 与 work-order-receipt 同家族但独立成轮（不与 task-notification 合并批次——
  * 质检轮必须携带自己的身份 batchId/originMeta）。它**不进** denylist：打回重派
  * 靠发起方自己的 AgentDispatch 能力，嵌套上限只限工单轮。
+ * 评审会批（review=true）是同一轮链的合议口味：只出大白话结论、带 AgentDispatch
+ * denylist（评审会的产出是意见不是工单，禁派单把循环掐死在机制层）。
  */
 export interface WorkOrderBatchQcRuntimeCommand extends RuntimeCommandBase {
   readonly branchGeneration: number;
@@ -161,6 +163,8 @@ export interface WorkOrderBatchQcRuntimeCommand extends RuntimeCommandBase {
   /** 质检的批次身份（≡ originMeta.workId，闸门台账行的确定性 id 也由它派生）。 */
   readonly batchId: string;
   readonly batchTitle?: string;
+  /** 合议口味（评审会批）：本批全是评审单，收口轮 = 合议轮。 */
+  readonly review?: boolean;
   /** 待验货的工单清单（发起方派单台账里的同批行，触发侧已过滤）。 */
   readonly orders: readonly BatchQcOrder[];
   /** 后台结果轮头卡元信息（backgroundSource=agent_work_order_batch_qc）。 */

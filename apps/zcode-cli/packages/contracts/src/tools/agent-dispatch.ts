@@ -55,12 +55,26 @@ export const AgentDispatchInputSchema = z
       .describe(
         "Batch identity: pass back the batch_id from a previous dispatch result to add more work orders to the same job site later (e.g. after reading a receipt). Only honored together with batch_title; omit to start a new batch.",
       ),
+    // 评审会（2026-10-02）：review=true 的单是评审单——评审人只挑刺不动手；评审单
+    // 必须自成一批（回执收口后触发的是合议轮而不是质检轮），schema 一行 refine 钉死。
+    review: z
+      .boolean()
+      .optional()
+      .describe(
+        "true marks this order as a REVIEW order: the target agent reviews the work and reports findings (verdict, reasons, top concern) instead of building or fixing anything. Review orders must form their OWN batch (never mixed with build orders) - when every review receipt is in, the system automatically opens a council-synthesis turn for the batch instead of a quality-check pass.",
+      ),
   })
   .strict()
   // 未点名（对齐稿 §三 #2/#5）：不点名员工只允许派生新普通会话；否则无落点。
   .refine((input) => input.agent !== undefined || input.newSession === true, {
     message: "agent is required unless newSession is true",
     path: ["agent"],
+  })
+  // 评审单必须挂批次（合议轮按批次开）：散评审单收口后没有合议的地方， loud fail 早失败。
+  .refine((input) => input.review !== true || input.batch_title !== undefined, {
+    message:
+      "review=true requires batch_title: review orders must form their own batch so the council turn has a batch to convene on",
+    path: ["batch_title"],
   });
 export type AgentDispatchInput = z.infer<typeof AgentDispatchInputSchema>;
 export const AgentDispatchInputJsonSchema = toToolJsonSchema(AgentDispatchInputSchema);

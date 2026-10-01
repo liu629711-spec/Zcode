@@ -92,6 +92,10 @@ export const backgroundResultOriginMetaSchema = z.object({
   // 派单回执轮（agent_work_order_receipt）携带：原工单批次（工地卡聚合键）；缺席 = 散单。
   batchId: z.string().min(1).max(128).optional(),
   batchTitle: z.string().max(200).optional(),
+  // 批次收口自动轮的口味（评审会批，2026-10-02）："review" = 合议轮（本批是评审会，
+  // UI 词表换合议）；缺席 = 批次质检轮。取值与 contracts 的 BackgroundResultOriginMeta
+  // .qcKind 保持同步；zod 剥离未知键，不加即冷恢复后合议卡退化成质检卡。
+  qcKind: z.enum(["review"]).optional(),
   // 失败回执（2026-10-01 员工可靠性批）携带：原工单任务原文 + 结构化失败线索——
   // 失败卡大白话与「一键重派」的唯一数据源；zod 剥离未知键，不加即静默丢。
   // 上界与发射侧对齐：task 同 contracts 的 AGENT_WORK_ORDER_TASK_MAX_CHARS（8192），

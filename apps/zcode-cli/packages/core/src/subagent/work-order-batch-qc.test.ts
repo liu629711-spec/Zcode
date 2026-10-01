@@ -10,6 +10,7 @@ import { test } from "node:test";
 import {
   buildBatchQcEnvelopeText,
   buildBatchQcTitle,
+  buildWorkOrderEnvelopeText,
   buildWorkOrderReceiptEnvelopeText,
 } from "./work-order.ts";
 
@@ -125,4 +126,54 @@ test("buildBatchQcEnvelopeText：验货纪律的产品语义钉子（工作区�
   // 结论语言跟用户走（评审 C2），不写死中文。
   assert.match(text, /本会话用户的语言/);
   assert.ok(!text.includes("用中文给用户"));
+});
+
+test("buildWorkOrderEnvelopeText：评审单带评审要求块，且在信封标签外（评审会批）", () => {
+  const text = buildWorkOrderEnvelopeText({
+    workOrderId: "wo-1",
+    fromAgentName: "老板",
+    fromSessionId: "sess-boss",
+    task: "评审登录页改造",
+    review: true,
+  });
+  assert.match(text, /评审要求（本单是评审单：你是评审人，不是施工人）：/);
+  assert.match(text, /只评审，不动手/);
+  assert.match(text, /最不放心的地方/);
+  // 指令在标签外：事件面把标签内原文当任务正文透出，里面不能掺指令。
+  const closing = text.indexOf("</work-order>");
+  const reviewBlock = text.indexOf("评审要求");
+  assert.ok(closing !== -1 && reviewBlock > closing);
+  // 语言硬要求仍是最后一行。
+  assert.match(text, /回复要求：使用与上面工单正文相同的语言；工单未交代的事项不要自行发挥。\n?$/);
+});
+
+test("buildWorkOrderEnvelopeText：普通工单不带评审要求（口径不变）", () => {
+  const text = buildWorkOrderEnvelopeText({
+    workOrderId: "wo-1",
+    fromAgentName: "老板",
+    fromSessionId: "sess-boss",
+    task: "把登录页的无障碍问题修一遍",
+  });
+  assert.ok(!text.includes("评审要求"));
+});
+
+test("buildBatchQcEnvelopeText：评审会批走合议要求——禁派单、无打回、结论交还用户", () => {
+  const text = buildBatchQcEnvelopeText({
+    batchId: "b-review",
+    batchTitle: "登录页",
+    review: true,
+    orders: ORDERS,
+  });
+  assert.match(text, /合议要求（自动合议，不是用户发言）：/);
+  assert.match(text, /AgentDispatch 对你禁用/);
+  assert.match(text, /结论交给用户裁决/);
+  assert.match(text, /每位评审一行/);
+  // 合议没有打回权：打回字样不得出现在合议指令里。
+  assert.ok(!text.includes("打回"));
+});
+
+test("buildBatchQcTitle：评审会批换合议前缀，无标题退「评审合议」", () => {
+  assert.equal(buildBatchQcTitle("登录页", { review: true }), "合议 · 登录页");
+  assert.equal(buildBatchQcTitle(undefined, { review: true }), "评审合议");
+  assert.equal(buildBatchQcTitle("登录页"), "质检 · 登录页");
 });
