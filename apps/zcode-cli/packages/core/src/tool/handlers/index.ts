@@ -100,10 +100,11 @@ export const builtInTools: ToolEntry[] = [
   sendMessageToolEntry,
   respondToCoordinatorToolEntry,
   submitResultToolEntry,
-  // actor 的升级通道。与 submit_result 完全同构：
-  // 端口在场即注册（includeEscalate），`tools:"none"` 下由 workflow_child 的 allowlist
-  // 补回逻辑救回来。不入 actor 的默认 disallow——最可能撞上未预见之墙的 actor 恰是
-  // 作者没标记的那一个。
+  // actor 的升级通道。与 submit_result 完全同构：端口在场即注册（includeEscalate）；
+  // 岗位白名单收窄时靠宿主合成并回控制管线（bootstrap 的 workflow-actor-tools.ts），
+  // 本文件的 allowlist 过滤排在这两道门**之前**，宿主不并回它们就会消失
+  // （评审 A1/B1 的教训）。不入 actor 的默认 disallow——最可能撞上未预见之墙的
+  // actor 恰是作者没标记的那一个。
   escalateToolEntry,
   taskOutputToolEntry,
   taskStopToolEntry,

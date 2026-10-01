@@ -110,9 +110,10 @@ function appendChildControlTool(
     return [...allowlist, RESPOND_TO_COORDINATOR_TOOL_NAME];
   }
 
-  // workflow child 没有 allowlist 收窄（persona 无工具档位，工具面只有减法，见
-  // bootstrap 的 workflow-actor-tools.ts），submit_result / escalate 由 includeSubmitResult /
-  // includeEscalate 两道门注册，不需要在这里补回。
+  // workflow child 的 allowlist 收窄**由宿主合成时自带控制管线**（班底进图纸后
+  // 岗位白名单会到场）：bootstrap 的 workflow-actor-tools.ts 合成白名单时把
+  // submit_result / escalate 无条件并回（岗位规矩再窄，交件与喊人的通道不关），
+  // 所以这里不需要再补回；includeSubmitResult / includeEscalate 两道门照常生效。
   return allowlist;
 }
 

@@ -124,9 +124,16 @@ export function createScriptWorkflowAgentRuntime(input: {
       parentSessionId: input.deps.sessionId,
       subagents: { enabled: false },
       taskType: "workflow_child",
-      toolAllowlist: input.request.opts?.tools,
       workingDirectory: input.deps.workingDirectory,
       ...input.configOverrides,
+      // 白名单双源取**交集**（评审 B6）：脚本的 opts.tools 是作者显式要的更窄面，
+      // 员工岗位白名单（configOverrides）不该把它悄悄放宽。必须排在 overrides
+      // 展开之后——放在前面会被整键盖回去，交集等于白算。字面量不允许重名键，
+      // 基线的 toolAllowlist 由这一行统一表达。
+      toolAllowlist: intersectToolAllowlists(
+        input.request.opts?.tools,
+        input.configOverrides?.toolAllowlist,
+      ),
     },
     {
       ...createRuntimeDeps(input.deps, input.traceContext, input.childSessionId, {
@@ -237,4 +244,19 @@ function createRuntimeDeps(
         : undefined,
     traceContext,
   };
+}
+
+/**
+ * 两条白名单来源都在场时取**交集**（评审 B6）：脚本的 opts.tools 是作者显式要的
+ * 更窄面，员工岗位白名单不该把它悄悄放宽；任一缺席 = 跟随另一条（现状语义）。
+ */
+function intersectToolAllowlists(
+  scriptTools: readonly string[] | undefined,
+  profileTools: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (scriptTools === undefined) return profileTools;
+  if (profileTools === undefined) return scriptTools;
+  const profileSet = new Set(profileTools);
+  const intersected = scriptTools.filter((tool) => profileSet.has(tool));
+  return intersected.length > 0 ? intersected : undefined;
 }

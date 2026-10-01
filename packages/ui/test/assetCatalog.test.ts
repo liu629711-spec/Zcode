@@ -196,15 +196,17 @@ test("设计风格卡全量：152 张齐且全为 design-style 类", () => {
   assert.equal(new Set(ids).size, ids.length, "全目录 id 必须全局唯一");
 });
 
-test("countDeliverableExternalRefs：数真实服务外链，SVG 命名空间不算（复验拍板）", () => {
+test("countDeliverableExternalRefs：只数资源类加载，署名 <a href> 与 xmlns 不算（复验拍板）", () => {
   assert.equal(
     countDeliverableExternalRefs(
       '<svg xmlns="http://www.w3.org/2000/svg"></svg>' +
         '<img src="https://api.dicebear.com/9/x/svg?seed=a">' +
+        '<img src="//api.dicebear.com/9/x/svg?seed=b">' +
         '<a href="https://github.com/uiverse-io/galaxy">署名</a>' +
+        '<link href="https://fonts.googleapis.com/css2?family=x" rel="stylesheet">' +
         '<a href="/relative/path">站内</a>',
     ),
-    2,
+    3,
   );
   assert.equal(countDeliverableExternalRefs(""), 0);
   assert.equal(countDeliverableExternalRefs("<div>没有外链的图纸</div>"), 0);

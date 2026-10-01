@@ -636,6 +636,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                   event: "workflow_actor.tools_narrowed",
                   module: "bootstrap.app",
                   sessionId,
+                  // 收窄后的实际工具面：排障不用翻档案反推（评审 A5）。
+                  toolAllowlist: toolPolicy.toolAllowlist?.join(","),
+                  toolDisallowlist: toolPolicy.toolDisallowlist.join(","),
                 });
               }
               // 派单侧同款护栏（评审 B1/A5）：员工档案配的模型已下线/不在注册表时

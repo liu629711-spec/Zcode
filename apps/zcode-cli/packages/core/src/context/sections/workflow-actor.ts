@@ -13,8 +13,9 @@
 // 契约曾按 persona 的工具档位分支；实盘里零工具的 GLM 子代理被
 // 「Ground every claim in something you read or ran」逼着去读目录、跑命令，而它没有这些工具，
 // 于是发出一个退化的 `escalate("placeholder")`。修法是**把工具面说死**：子代理先知道自己有什么，
-// 再被告知证据从哪来。工具档位退场后，
-// 每个子代理都有完整工作工具集，契约回到一份文本；「说死工具面」的原则不变。
+// 再被告知证据从哪来。工具档位退场后，子代理默认完整工作工具集减安全底线；
+// 班底进图纸后岗位白名单可再收窄（宿主合成，控制管线恒在——见 bootstrap 的
+// workflow-actor-tools.ts），契约回到一份文本；「说死工具面」的原则不变。
 
 import type { ContextSection, WorkflowActorContext } from "../types.js";
 import { estimateTokens } from "../utils.js";

@@ -6982,7 +6982,7 @@ const enUS: Record<string, string> = {
   "assetLibrary.detail.copyAria": "Copy current file content",
   "assetLibrary.detail.copied": "Copied",
   "assetLibrary.detail.copyFailed": "Copy failed: {error}. Please select and copy the code manually.",
-  "assetLibrary.detail.externalRefs": "The source contains {count} external link(s): they won't load offline; keep attribution links.",
+  "assetLibrary.detail.externalRefs": "The source references {count} external resources (images, fonts, ...) that won't load offline; keep attribution links.",
   "assetLibrary.detail.sendToNewChat": "Send to new chat",
   "assetLibrary.detail.sendToNewChatAria":
     "Prefill the asset request message into a new chat composer; nothing is sent automatically",

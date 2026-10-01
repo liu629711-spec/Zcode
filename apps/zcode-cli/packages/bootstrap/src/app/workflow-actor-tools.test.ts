@@ -28,15 +28,27 @@ test("岗位禁令并进减法表：员工被禁的 Bash/Write 在图纸里照�
   assert.equal(new Set(policy.toolDisallowlist).size, policy.toolDisallowlist.length);
 });
 
-test("岗位白名单在场：整个面收紧成「白名单 − 安全底线」", () => {
+test("岗位白名单在场：收紧成「白名单 − 安全底线 ∪ 控制管线」", () => {
   const policy = workflowActorToolPolicy({
     tools: ["Read", "Grep", "AskUserQuestion"],
   });
   assert.equal(policy.narrowed, true);
-  assert.deepEqual(policy.toolAllowlist, ["Read", "Grep"]);
   // 白名单里混进底线工具（AskUserQuestion 会悬挂在无人应答的会话里）：底线赢。
+  assert.deepEqual(policy.toolAllowlist, ["Read", "Grep", "submit_result", "escalate"]);
   assert.ok(!policy.toolAllowlist?.includes("AskUserQuestion"));
+  // 控制管线无条件在场（评审 A1/B1 的 P1）：typed ask 靠 submit_result 交件、
+  // 卡住靠 escalate 喊人——任何真实员工档案的白名单都不会写它们，必须并回。
+  assert.ok(policy.toolAllowlist?.includes("submit_result"));
+  assert.ok(policy.toolAllowlist?.includes("escalate"));
   // 减法表保持完整（白名单语义下它仍是第二道闸）。
+  assert.equal(policy.toolDisallowlist.length, 7);
+});
+
+test("通配符白名单（general-purpose 的 tools=[\"*\"]）归一为不设白名单", () => {
+  const policy = workflowActorToolPolicy({ tools: ["*"] });
+  // "*" = 员工放开全部：回到减法表基线，绝不变成「白名单过滤后零工具」。
+  assert.equal(policy.toolAllowlist, undefined);
+  assert.equal(policy.narrowed, false);
   assert.equal(policy.toolDisallowlist.length, 7);
 });
 
@@ -46,7 +58,8 @@ test("白名单与禁令同给：两面同时生效", () => {
     disallowedTools: ["Bash"],
   });
   assert.equal(policy.narrowed, true);
-  assert.deepEqual(policy.toolAllowlist, ["Read", "Bash"]);
+  assert.ok(policy.toolAllowlist?.includes("Read"));
+  assert.ok(policy.toolAllowlist?.includes("submit_result"));
   assert.ok(policy.toolDisallowlist.includes("Bash"));
 });
 

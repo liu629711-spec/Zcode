@@ -41,14 +41,19 @@ const REDIRECT_AND_PROTOCOL_REF =
   /(?:<meta[^>]*http-equiv\s*=\s*["']?refresh)|(?:<form[^>]*\baction\s*=\s*["']?(?:https?:)?\/\/)|(?:\b(?:href|src|action)\s*=\s*["']?\s*javascript:)/i;
 
 /**
- * 交付原文的外链计数（复验拍板 2026-10-01）：复制图纸时的那一行提示用。
+ * 交付原文的**资源类**外链计数（复验拍板 2026-10-01）：复制图纸时的那一行提示用。
  * 台账口径是「图纸保持上游逐字，清洗只在预览副本」，所以不清洗、只数数——
- * 数的是真正会发起外部加载的绝对地址；www.w3.org 是 SVG 命名空间标识符
- * （标识符不是请求），剔除以免把每个带 SVG 的图纸都误报成带外链。
+ * 只数真正会发起外部**加载**的形态（src/srcset/poster、@import/url()、link href；
+ * 含协议相对 //cdn…，与 EXTERNAL_REF 同宽，评审 B3）。署名的 <a href> 是超链接
+ * 不是资源加载，离线渲染照常显示，不计——不然提示会说「离线看不到」看得见的
+ * 东西（评审 B2）。xmlns 命名空间是标识符不是请求，词面上天然不命中。
  */
 export function countDeliverableExternalRefs(content: string): number {
-  const matches = content.match(/https?:\/\/[^\s"'`)>]+/gi) ?? [];
-  return matches.filter((url) => !/^https?:\/\/(?:[^/]*\.)?w3\.org(?:\/|$)/i.test(url)).length;
+  return (
+    content.match(
+      /(?:\b(?:src|srcset|poster)\s*=\s*["']?(?:https?:)?\/\/)|(?:@import\s+(?:url\s*\(\s*)?["']?(?:https?:)?\/\/)|(?:url\(\s*["']?(?:https?:)?\/\/)|(?:<link[^>]+\bhref\s*=\s*["']?(?:https?:)?\/\/)/gi,
+    )?.length ?? 0
+  );
 }
 
 /**

@@ -29,6 +29,15 @@ export interface WorkflowActorProfileToolLimits {
   disallowedTools?: readonly string[];
 }
 
+/**
+ * 工作流 actor 的**控制管线工具**（评审 A1/B1 的 P1）：submit_result 是 typed ask
+ * 的唯一交件通道、escalate 是卡住时喊人的唯一通道——两者由端口门决定注册与否，
+ * 但绝不能被岗位白名单滤掉。任何真实员工档案的白名单都不会包含它们（这是只有
+ * 工作流引擎才知道的隐形管线），所以合成白名单时必须显式并回（照 core
+ * tool-allowlist.ts 给 subagent_child 补回 RespondToCoordinator 的同款先例）。
+ */
+const WORKFLOW_ACTOR_CONTROL_TOOLS = ["submit_result", "escalate"] as const;
+
 /** AgentRuntimeConfig 的工具面切片。 */
 export interface WorkflowActorToolPolicy {
   toolDisallowlist: readonly string[];
@@ -66,26 +75,40 @@ const ACTOR_DISALLOWED_TOOLS: readonly string[] = [
  */
 /**
  * 班底进图纸（2026-10-01 拍板）：点名员工的**岗位禁令随行**——员工被限定"只读"
- * 是岗位属性，进图纸不失效。合成规则（与派单路径的 profileToPersona 同源）：
- * - 岗位白名单（profile.tools）在场 → actor 只能用「白名单 − 安全底线」：
- *   底线（不许问人/不许递归编排/不许越界读）压过任何岗位白名单；
+ * 是岗位属性，进图纸不失效。合成规则（与派单路径同档案、两套合成：图纸侧多减
+ * 安全底线，因为 headless 无人应答）：
+ * - 岗位白名单（profile.tools）在场 → actor 只能用「白名单 − 安全底线 ∪ 控制管线」：
+ *   底线压过任何岗位白名单；控制管线工具（submit_result/escalate）无条件并回；
+ *   通配符 "*" 归一为不设白名单（员工放开全部 = 回到减法表基线，评审 A1）；
  * - 岗位禁令（profile.disallowedTools）→ 并进减法表；
  * - 都缺席 → 行为与从前逐字节一致（narrowed=false）。
- * 只覆盖内建工具；MCP / plugin 工具的过滤留待生产接线时处理（同一个工厂 seam）。
+ * MCP / plugin 工具同样吃这份白名单/减法表（registerMcpTools 读同一配置）——
+ * 岗位白名单会把未点名的 MCP 工具一并收走，这是收紧不是放行。
  */
 export function workflowActorToolPolicy(
   profileLimits?: WorkflowActorProfileToolLimits,
 ): WorkflowActorToolPolicy {
-  const profileAllowlist = profileLimits?.tools;
+  const rawAllowlist = profileLimits?.tools;
   const profileDisallowed = profileLimits?.disallowedTools ?? [];
+  const hasWildcard = rawAllowlist?.includes("*") === true;
+  const profileAllowlist =
+    rawAllowlist !== undefined && rawAllowlist.length > 0 && !hasWildcard
+      ? rawAllowlist
+      : undefined;
   const narrowed =
     (profileAllowlist !== undefined && profileAllowlist.length > 0) ||
     profileDisallowed.length > 0;
   const toolDisallowlist = [...new Set([...ACTOR_DISALLOWED_TOOLS, ...profileDisallowed])];
-  // 岗位白名单在场：actor 只能用「白名单 − 安全底线」。白名单里混进底线工具时，
-  // 底线赢——岗位规矩再宽也请不回"问人/递归编排/越界读"这三类。
-  const toolAllowlist = profileAllowlist?.length
-    ? profileAllowlist.filter((tool) => !ACTOR_DISALLOWED_TOOLS.includes(tool))
+  // 岗位白名单在场：actor 只能用「白名单 − 安全底线 ∪ 控制管线」。白名单里混进
+  // 底线工具时，底线赢——岗位规矩再宽也请不回"问人/递归编排/越界读"这三类；
+  // 控制管线再窄也要在，否则 typed ask 交不了件、卡住喊不了人（评审 A1/B1）。
+  const toolAllowlist = profileAllowlist
+    ? [
+        ...new Set([
+          ...profileAllowlist.filter((tool) => !ACTOR_DISALLOWED_TOOLS.includes(tool)),
+          ...WORKFLOW_ACTOR_CONTROL_TOOLS,
+        ]),
+      ]
     : undefined;
   return {
     toolDisallowlist,

@@ -4,7 +4,12 @@
 // 自动重试链），老板拿到的是诚实的失败回执（带结构化根因 + retried 章），
 // 而另一位员工在同一老板会话里的工单照常交付成功回执，队列不被堵死。
 // 驱动**真实** scheduleWorkOrderReceiptRelay（与 agent-dispatch-receipts.test.ts
-// 同一套假件纪律）。每条测试结尾必须退订：默认看门狗 30 分钟，不退订吊死进程。
+// 同一套假件纪律）。每条测试结尾必须退订：默认看门狗 30 分钟，不退订吊死进程
+// （也因此**不注**短 watchdogMs——参考件的纪律：非看门狗专项测试一律用默认值，
+// 5ms 在慢机器上会让 B 腿的看门狗抢在 TurnComplete 前误杀，评审 A2）。
+// 残留（评审 B5，接受）：测试伪造的 error.code="auth_failed" 在生产投影处没有
+// 产出路径钉住——隔离性质不依赖 code（relay 对失败不分类），丢的只是失败卡上
+// 的大白话分类；真机 401 若不带 code，失败卡退化为纯文本 reason，照常诚实。
 // 运行：npx tsx --test apps/zcode-cli/packages/bootstrap/test/auth-failure-isolation.test.ts
 // ============================================================
 
@@ -90,7 +95,6 @@ function harness() {
     inputId: inputId("wo-a"),
     envelope: { workOrderId: "wo-a", fromSessionId: BOSS_SESSION } as never,
     agentName: "worker-a",
-    watchdogMs: 5,
   });
   const unsubscribeB = scheduleWorkOrderReceiptRelay(context as never, deps, {
     targetRecord: {
@@ -100,7 +104,6 @@ function harness() {
     inputId: inputId("wo-b"),
     envelope: { workOrderId: "wo-b", fromSessionId: BOSS_SESSION } as never,
     agentName: "worker-b",
-    watchdogMs: 5,
   });
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
   return { boss, workerA, workerB, unsubscribeA, unsubscribeB, tick, inputId };
