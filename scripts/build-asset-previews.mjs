@@ -290,25 +290,74 @@ export function cn(...inputs) {
 export default cn;
 `;
 
-/** 写入一件货的预览源码树：图纸逐字（entry 打离线化 patch），返回入口文件名。 */
+/** 写入一件货的预览源码树：图纸逐字（全文件按命中打离线化 patch），返回入口文件名。 */
 function writePreviewSources(manifest, tempDir) {
   let entryName = null;
+  const patches = manifest.preview.patches ?? [];
+  const patchHits = new Array(patches.length).fill(0);
   for (const [index, file] of manifest.files.entries()) {
     let content = file.content;
-    if (index === 0) {
-      for (const patch of manifest.preview.patches ?? []) {
-        if (!content.includes(patch.from)) {
-          throw new Error(`${manifest.id}: 预览 patch 未命中（${patch.note}）：${patch.from.slice(0, 60)}…`);
-        }
+    // patch 曾只打 entry 文件，URL 藏在其它图纸文件里就漏网、还会被 tailwind
+    // 扫进 CSS（audit 2026-10-01：rareui 两件外链泄漏）。改为全文件按命中打，
+    // 严格的「每条 patch 至少命中一次」断言保留在循环外。
+    for (const [patchIndex, patch] of patches.entries()) {
+      if (content.includes(patch.from)) {
         content = content.replaceAll(patch.from, patch.to);
+        patchHits[patchIndex] += 1;
       }
-      entryName = file.name;
     }
-    fs.writeFileSync(path.join(tempDir, path.basename(file.name)), content);
+    if (index === 0) entryName = file.name;
+    fs.writeFileSync(path.join(tempDir, path.basename(file.name)), autoOfflineScrub(content));
+  }
+  for (const [patchIndex, patch] of patches.entries()) {
+    if (patchHits[patchIndex] === 0) {
+      throw new Error(`${manifest.id}: 预览 patch 未命中（${patch.note}）：${patch.from.slice(0, 60)}…`);
+    }
   }
   fs.writeFileSync(path.join(tempDir, "lib-utils.ts"), CN_SHIM);
-  fs.writeFileSync(path.join(tempDir, "__demo.tsx"), manifest.preview.demo);
+  fs.writeFileSync(path.join(tempDir, "__demo.tsx"), autoOfflineScrub(manifest.preview.demo));
   return entryName;
+}
+
+/**
+ * 自动离线清洗兜底（audit 2026-10-01）：卡片漏写 patches 时（registry 条目、上游
+ * 后来加的远程图），预览源码里残留的请求上下文外链在此就地换成内联占位——
+ * 只影响预览副本，图纸原文不动。判据与 assertNoExternalUrls 同族。
+ */
+const AUTO_PLACEHOLDER =
+  "data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27160%27%20height%3D%2790%27%3E%3Crect%20width%3D%27100%25%27%20height%3D%27100%25%27%20fill%3D%27%23333b47%27%2F%3E%3C%2Fsvg%3E";
+const AUTO_EXTERNAL_ATTR = /\s(src|href|srcset|poster)(\s*=\s*)(["']?)(?:https?:)?\/\/[^"'`>\s]*(["']?)/gi;
+const AUTO_EXTERNAL_CSS_URL = /url\(\s*(["']?)(?:https?:)?\/\/[^)"']*\1\s*\)/gi;
+const AUTO_EXTERNAL_IMPORT = /@import\s+(?:url\(\s*)?["']?(?:https?:)?\/\/[^;"')]*["']?\)?;?/gi;
+
+function autoOfflineScrub(content) {
+  return content
+    // 占位图全程无引号字符（引号全编码），沿用原 url() 的引号风格—— arbitrary
+    // class 常嵌在 JSX/HTML 属性的引号里，引号风格不对会把源码文本炸出语法错。
+    .replace(AUTO_EXTERNAL_CSS_URL, (_match, quote) => `url(${quote}${AUTO_PLACEHOLDER}${quote})`)
+    .replace(AUTO_EXTERNAL_IMPORT, `@import url("${AUTO_PLACEHOLDER}");`)
+    .replace(
+      AUTO_EXTERNAL_ATTR,
+      (_match, attr, eq, openQuote, closeQuote) =>
+        ` ${attr}${eq}${openQuote}${AUTO_PLACEHOLDER}${closeQuote}`,
+    );
+}
+
+/**
+ * 产物零外链断言：只查「会发起请求的上下文」（src/href/srcset/poster/url()/@import，
+ * 含协议相对 //）——React 生产包里 "visit https://react.dev/errors/…" 这类代码字符串
+ * 不是请求，不算泄漏。判据与 catalogCheck.EXTERNAL_REF 同族。
+ */
+const EXTERNAL_REF_SNIPPET =
+  /(?:\b(?:src|href|srcset|poster)\s*=\s*["']?(?:https?:)?\/\/)|(?:@import\s+(?:url\s*\(\s*)?["']?(?:https?:)?\/\/)|(?:url\(\s*["']?(?:https?:)?\/\/)/gi;
+
+function assertNoExternalUrls(manifestId, html) {
+  const hits = [...html.matchAll(EXTERNAL_REF_SNIPPET)];
+  if (hits.length > 0) {
+    throw new Error(
+      `${manifestId}: 预览产物含外链引用（沙箱禁一切外链）：${hits.length} 处，如 ${html.slice(hits[0].index, hits[0].index + 80).replace(/\s+/g, " ")}…`,
+    );
+  }
 }
 
 /** 组装 esbuild 别名表：裸模块 → 运行时 shim，@/lib/utils → cn，@/components/** → 同目录同名文件。 */
@@ -479,6 +528,7 @@ const htmlById = {};
 for (const manifest of selfMadeReact) {
   const js = await bundleSelfMadeDemo(manifest, tempDir);
   htmlById[manifest.id] = wrapHtml(js, manifest, reactVersion);
+  assertNoExternalUrls(manifest.id, htmlById[manifest.id]);
   console.log(`[ok] ${manifest.id}: ${(htmlById[manifest.id].length / 1024).toFixed(0)}KB（自制 react 货）`);
 }
 
@@ -508,6 +558,8 @@ for (const chunkName of [...usedChunks].sort()) {
 const openSourcePreviews = {};
 for (const manifest of openSourceAssets) {
   const built = await buildOpenSourcePreview(manifest, tempDir);
+  assertNoExternalUrls(manifest.id, `${built.css}
+${built.body}`);
   openSourcePreviews[manifest.id] = {
     title: manifest.title,
     theme: manifest.preview.theme,

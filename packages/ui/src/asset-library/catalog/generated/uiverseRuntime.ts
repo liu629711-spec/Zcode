@@ -7,7 +7,7 @@ import type { AssetCategory, AssetManifest } from "../types.js";
  * 上游自包含 HTML），本模块把它们包成 AssetManifest：图纸 = 署名头 + 上游原文；
  * previewHtml 惰性生成（首读才算、按 id 缓存）——3,800 份预览文档不能在模块
  * 加载时全量拼出来，内存和首屏都遭不住。图纸保持上游逐字（含上游署名注释），
- * 外链清洗只发生在预览副本上（沙箱禁一切外链，见 catalogCheck.EXTERNAL_SRC）。
+ * 外链清洗只发生在预览副本上（沙箱禁一切外链，判据见 catalogCheck.EXTERNAL_REF）。
  */
 
 export interface UiverseAutoMeta {
@@ -27,15 +27,19 @@ export interface UiverseAutoMeta {
 }
 
 /** 预览里命中外链图片一律换等比灰底占位；图纸不动。 */
-const EXTERNAL_SRC = /src\s*=\s*(["'])https?:\/\/[^"']*\1/gi;
-const EXTERNAL_CSS_URL = /url\(\s*(["']?)https?:\/\/[^)"']*\1\s*\)/gi;
+// audit 2026-10-01 加宽：src 之外 href/srcset/poster、协议相对 //、@import 同样
+// 会发起请求或跳转；xmlns 命名空间不在词面上，天然不误伤。
+const EXTERNAL_ATTR = /\s(src|href|srcset|poster)(\s*=\s*)(["']?)(?:https?:)?\/\/[^"'`>\s]*/gi;
+const EXTERNAL_CSS_URL = /url\(\s*(["']?)(?:https?:)?\/\/[^)"']*\1\s*\)/gi;
+const EXTERNAL_IMPORT = /@import\s+(?:url\(\s*)?["']?(?:https?:)?\/\/[^;"')]*["']?\)?;?/gi;
 const PLACEHOLDER =
   "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='160'%20height='90'%3E%3Crect%20width='100%25'%20height='100%25'%20fill='%23222b3a'/%3E%3C/svg%3E";
 
 function sanitizeForSandbox(html: string): string {
   return html
-    .replace(EXTERNAL_SRC, `src="${PLACEHOLDER}"`)
-    .replace(EXTERNAL_CSS_URL, `url("${PLACEHOLDER}")`);
+    .replace(EXTERNAL_CSS_URL, `url("${PLACEHOLDER}")`)
+    .replace(EXTERNAL_IMPORT, `@import url("${PLACEHOLDER}");`)
+    .replace(EXTERNAL_ATTR, (_match, attr: string, eq: string) => ` ${attr}${eq}"${PLACEHOLDER}"`);
 }
 
 function buildPreview(meta: UiverseAutoMeta, blueprint: string): string {

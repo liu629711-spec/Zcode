@@ -23,8 +23,13 @@ const ASSET_CATEGORIES: readonly AssetCategory[] = [
   "design-style",
 ];
 
-/** 外链检测：src 指向 http(s)（双引号/单引号都算）。相对引用与 data: 不拦。 */
-const EXTERNAL_SRC = /src\s*=\s*["']https?:/i;
+/**
+ * 外链检测（audit 2026-10-01 加宽）：src/href/srcset/poster、CSS url()、@import
+ * 里出现 http(s) 或协议相对 // 都算——src 之外的形态同样会发起请求或跳转。
+ * xmlns 命名空间是标识符不是请求，不在词面上，天然不误伤。
+ */
+const EXTERNAL_REF =
+  /(?:\b(?:src|href|srcset|poster)\s*=\s*["']?(?:https?:)?\/\/)|(?:@import\s+(?:url\s*\(\s*)?["']?(?:https?:)?\/\/)|(?:url\(\s*["']?(?:https?:)?\/\/)/i;
 
 /**
  * 对整份目录逐件体检，返回全部问题（人可读，含 id 定位）；空数组 = 全绿。
@@ -65,7 +70,7 @@ export function validateCatalog(manifests: readonly AssetManifest[]): string[] {
         }
       }
     }
-    if (EXTERNAL_SRC.test(manifest.previewHtml)) {
+    if (EXTERNAL_REF.test(manifest.previewHtml)) {
       errors.push(`${label}: previewHtml 含外链（src="http…"），沙箱内禁一切外链`);
     }
     if (manifest.previewHtml.includes("localStorage")) {
