@@ -27,9 +27,18 @@ const ASSET_CATEGORIES: readonly AssetCategory[] = [
  * 外链检测（audit 2026-10-01 加宽）：src/href/srcset/poster、CSS url()、@import
  * 里出现 http(s) 或协议相对 // 都算——src 之外的形态同样会发起请求或跳转。
  * xmlns 命名空间是标识符不是请求，不在词面上，天然不误伤。
+ *
+ * 复验加宽（2026-10-01 队列⑤）：当时记录的盲区一并关掉——meta refresh（外链
+ * 跳转的第三条路）、form action 外链（提交即出站）、javascript: 伪协议 URL。
+ * 三条都由 asset-library-reverify.mts 的全模式扫描背书：现行 4,076 件零命中，
+ * 收进体检是防未来新增，不是修存量。
  */
 const EXTERNAL_REF =
   /(?:\b(?:src|href|srcset|poster)\s*=\s*["']?(?:https?:)?\/\/)|(?:@import\s+(?:url\s*\(\s*)?["']?(?:https?:)?\/\/)|(?:url\(\s*["']?(?:https?:)?\/\/)/i;
+
+/** 外链跳转的其它通道：meta refresh / form action 外链 / javascript: 伪协议。 */
+const REDIRECT_AND_PROTOCOL_REF =
+  /(?:<meta[^>]*http-equiv\s*=\s*["']?refresh)|(?:<form[^>]*\baction\s*=\s*["']?(?:https?:)?\/\/)|(?:\b(?:href|src|action)\s*=\s*["']?\s*javascript:)/i;
 
 /**
  * 对整份目录逐件体检，返回全部问题（人可读，含 id 定位）；空数组 = 全绿。
@@ -72,6 +81,11 @@ export function validateCatalog(manifests: readonly AssetManifest[]): string[] {
     }
     if (EXTERNAL_REF.test(manifest.previewHtml)) {
       errors.push(`${label}: previewHtml 含外链（src="http…"），沙箱内禁一切外链`);
+    }
+    if (REDIRECT_AND_PROTOCOL_REF.test(manifest.previewHtml)) {
+      errors.push(
+        `${label}: previewHtml 含跳转/伪协议通道（meta refresh / form action 外链 / javascript:），沙箱内禁一切出站`,
+      );
     }
     if (manifest.previewHtml.includes("localStorage")) {
       errors.push(`${label}: previewHtml 含 localStorage（沙箱无源环境会抛）`);

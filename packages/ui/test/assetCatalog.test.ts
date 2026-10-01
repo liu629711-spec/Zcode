@@ -53,6 +53,18 @@ test("坏货逐项体检：每类坏法都报出对应错误", () => {
   ]);
   assert.ok(external.some((m) => m.includes("外链")), external.join("；"));
 
+  // 跳转/伪协议通道（复验 2026-10-01 加宽：审计记录的三条盲区收进体检）
+  const redirect = validateCatalog([
+    broken({ previewHtml: '<meta http-equiv="refresh" content="0;url=https://evil.example">' }),
+    broken({ previewHtml: '<form action="https://evil.example/collect"></form>' }),
+    broken({ previewHtml: '<a href="javascript:fetch(location)">x</a>' }),
+  ]);
+  assert.equal(
+    redirect.filter((m) => m.includes("跳转/伪协议")).length,
+    3,
+    redirect.join("；"),
+  );
+
   // previewHtml localStorage
   const persistent = validateCatalog([
     broken({ previewHtml: "<script>localStorage.setItem('k','v');</script>" }),
