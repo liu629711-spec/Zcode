@@ -7006,6 +7006,7 @@ const enUS: Record<string, string> = {
   // lives in the QC turn's own titled card.
   "chat.workOrderBatch.qc.running": "Quality check running…",
   "chat.workOrderBatch.qc.done": "Quality check complete",
+  "chat.workOrderBatch.qc.failed": "Quality check incomplete",
 };
 
 export default enUS;

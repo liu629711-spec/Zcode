@@ -6679,6 +6679,7 @@ const zhCN: Record<string, string> = {
   // 批次质检（纪律协议批）：工地卡上的状态灯一行；结论全文在质检轮自己的卡里。
   "chat.workOrderBatch.qc.running": "正在质检…",
   "chat.workOrderBatch.qc.done": "质检完成",
+  "chat.workOrderBatch.qc.failed": "质检未完成",
 };
 
 export default zhCN;

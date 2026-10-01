@@ -1438,11 +1438,19 @@ export async function discardPersistedPendingSteerInputs(
           status: "discarded",
           reason: "session_resumed",
         });
+        // batchId 直接从行 payload 收（评审 R3）：回执 payload 畸形时
+        // redeliverableWorkOrderReceipt 返回 undefined、这行重投不了，但它的派单行
+        // 已在此循环里收口——批次可能就此全部收口，batchId 不能跟着丢。
+        const payloadEnvelope = (record.payload as { envelope?: { batchId?: unknown } } | undefined)
+          ?.envelope;
+        const payloadBatchId = (
+          payloadEnvelope as { batchId?: unknown } | undefined
+        )?.batchId;
+        if (typeof payloadBatchId === "string" && payloadBatchId) {
+          qcBatchIds.add(payloadBatchId);
+        }
         const receipt = redeliverableWorkOrderReceipt(record);
         if (!receipt) continue;
-        if (typeof receipt.envelope.batchId === "string") {
-          qcBatchIds.add(receipt.envelope.batchId);
-        }
         if (
           record.kind === "agentWorkOrderDispatch" &&
           receiptWorkOrderIds.has(receipt.workOrderId)

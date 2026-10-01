@@ -43,16 +43,17 @@ export interface EnqueueAgentWorkOrderBatchQcInput {
 
 /**
  * 公共入口（AgentRuntime 面上）：为一批已收口的工单开一轮自动质检。
- * 闸门（每批只此一次）由确定性台账行承担，且**落闸先于开轮**（评审 A4）：
- * saveSessionInput 底下是同步写，命令出队前闸门行必已可见；若先开轮后落闸，
- * 落闸失败会出现「质检已在跑而闸门缺席」的二开窗口。
+ * 闸门（每批只此一次）由确定性台账行承担，且**落闸先于开轮、落闸失败就放弃开轮**
+ * （评审 A4/R1）：落闸 await 到底，写不进账本就不开轮——宁缺毋滥，绝不出现
+ * 「质检已在跑而闸门缺席」的二开窗口；写成功路径下 node:sqlite 同步写保证
+ * 命令出队前闸门行必已可见。
  * 崩溃窗口（闸门已落、轮未跑）质检丢失不补跑：与回执同一档 best-effort，权威
  * 事实在各目标会话的留档里。
  */
-export function enqueueAgentWorkOrderBatchQc(
+export async function enqueueAgentWorkOrderBatchQc(
   this: AgentRuntimeInternal,
   input: EnqueueAgentWorkOrderBatchQcInput,
-): void {
+): Promise<void> {
   const traceContext = input.traceContext ?? this.rootTraceContext;
   if (this.shuttingDown) {
     // teardown 期间不能再启动模型轮次；质检如实丢弃（各单回执仍已送达）。
@@ -91,33 +92,47 @@ export function enqueueAgentWorkOrderBatchQc(
     text,
     traceContext,
   };
-  // 闸门台账行（deterministic id，upsert 幂等）**先于** enqueueRuntimeCommand：
-  // 见函数头注。resume 清扫会把残余 admitted 行收口为 discarded，不影响触发侧的
-  // 「行存在即跳过」判定；run 阶段 promote 的就是这一行（id 对齐，评审 A2/B3）。
-  const admission = this.sessionStore?.saveSessionInput?.({
-    id: batchQcLedgerId(this.sessionId, input.batchId),
-    sessionID: this.sessionId,
-    kind: "agentWorkOrderBatchQc",
-    delivery: "queue",
-    payload: {
-      text,
-      batchId: input.batchId,
-      ...(input.batchTitle === undefined ? {} : { batchTitle: input.batchTitle }),
-      orders: [...input.orders],
-    },
-  });
-  this.enqueueRuntimeCommand(command);
-  if (admission) {
-    void this.trackResidencyBlockingWork(admission).catch((error) => {
-      this.logger?.warn("Failed to admit agent work order batch QC to ledger", {
-        ...traceContextToLogContext(traceContext),
+  // 闸门台账行（deterministic id，upsert 幂等）**先于** enqueueRuntimeCommand 且
+  // await 到底（见函数头注）。resume 清扫会把残余 admitted 行收口为 discarded，
+  // 不影响触发侧的「行存在即跳过」判定；run 阶段 promote 的就是这一行（id 对齐）。
+  try {
+    const admission = await this.sessionStore?.saveSessionInput?.({
+      id: batchQcLedgerId(this.sessionId, input.batchId),
+      sessionID: this.sessionId,
+      kind: "agentWorkOrderBatchQc",
+      delivery: "queue",
+      payload: {
+        text,
         batchId: input.batchId,
-        errorMessage: error instanceof Error ? error.message : String(error),
-        event: "session_input.admit_failed",
-        module: "core.runtime",
-        status: "failed",
-      });
+        ...(input.batchTitle === undefined ? {} : { batchTitle: input.batchTitle }),
+        orders: [...input.orders],
+      },
     });
+    this.enqueueRuntimeCommand(command);
+    if (admission) {
+      void this.trackResidencyBlockingWork(admission).catch((error) => {
+        this.logger?.warn("Failed to admit agent work order batch QC to ledger", {
+          ...traceContextToLogContext(traceContext),
+          batchId: input.batchId,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "session_input.admit_failed",
+          module: "core.runtime",
+          status: "failed",
+        });
+      });
+    }
+  } catch (error) {
+    // 落闸失败 = 闸门缺席，开轮就是裸奔（评审 R1）：放弃这轮质检，如实留痕。
+    // 批次数据无损（回执都已送达），老板下次重派或手动验收不受影响。
+    this.logger?.warn("Failed to save batch QC gate row; skipping inspection turn", {
+      ...traceContextToLogContext(traceContext),
+      batchId: input.batchId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "agent_work_order_batch_qc.gate_save_failed",
+      module: "core.runtime",
+      status: "failed",
+    });
+    return;
   }
   this.logger?.info("Agent work order batch QC enqueued", {
     ...traceContextToLogContext(traceContext),
@@ -188,7 +203,7 @@ async function startBatchQcIfComplete(
   const orders = batchQcOrdersFromDispatchRows(batchRows, input.batchId);
   if (orders.length === 0) return;
   const batchTitle = readBatchTitleFromDispatchRows(batchRows);
-  this.enqueueAgentWorkOrderBatchQc({
+  await this.enqueueAgentWorkOrderBatchQc({
     batchId: input.batchId,
     ...(batchTitle === undefined ? {} : { batchTitle }),
     orders,

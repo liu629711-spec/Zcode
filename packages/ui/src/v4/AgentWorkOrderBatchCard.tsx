@@ -42,6 +42,22 @@ const STATUS_DOT_KEY: Record<WorkOrderBatchOrder["status"], keyof typeof STATUS_
   failed: "failed",
 };
 
+/** 批次质检（纪律协议批）的三态灯：轮失败/被中断时绝不假报「完成」（评审 C1）。 */
+const QC_STATE_DOT: Record<NonNullable<WorkOrderBatchModel["qc"]>["state"], keyof typeof STATUS_DOT> =
+  { running: "running", done: "done", failed: "failed" };
+
+const QC_STATE_MESSAGE: Record<NonNullable<WorkOrderBatchModel["qc"]>["state"], string> = {
+  running: "chat.workOrderBatch.qc.running",
+  done: "chat.workOrderBatch.qc.done",
+  failed: "chat.workOrderBatch.qc.failed",
+};
+
+const QC_STATE_TEXT: Record<NonNullable<WorkOrderBatchModel["qc"]>["state"], string> = {
+  running: "text-foreground-subtle",
+  done: "text-success",
+  failed: "text-destructive",
+};
+
 export function AgentWorkOrderBatchCard({
   batch,
   context,
@@ -180,22 +196,18 @@ export function AgentWorkOrderBatchCard({
         ))}
       </div>
       {batch.qc ? (
-        // 批次质检（纪律协议批）：状态灯一行。结论全文在旁边的「质检 · 标题」卡里
-        // （质检轮自己渲染），工地卡不重复贴正文。
-        <div className="flex items-center gap-2 border-t border-card-border/60 px-3 py-1.5">
+        // 批次质检（纪律协议批）：状态灯一行（role=status，翻转可被读屏播报）。
+        // 结论全文在旁边的「质检 · 标题」卡里（质检轮自己渲染），工地卡不重复贴正文。
+        <div
+          role="status"
+          className="flex items-center gap-2 border-t border-card-border/60 px-3 py-1.5"
+        >
           <span
             aria-hidden="true"
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              STATUS_DOT[batch.qc.running ? "running" : "done"],
-            )}
+            className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[QC_STATE_DOT[batch.qc.state]])}
           />
-          <span className="text-ui-xs text-foreground-subtle">
-            {intl.formatMessage({
-              id: batch.qc.running
-                ? "chat.workOrderBatch.qc.running"
-                : "chat.workOrderBatch.qc.done",
-            })}
+          <span className={cn("text-ui-xs", QC_STATE_TEXT[batch.qc.state])}>
+            {intl.formatMessage({ id: QC_STATE_MESSAGE[batch.qc.state] })}
           </span>
         </div>
       ) : null}

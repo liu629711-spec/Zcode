@@ -191,7 +191,7 @@ export interface AgentRuntimeCoreMethods {
     };
   }): Promise<EnqueueAgentWorkOrderResult>;
   enqueueAgentWorkOrderReceipt(input: EnqueueAgentWorkOrderReceiptInput): void;
-  enqueueAgentWorkOrderBatchQc(input: EnqueueAgentWorkOrderBatchQcInput): void;
+  enqueueAgentWorkOrderBatchQc(input: EnqueueAgentWorkOrderBatchQcInput): Promise<void>;
   maybeEnqueueAgentWorkOrderBatchQc(
     input: MaybeEnqueueAgentWorkOrderBatchQcInput,
   ): Promise<void>;

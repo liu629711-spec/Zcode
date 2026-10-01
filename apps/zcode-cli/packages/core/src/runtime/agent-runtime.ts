@@ -447,7 +447,7 @@ export interface AgentRuntime {
    * 触发在 bootstrap 协议端口（最后一张回执销账后）；闸门（每批只此一次）由
    * 确定性台账行承担。绝不打断进行中回合。
    */
-  enqueueAgentWorkOrderBatchQc(input: EnqueueAgentWorkOrderBatchQcInput): void;
+  enqueueAgentWorkOrderBatchQc(input: EnqueueAgentWorkOrderBatchQcInput): Promise<void>;
   /**
    * 批次质检触发（幂等自查）：本会话 batchId 批次全部收口且未质检过 → 开质检轮；
    * 否则空转。闸门（确定性台账行）+ 同批并发串行都在实现里。活回执投递与

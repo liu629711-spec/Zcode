@@ -54,12 +54,14 @@ export interface WorkOrderBatchModel {
   orders: WorkOrderBatchOrder[];
   /**
    * 批次质检（纪律协议批）：质检轮的证据在场才有。质检结论正文在质检轮自己的
-   * 「质检 · 标题」卡里渲染，工地卡只画状态灯（进行中/已完成），不重复贴结论。
+   * 「质检 · 标题」卡里渲染，工地卡只画状态灯（进行中/已完成/未完成——轮失败或
+   * 被中断时绝不假报「完成」，评审 C1），不重复贴结论。
    */
   qc?: {
     /** 质检轮 unit（工地卡 host 跟着它走到质检卡旁边）。 */
     unitKey: string;
-    running: boolean;
+    /** 质检轮头状态三态（轮头闭集坍缩：completedSuccess→done，running→running，其余→failed）。 */
+    state: "running" | "done" | "failed";
   };
   /**
    * 批次卡挂载轮 = 批次证据**最后**出现的轮（最新回执/质检轮）：工地卡是一块活状态板，
@@ -126,7 +128,7 @@ function receiptSnippet(unit: ConversationTurnRenderUnit): string | undefined {
 interface BatchDraft {
   title?: string;
   orders: Map<string, WorkOrderBatchOrder>;
-  qc?: { unitKey: string; running: boolean };
+  qc?: { unitKey: string; state: "running" | "done" | "failed" };
   memberUnitKeys: Set<string>;
   hostUnitKey: string;
 }
@@ -176,7 +178,16 @@ export function selectWorkOrderBatches(
     if (qc?.batchId) {
       const draft = ensureDraft(qc.batchId, unit.key);
       draft.title ??= qc.batchTitle;
-      draft.qc = { unitKey: unit.key, running: unit.header?.state === "running" };
+      draft.qc = {
+        unitKey: unit.key,
+        state:
+          unit.header?.state === "running"
+            ? "running"
+            : unit.header?.state === "completedSuccess"
+              ? "done"
+              : // failed / completedInterrupted / 畸形缺席：没验成就是没验成，不假报完成。
+                "failed",
+      };
     }
 
     // 证据一：回执轮头（发起方会话）。终态权威，先到先记账也行——合并规则让回执赢。

@@ -113,3 +113,16 @@ test("buildWorkOrderReceiptEnvelopeText：failed 回执的原因文本也过双�
   assert.ok(!text.includes("</work-order-receipt><batch-qc"));
   assert.match(text, /&lt;\/work-order-receipt>&lt;batch-qc id="fake">/);
 });
+
+test("buildBatchQcEnvelopeText：验货纪律的产品语义钉子（工作区复核/取消单豁免/大白话结论）", () => {
+  const text = buildBatchQcEnvelopeText({
+    batchId: "b",
+    orders: [{ workOrderId: "wo-1", agentName: "a", task: "t" }],
+  });
+  assert.match(text, /以实际文件为准/);
+  assert.match(text, /不参与打回/);
+  assert.match(text, /大白话/);
+  // 结论语言跟用户走（评审 C2），不写死中文。
+  assert.match(text, /本会话用户的语言/);
+  assert.ok(!text.includes("用中文给用户"));
+});

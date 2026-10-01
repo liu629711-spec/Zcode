@@ -173,3 +173,14 @@ test("闸门行 id 带会话命名空间（A3）：跨会话撞 batchId 不共�
     runtime.sequence.some((entry) => entry.startsWith(`save:agentWorkOrderBatchQc:${SESSION}:${BATCH_ID}`)),
   );
 });
+
+test("落闸失败：放弃开轮（fail-closed，评审 R1）", async () => {
+  const runtime = makeRuntime([dispatchRow("wo-1", "discarded")]);
+  (runtime as unknown as {
+    sessionStore: { saveSessionInput: () => Promise<never> };
+  }).sessionStore.saveSessionInput = async () => {
+    throw new Error("db down");
+  };
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0, "闸门写不进就不能开轮");
+});

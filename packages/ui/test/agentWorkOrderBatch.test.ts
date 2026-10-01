@@ -319,10 +319,10 @@ test("selectWorkOrderBatches：质检轮把工地卡跟到质检卡旁，完成�
   const batches = selectWorkOrderBatches(units);
   assert.equal(batches.length, 1);
   assert.equal(batches[0]?.hostUnitKey, "qc-turn");
-  assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", running: false });
+  assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", state: "done" });
 });
 
-test("selectWorkOrderBatches：在跑的质检轮 → qc.running true（状态灯讲「正在质检」）", () => {
+test("selectWorkOrderBatches：在跑的质检轮 → qc.state running（状态灯讲「正在质检」）", () => {
   const units = [
     dispatchTurn("dispatch-turn", [
       dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
@@ -331,7 +331,21 @@ test("selectWorkOrderBatches：在跑的质检轮 → qc.running true（状态�
     qcTurn("qc-turn", BATCH, "running"),
   ];
   const batches = selectWorkOrderBatches(units);
-  assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", running: true });
+  assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", state: "running" });
+});
+
+test("selectWorkOrderBatches：质检轮失败/被中断 → qc.state failed，绝不假报「完成」", () => {
+  for (const state of ["failed", "completedInterrupted"] as const) {
+    const units = [
+      dispatchTurn("dispatch-turn", [
+        dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+        dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+      ]),
+      qcTurn("qc-turn", BATCH, state),
+    ];
+    const batches = selectWorkOrderBatches(units);
+    assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", state: "failed" }, state);
+  }
 });
 
 test("selectWorkOrderBatches：质检轮里的打回重派工单行照常聚进工地卡", () => {
