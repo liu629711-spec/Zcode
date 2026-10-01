@@ -30,6 +30,17 @@ declare interface Node<T> extends PromiseLike<T> {}
 declare interface AgentPersona {
   /** System prompt describing the actor's role. */
   system?: string;
+  /**
+   * Name of a roster employee (built-in crew like "code-reviewer", or any user/project
+   * agent) who works this actor's asks. The host resolves it against the workspace roster
+   * when the actor session is created: the employee's own system prompt (methodology,
+   * standards) becomes the actor's identity, and the employee's model selection applies
+   * unless the run sets subagent_model. The system field, when also given, is appended as
+   * step-specific requirements on top of the employee's own prompt. A name that matches
+   * nobody fails the run loudly at actor creation — it never silently degrades to an
+   * anonymous worker.
+   */
+  profile?: string;
 }
 
 /**

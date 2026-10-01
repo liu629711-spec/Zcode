@@ -65,6 +65,12 @@ export function refToString(ref: InstanceRef | ActorRef): string {
 export interface PersonaSpec {
   name?: string;
   system?: string;
+  /**
+   * 宿主侧才解析的员工引用（班底进图纸）：脚本作者点名的员工名。引擎**只透传不解读**——
+   * 名册在宿主（bootstrap 的 runtime 工厂），展开成 system prompt/模型覆盖是宿主的事；
+   * 引擎不 import 名册（app-free 纪律）。运行期值，随 actor-created 事件原样进 journal。
+   */
+  profile?: string;
 }
 
 /**

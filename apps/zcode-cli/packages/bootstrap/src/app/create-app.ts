@@ -86,6 +86,10 @@ import { createScriptWorkflowAgentRuntime } from "./script-workflow-child-runtim
 import { workflowActorModelPolicy } from "./workflow-actor-model.js";
 import { workflowActorToolPolicy } from "./workflow-actor-tools.js";
 import {
+  composeWorkflowActorPersona,
+  resolveWorkflowActorProfile,
+} from "./workflow-actor-profile.js";
+import {
   createNodeReplBrowserBroker,
   injectNodeReplBrowserBroker,
   type NodeReplBrowserBroker,
@@ -597,22 +601,36 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
               submitProfile,
               escalatePort,
               modelRequestAdmission,
-            }) =>
-              createScriptWorkflowAgentRuntime({
+            }) => {
+              // 班底进图纸（2026-10-01）：persona.profile 点名的员工在这里展开——
+              // 引擎只透传名字（app-free），名册在宿主。点名了但解析不出（缺失/歧义）
+              // 直接抛错让 run 大声失败，绝不悄悄退化成匿名工人；没点名时一切照旧。
+              // ponytail: 员工记忆本（profile.memory）暂未接进 actor 会话（见
+              // workflow-actor-profile.ts 的天花板注释），班底在图纸里暂时有脸没记性。
+              const actorProfile = resolveWorkflowActorProfile(
+                persona,
+                getRuntime().getAgentProfiles(),
+              );
+              const actorSystem = actorProfile
+                ? composeWorkflowActorPersona(actorProfile, persona)
+                : persona.system;
+              return createScriptWorkflowAgentRuntime({
                 childSessionId: actorSessionId,
                 configOverrides: {
                   // persona 的身份（有效名 + system）→ context builder 的工作流子代理路径。
                   // 匿名 / 无 system 时字段缺席，builder 据此省略 named 从句与 persona 段。
+                  // 有名员工时 system = 员工档案说明书（+脚本追加的步骤要求）。
                   workflowActor: {
                     ...(persona.name === undefined ? {} : { name: persona.name }),
-                    ...(persona.system === undefined ? {} : { persona: persona.system }),
+                    ...(actorSystem === undefined ? {} : { persona: actorSystem }),
                   },
                   // actor 的工具面是减法（全集减去会悬挂/越权的交互工具），只能经 configOverrides
                   // 表达（request.opts.tools 只有 allowlist）。
                   ...workflowActorToolPolicy(),
                   // 模型面：`runSubagentModel` 是本 run 自己的选择（`subagent_model`），在场时整条
-                  // 覆盖，排在 pin 之上——主代理不受它影响。没有它也没有 pin 就不覆盖——child runtime
-                  // 的基线本就是父会话当前模型（工厂的基线，见 script-workflow-child-runtime.ts）。
+                  // 覆盖，排在 pin 之上——主代理不受它影响。员工档案模型（班底进图纸）插在 run
+                  // 选择之下、pin 之上——它是员工身份的一部分。没有它也没有 pin 就不覆盖——child
+                  // runtime 的基线本就是父会话当前模型（工厂的基线，见 script-workflow-child-runtime.ts）。
                   // resume 带来的 pin 钉住上一次实际跑的模型（persona 冻结不变式的持久化那一半，见
                   // workflow-actor-model.ts 的优先级表）；parentSelection 取父会话**当前**的选择，
                   // 与工厂基线同源，pin 比对才不会漂移。
@@ -620,6 +638,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                     {
                       parentSelection: getRuntime().getSessionModelSelection(),
                       ...(runSubagentModel === undefined ? {} : { runSelection: runSubagentModel }),
+                      ...(actorProfile?.modelSelection === undefined
+                        ? {}
+                        : { profileSelection: actorProfile.modelSelection }),
                     },
                     pinnedModel,
                   ).configOverrides,
@@ -666,7 +687,8 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                 workflowEscalatePort: escalatePort,
                 // 请求级准入端口：driver 在治理器在场时给出，runner 每次尝试先过闸门。
                 ...(modelRequestAdmission === undefined ? {} : { modelRequestAdmission }),
-              }),
+              });
+            },
             // 边界记账与转录截断都读写 actor 会话的消息，走的必须是同一个 store。
             actorTranscriptStore: sessionStore,
             // 用户面产物的字节落点：与主会话、workflow 子

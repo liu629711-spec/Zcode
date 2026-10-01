@@ -30,6 +30,14 @@ interface WorkflowActorModelHost {
    * 缺省（见下面的函数注释）。主代理不受它影响——它只描述子代理。
    */
   runSelection?: ModelSelection | undefined;
+  /**
+   * 员工档案自带的模型（班底进图纸：persona.profile 点名的员工，档案 modelSelection）。
+   *
+   * 位置：run 选择之下、pin 之上。它是「这位员工自己配的模型」——员工身份的一部分；
+   * pin 守的是「父会话换模型导致的静默身份漂移」，而档案模型本来就是身份的显式组成，
+   * 不该被上一条 run 的记录压住。没有档案引用时缺席，优先级表不变。
+   */
+  profileSelection?: ModelSelection | undefined;
 }
 
 /** AgentRuntimeConfig 的模型面切片。 */
@@ -65,7 +73,7 @@ export class WorkflowActorPinnedModelError extends Error {
  * `pinnedModel` 是这个 actor 在 journal 里记下的 `resolvedModel`（`providerId/modelId`），
  * 只有 resume（含 amend-resume 从前驱承袭的种子）会带上它。
  *
- * 优先级：**本 run 的 `subagentModel` > resume pin > 父会话当前模型**。
+ * 优先级：**本 run 的 `subagentModel` > 员工档案模型（班底进图纸） > resume pin > 父会话当前模型**。
  *
  * | run 选择 | pin | 解析结果 |
  * |---|---|---|
@@ -110,6 +118,10 @@ export function workflowActorModelPolicy(
   // run 选择在场：整条覆盖，pin 连解析都不解析——它只是本 run 要替换掉的那个缺省。
   if (host.runSelection !== undefined) {
     return { configOverrides: { modelSelection: host.runSelection } };
+  }
+  // 员工档案模型（班底进图纸）：员工身份的一部分，压过 pin 的旧记录（见 host 字段注释）。
+  if (host.profileSelection !== undefined) {
+    return { configOverrides: { modelSelection: host.profileSelection } };
   }
   if (pinnedModel === undefined) return { configOverrides: {} };
   const pinned = parsePinnedModel(pinnedModel);
