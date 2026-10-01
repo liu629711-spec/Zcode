@@ -34,8 +34,8 @@ export function createSession(
         title, title_source, title_message_id, version,
         share_url, summary_additions, summary_deletions, summary_files, summary_diffs,
         revert, permission, time_created, time_updated, time_title_updated,
-        time_compacting, time_archived, persona_json
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, null, ?, ?, ?, ?, null, null, ?)
+        time_compacting, time_archived, persona_json, memory_isolation
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, null, null, null, null, ?, ?, ?, ?, null, null, ?, ?)
       on conflict(id) do update set
         project_id = excluded.project_id,
         workspace_id = excluded.workspace_id,
@@ -53,6 +53,7 @@ export function createSession(
         permission = coalesce(excluded.permission, session.permission),
         -- persona 是创建期一次性快照：首写为准，重放/并发重建不得清掉或漂移。
         persona_json = coalesce(session.persona_json, excluded.persona_json),
+        memory_isolation = coalesce(session.memory_isolation, excluded.memory_isolation),
         time_title_updated = excluded.time_title_updated,
         time_updated = excluded.time_updated
       `,
@@ -77,6 +78,7 @@ export function createSession(
       timeUpdated,
       input.titleSource || input.titleMessageID ? timeUpdated : null,
       encodeSessionPersonaJson(input.persona),
+      input.memoryIsolated === true ? 1 : null,
     );
 
   return mustGetSession(db, input.id);
@@ -131,6 +133,8 @@ export async function updateSession(
         time_title_updated = ?,
         time_compacting = ?,
         time_archived = ?,
+        -- 隔离标记是出生事实：update 通道只在显式置位时写 1，绝不静默清除。
+        memory_isolation = coalesce(?, memory_isolation),
         -- 路径自愈可能携带并发读取前的旧时间，不能回退真实活动时间。
         time_updated = max(time_updated, ?)
       where id = ?
@@ -156,6 +160,7 @@ export async function updateSession(
         : (current.time.titleUpdated ?? null),
       input.timeCompacting === undefined ? (current.time.compacting ?? null) : input.timeCompacting,
       input.timeArchived === undefined ? (current.time.archived ?? null) : input.timeArchived,
+      input.memoryIsolated === true ? 1 : null,
       input.timeUpdated ?? now,
       input.id,
     );

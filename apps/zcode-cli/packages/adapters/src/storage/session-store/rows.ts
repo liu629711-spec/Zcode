@@ -14,6 +14,7 @@ export interface SessionRow {
   version: string;
   share_url: string | null;
   persona_json: string | null;
+  memory_isolation: number | null;
   summary_additions: number | null;
   summary_deletions: number | null;
   summary_files: number | null;

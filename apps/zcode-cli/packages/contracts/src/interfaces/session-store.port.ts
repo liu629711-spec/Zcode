@@ -179,6 +179,8 @@ export interface SessionInfo {
    * 这是「这个会话属于哪个智能体」的结构化标记，供徽章等下游查询。
    */
   persona?: ZCodeSessionPersona;
+  /** 派单隔离工位标记（出生事实，audit 2026-10-01）；undefined = 未声明。 */
+  memoryIsolated?: boolean;
   time: {
     created: number;
     updated: number;
@@ -206,6 +208,12 @@ export interface CreateSessionInput {
   permission?: PermissionRuleset;
   /** persona 快照写点：与 title/taskType 同点落盘；缺席即普通会话，行值 NULL。 */
   persona?: ZCodeSessionPersona;
+  /**
+   * 派单隔离工位标记（审计 2026-10-01）：true = 该会话出生即记忆隔离工位
+   * （不读工作区记忆）。resume 由服务端读本标记重建隔离，不再依赖 create 期
+   * 一次性传参。首写为准，update 通道只置位不清除。
+   */
+  memoryIsolated?: boolean;
   time?: {
     created?: number;
     updated?: number;
@@ -283,6 +291,7 @@ export interface UpdateSessionInput {
   permission?: PermissionRuleset | null;
   timeCompacting?: number | null;
   timeArchived?: number | null;
+  memoryIsolated?: boolean;
 }
 
 export interface FileDiff {

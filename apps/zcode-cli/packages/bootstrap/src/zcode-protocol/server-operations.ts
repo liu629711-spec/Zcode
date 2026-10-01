@@ -149,8 +149,15 @@ type ZCodeSessionRecordParams = (
       // memoryEnabled 同 persona：服务端内部覆盖通道（派生工位传 false），
       // resume 线上协议不开放该键；声明仅为 create/resume 联合类型字段可达。
       memoryEnabled?: ZCodeSessionCreateParams["memoryEnabled"];
+      // 隔离工位标记同 persona：服务端从 session 行的 memory_isolation 列回灌
+      // （audit 2026-10-01），resume 线上协议不开放该键。
+      memoryIsolated?: boolean;
     })
-) & { taskType?: SessionTaskType };
+) & {
+  taskType?: SessionTaskType;
+  /** 隔离工位标记：create 期显式声明或从 session 行回灌（服务端内部通道）。 */
+  memoryIsolated?: boolean;
+};
 
 interface SessionStartupPreferences {
   memoryEnabled: boolean;
@@ -1491,6 +1498,8 @@ export async function activateSessionForResume(
       // 协议参数——避免调用方传陈旧 persona 的新通道）。修复批之前建的 persona
       // 会话行上没有快照，按普通会话恢复，UI/文档明示「重启后失忆」。
       ...(session.persona ? { persona: session.persona } : {}),
+      // 隔离工位标记随行回灌：临时工位重启后仍不读工作区记忆（audit 2026-10-01）。
+      ...(session.memoryIsolated === true ? { memoryIsolated: true } : {}),
       workspace,
     },
     params.sessionId as SessionId,
@@ -3314,9 +3323,9 @@ async function materializeSessionRecord(
   // 开关——派单开的普通会话不读工作区记忆笔记，否则 worker 开口就是老板的待办
   // （真机事故 2026-09-30）。resume 兼容分支声明同名字段仅为联合类型可达，无人传。
   const effectivePreferences =
-    params.memoryEnabled === undefined
-      ? startupPreferences
-      : { ...startupPreferences, memoryEnabled: params.memoryEnabled };
+    params.memoryEnabled === false || params.memoryIsolated === true
+      ? { ...startupPreferences, memoryEnabled: false }
+      : startupPreferences;
   return createRecord(context, params, sessionId, resume, effectivePreferences, trace);
 }
 

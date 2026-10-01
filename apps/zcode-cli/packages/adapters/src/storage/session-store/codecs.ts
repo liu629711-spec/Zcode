@@ -71,6 +71,7 @@ export function decodeSessionRow(row: SessionRow): SessionInfo {
     revert: decodeJson<SessionRevert>(row.revert),
     permission: decodeJson<PermissionRuleset>(row.permission),
     persona: decodeSessionPersonaJson(row.persona_json),
+    memoryIsolated: row.memory_isolation === 1 ? true : undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,

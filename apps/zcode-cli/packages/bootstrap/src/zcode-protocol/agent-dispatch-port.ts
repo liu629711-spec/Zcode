@@ -352,6 +352,22 @@ export function createProtocolAgentDispatchPort(
         workerTitleSeed,
         { traceContext: targetRecord.traceContext },
       );
+      // 隔离工位标记落盘（审计 2026-10-01 P1）：无名临时工的 memoryEnabled=false
+      // 原来只是 create 期一次性传参，重启后 resume 按全局开关恢复、员工又读到老板
+      // 记忆。行上落 memory_isolation（首写为准），resume 读到即重建隔离；有 persona
+      // 的员工会话隔离本就随快照穿越重启，不走这条路。
+      if (createdSession && namedProfile === undefined && context.deps.sessionStore) {
+        await context.deps.sessionStore
+          .updateSession({ id: targetRecord.app.sessionId, memoryIsolated: true })
+          .catch((error) => {
+            context.logger?.warn("Failed to persist memory isolation flag", {
+              errorMessage: error instanceof Error ? error.message : String(error),
+              event: "agent_dispatch.memory_isolation_flag_failed",
+              module: "bootstrap.zcode_protocol",
+              targetSessionId,
+            });
+          });
+      }
       const admission = await targetRecord.app.runtime.enqueueAgentWorkOrder({
         envelope,
         traceContext: targetRecord.traceContext,

@@ -930,7 +930,13 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = [
     id: "0023_session_persona",
     sql: SESSION_PERSONA_MIGRATION_SQL,
   },
+  {
+    appVersion: "0.16.9",
+    id: "0024_session_memory_isolation",
+    sql: SESSION_MEMORY_ISOLATION_MIGRATION_SQL,
+  },
 ];
 import { OFFICIAL_GLM_SELECTION_MIGRATION_SQL } from "./migrations/0021-official-glm-selection.js";
 import { BACKFILLED_SESSION_REASONING_MIGRATION_SQL } from "./migrations/0022-backfilled-session-reasoning.js";
 import { SESSION_PERSONA_MIGRATION_SQL } from "./migrations/0023-session-persona.js";
+import { SESSION_MEMORY_ISOLATION_MIGRATION_SQL } from "./migrations/0024-session-memory-isolation.js";
