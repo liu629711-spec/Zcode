@@ -27,6 +27,8 @@ export interface AgentWorkOrderBatchQcMeta {
   batchId: string;
   title: string;
   batchTitle?: string;
+  /** 合议口味（评审会批）：originMeta.qcKind === "review"，UI 据此换合议词表。 */
+  review?: boolean;
 }
 
 /**
@@ -46,6 +48,7 @@ export function resolveAgentWorkOrderBatchQcMeta(
     batchId: originMeta.workId,
     title: originMeta.title,
     ...(originMeta.batchTitle ? { batchTitle: originMeta.batchTitle } : {}),
+    ...(originMeta.qcKind === "review" ? { review: true } : {}),
   };
 }
 

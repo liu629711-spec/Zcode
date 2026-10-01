@@ -6681,6 +6681,11 @@ const zhCN: Record<string, string> = {
   "chat.workOrderBatch.qc.running": "正在质检…",
   "chat.workOrderBatch.qc.done": "质检完成",
   "chat.workOrderBatch.qc.failed": "质检未完成",
+  // 合议（评审会批）：评审会批的收口轮是合议而不是质检，同一盏灯换一套词。
+  "chat.workOrderBatch.qcReview.running": "正在合议…",
+  "chat.workOrderBatch.qcReview.done": "合议完成",
+  "chat.workOrderBatch.qcReview.failed": "合议未完成",
+  "chat.workOrderBatch.qcReview.station": "合议",
 };
 
 export default zhCN;

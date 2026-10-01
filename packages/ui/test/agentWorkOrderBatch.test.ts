@@ -289,7 +289,12 @@ test("selectWorkOrderBatches：被中断的回执是 cancelled，不再画成红
 // 批次质检（纪律协议批）：质检轮证据进批次模型。
 // ============================================================
 
-function qcTurn(key: string, batch: { batchId: string; batchTitle?: string }, state = "completedSuccess"): ConversationTurnRenderUnit {
+function qcTurn(
+  key: string,
+  batch: { batchId: string; batchTitle?: string },
+  state = "completedSuccess",
+  options?: { review?: boolean },
+): ConversationTurnRenderUnit {
   return unit(key, {
     header: turnHeaderRow({
       turnId: key,
@@ -301,6 +306,7 @@ function qcTurn(key: string, batch: { batchId: string; batchTitle?: string }, st
         title: `质检 · ${batch.batchTitle}`,
         batchId: batch.batchId,
         ...(batch.batchTitle ? { batchTitle: batch.batchTitle } : {}),
+        ...(options?.review ? { qcKind: "review" as const } : {}),
       },
     }),
   });
@@ -332,6 +338,19 @@ test("selectWorkOrderBatches：在跑的质检轮 → qc.state running（状态�
   ];
   const batches = selectWorkOrderBatches(units);
   assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", state: "running" });
+});
+
+test("selectWorkOrderBatches：评审会批的合议轮 → qc.review=true（合议词表的依据，不从标题反推）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "code-reviewer", task: "评审登录页", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle }, { workOrderId: "wo-1", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "code-reviewer", delivery: "started" }),
+      dispatchRow("call-2", { agent: "frontend-design", task: "评审登录页", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle }, { workOrderId: "wo-2", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "frontend-design", delivery: "started" }),
+    ]),
+    qcTurn("council-turn", BATCH, "completedSuccess", { review: true }),
+  ];
+  const batches = selectWorkOrderBatches(units);
+  assert.equal(batches.length, 1);
+  assert.deepEqual(batches[0]?.qc, { unitKey: "council-turn", state: "done", review: true });
 });
 
 test("selectWorkOrderBatches：质检轮失败/被中断 → qc.state failed，绝不假报「完成」", () => {

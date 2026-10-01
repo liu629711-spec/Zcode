@@ -62,6 +62,8 @@ export interface WorkOrderBatchModel {
     unitKey: string;
     /** 质检轮头状态三态（轮头闭集坍缩：completedSuccess→done，running→running，其余→failed）。 */
     state: "running" | "done" | "failed";
+    /** 合议口味（评审会批）：CLI 的 originMeta.qcKind="review"，UI 据此换合议词表。 */
+    review?: boolean;
   };
   /**
    * 批次卡挂载轮 = 批次证据**最后**出现的轮（最新回执/质检轮）：工地卡是一块活状态板，
@@ -128,7 +130,7 @@ function receiptSnippet(unit: ConversationTurnRenderUnit): string | undefined {
 interface BatchDraft {
   title?: string;
   orders: Map<string, WorkOrderBatchOrder>;
-  qc?: { unitKey: string; state: "running" | "done" | "failed" };
+  qc?: { unitKey: string; state: "running" | "done" | "failed"; review?: boolean };
   memberUnitKeys: Set<string>;
   hostUnitKey: string;
 }
@@ -187,6 +189,7 @@ export function selectWorkOrderBatches(
               ? "done"
               : // failed / completedInterrupted / 畸形缺席：没验成就是没验成，不假报完成。
                 "failed",
+        ...(qc.review ? { review: true } : {}),
       };
     }
 

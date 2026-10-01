@@ -7008,6 +7008,11 @@ const enUS: Record<string, string> = {
   "chat.workOrderBatch.qc.running": "Quality check running…",
   "chat.workOrderBatch.qc.done": "Quality check complete",
   "chat.workOrderBatch.qc.failed": "Quality check incomplete",
+  // Council (review-meeting batch): the settle turn is a council, same lamp, new words.
+  "chat.workOrderBatch.qcReview.running": "Council running…",
+  "chat.workOrderBatch.qcReview.done": "Council complete",
+  "chat.workOrderBatch.qcReview.failed": "Council incomplete",
+  "chat.workOrderBatch.qcReview.station": "Council",
 };
 
 export default enUS;
