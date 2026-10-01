@@ -41,6 +41,7 @@ import type {
 } from "@zcode/contracts";
 import type { EnqueueAgentWorkOrderResult } from "./methods/work-orders.js";
 import type { EnqueueAgentWorkOrderReceiptInput } from "./methods/work-order-receipts.js";
+import type { EnqueueAgentWorkOrderBatchQcInput } from "./methods/work-order-batch-qc.js";
 import type { RuntimeCommand, RuntimeCommandId } from "./command-queue.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
@@ -187,6 +188,7 @@ export interface AgentRuntimeCoreMethods {
     };
   }): Promise<EnqueueAgentWorkOrderResult>;
   enqueueAgentWorkOrderReceipt(input: EnqueueAgentWorkOrderReceiptInput): void;
+  enqueueAgentWorkOrderBatchQc(input: EnqueueAgentWorkOrderBatchQcInput): void;
   enqueueSubagentMessage(input: EnqueueSubagentMessageInput): undefined;
   drainPendingRuntimeCommandsForActiveLoop(): Promise<{
     backgroundSubagentResultConsumed: boolean;

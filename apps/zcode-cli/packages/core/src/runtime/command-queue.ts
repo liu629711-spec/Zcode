@@ -4,7 +4,10 @@ import type {
   BackgroundResultOriginMeta,
   WorkflowLaunchMeta,
 } from "@zcode/contracts";
-import type { WorkOrderReceiptOutcome } from "../subagent/work-order.js";
+import type {
+  BatchQcOrder,
+  WorkOrderReceiptOutcome,
+} from "../subagent/work-order.js";
 import type {
   ActiveTurnStartReservation,
   ContinueActiveTargetLoopOptions,
@@ -21,6 +24,7 @@ export type RuntimeCommandMode =
   | "subagent-message"
   | "work-order"
   | "work-order-receipt"
+  | "work-order-batch-qc"
   | "control-only-turn";
 export type RuntimeCommandId = string & {
   readonly __runtimeCommandId: unique symbol;
@@ -145,6 +149,27 @@ export interface WorkOrderReceiptRuntimeCommand extends RuntimeCommandBase {
 }
 
 /**
+ * 批次质检命令（纪律协议批）：批次全部收口后在发起方会话自动开的验货轮。
+ * 与 work-order-receipt 同家族但独立成轮（不与 task-notification 合并批次——
+ * 质检轮必须携带自己的身份 batchId/originMeta）。它**不进** denylist：打回重派
+ * 靠发起方自己的 AgentDispatch 能力，嵌套上限只限工单轮。
+ */
+export interface WorkOrderBatchQcRuntimeCommand extends RuntimeCommandBase {
+  readonly branchGeneration: number;
+  readonly mode: "work-order-batch-qc";
+  readonly source: "agent_work_order_batch_qc";
+  /** 质检的批次身份（≡ originMeta.workId，闸门台账行的确定性 id 也由它派生）。 */
+  readonly batchId: string;
+  readonly batchTitle?: string;
+  /** 待验货的工单清单（发起方派单台账里的同批行，触发侧已过滤）。 */
+  readonly orders: readonly BatchQcOrder[];
+  /** 后台结果轮头卡元信息（backgroundSource=agent_work_order_batch_qc）。 */
+  readonly originMeta: BackgroundResultOriginMeta;
+  /** 信封拼装后的质检正文（<batch-qc> 包裹 + 验货要求）。 */
+  readonly text: string;
+}
+
+/**
  * 一条排队的 controlOnly 用户轮：GUI「配置」
  * 已经把 run 修订掉了，这条命令只负责把这件事记进会话。它不进模型轮，却要落一条 user 消息，而
  * user 消息插不进一个正在跑的 turn（provider 语法：assistant 的 tool_use 与 tool_result 之间
@@ -171,6 +196,7 @@ export type RuntimeCommand =
   | SubagentMessageRuntimeCommand
   | WorkOrderRuntimeCommand
   | WorkOrderReceiptRuntimeCommand
+  | WorkOrderBatchQcRuntimeCommand
   | ControlOnlyTurnRuntimeCommand;
 
 export interface RuntimeCommandQueue {

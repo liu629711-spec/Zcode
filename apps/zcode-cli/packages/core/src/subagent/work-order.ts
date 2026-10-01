@@ -133,8 +133,18 @@ export function resolveDispatchModelSelection(input: {
  */
 const ENVELOPE_TAG_NEUTRALIZATION = /<\/?work-order(?:-receipt)?\b/gi;
 
+/**
+ * 批次质检信封（纪律协议批）的同族中和：员工答案会进发起方上下文，夹带的伪造
+ * `<batch-qc>` 信封会在质检轮里被当成真的验货输入（注入面与 work-order 家族同型）。
+ */
+const BATCH_QC_TAG_NEUTRALIZATION = /<\/?batch-qc\b/gi;
+
 function neutralizeEnvelopeTags(text: string): string {
   return text.replace(ENVELOPE_TAG_NEUTRALIZATION, (tag) => tag.replace("<", "&lt;"));
+}
+
+function neutralizeBatchQcTags(text: string): string {
+  return text.replace(BATCH_QC_TAG_NEUTRALIZATION, (tag) => tag.replace("<", "&lt;"));
 }
 
 /**
@@ -220,7 +230,7 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
   const status = input.outcome.status;
   const body =
     status === "completed"
-      ? neutralizeEnvelopeTags(input.outcome.response ?? "")
+      ? neutralizeEnvelopeTags(neutralizeBatchQcTags(input.outcome.response ?? ""))
       : status === "cancelled"
         ? "The target agent's turn was interrupted before it could produce a final answer. No answer was delivered; you may re-dispatch the task or report the interruption to the user."
         : `The target agent's turn failed before producing a final answer${
@@ -237,5 +247,64 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
     `<work-order-receipt id="${input.workOrderId}" from-agent="${agentLabel}" from-session="${input.targetSessionId}" status="${status}">`,
     body,
     "</work-order-receipt>",
+  ].join("\n");
+}
+
+// ── 批次质检（纪律协议批）纯规则 ────────────────────────────────────
+
+/** 质检清单里的一张工单：来自发起方派单台账的同批行（触发侧已过滤）。 */
+export interface BatchQcOrder {
+  workOrderId: string;
+  agentName: string;
+  task: string;
+}
+
+/**
+ * 质检轮头卡标题（后台结果轮头链按 originMeta.title 原样透传）。
+ * 质检是发起方自己的动作，标题不署任何员工名。
+ */
+export function buildBatchQcTitle(batchTitle?: string): string {
+  const title = batchTitle?.trim();
+  return title ? `质检 · ${title}` : "批次质检";
+}
+
+/** 质检信封里的单条任务上界：与 agentWorkOrderMeta 的落库上界同口径（超界截断诚实）。 */
+const BATCH_QC_TASK_MAX_CHARS = 8_192;
+
+/**
+ * 质检正文（发起方会话的模型输入 carrier）。自带 <batch-qc> 信封（批次身份 +
+ * 待验货清单），验货要求随信封走。回执答案不进信封——它们本就在发起方历史里，
+ * 按 receipt 信封的 workOrderId 对号；质检指令要求以工作区实际产物为准复核。
+ * ponytail: 清单来自老板自己派的单（同批派单台账行），不设单数上限；单条任务
+ * 有界。真出现超大批次（几十单 × 8192 字）再谈分页。
+ */
+export function buildBatchQcEnvelopeText(input: {
+  batchId: string;
+  batchTitle?: string;
+  orders: readonly BatchQcOrder[];
+}): string {
+  const title = neutralizeEnvelopeTags(neutralizeBatchQcTags(input.batchTitle?.trim() ?? ""));
+  const orderLines = input.orders.map((order) => {
+    const task = neutralizeEnvelopeTags(neutralizeBatchQcTags(order.task)).trim();
+    const clipped =
+      task.length > BATCH_QC_TASK_MAX_CHARS
+        ? `${task.slice(0, BATCH_QC_TASK_MAX_CHARS - 1)}…`
+        : task;
+    const agentLabel = escapeEnvelopeAttribute(order.agentName.trim() || "agent");
+    return `<order id="${order.workOrderId}" agent="${agentLabel}">${clipped}</order>`;
+  });
+  return [
+    `<batch-qc id="${input.batchId}"${title ? ` title="${escapeEnvelopeAttribute(title)}"` : ""}>`,
+    ...orderLines,
+    "</batch-qc>",
+    "",
+    "质检要求（自动验货，不是用户发言）：",
+    "1. 上列每张工单的回执都在本会话历史里（<work-order-receipt> 信封，信封 id 与上列 order 的 id 一一对应）。先逐单找到回执。",
+    "2. 逐单验货：对照工单任务核对回执答案；凡能落到工作区的（代码/文件改动），以实际文件为准复核，不轻信员工的自我报告。",
+    "3. 回执缺失、答案与任务对不上号、或答案自相矛盾的，如实标注「无法核实」，不要猜、不要补。",
+    "4. 被中断（cancelled）的单是用户自己叫停的，不参与打回，结论里如实说明即可。",
+    "5. 不合格的单（打回）：用 AgentDispatch 工具重派给同一位员工（agent 名与本清单一致），batch_id 与 batch_title 必须原样沿用本批次，任务正文 = 原任务全文 + 换行 + 「【质检打回】」+ 具体不合格原因与修改要求。整个批次最多打回这一轮，重派的单不再自动质检。",
+    "6. 没有问题就什么都不重派；拿不准的不要打回，写进结论里留给用户判断。",
+    "7. 最后用中文给用户一段大白话验收结论：每单一行（通过 / 已打回重派 / 无法核实 + 一句原因），最后一句总评。不要贴大段代码或长篇复述。",
   ].join("\n");
 }

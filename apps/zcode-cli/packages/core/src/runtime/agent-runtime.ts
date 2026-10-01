@@ -70,6 +70,7 @@ import { installAgentRuntimeMethods } from "./methods/index.js";
 import type { StartSavedWorkflowRunResult } from "./methods/dynamic-workflow-run-start.js";
 import type { EnqueueAgentWorkOrderResult } from "./methods/work-orders.js";
 import type { EnqueueAgentWorkOrderReceiptInput } from "./methods/work-order-receipts.js";
+import type { EnqueueAgentWorkOrderBatchQcInput } from "./methods/work-order-batch-qc.js";
 import type { AgentWorkOrderEnvelope } from "./deps.js";
 import type { AgentProfile } from "../subagent/profile.js";
 import type {
@@ -438,6 +439,12 @@ export interface AgentRuntime {
    * core 只负责排队、落库 synthetic notice 与按回执身份成轮。绝不打断进行中回合。
    */
   enqueueAgentWorkOrderReceipt(input: EnqueueAgentWorkOrderReceiptInput): void;
+  /**
+   * 批次质检（纪律协议批）窄公共入口：批次全部收口后为它开一轮自动验货。
+   * 触发在 bootstrap 协议端口（最后一张回执销账后）；闸门（每批只此一次）由
+   * 确定性台账行承担。绝不打断进行中回合。
+   */
+  enqueueAgentWorkOrderBatchQc(input: EnqueueAgentWorkOrderBatchQcInput): void;
   /** Session 常驻池使用的 runtime busy 权威事实，包含 queue/drain/reservation。 */
   hasActiveOrQueuedTurnWork(): boolean;
   /** Session 常驻池使用的后台 Bash/Agent/Workflow running 权威事实。 */

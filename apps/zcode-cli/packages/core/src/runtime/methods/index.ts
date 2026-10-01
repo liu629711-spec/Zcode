@@ -48,6 +48,7 @@ import {
 import { drainPendingRuntimeCommandsForActiveLoop } from "./runtime-command-active-loop.js";
 import { enqueueAgentWorkOrder } from "./work-orders.js";
 import { enqueueAgentWorkOrderReceipt } from "./work-order-receipts.js";
+import { enqueueAgentWorkOrderBatchQc } from "./work-order-batch-qc.js";
 import { enqueueSubagentMessage } from "./subagent-messages.js";
 import {
   acquireForegroundPromotionLease,
@@ -264,6 +265,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.enqueueBackgroundTaskNotification = enqueueBackgroundTaskNotification;
   proto.enqueueAgentWorkOrder = enqueueAgentWorkOrder;
   proto.enqueueAgentWorkOrderReceipt = enqueueAgentWorkOrderReceipt;
+  proto.enqueueAgentWorkOrderBatchQc = enqueueAgentWorkOrderBatchQc;
   proto.enqueueSubagentMessage = enqueueSubagentMessage;
   proto.drainPendingRuntimeCommandsForActiveLoop = drainPendingRuntimeCommandsForActiveLoop;
   proto.sealBackgroundTaskNotifications = sealBackgroundTaskNotifications;

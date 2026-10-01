@@ -10,6 +10,7 @@ import { persistSubagentMessageCommand } from "./subagent-messages.js";
 import { runControlOnlyTurnCommand } from "./control-only-turn.js";
 import { runWorkOrderCommand } from "./work-orders.js";
 import { runWorkOrderReceiptCommand } from "./work-order-receipts.js";
+import { runWorkOrderBatchQcCommand } from "./work-order-batch-qc.js";
 import { createTurnCancelledError } from "../helpers/index.js";
 import { executeTargetContinuationCommand } from "./target.js";
 import { runActiveTargetContinuationLoop } from "./target-continuation-loop.js";
@@ -66,6 +67,11 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
       if (firstCommand.mode === "work-order-receipt") {
         // 回执同样独占成轮：轮身份（workOrderId/originMeta）必须逐单携带。
         await runWorkOrderReceiptCommand.call(this, firstCommand);
+        continue;
+      }
+      if (firstCommand.mode === "work-order-batch-qc") {
+        // 质检同样独占成轮：轮身份（batchId/originMeta）必须逐批携带。
+        await runWorkOrderBatchQcCommand.call(this, firstCommand);
         continue;
       }
       if (commands.length !== 1) {
