@@ -11,6 +11,7 @@ import type { ModelSelection } from "@zcode/shared/model-selection";
 import { workflowActorModelPolicy } from "./workflow-actor-model.js";
 import {
   composeWorkflowActorPersona,
+  profileModelSelection,
   resolveWorkflowActorProfile,
   WorkflowActorProfileError,
 } from "./workflow-actor-profile.js";
@@ -52,13 +53,28 @@ test("resolveWorkflowActorProfile：名册没有 → 大声抛错，绝不静默
   );
 });
 
+test("resolveWorkflowActorProfile：not_found 报错带可用员工名单（照派单先例，评审 B3）", () => {
+  assert.throws(
+    () => resolveWorkflowActorProfile({ profile: "不存在的员工" }, ROSTER),
+    (error: unknown) => {
+      if (!(error instanceof WorkflowActorProfileError) || error.kind !== "not_found") return false;
+      // 名单只含身份档（project/user/built-in），插件工不进名单。
+      return (
+        error.names?.includes("code-reviewer") === true &&
+        error.names?.includes("插件工") !== true &&
+        error.message.includes("code-reviewer")
+      );
+    },
+  );
+});
+
 test("resolveWorkflowActorProfile：撞名 → 歧义抛错并带双方名字", () => {
   assert.throws(
     () => resolveWorkflowActorProfile({ profile: "同名" }, ROSTER),
     (error: unknown) =>
       error instanceof WorkflowActorProfileError &&
       error.kind === "ambiguous" &&
-      (error.matchedNames?.length ?? 0) === 2,
+      (error.names?.length ?? 0) === 2,
   );
 });
 
@@ -104,4 +120,31 @@ test("workflowActorModelPolicy：档案模型插在 run 选择之下、pin 之�
   );
   // 没点名时优先级表完全不变（基线回归）。
   assert.deepEqual(workflowActorModelPolicy({}, undefined).configOverrides, {});
+});
+
+test("profileModelSelection：档案模型可用→覆盖；已下线→回落父会话并报告；没配→不覆盖", () => {
+  const profileWithModel = { ...ROSTER[0]!, modelSelection: selection("crew-model") };
+  // 可用：原样覆盖。
+  assert.deepEqual(
+    profileModelSelection({
+      profile: profileWithModel,
+      isModelAvailable: (s) => s.modelId !== "dead-model",
+    }),
+    { modelSelection: selection("crew-model"), fellBack: false },
+  );
+  // 已下线（评审 B1/A5）：不覆盖（继承父会话模型）+ fellBack 让调用方留告警。
+  assert.deepEqual(
+    profileModelSelection({
+      profile: { ...profileWithModel, modelSelection: selection("dead-model") },
+      isModelAvailable: (s) => s.modelId !== "dead-model",
+    }),
+    { fellBack: true },
+  );
+  // 注册表缺席无法校验：原样放行，失败在第一次 ask 响亮浮出。
+  assert.deepEqual(profileModelSelection({ profile: profileWithModel }), {
+    modelSelection: selection("crew-model"),
+    fellBack: false,
+  });
+  // 员工没配模型：不覆盖，无告警。
+  assert.deepEqual(profileModelSelection({ profile: ROSTER[0]! }), { fellBack: false });
 });

@@ -87,8 +87,10 @@ import { workflowActorModelPolicy } from "./workflow-actor-model.js";
 import { workflowActorToolPolicy } from "./workflow-actor-tools.js";
 import {
   composeWorkflowActorPersona,
+  profileModelSelection,
   resolveWorkflowActorProfile,
 } from "./workflow-actor-profile.js";
+import { getRegistryBackedModel } from "./provider-registry-selection.js";
 import {
   createNodeReplBrowserBroker,
   injectNodeReplBrowserBroker,
@@ -614,6 +616,29 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
               const actorSystem = actorProfile
                 ? composeWorkflowActorPersona(actorProfile, persona)
                 : persona.system;
+              // 派单侧同款护栏（评审 B1/A5）：员工档案配的模型已下线/不在注册表时
+              // 不覆盖（actor 继承父会话当前模型，与派单回落老板当前模型同口径）+
+              // 告警留痕；别等第一次 ask 才以 invalid_model_request 炸穿整个 run。
+              const profileModel = profileModelSelection({
+                profile: actorProfile,
+                ...(options?.providerRegistry === undefined
+                  ? {}
+                  : {
+                      isModelAvailable: (selection) =>
+                        getRegistryBackedModel(options.providerRegistry, selection) !== undefined,
+                    }),
+              });
+              if (profileModel.fellBack) {
+                logger?.warn(
+                  "Workflow actor profile model is unavailable; falling back to the parent session model",
+                  {
+                    actorProfileName: actorProfile?.name,
+                    event: "workflow_actor.profile_model_fallback",
+                    module: "bootstrap.app",
+                    sessionId,
+                  },
+                );
+              }
               return createScriptWorkflowAgentRuntime({
                 childSessionId: actorSessionId,
                 configOverrides: {
@@ -638,9 +663,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                     {
                       parentSelection: getRuntime().getSessionModelSelection(),
                       ...(runSubagentModel === undefined ? {} : { runSelection: runSubagentModel }),
-                      ...(actorProfile?.modelSelection === undefined
+                      ...(profileModel.modelSelection === undefined
                         ? {}
-                        : { profileSelection: actorProfile.modelSelection }),
+                        : { profileSelection: profileModel.modelSelection }),
                     },
                     pinnedModel,
                   ).configOverrides,

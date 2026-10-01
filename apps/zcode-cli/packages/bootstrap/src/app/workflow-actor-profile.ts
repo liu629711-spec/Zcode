@@ -9,42 +9,43 @@
 
 import type { AgentProfile } from "@zcode/core";
 import { resolveWorkOrderTarget } from "@zcode/core";
+import type { ModelSelection } from "@zcode/shared/model-selection";
 import type { PersonaSpec } from "@zcode/dynamic-workflow";
 
-/** 点名了员工但解析失败时抛出；带人话原因（缺失给改法，歧义列撞名双方）。 */
+/** 报错里最多列多少个可用员工名（全名单可能很长，bounded 诚实）。 */
+const AVAILABLE_NAMES_MAX = 12;
+
+/** 点名了员工但解析失败时抛出；not_found 带可用员工名单（照派单同名错误的先例），歧义带撞名双方。 */
 export class WorkflowActorProfileError extends Error {
   readonly profileName: string;
   readonly kind: "not_found" | "ambiguous";
-  readonly matchedNames?: readonly string[];
+  /** not_found = 名册里可点名的员工名（截断诚实）；ambiguous = 撞名的双方。 */
+  readonly names?: readonly string[];
 
   constructor(
     kind: "not_found" | "ambiguous",
     profileName: string,
-    matchedNames?: readonly string[],
+    names?: readonly string[],
   ) {
     super(
       kind === "not_found"
-        ? `图纸里点名的员工「${profileName}」不在名册里（可能被改名或删除）。请改用名册里已有的员工名，或删掉这个 profile 引用改用普通 persona。`
-        : `图纸里点名的员工「${profileName}」在名册里撞了名（${(matchedNames ?? []).join("、")}）。请改用唯一的员工名，或按工号点名。`,
+        ? `图纸里点名的员工「${profileName}」不在名册里（可能被改名或删除）。可点名的员工：${(names ?? []).join("、") || "（名册是空的）"}。请改用其中一员，或删掉这个 profile 引用改用普通 persona。`
+        : `图纸里点名的员工「${profileName}」在名册里撞了名（${(names ?? []).join("、")}）。请改用唯一的员工名，或按工号点名。`,
     );
     this.name = "WorkflowActorProfileError";
     this.profileName = profileName;
     this.kind = kind;
-    if (matchedNames !== undefined) this.matchedNames = matchedNames;
+    if (names !== undefined) this.names = names;
   }
-}
-
-/** persona 是否点了员工的将（引用为空串视同没点）。 */
-export function hasWorkflowActorProfileRef(persona: PersonaSpec): boolean {
-  const wanted = persona.profile?.trim();
-  return wanted !== undefined && wanted.length > 0;
 }
 
 /**
  * persona 上的员工引用 → 名册档案。没点名返回 undefined；点名了但解析不出
- * （缺失/歧义）抛 {@link WorkflowActorProfileError}——**宁可 fail 整个 actor，
+ * （缺失/歧义）抛 {@link WorkflowActorProfileError}——**宁可让这一步响亮失败，
  * 也绝不悄悄退化成匿名工人**（那等于脚本作者点将点了个寂寞还不知道）。
  * 匹配口径与派单点名完全同源（大小写不敏感、限身份档三来源、歧义拒绝）。
+ * 注意失败时机：解析发生在该 actor 首次派发建会话时（不是引擎 createActor），
+ * 节点失败语义照旧——未被脚本接住时整个 run 以人话报错收场。
  */
 export function resolveWorkflowActorProfile(
   persona: PersonaSpec,
@@ -57,7 +58,32 @@ export function resolveWorkflowActorProfile(
   if (resolution.kind === "ambiguous") {
     throw new WorkflowActorProfileError("ambiguous", wanted, resolution.matchedNames);
   }
-  throw new WorkflowActorProfileError("not_found", wanted);
+  const availableNames = profiles
+    .filter(
+      (profile) =>
+        profile.source === "project" ||
+        profile.source === "user" ||
+        profile.source === "built-in",
+    )
+    .map((profile) => profile.name)
+    .slice(0, AVAILABLE_NAMES_MAX);
+  throw new WorkflowActorProfileError("not_found", wanted, availableNames);
+}
+
+/**
+ * 员工档案模型 → actor 的模型覆盖（派单侧同款护栏，评审 B1/A5）：档案配的模型
+ * 已下线/不在注册表时**不覆盖**（actor 自然继承父会话当前模型——与派单回落老板
+ * 当前模型同一口径），返回 fellBack=true 让调用方留一条告警日志；注册表无法
+ * 校验（缺 registry）时原样放行，失败在第一次 ask 时响亮浮出。
+ */
+export function profileModelSelection(input: {
+  profile: AgentProfile | undefined;
+  isModelAvailable?: (selection: ModelSelection) => boolean;
+}): { modelSelection?: ModelSelection; fellBack: boolean } {
+  const selection = input.profile?.modelSelection;
+  if (selection === undefined) return { fellBack: false };
+  if (input.isModelAvailable?.(selection) === false) return { fellBack: true };
+  return { modelSelection: selection, fellBack: false };
 }
 
 /**
@@ -65,10 +91,11 @@ export function resolveWorkflowActorProfile(
  * 脚本的 system（若给了）是**本步骤的附加要求**，追加在身份之后——图纸作者
  * 不该（也不能）改写员工的性格说明书，只能给这一步加要求。整体为空（无引用
  * 且脚本没给 system）返回 undefined，配置侧按「字段缺席」处理。
- * ponytail: 员工的记忆本（profile.memory）这一刀没接——actor 会话还没有
- * 记忆身份管道（projectAgentPersona + 记忆工具白名单联动），班底在图纸里
- * 暂时"有脸没记性"。升级路径 = 在 child runtime 配置上补记忆身份并让
- * persistent-memory 认它；观察到真机需求再接。
+ * ponytail: 员工的记忆本（profile.memory）、工具限制（profile.tools）与权限
+ * 模式都不随行——actor 会话保持图纸工人的标配工具面，班底在图纸里"有脸、
+ * 有嗓子（模型），暂时没记性、也没戴工牌上的工具镣铐"。记忆需要
+ * projectAgentPersona 身份管道，工具面需要与减法表求交的产品裁决；真机
+ * 需求出现先接哪个，等老板拍板。
  */
 export function composeWorkflowActorPersona(
   profile: AgentProfile,

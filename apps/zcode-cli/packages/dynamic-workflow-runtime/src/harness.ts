@@ -38,6 +38,7 @@ import {
   type AskSpec,
   type Caps,
   type ImportedRunCache,
+  type PersonaSpec,
   type RunSettlement,
   type ValidateFn,
   type WorkflowDriver,
@@ -466,7 +467,9 @@ function handleChildMessage(message: ChildMessage, deps: MessageDeps): void {
         const actorId = engine.createActor(
           message.siteId,
           message.name,
-          message.persona as string | undefined,
+          // child 桥原样透传（child-source.ts 的 JSON 桥不过滤字段）：persona 可能是
+          // 字符串，也可能是完整 PersonaSpec（班底进图纸的 profile 引用就靠它过桥）。
+          message.persona as PersonaSpec | string | undefined,
         );
         actorMap.set(message.localId, actorId);
       } catch (cause) {

@@ -31,14 +31,20 @@ declare interface AgentPersona {
   /** System prompt describing the actor's role. */
   system?: string;
   /**
-   * Name of a roster employee (built-in crew like "code-reviewer", or any user/project
-   * agent) who works this actor's asks. The host resolves it against the workspace roster
-   * when the actor session is created: the employee's own system prompt (methodology,
-   * standards) becomes the actor's identity, and the employee's model selection applies
-   * unless the run sets subagent_model. The system field, when also given, is appended as
-   * step-specific requirements on top of the employee's own prompt. A name that matches
-   * nobody fails the run loudly at actor creation — it never silently degrades to an
-   * anonymous worker.
+   * Name (or agentId) of a roster employee - the built-in crew like "code-reviewer", or
+   * any user/project agent - who works this actor's asks. The host resolves it against
+   * the workspace roster when the actor session is first dispatched: the employee's own
+   * system prompt (methodology, standards) becomes the actor's identity, and the
+   * employee's model selection applies unless the run sets subagent_model or that model
+   * is no longer available (then the actor inherits the parent session's model). The
+   * system field, when also given, is appended as step-specific requirements on top of
+   * the employee's own prompt - you can add requirements for a step, but you cannot
+   * rewrite the employee's character sheet. What does NOT travel with the employee:
+   * their tool restrictions, memory notebook and permission mode stay chat-side; the
+   * actor keeps the standard workflow-actor toolset. A name matching nobody (or an
+   * ambiguous one) fails loudly with a plain-language error listing the available
+   * employees when the actor session is first dispatched - it never silently degrades
+   * to an anonymous worker.
    */
   profile?: string;
 }

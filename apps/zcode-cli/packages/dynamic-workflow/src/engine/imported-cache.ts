@@ -208,6 +208,12 @@ export class ImportedWorldQueue {
  * 匿名 actor 永不附着：名字是缓存身份键，没有名字就没有可比对的坐标（代价已裁决）。
  * 比对之所以在**运行期**而不是提交时静态比对两份脚本：名字与 persona 都是运行期值
  * （`agent()` 的实参可以是动态表达式），静态比对是第二份真相，恰是本包处处要防的。
+ *
+ * 点名员工的 actor（profile 引用，班底进图纸）也**永不附着**：profile 是活引用——
+ * 缓存比对只能看到引用串，而名册内容（员工的人设/模型）在两次 run 之间可能被改过；
+ * 引用串相同 ≠ 身份相同，命中就会把旧人设产出的转录与答案接到新人设下重放
+ * （评审 A1）。身份正确性优先于续跑加速：点名 actor 一律全新重跑。要找回加速，
+ * 得让宿主把「解析后的身份指纹」随 persona 进 journal 再参与比对——等真需求再接。
  */
 export function matchImportedActor(
   cache: ImportedRunCache | undefined,
@@ -216,6 +222,7 @@ export function matchImportedActor(
   if (cache === undefined) return undefined;
   const name = spec.name;
   if (name === undefined || name === "") return undefined;
+  if (spec.profile !== undefined) return undefined;
   const candidate = cache.actors.get(name);
   if (candidate === undefined) return undefined;
   if (canonicalJson(spec) !== canonicalJson(candidate.persona)) return undefined;
