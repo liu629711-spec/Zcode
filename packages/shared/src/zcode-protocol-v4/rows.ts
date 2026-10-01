@@ -129,8 +129,10 @@ export const userInputRowSchema = z.object({
   ]),
   originMeta: z
     .object({
-      // 与 backgroundResultOriginMetaSchema 同一组取值（含 workflow run 的 "workflow"）。
-      backgroundSource: z.enum(["bash", "subagent", "workflow"]).optional(),
+      // 直接复用 backgroundResultOriginMetaSchema 的词表（评审 B5：这份副本曾停留在
+      // 旧三值、注释却声称同词表——早已漂移，每次加值都会再漏。本行目前没有写入方
+      // 会写 receipt/qc 值，放宽解析只影响手工/旧转录数据，安全）。
+      backgroundSource: backgroundResultOriginMetaSchema.shape.backgroundSource.optional(),
       workId: z.string().optional(),
       senderSessionId: z.string().optional(),
       senderLabel: z.string().optional(),
