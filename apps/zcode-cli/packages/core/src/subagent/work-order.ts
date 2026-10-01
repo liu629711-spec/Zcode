@@ -81,48 +81,45 @@ export interface DispatchModelResolution {
   /** 模型终值；undefined = 连回落目标都没有，交给会话缺省机制。 */
   modelSelection: ModelSelection | undefined;
   /**
-   * 终值来源：requested=本单指定（D32）且有效；ambient=环境默认（新会话=档案默认、
-   * 复用会话=会话常驻）且有效——复用会话据此**不传** per-order 覆盖，让会话自己跑；
-   * fallback=回落主会话当前模型（老板正用它说话，必然可用）。
+   * 终值来源：requested=本单指定（D32）且有效；fallback=跟随发起会话当前模型
+   * （老板正用它说话，必然可用——2026-10-02 拍板后这就是"没指定"的默认值）。
    */
-  source: "requested" | "ambient" | "fallback";
-  /** source=fallback 时的原因：unset=谁都没配模型；unavailable=配的模型不在注册表里（下线/已删/拼错）。 */
+  source: "requested" | "fallback";
+  /** source=fallback 时的原因：unset=本单没指定（正常默认）；unavailable=指定的模型不在注册表里（下线/没钱/拼错）。 */
   reason?: "unset" | "unavailable";
-  /** true = 候选模型没过校验又没有回落目标——只能带着坏候选上场（端口据此告警）。 */
+  /** true = 指定的模型没过校验又没有回落目标——只能带着坏候选上场（端口据此告警）。 */
   unavailable?: boolean;
 }
 
 /**
- * 派单模型裁决：候选 = 本单指定（requested，缺席才轮到环境默认 ambient），
- * 过了可用性判据就放行；候选不在注册表里（已下线/已删/拼错）**直接**回落主会话
- * 当前模型（fallback）——不再试环境默认（老板拍板口径：「配了已下线模型→回落主
- * 会话当前模型」，环境默认是「没指定时」的候选来源，不是失效后的下一级）。
- * 判据缺席时只做「没配 → 回落」，不越权拦人。
+ * 派单模型裁决（2026-10-02 老板拍板：**默认跟随发起会话当前模型**）：
+ * 候选只有本单指定（requested）；缺席 → 主会话当前模型（"我选了哪个，大家都用
+ * 哪个"）；指定了但不在注册表里（下线/没钱/拼错）→ 同样回落主会话当前模型并
+ * 留痕，绝不带着坏候选上场——除非连回落目标都没有（unavailable，端口告警）。
+ * 员工档案自配的模型**不再自动候选**（前口径"档案默认在没指定时当候选"废止：
+ * 各员工档案押不同供应商，有的一分钱不剩，默认分散不合理）。要跑某个特定模型，
+ * 派单时明说（工具 model 参数 / 图纸 subagent_model）。
  */
 export function resolveDispatchModelSelection(input: {
   /** 本单指定的模型（工单参数 model_selection）；派单方明确点名的那一个。 */
   requested?: ModelSelection;
-  /** 环境默认：新会话=档案默认；复用会话=会话常驻。requested 缺席时才生效。 */
-  ambient?: ModelSelection;
-  /** 回落目标：主会话当前模型。 */
+  /** 回落目标：主会话当前模型（既是"没指定"的默认值，也是"指定失效"的回落值）。 */
   fallback?: ModelSelection;
   /** 模型可用性判据；缺席 = 没法校验。 */
   isModelAvailable?: (selection: ModelSelection) => boolean;
 }): DispatchModelResolution {
-  const { requested, ambient, fallback, isModelAvailable } = input;
-  const candidate = requested ?? ambient;
-  const source = requested ? ("requested" as const) : ("ambient" as const);
-  if (!candidate) {
+  const { requested, fallback, isModelAvailable } = input;
+  if (requested === undefined) {
     return fallback
       ? { modelSelection: fallback, source: "fallback", reason: "unset" }
       : { modelSelection: undefined, source: "fallback", reason: "unset" };
   }
-  if (!isModelAvailable || isModelAvailable(candidate)) {
-    return { modelSelection: candidate, source };
+  if (!isModelAvailable || isModelAvailable(requested)) {
+    return { modelSelection: requested, source: "requested" };
   }
   return fallback
     ? { modelSelection: fallback, source: "fallback", reason: "unavailable" }
-    : { modelSelection: candidate, source, unavailable: true };
+    : { modelSelection: requested, source: "requested", unavailable: true };
 }
 
 /**

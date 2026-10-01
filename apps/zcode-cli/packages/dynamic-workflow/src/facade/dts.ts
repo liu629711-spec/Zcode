@@ -35,18 +35,17 @@ declare interface AgentPersona {
    * built-in crew like "code-reviewer", or any user/project agent - who works this
    * actor's asks. The host resolves it against the workspace roster when the actor
    * session is first dispatched: the employee's own system prompt (methodology,
-   * standards) becomes the actor's identity, and the employee's model selection applies
-   * unless the run sets subagent_model or that model is no longer available (then the
-   * actor inherits the parent session's model). On an amended re-run the employee's
-   * CURRENT model wins over the model recorded from the previous run (the host journals
-   * what actually ran, so the switch is auditable). The system field, when also given,
-   * is appended as step-specific requirements on top of the employee's own prompt - you
-   * can add requirements for a step, but you cannot rewrite the employee's character
-   * sheet. What does NOT travel with the employee: their tool restrictions, memory
-   * notebook and permission mode stay chat-side; the actor keeps the standard
-   * workflow-actor toolset. A name matching nobody (or an ambiguous one) fails loudly
-   * with a plain-language error listing the available employees when the actor session
-   * is first dispatched - it never silently degrades to an anonymous worker.
+   * standards) becomes the actor's identity. The model always follows this run -
+   * subagent_model when the run sets one, otherwise the parent session's current
+   * model (the employee's own model selection does not apply here). The system
+   * field, when also given, is appended as step-specific requirements on top of
+   * the employee's own prompt - you can add requirements for a step, but you cannot
+   * rewrite the employee's character sheet. What does NOT travel with the employee:
+   * their memory notebook, permission mode and model selection stay chat-side; the
+   * actor keeps the standard workflow-actor toolset. A name matching nobody (or an
+   * ambiguous one) fails loudly with a plain-language error listing the available
+   * employees when the actor session is first dispatched - it never silently
+   * degrades to an anonymous worker.
    */
   profile?: string;
 }

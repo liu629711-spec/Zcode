@@ -1,6 +1,6 @@
 // ============================================================
-// 班底进图纸（2026-10-01）的可运行检查：persona.profile 的名册解析、
-// 身份拼装、模型优先级插档。
+// 班底进图纸（2026-10-01）的可运行检查：persona.profile 的名册解析与
+// 身份拼装（模型不随行——2026-10-02 拍板，默认跟随发起会话）。
 // 运行：npx tsx --test apps/zcode-cli/packages/bootstrap/src/app/workflow-actor-profile.test.ts
 // ============================================================
 
@@ -11,7 +11,6 @@ import type { ModelSelection } from "@zcode/shared/model-selection";
 import { workflowActorModelPolicy } from "./workflow-actor-model.js";
 import {
   composeWorkflowActorPersona,
-  profileModelSelection,
   resolveWorkflowActorProfile,
   WorkflowActorProfileError,
 } from "./workflow-actor-profile.js";
@@ -117,51 +116,15 @@ test("composeWorkflowActorPersona：只点名没加要求 → 原样用档案说
   assert.equal(composeWorkflowActorPersona(ROSTER[0]!, {}), "你是审查员：对照合格标准逐条复核。");
 });
 
-const selection = (modelId: string): ModelSelection => ({ providerId: "prov", modelId });
-
-test("workflowActorModelPolicy：档案模型插在 run 选择之下、pin 之上", () => {
-  const profileModel = selection("crew-model");
-  const runModel = selection("run-model");
-  // run 显式选择永远最高。
-  assert.deepEqual(
-    workflowActorModelPolicy(
-      { profileSelection: profileModel, runSelection: runModel },
-      "prov/old",
-    ).configOverrides,
-    { modelSelection: runModel },
-  );
-  // 没 run 选择时档案模型压过 pin：员工自己的模型是身份的一部分。
-  assert.deepEqual(
-    workflowActorModelPolicy({ profileSelection: profileModel }, "prov/old").configOverrides,
-    { modelSelection: profileModel },
-  );
-  // 没点名时优先级表完全不变（基线回归）。
+test("workflowActorModelPolicy：员工档案自配模型不插档（2026-10-02 拍板），优先级表回到 run > pin > 父会话", () => {
+  const selection = (modelId: string): ModelSelection => ({ providerId: "prov", modelId });
+  // 没 run 选择、没 pin → 不覆盖（继承父会话当前模型）。
   assert.deepEqual(workflowActorModelPolicy({}, undefined).configOverrides, {});
+  // run 显式选择照旧最高。
+  assert.deepEqual(
+    workflowActorModelPolicy({ runSelection: selection("run-model") }, "prov/old")
+      .configOverrides,
+    { modelSelection: selection("run-model") },
+  );
 });
 
-test("profileModelSelection：档案模型可用→覆盖；已下线→回落父会话并报告；没配→不覆盖", () => {
-  const profileWithModel = { ...ROSTER[0]!, modelSelection: selection("crew-model") };
-  // 可用：原样覆盖。
-  assert.deepEqual(
-    profileModelSelection({
-      profile: profileWithModel,
-      isModelAvailable: (s) => s.modelId !== "dead-model",
-    }),
-    { modelSelection: selection("crew-model"), fellBack: false },
-  );
-  // 已下线（评审 B1/A5）：不覆盖（继承父会话模型）+ fellBack 让调用方留告警。
-  assert.deepEqual(
-    profileModelSelection({
-      profile: { ...profileWithModel, modelSelection: selection("dead-model") },
-      isModelAvailable: (s) => s.modelId !== "dead-model",
-    }),
-    { fellBack: true },
-  );
-  // 注册表缺席无法校验：原样放行，失败在第一次 ask 响亮浮出。
-  assert.deepEqual(profileModelSelection({ profile: profileWithModel }), {
-    modelSelection: selection("crew-model"),
-    fellBack: false,
-  });
-  // 员工没配模型：不覆盖，无告警。
-  assert.deepEqual(profileModelSelection({ profile: ROSTER[0]! }), { fellBack: false });
-});

@@ -248,18 +248,18 @@ export function createProtocolAgentDispatchPort(
       const workerTitleSeed = input.title?.trim() || input.task;
 
       // 员工默认模型护栏（2026-10-01，真机事故 9-30 员工配了下线模型工单三连炸）：
-      // 派单当场校验模型在不在注册表里，没配/已下线 → 回落主会话当前模型（老板
-      // 正用它说话，必然可用），别等工单轮跑起来才被供应商拒收。
+      // 派单当场校验模型在不在注册表里。2026-10-02 拍板修订：**默认跟随发起会话
+      // 当前模型**——员工档案自配的模型不再自动候选（各档案押不同供应商，有的
+      // 一分钱不剩，默认分散不合理）；要跑某个特定模型，派单时明说（本单指定）。
       const fallbackModel = ownRecord.app.runtime.getSessionModelSelection();
       const getModelOption = ownRecord.app.getModelOption;
       const isModelAvailable = getModelOption
         ? (selection: ModelSelection) => getModelOption(selection) !== undefined
         : undefined;
-      // 新段出生模型：本单指定（D32）→ 档案默认 → 回落。落到 persona 快照/出生
+      // 新段出生模型：本单指定 → 跟随发起会话当前模型。落到 persona 快照/出生
       // 常驻上的就是工单实际要跑的模型，回执与日志对账同源。
       const birthModel = resolveDispatchModelSelection({
         requested: input.modelSelection,
-        ambient: namedProfile?.modelSelection,
         fallback: fallbackModel,
         isModelAvailable,
       });
@@ -314,17 +314,16 @@ export function createProtocolAgentDispatchPort(
       const targetRecord =
         context.sessions.get(targetSessionId) ??
         (await deps.activateSessionRecord(targetSessionId));
-      // 复用会话的护栏：本单指定 / 会话常驻过了校验才放行。ambient（会话常驻）
-      // 有效时**不传** per-order 覆盖——让会话自己的常驻模型跑，保持既有语义；
-      // 只有指定/回落才带 modelSelection。
+      // 复用会话同样跟随发起会话当前模型（2026-10-02 拍板）：前口径是「会话常驻
+      // 有效就不传 per-order 覆盖、让会话自己跑」，那等于员工各押各的供应商——
+      // 现在除了本单指定，一律带 per-order 覆盖（老板当前模型），员工会话自己的
+      // 常驻只管它自己的闲聊轮。指定了已下线模型 → 回落老板当前模型并留痕。
       const dispatchModel = resolveDispatchModelSelection({
         requested: input.modelSelection,
-        ambient: targetRecord.app.runtime.getSessionModelSelection(),
         fallback: fallbackModel,
         isModelAvailable,
       });
-      const enqueueModelSelection =
-        dispatchModel.source === "ambient" ? undefined : dispatchModel.modelSelection;
+      const enqueueModelSelection = dispatchModel.modelSelection;
       if (dispatchModel.unavailable) {
         context.logger?.warn("Agent work order model unavailable and no fallback", {
           event: "agent_dispatch.model_fallback",
@@ -333,7 +332,11 @@ export function createProtocolAgentDispatchPort(
           targetSessionId,
           workOrderId: envelope.workOrderId,
         });
-      } else if (dispatchModel.source === "fallback" && dispatchModel.modelSelection) {
+      } else if (
+        dispatchModel.source === "fallback" &&
+        dispatchModel.reason === "unavailable" &&
+        dispatchModel.modelSelection
+      ) {
         context.logger?.info("Agent work order model fell back to dispatcher's current model", {
           event: "agent_dispatch.model_fallback",
           module: "bootstrap.zcode_protocol",

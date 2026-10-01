@@ -9,7 +9,6 @@
 
 import type { AgentProfile } from "@zcode/core";
 import { resolveWorkOrderTarget } from "@zcode/core";
-import type { ModelSelection } from "@zcode/shared/model-selection";
 import type { PersonaSpec } from "@zcode/dynamic-workflow";
 
 /** 报错里最多列多少个可用员工名（全名单可能很长，bounded 诚实）。 */
@@ -84,30 +83,15 @@ export function resolveWorkflowActorProfile(
 }
 
 /**
- * 员工档案模型 → actor 的模型覆盖（派单侧同款护栏，评审 B1/A5）：档案配的模型
- * 已下线/不在注册表时**不覆盖**（actor 自然继承父会话当前模型——与派单回落老板
- * 当前模型同一口径），返回 fellBack=true 让调用方留一条告警日志；注册表无法
- * 校验（缺 registry）时原样放行，失败在第一次 ask 时响亮浮出。
- */
-export function profileModelSelection(input: {
-  profile: AgentProfile | undefined;
-  isModelAvailable?: (selection: ModelSelection) => boolean;
-}): { modelSelection?: ModelSelection; fellBack: boolean } {
-  const selection = input.profile?.modelSelection;
-  if (selection === undefined) return { fellBack: false };
-  if (input.isModelAvailable?.(selection) === false) return { fellBack: true };
-  return { modelSelection: selection, fellBack: false };
-}
-
-/**
  * 有名员工 + 脚本人设 → actor 的 system 文本。员工档案的说明书是身份主体；
  * 脚本的 system（若给了）是**本步骤的附加要求**，追加在身份之后——图纸作者
  * 不该（也不能）改写员工的性格说明书，只能给这一步加要求。整体为空（无引用
  * 且脚本没给 system）返回 undefined，配置侧按「字段缺席」处理。
- * ponytail: 员工的**记忆本**（profile.memory）与**权限模式**不随行（2026-10-01
- * 拍板）：actor 会话还没有记忆身份管道（projectAgentPersona + 记忆工具白名单
- * 联动），且图纸并行扇出会让同一本记忆多写者互踩——真有需求先做只读；
- * 工具限制已随行（workflow-actor-tools.ts 的合成，含控制管线豁免）。
+ * ponytail: 员工的**记忆本**（profile.memory）、**权限模式**与**自配模型**
+ * 不随行（2026-10-02 拍板）：actor 会话还没有记忆身份管道（projectAgentPersona
+ * + 记忆工具白名单联动），且图纸并行扇出会让同一本记忆多写者互踩——真有需求
+ * 先做只读；模型默认一律跟随发起会话（各档案押不同供应商的默认分散不合理），
+ * 要换模型走图纸的 subagent_model。
  */
 export function composeWorkflowActorPersona(
   profile: AgentProfile,

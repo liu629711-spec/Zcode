@@ -274,7 +274,6 @@ const modelB: ModelSelection = { providerId: "prov-b", modelId: "model-b" };
 test("resolveDispatchModelSelection：本单指定且可用 → 原样放行（D32 语义不变）", () => {
   const resolution = resolveDispatchModelSelection({
     requested: modelA,
-    ambient: modelB,
     fallback: modelB,
     isModelAvailable: (m) => m.modelId === "model-a",
   });
@@ -306,31 +305,7 @@ test("resolveDispatchModelSelection：本单指定已下线且没有回落目标
   assert.equal(resolution.unavailable, true);
 });
 
-test("resolveDispatchModelSelection：没指定时档案默认有效 → ambient（复用会话不传覆盖）", () => {
-  const resolution = resolveDispatchModelSelection({
-    ambient: modelB,
-    fallback: modelA,
-    isModelAvailable: () => true,
-  });
-  assert.deepEqual(
-    { source: resolution.source, model: resolution.modelSelection?.modelId },
-    { source: "ambient", model: "model-b" },
-  );
-});
-
-test("resolveDispatchModelSelection：会话常驻模型已下线 → 回落主会话模型（9-30 事故主场景）", () => {
-  const resolution = resolveDispatchModelSelection({
-    ambient: modelA,
-    fallback: modelB,
-    isModelAvailable: (m) => m.modelId !== "model-a",
-  });
-  assert.deepEqual(
-    { source: resolution.source, reason: resolution.reason, model: resolution.modelSelection?.modelId },
-    { source: "fallback", reason: "unavailable", model: "model-b" },
-  );
-});
-
-test("resolveDispatchModelSelection：谁都没配模型 → 回落主会话当前模型", () => {
+test("resolveDispatchModelSelection：没指定 → 跟随主会话当前模型（2026-10-02 拍板，档案默认废止）", () => {
   const resolution = resolveDispatchModelSelection({
     fallback: modelB,
     isModelAvailable: () => true,

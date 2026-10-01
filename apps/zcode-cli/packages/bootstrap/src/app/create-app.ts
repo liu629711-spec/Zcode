@@ -87,10 +87,8 @@ import { workflowActorModelPolicy } from "./workflow-actor-model.js";
 import { workflowActorToolPolicy } from "./workflow-actor-tools.js";
 import {
   composeWorkflowActorPersona,
-  profileModelSelection,
   resolveWorkflowActorProfile,
 } from "./workflow-actor-profile.js";
-import { getRegistryBackedModel } from "./provider-registry-selection.js";
 import {
   createNodeReplBrowserBroker,
   injectNodeReplBrowserBroker,
@@ -639,33 +637,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                   toolDisallowlist: toolPolicy.toolDisallowlist.join(","),
                 });
               }
-              // 派单侧同款护栏（评审 B1/A5）：员工档案配的模型已下线/不在注册表时
-              // 不覆盖（actor 继承父会话当前模型，与派单回落老板当前模型同口径）+
-              // 告警留痕；别等第一次 ask 才以 invalid_model_request 炸穿整个 run。
-              const profileModel = profileModelSelection({
-                profile: actorProfile,
-                ...(options?.providerRegistry === undefined
-                  ? {}
-                  : {
-                      isModelAvailable: (selection) =>
-                        getRegistryBackedModel(options.providerRegistry, selection) !== undefined,
-                    }),
-              });
-              if (profileModel.fellBack) {
-                logger?.warn(
-                  "Workflow actor profile model is unavailable; falling back to the parent session model",
-                  {
-                    actorProfileName: actorProfile?.name,
-                    event: "workflow_actor.profile_model_fallback",
-                    // 记下档案里配的是哪个模型（provider/model 两段），排障不用翻档案反推。
-                    profileModelId: actorProfile?.modelSelection
-                      ? `${actorProfile.modelSelection.providerId}/${actorProfile.modelSelection.modelId}`
-                      : undefined,
-                    module: "bootstrap.app",
-                    sessionId,
-                  },
-                );
-              }
+              // 模型面说明（2026-10-02 拍板）：员工档案自配的模型**不插档**——默认
+              // 一律跟随发起会话的模型（profile.modelSelection 在派单与图纸两条路
+              // 都不再自动生效；要换模型走 run 级 subagent_model 显式指定）。
               return createScriptWorkflowAgentRuntime({
                 childSessionId: actorSessionId,
                 configOverrides: {
@@ -683,19 +657,17 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                     ? {}
                     : { toolAllowlist: toolPolicy.toolAllowlist }),
                   // 模型面：`runSubagentModel` 是本 run 自己的选择（`subagent_model`），在场时整条
-                  // 覆盖，排在 pin 之上——主代理不受它影响。员工档案模型（班底进图纸）插在 run
-                  // 选择之下、pin 之上——它是员工身份的一部分。没有它也没有 pin 就不覆盖——child
-                  // runtime 的基线本就是父会话当前模型（工厂的基线，见 script-workflow-child-runtime.ts）。
-                  // resume 带来的 pin 钉住上一次实际跑的模型（persona 冻结不变式的持久化那一半，见
-                  // workflow-actor-model.ts 的优先级表）；parentSelection 取父会话**当前**的选择，
-                  // 与工厂基线同源，pin 比对才不会漂移。
+                  // 覆盖，排在 pin 之上——主代理不受它影响。员工档案自配的模型**不插档**
+                  // （2026-10-02 拍板：默认一律跟随发起会话的模型，默认分散不合理）。
+                  // 没有 run 选择也没有 pin 就不覆盖——child runtime 的基线本就是父会话
+                  // 当前模型（工厂的基线，见 script-workflow-child-runtime.ts）。
+                  // resume 带来的 pin 钉住上一次实际跑的模型（persona 冻结不变式的持久化那一半，
+                  // 见 workflow-actor-model.ts 的优先级表）；parentSelection 取父会话**当前**的
+                  // 选择，与工厂基线同源，pin 比对才不会漂移。
                   ...workflowActorModelPolicy(
                     {
                       parentSelection: getRuntime().getSessionModelSelection(),
                       ...(runSubagentModel === undefined ? {} : { runSelection: runSubagentModel }),
-                      ...(profileModel.modelSelection === undefined
-                        ? {}
-                        : { profileSelection: profileModel.modelSelection }),
                     },
                     pinnedModel,
                   ).configOverrides,
