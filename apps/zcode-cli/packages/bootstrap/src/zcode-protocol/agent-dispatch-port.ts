@@ -389,6 +389,31 @@ export function createProtocolAgentDispatchPort(
           ? {}
           : { modelSelection: enqueueModelSelection }),
       });
+      // 派单台账（audit 2026-10-01 对账批）：发起方账本落下「已派未回」的凭据
+      // （完整信封 + 工号 + 归还地址）。回执丢失/崩溃后，resume 清扫据此合成
+      // 失败回执——钱花了账上必须有。best-effort：落不进账本不影响派单本身。
+      try {
+        context.deps.sessionStore?.saveSessionInput?.({
+          id: `agentWorkOrderDispatch:${envelope.workOrderId}`,
+          sessionID: ownRecord.app.sessionId,
+          kind: "agentWorkOrderDispatch",
+          delivery: "queue",
+          payload: {
+            text: envelope.task,
+            workOrderId: envelope.workOrderId,
+            agentName: namedProfile?.name ?? workerTitleSeed,
+            targetSessionId,
+            envelope,
+          },
+        });
+      } catch (ledgerError) {
+        context.logger?.warn("Failed to admit agent work order dispatch to ledger", {
+          errorMessage: ledgerError instanceof Error ? ledgerError.message : String(ledgerError),
+          event: "agent_dispatch.ledger_admit_failed",
+          module: "bootstrap.zcode_protocol",
+          workOrderId: envelope.workOrderId,
+        });
+      }
       context.logger?.info("Agent work order dispatched", {
         createdSession,
         delivery: admission.delivery,

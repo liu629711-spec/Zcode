@@ -104,6 +104,9 @@ export function receiptOutcomeFromSessionEvent(
  * `setTimeout(0)` 后的订阅/enqueue 都在干净时点（queueMicrotask 不行，仍排在
  * 迭代恢复之前）。之后第一棒再没有在飞事件，同 inputId 的终态只可能来自重试轮。
  */
+/** 回执看门狗默认时长：工单合法长跑可超 30 分钟，触发时会先查活跃轮再决定。 */
+const WATCHDOG_MS_DEFAULT = 30 * 60_000;
+
 export function scheduleWorkOrderReceiptRelay(
   context: ZCodeProtocolAgentServerContext,
   deps: ReceiptRelayDeps,
@@ -117,52 +120,97 @@ export function scheduleWorkOrderReceiptRelay(
     modelSelection?: ModelSelection;
     /** true = 本订阅是自动重试的第二棒：失败不再重试，如实投递。 */
     retried?: boolean;
+    /** 回执看门狗时长；缺席用 30 分钟默认（测试注入小值）。 */
+    watchdogMs?: number;
   },
 ): () => void {
-  const unsubscribe = input.targetRecord.app.runtime.subscribeEvents({
+  let unsubscribe: () => void;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const clearWatchdog = () => {
+    if (watchdog !== undefined) {
+      clearTimeout(watchdog);
+      watchdog = undefined;
+    }
+  };
+  const handleTerminalOutcome = (outcome: WorkOrderReceiptOutcome) => {
+    clearWatchdog();
+    if (outcome.status === "failed" && !input.retried) {
+      // 重试推迟到下一个宏任务（本函数头注：Set 迭代中途挂订阅会收到正在
+      // 分发的这条终态事件）。catch 兜 retryWorkOrderOnce 的投递失败。
+      setTimeout(() => {
+        void retryWorkOrderOnce(context, deps, input, outcome).catch((error) => {
+          context.logger?.warn("Failed to schedule agent work order retry", {
+            errorMessage: error instanceof Error ? error.message : String(error),
+            event: "agent_work_order_receipt.retry_schedule_failed",
+            fromSessionId: input.envelope.fromSessionId,
+            module: "bootstrap.zcode_protocol",
+            targetSessionId: input.targetRecord.app.sessionId,
+            workOrderId: input.envelope.workOrderId,
+          });
+        });
+      }, 0);
+      return;
+    }
+    const finalOutcome =
+      outcome.status === "failed" && input.retried ? { ...outcome, retried: true } : outcome;
+    void deliverWorkOrderReceipt(context, deps, {
+      envelope: input.envelope,
+      agentName: input.agentName,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+      targetSessionId: input.targetRecord.app.sessionId,
+      outcome: finalOutcome,
+    }).catch((error) => {
+      context.logger?.warn("Failed to deliver agent work order receipt", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "agent_work_order_receipt.delivery_failed",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        outcomeStatus: finalOutcome.status,
+        targetSessionId: input.targetRecord.app.sessionId,
+        workOrderId: input.envelope.workOrderId,
+      });
+    });
+  };
+  // 回执看门狗（audit 2026-10-01 对账批）：目标 record 关闭/卡死时订阅随 record
+  // 消失，回执永不到达，老板的卡永远停在「已派单」。到点先看本单是否还在目标
+  // 会话里活跃（长任务合法超过 30 分钟）：还在跑就重新武装；确认死单才合成
+  // 超时失败回执，走与 TurnError 相同的终态处理。
+  const armWatchdog = () => {
+    watchdog = setTimeout(() => {
+      const runtime = input.targetRecord.app.runtime;
+      const stillRunning =
+        runtime.getActiveTurnInfo()?.inputId === input.inputId || runtime.hasActiveOrQueuedTurnWork();
+      if (stillRunning) {
+        armWatchdog();
+        return;
+      }
+      context.logger?.warn("Agent work order receipt timed out; synthesizing failure", {
+        event: "agent_work_order_receipt.watchdog_fired",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        targetSessionId: input.targetRecord.app.sessionId,
+        workOrderId: input.envelope.workOrderId,
+      });
+      handleTerminalOutcome({
+        status: "failed",
+        reason:
+          "work order receipt timed out: the target session may have been closed or interrupted before finishing",
+      });
+    }, input.watchdogMs ?? WATCHDOG_MS_DEFAULT);
+  };
+  unsubscribe = input.targetRecord.app.runtime.subscribeEvents({
     onSessionEvent: (event: SessionEvent) => {
       const outcome = receiptOutcomeFromSessionEvent(event, input.inputId);
       if (!outcome) return;
       unsubscribe();
-      if (outcome.status === "failed" && !input.retried) {
-        // 重试推迟到下一个宏任务（本函数头注：Set 迭代中途挂订阅会收到正在
-        // 分发的这条终态事件）。catch 兜 retryWorkOrderOnce 的投递失败。
-        setTimeout(() => {
-          void retryWorkOrderOnce(context, deps, input, outcome).catch((error) => {
-            context.logger?.warn("Failed to schedule agent work order retry", {
-              errorMessage: error instanceof Error ? error.message : String(error),
-              event: "agent_work_order_receipt.retry_schedule_failed",
-              fromSessionId: input.envelope.fromSessionId,
-              module: "bootstrap.zcode_protocol",
-              targetSessionId: input.targetRecord.app.sessionId,
-              workOrderId: input.envelope.workOrderId,
-            });
-          });
-        }, 0);
-        return;
-      }
-      const finalOutcome =
-        outcome.status === "failed" && input.retried ? { ...outcome, retried: true } : outcome;
-      void deliverWorkOrderReceipt(context, deps, {
-        envelope: input.envelope,
-        agentName: input.agentName,
-        ...(input.agentId ? { agentId: input.agentId } : {}),
-        targetSessionId: input.targetRecord.app.sessionId,
-        outcome: finalOutcome,
-      }).catch((error) => {
-        context.logger?.warn("Failed to deliver agent work order receipt", {
-          errorMessage: error instanceof Error ? error.message : String(error),
-          event: "agent_work_order_receipt.delivery_failed",
-          fromSessionId: input.envelope.fromSessionId,
-          module: "bootstrap.zcode_protocol",
-          outcomeStatus: finalOutcome.status,
-          targetSessionId: input.targetRecord.app.sessionId,
-          workOrderId: input.envelope.workOrderId,
-        });
-      });
+      handleTerminalOutcome(outcome);
     },
   });
-  return unsubscribe;
+  armWatchdog();
+  return () => {
+    clearWatchdog();
+    unsubscribe();
+  };
 }
 
 /**
@@ -179,6 +227,7 @@ async function retryWorkOrderOnce(
     agentName: string;
     agentId?: string;
     modelSelection?: ModelSelection;
+    watchdogMs?: number;
   },
   failedOutcome: WorkOrderReceiptOutcome,
 ): Promise<void> {
@@ -193,6 +242,7 @@ async function retryWorkOrderOnce(
     ...(input.agentId ? { agentId: input.agentId } : {}),
     modelSelection: input.modelSelection,
     retried: true,
+    ...(input.watchdogMs === undefined ? {} : { watchdogMs: input.watchdogMs }),
   });
   try {
     const admission = await input.targetRecord.app.runtime.enqueueAgentWorkOrder({

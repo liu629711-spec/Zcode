@@ -6,7 +6,10 @@
 //  1. 第一棒失败分发期间零投递（重试订阅推迟到宏任务，不会被同一次迭代访问到）；
 //  2. 两棒都失败 → 恰好一条回执、盖 retried 章、由第二棒触发；
 //  3. 重试成功 → 只投 completed、不盖章；
-//  4. 重试 enqueue 抛错（会话关闭）→ 原失败如实送达、无章。
+//  4. 重试 enqueue 抛错（会话关闭）→ 原失败如实送达、无章；
+//  5. 看门狗：目标会话死掉 → 合成超时失败回执（重派入口不丢）；本单还在跑 →
+//     重新武装不误杀长任务。
+// 每条测试结尾必须退订：默认看门狗 30 分钟，不退订会把测试进程吊住。
 // 运行：npx tsx --test apps/zcode-cli/packages/bootstrap/test/agent-dispatch-receipts.test.ts
 // ============================================================
 
@@ -30,9 +33,13 @@ interface RecordedReceipt {
 function makeWorkerRuntime() {
   const sinks = new Set<{ onSessionEvent: (event: never) => void }>();
   let failEnqueue = false;
+  let busy = false;
   return {
     setFailEnqueue: (value: boolean) => {
       failEnqueue = value;
+    },
+    setBusy: (value: boolean) => {
+      busy = value;
     },
     async notifyEventSinks(event: { type: SessionEventType; payload: Record<string, unknown> }) {
       for (const sink of sinks) {
@@ -52,6 +59,13 @@ function makeWorkerRuntime() {
       }
       return { delivery: "started" as const, inputId: INPUT_ID, workOrderId: "wo-1" };
     },
+    // 看门狗探测面：busy = 本单还在目标会话里活跃（长任务合法超时）。
+    getActiveTurnInfo() {
+      return busy ? { inputId: INPUT_ID } : undefined;
+    },
+    hasActiveOrQueuedTurnWork() {
+      return busy;
+    },
   };
 }
 
@@ -60,7 +74,9 @@ function makeBossRuntime() {
   const receipts: RecordedReceipt[] = [];
   return {
     receipts,
-    enqueueAgentWorkOrderReceipt(input: { outcome: { status: string; retried?: boolean; failureCode?: string } }) {
+    enqueueAgentWorkOrderReceipt(input: {
+      outcome: { status: string; retried?: boolean; failureCode?: string };
+    }) {
       receipts.push({
         status: input.outcome.status,
         retried: input.outcome.retried === true,
@@ -70,7 +86,7 @@ function makeBossRuntime() {
   };
 }
 
-function harness() {
+function harness(options?: { watchdogMs?: number }) {
   const worker = makeWorkerRuntime();
   const boss = makeBossRuntime();
   const context = {
@@ -88,6 +104,7 @@ function harness() {
     inputId: INPUT_ID,
     envelope: { workOrderId: "wo-1", fromSessionId: BOSS_SESSION } as never,
     agentName: "worker",
+    ...(options?.watchdogMs === undefined ? {} : { watchdogMs: options.watchdogMs }),
   });
   return { worker, boss, unsubscribe };
 }
@@ -109,15 +126,16 @@ function turnCompleteSuccess() {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("第一棒失败分发期间零投递（重试订阅推迟到宏任务，P1 竞态不复发）", async () => {
-  const { worker, boss } = harness();
+  const { worker, boss, unsubscribe } = harness({ watchdogMs: 5 });
   await worker.notifyEventSinks(turnError("boom attempt-1"));
   assert.equal(boss.receipts.length, 0);
   await tick();
   assert.equal(boss.receipts.length, 0, "重试订阅+enqueue 落定后也不该有回执");
+  unsubscribe();
 });
 
 test("两棒都失败：恰好一条回执、盖 retried 章、带结构化失败线索", async () => {
-  const { worker, boss } = harness();
+  const { worker, boss, unsubscribe } = harness({ watchdogMs: 5 });
   await worker.notifyEventSinks(turnError("boom attempt-1"));
   await tick();
   await worker.notifyEventSinks(turnError("boom attempt-2"));
@@ -125,24 +143,45 @@ test("两棒都失败：恰好一条回执、盖 retried 章、带结构化失�
   assert.deepEqual(boss.receipts, [
     { status: "failed", retried: true, failureCode: "invalid_model_request" },
   ]);
+  unsubscribe();
 });
 
 test("重试成功：只投 completed、不盖 retried 章", async () => {
-  const { worker, boss } = harness();
+  const { worker, boss, unsubscribe } = harness({ watchdogMs: 5 });
   await worker.notifyEventSinks(turnError("boom"));
   await tick();
   await worker.notifyEventSinks(turnCompleteSuccess());
   await tick();
   assert.deepEqual(boss.receipts, [{ status: "completed", retried: false }]);
+  unsubscribe();
 });
 
 test("重试 enqueue 抛错（会话关闭）：原失败如实送达、无 retried 章", async () => {
-  const { worker, boss, unsubscribe } = harness();
-  void unsubscribe;
+  const { worker, boss, unsubscribe } = harness({ watchdogMs: 5 });
   worker.setFailEnqueue(true);
   await worker.notifyEventSinks(turnError("boom"));
   await tick();
   assert.deepEqual(boss.receipts, [
     { status: "failed", retried: false, failureCode: "invalid_model_request" },
   ]);
+  unsubscribe();
+});
+
+test("看门狗：目标会话死掉后合成超时失败回执（重派入口不丢）", async () => {
+  const { boss, unsubscribe } = harness({ watchdogMs: 10 });
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(boss.receipts.length, 1);
+  assert.equal(boss.receipts[0]!.status, "failed");
+  unsubscribe();
+});
+
+test("看门狗：本单还在跑就重新武装，不误杀长任务", async () => {
+  const { worker, boss, unsubscribe } = harness({ watchdogMs: 10 });
+  worker.setBusy(true);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(boss.receipts.length, 0, "长任务在跑，看门狗不得开火");
+  worker.setBusy(false);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(boss.receipts.length, 1, "确认死单后才合成");
+  unsubscribe();
 });

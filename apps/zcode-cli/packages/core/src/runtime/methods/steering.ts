@@ -31,6 +31,7 @@ import type {
 } from "../deps.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { createRuntimeModel } from "./runtime-model.js";
+import type { EnqueueAgentWorkOrderReceiptInput } from "./work-order-receipts.js";
 import {
   buildUserContentFromTurn,
   measureUtf8Bytes,
@@ -1328,6 +1329,62 @@ export async function discardPendingInput(
   });
 }
 
+/**
+ * 工单族 admission 的重投重建（audit 2026-10-01 对账批）：从账本 payload 防御性
+ * 收窄出回执入参；畸形（旧格式/字段缺失）返回 undefined 走丢弃，绝不抛。
+ * 回执记录带真实 outcome 原样重投；派单记录（无 outcome）合成超时失败回执——
+ * 崩溃时它还没跑出回执，目标会话的执行队列同样没熬过重启，这单确已死亡。
+ */
+function redeliverableWorkOrderReceipt(record: {
+  kind: string;
+  payload: { text: string; [key: string]: unknown };
+}): EnqueueAgentWorkOrderReceiptInput | undefined {
+  const payload = record.payload;
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+  const workOrderId = typeof payload.workOrderId === "string" ? payload.workOrderId : undefined;
+  const agentName = typeof payload.agentName === "string" ? payload.agentName : "";
+  const targetSessionId =
+    typeof payload.targetSessionId === "string" ? payload.targetSessionId : "";
+  const envelope = isRecord(payload.envelope) ? payload.envelope : undefined;
+  const outcome = isRecord(payload.outcome) ? payload.outcome : undefined;
+  if (!workOrderId || !envelope) return undefined;
+  if (
+    typeof envelope.workOrderId !== "string" ||
+    typeof envelope.fromSessionId !== "string" ||
+    typeof envelope.fromAgentName !== "string" ||
+    typeof envelope.task !== "string"
+  ) {
+    return undefined;
+  }
+  const status = outcome?.status;
+  const outcomeKnown =
+    status === "completed" || status === "cancelled" || status === "failed";
+  if (record.kind === "agentWorkOrderReceipt" && !outcomeKnown) return undefined;
+  const reason =
+    outcomeKnown && typeof outcome?.reason === "string" && outcome.reason
+      ? outcome.reason
+      : "进程重启：这张工单恢复时已不在执行队列里，没有留下回执；请重派或到目标会话核实。";
+  return {
+    workOrderId,
+    agentName,
+    targetSessionId,
+    envelope: {
+      workOrderId: envelope.workOrderId,
+      ...(typeof envelope.fromAgentId === "string" ? { fromAgentId: envelope.fromAgentId } : {}),
+      fromAgentName: envelope.fromAgentName,
+      fromSessionId: envelope.fromSessionId,
+      task: envelope.task,
+      ...(typeof envelope.batchId === "string" ? { batchId: envelope.batchId } : {}),
+      ...(typeof envelope.batchTitle === "string" ? { batchTitle: envelope.batchTitle } : {}),
+    },
+    outcome: {
+      status: outcomeKnown ? (status as "completed" | "cancelled" | "failed") : "failed",
+      ...(reason ? { reason } : {}),
+    },
+  };
+}
+
 export async function discardPersistedPendingSteerInputs(
   this: AgentRuntimeInternal,
   traceContext: TraceContext,
@@ -1342,7 +1399,46 @@ export async function discardPersistedPendingSteerInputs(
         sessionID: this.sessionId,
         status: "admitted",
       })) ?? [];
+    // 对账批（audit 2026-10-01）：工单族 admission 不再一律丢弃。
+    // - 回执（agentWorkOrderReceipt）：payload 带完整 outcome/envelope，崩溃只丢了
+    //   内存队列——重投，老板照样拿到真实终态（含一键重派）。
+    // - 派单（agentWorkOrderDispatch）且没有同 workOrderId 的回执 admission：这单
+    //   崩溃时还没跑出回执，合成一条超时失败回执；有回执的派单已有真实终态，照旧丢。
+    // 其余 admitted 照旧 discarded（session_resumed）。
+    const receiptWorkOrderIds = new Set(
+      admitted
+        .filter((record) => record.kind === "agentWorkOrderReceipt")
+        .map((record) =>
+          typeof record.payload.workOrderId === "string" ? record.payload.workOrderId : "",
+        ),
+    );
     for (const record of admitted) {
+      if (record.kind === "agentWorkOrderReceipt" || record.kind === "agentWorkOrderDispatch") {
+        await this.sessionStore?.settleSessionInput?.({
+          id: record.id,
+          sessionID: this.sessionId,
+          status: "discarded",
+          reason: "session_resumed",
+        });
+        const receipt = redeliverableWorkOrderReceipt(record);
+        if (!receipt) continue;
+        if (
+          record.kind === "agentWorkOrderDispatch" &&
+          receiptWorkOrderIds.has(receipt.workOrderId)
+        ) {
+          // 有真实回执的派单：重投回执已覆盖，不重复合成。
+          continue;
+        }
+        this.enqueueAgentWorkOrderReceipt(receipt);
+        this.logger?.info("Redelivered agent work order receipt on resume", {
+          event: "agent_work_order_receipt.resume_redelivered",
+          kind: record.kind,
+          module: "core.runtime",
+          sessionId: this.sessionId,
+          workOrderId: receipt.workOrderId,
+        });
+        continue;
+      }
       await this.sessionStore?.settleSessionInput?.({
         id: record.id,
         sessionID: this.sessionId,
