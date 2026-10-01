@@ -35,6 +35,8 @@ export interface WorkOrderBatchOrder {
   failureModelId?: string;
   failureReason?: string;
   retried?: boolean;
+  /** 交活方工号（重派按号找人）；随失败回执证据进批次模型。 */
+  agentId?: string;
 }
 
 export interface WorkOrderBatchModel {
@@ -173,6 +175,7 @@ export function selectWorkOrderBatches(
           ...(receipt.failureModelId ? { failureModelId: receipt.failureModelId } : {}),
           ...(receipt.failureReason ? { failureReason: receipt.failureReason } : {}),
           ...(receipt.retried ? { retried: true } : {}),
+          ...(receipt.agentId ? { agentId: receipt.agentId } : {}),
         },
         unit.key,
       );

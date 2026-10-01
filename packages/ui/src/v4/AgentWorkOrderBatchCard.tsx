@@ -164,6 +164,8 @@ export function AgentWorkOrderBatchCard({
                 meta={order}
                 context={context}
                 unitKey={`batch:${batch.batchId}:${order.key}`}
+                batchId={batch.batchId}
+                batchTitle={batch.title}
               />
             ) : null}
           </div>

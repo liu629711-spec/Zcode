@@ -315,6 +315,11 @@ export interface BackgroundResultOriginMeta {
   failureReason?: string;
   /** 失败回执结构化线索：已自动重试过一次仍失败——回执措辞据此升级，不谎报。 */
   retried?: boolean;
+  /**
+   * 失败回执携带：交活方工号（一键重派的权威目标——员工改名后按名重派会派错人，
+   * 按号优先；audit 2026-10-01）。completed 回执不带（转交按名册选人，语义不同）。
+   */
+  agentId?: string;
 }
 
 /**

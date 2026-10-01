@@ -1372,6 +1372,10 @@ export function createConversationV4Gateway(
         agent: input.agent,
         task: input.task,
         ...(input.newSession !== undefined ? { newSession: input.newSession } : {}),
+        // 失败卡「重派这单」的批次续批（audit 2026-10-01）：带上原批次，
+        // 重派回执归回原工地卡，不再散单。
+        ...(input.batchId ? { batchId: input.batchId } : {}),
+        ...(input.batchTitle ? { batchTitle: input.batchTitle } : {}),
         sourceSessionId: sessionId,
       });
     },

@@ -2180,7 +2180,11 @@ export function SessionPane({
    * 定义放后面就是 TDZ 崩溃（Cannot access before initialization，正常会话整窗白屏）。
    */
   const handleDispatchAgentWorkOrder = useCallback(
-    async (agent: string, task: string): Promise<"started" | "queued"> => {
+    async (
+      agent: string,
+      task: string,
+      options?: { batchId?: string; batchTitle?: string },
+    ): Promise<"started" | "queued"> => {
       if (!sessionId) {
         // 草稿还没有归属会话：回执没有归还地址，先发一条消息把会话建起来。
         throw new Error(intl.formatMessage({ id: "chat.mention.agents.dispatchDraftOnly" }));
@@ -2188,7 +2192,12 @@ export function SessionPane({
       const ack = await sendCommand(
         createCommandEnvelope({
           type: "dispatchAgentWorkOrder",
-          payload: { agent, task },
+          payload: {
+            agent,
+            task,
+            ...(options?.batchId ? { batchId: options.batchId } : {}),
+            ...(options?.batchTitle ? { batchTitle: options.batchTitle } : {}),
+          },
           sessionId,
         }),
       );

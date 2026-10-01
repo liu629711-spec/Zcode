@@ -2,7 +2,8 @@
  * 派单失败回执的「大白话失败说明 + 一键重派」（2026-10-01 员工可靠性批）。
  * 数据全部来自轮头 originMeta 的结构化失败线索（CLI 权威下发，describeReceiptFailure
  * 做大白话映射），绝不从回执文本反推。重派 = 原员工 + 原任务原文，走与转交同一条
- * dispatchAgentWorkOrder 宿主能力；员工不在名册（无名工位/档案已删）时只说明、不给按钮。
+ * dispatchAgentWorkOrder 宿主能力；目标按工号优先（员工改名不误派，audit 2026-10-01），
+ * 名册对不上时明说原因，不再无声消失；批次内失败行重派带原批次（结果归回原工地卡）。
  *
  * inline 变体：工地卡行内使用——短语与按钮同行随 flex-wrap 换行。
  */
@@ -31,16 +32,28 @@ export function ReceiptFailureNotice({
   meta,
   context,
   unitKey,
+  batchId,
+  batchTitle,
   inline = false,
 }: {
   /** 回执标题（CLI 权威铸造；解员工名用）。 */
   title: string;
   meta: Pick<
     AgentWorkOrderReceiptMeta,
-    "task" | "failureCode" | "failureModelId" | "failureReason" | "retried"
+    | "task"
+    | "agentId"
+    | "batchId"
+    | "batchTitle"
+    | "failureCode"
+    | "failureModelId"
+    | "failureReason"
+    | "retried"
   >;
   context: ConversationRowRenderContext;
   unitKey: string;
+  /** 工地卡行内模式：批次身份由卡片显式传入（行模型不携带批次键）。 */
+  batchId?: string;
+  batchTitle?: string;
   /** 工地卡行内模式：短语与按钮同行（随父级 flex-wrap 换行），不带独立面板。 */
   inline?: boolean;
 }) {
@@ -55,23 +68,35 @@ export function ReceiptFailureNotice({
   );
   const presentation = describeReceiptFailure(meta);
   if (!presentation) return null;
-  const agentName = parseReceiptDelivererName(title) ?? parseFailedReceiptAgentName(title);
+  const titleName = parseReceiptDelivererName(title) ?? parseFailedReceiptAgentName(title);
   const task = meta.task?.trim();
   const dispatchWorkOrder = context.onDispatchAgentWorkOrder;
-  // 重派三道门：有宿主派单能力、解得出原员工、员工还在名册里（无名工位的标题
-  // 种子是任务正文，解出的「名字」多半不在册——那种只能报告老板，不冒名重派）。
+  // 目标按工号优先：工号在名册里即按号派（改名不影响）；否则退回名字对号。
+  // 两个都落空（员工被删/无名工位）→ 只说明，不给按钮。
+  const rosterEntry = meta.agentId
+    ? directory.find((agent) => agent.agentId === meta.agentId)
+    : undefined;
+  const nameEntry = titleName
+    ? directory.find(
+        (agent) => agent.name.trim().toLowerCase() === titleName.trim().toLowerCase(),
+      )
+    : undefined;
+  const target = rosterEntry?.name ?? nameEntry?.name ?? titleName;
+  const redispatchBatchId = meta.batchId ?? batchId;
+  const redispatchBatchTitle = meta.batchTitle ?? batchTitle;
   const canRedispatch =
     !done &&
     Boolean(dispatchWorkOrder) &&
-    Boolean(agentName && task) &&
-    directory.some(
-      (agent) => agent.name.trim().toLowerCase() === agentName?.trim().toLowerCase(),
-    );
+    Boolean(target && task) &&
+    Boolean(rosterEntry || nameEntry);
   const redispatch = async () => {
-    if (!dispatchWorkOrder || !agentName || !task || pending) return;
+    if (!dispatchWorkOrder || !target || !task || pending) return;
     setPending(true);
     try {
-      const delivery = await dispatchWorkOrder(agentName, task);
+      const delivery = await dispatchWorkOrder(target, task, {
+        ...(redispatchBatchId ? { batchId: redispatchBatchId } : {}),
+        ...(redispatchBatchTitle ? { batchTitle: redispatchBatchTitle } : {}),
+      });
       toast(
         intl.formatMessage(
           {
@@ -80,7 +105,7 @@ export function ReceiptFailureNotice({
                 ? "chat.mention.agents.dispatchQueued"
                 : "chat.mention.agents.dispatchAccepted",
           },
-          { name: agentName },
+          { name: target },
         ),
       );
       setDone(true);
@@ -117,6 +142,12 @@ export function ReceiptFailureNotice({
           </Button>
         ) : null}
       </div>
+      {!canRedispatch && target && task ? (
+        // 按钮缺席不再无声：员工不在名册（被删/改名对不上）时明说，老板知道为何不能重派。
+        <span className="min-w-0 text-ui-xs leading-4 text-foreground-subtlest">
+          {intl.formatMessage({ id: "chat.receipt.redispatch.unavailable" })}
+        </span>
+      ) : null}
       {presentation.detail ? (
         <span
           className={

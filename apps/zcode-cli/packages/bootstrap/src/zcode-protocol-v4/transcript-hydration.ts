@@ -1329,6 +1329,8 @@ function backgroundResultOriginMetaOfMessage(
     typeof record.failureReason === "string" && record.failureReason.trim()
       ? record.failureReason
       : undefined;
+  const agentId =
+    typeof record.agentId === "string" && record.agentId.trim() ? record.agentId.trim() : undefined;
   return {
     backgroundSource,
     title,
@@ -1340,6 +1342,7 @@ function backgroundResultOriginMetaOfMessage(
     ...(failureModelId ? { failureModelId } : {}),
     ...(failureReason ? { failureReason } : {}),
     ...(record.retried === true ? { retried: true } : {}),
+    ...(agentId ? { agentId } : {}),
     ...(workflowNotification ? { workflowNotification } : {}),
   };
 }

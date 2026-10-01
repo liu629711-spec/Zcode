@@ -5564,6 +5564,7 @@ const zhCN: Record<string, string> = {
   "chat.receipt.forward.note": "给他的说明（可选）：比如评审这份成果、照着继续施工",
   "chat.receipt.forward.confirm": "确认转交",
   "chat.receipt.redispatch": "重派这单",
+  "chat.receipt.redispatch.unavailable": "这位智能体已不在名册（被删或改名对不上），无法一键重派。",
   "chat.receipt.failure.retried": "系统已经自动重试过一次，还是不行。",
   "chat.receipt.failure.invalidModelRequest": "这位智能体用的模型被供应商拒收了，多半是模型下线或改了名。",
   "chat.receipt.failure.invalidModelRequest.named": "模型 {modelId} 被供应商拒收了，多半是下线或改了名。",

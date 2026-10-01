@@ -67,6 +67,7 @@ const FAILED_META = {
   failureModelId: "glm-5.3-flash-local",
   failureReason: "Provider rejected the model request.",
   retried: true,
+  agentId: "a-12345678-1234-1234-1234-123456789abc",
 };
 
 test("resolveAgentWorkOrderReceiptMeta：失败线索原样透出", () => {
@@ -80,6 +81,7 @@ test("resolveAgentWorkOrderReceiptMeta：失败线索原样透出", () => {
   assert.equal(meta.failureCode, "invalid_model_request");
   assert.equal(meta.failureModelId, "glm-5.3-flash-local");
   assert.equal(meta.retried, true);
+  assert.equal(meta.agentId, "a-12345678-1234-1234-1234-123456789abc");
 });
 
 test("describeReceiptFailure：invalid_model_request 讲人话并点名模型，原根因进详情", () => {

@@ -93,7 +93,12 @@ export interface ConversationRowRenderContext {
    * 宿主绑定 dispatchAgentWorkOrder 命令（与 @ 面板快捷派单同一能力）；缺席（只读会话）
    * 时转交入口整体不渲染。
    */
-  onDispatchAgentWorkOrder?: (agent: string, task: string) => Promise<"started" | "queued">;
+  onDispatchAgentWorkOrder?: (
+    agent: string,
+    task: string,
+    /** 失败卡「重派这单」的批次续批与工号寻址（audit 2026-10-01）；@ 面板不传。 */
+    options?: { batchId?: string; batchTitle?: string },
+  ) => Promise<"started" | "queued">;
   /**
    * 产物的全尺寸查看 tab 入口。
    *

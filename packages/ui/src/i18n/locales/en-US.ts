@@ -5811,6 +5811,7 @@ const enUS: Record<string, string> = {
   "chat.receipt.forward.note": "Instructions for the agent (optional): e.g. review this deliverable, build on it",
   "chat.receipt.forward.confirm": "Forward",
   "chat.receipt.redispatch": "Re-dispatch",
+  "chat.receipt.redispatch.unavailable": "This agent is no longer in the roster (deleted or renamed), so one-click re-dispatch is unavailable.",
   "chat.receipt.failure.retried": "An automatic retry already ran once and failed again.",
   "chat.receipt.failure.invalidModelRequest": "The provider rejected this agent's model — it was likely retired or renamed.",
   "chat.receipt.failure.invalidModelRequest.named": "The provider rejected model {modelId} — it was likely retired or renamed.",

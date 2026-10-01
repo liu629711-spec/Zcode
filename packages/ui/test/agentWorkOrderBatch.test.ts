@@ -232,6 +232,7 @@ test("selectWorkOrderBatches：失败回执的任务原文与失败线索进单�
           failureModelId: "glm-5.3-flash-local",
           failureReason: "Provider rejected the model request.",
           retried: true,
+          agentId: "a-12345678-1234-1234-1234-123456789abc",
         },
       }),
     }),
@@ -248,6 +249,7 @@ test("selectWorkOrderBatches：失败回执的任务原文与失败线索进单�
   assert.equal(order.failureModelId, "glm-5.3-flash-local");
   assert.equal(order.failureReason, "Provider rejected the model request.");
   assert.equal(order.retried, true);
+  assert.equal(order.agentId, "a-12345678-1234-1234-1234-123456789abc");
   // 失败行没有可转交的成果。
   assert.equal(order.receiptAnswer, undefined);
 });

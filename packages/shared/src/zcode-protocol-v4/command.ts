@@ -254,6 +254,10 @@ export const commandPayloadSchemas = {
     task: z.string().trim().min(1).max(8192),
     // true 强制开新 persona 会话；缺省投目标最新一段（无则自动开）。
     newSession: z.boolean().optional(),
+    // 批次续批（audit 2026-10-01）：失败卡「重派这单」带上原批次，重派结果归回
+    // 原工地卡而不是散单。字段与 AgentDispatch 工具的 batch_id/batch_title 同源。
+    batchId: z.string().trim().min(1).max(128).optional(),
+    batchTitle: z.string().trim().min(1).max(200).optional(),
   }),
   renameSession: z.object({ title: z.string() }),
   deleteSession: z.object({}),

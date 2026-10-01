@@ -94,6 +94,8 @@ export const backgroundResultOriginMetaSchema = z.object({
   failureModelId: z.string().min(1).max(160).optional(),
   failureReason: z.string().min(1).max(500).optional(),
   retried: z.boolean().optional(),
+  // 交活方工号（一键重派按号找人，改名不误派）；UUID 形状，上界照 batchId 口径。
+  agentId: z.string().min(1).max(128).optional(),
   // 只在 backgroundSource === "workflow" 的单条通知轮上在场；zod 剥离未知键，
   // 这里不加即整条链路静默丢——本字段是 manifest 渲染的唯一数据源。
   workflowNotification: workflowNotificationMetaSchema.optional(),

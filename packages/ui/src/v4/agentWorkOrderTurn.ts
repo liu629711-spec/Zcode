@@ -35,6 +35,8 @@ export interface AgentWorkOrderReceiptMeta {
   failureModelId?: string;
   failureReason?: string;
   retried?: boolean;
+  /** 交活方工号（一键重派按号找人，改名不误派；audit 2026-10-01）。 */
+  agentId?: string;
 }
 
 /**
@@ -59,6 +61,7 @@ export function resolveAgentWorkOrderReceiptMeta(
     ...(originMeta.failureModelId ? { failureModelId: originMeta.failureModelId } : {}),
     ...(originMeta.failureReason ? { failureReason: originMeta.failureReason } : {}),
     ...(originMeta.retried ? { retried: true } : {}),
+    ...(originMeta.agentId ? { agentId: originMeta.agentId } : {}),
   };
 }
 

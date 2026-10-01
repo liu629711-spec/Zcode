@@ -89,6 +89,8 @@ export function enqueueAgentWorkOrderReceipt(
             : {}),
           ...(input.outcome.reason ? { failureReason: input.outcome.reason } : {}),
           ...(input.outcome.retried ? { retried: true } : {}),
+          // 一键重派按工号找人（员工改名后旧名会派错人）：失败回执带上交活方工号。
+          ...(input.agentId ? { agentId: input.agentId } : {}),
         }
       : {}),
   };
