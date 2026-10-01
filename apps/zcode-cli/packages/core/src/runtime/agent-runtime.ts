@@ -70,7 +70,10 @@ import { installAgentRuntimeMethods } from "./methods/index.js";
 import type { StartSavedWorkflowRunResult } from "./methods/dynamic-workflow-run-start.js";
 import type { EnqueueAgentWorkOrderResult } from "./methods/work-orders.js";
 import type { EnqueueAgentWorkOrderReceiptInput } from "./methods/work-order-receipts.js";
-import type { EnqueueAgentWorkOrderBatchQcInput } from "./methods/work-order-batch-qc.js";
+import type {
+  EnqueueAgentWorkOrderBatchQcInput,
+  MaybeEnqueueAgentWorkOrderBatchQcInput,
+} from "./methods/work-order-batch-qc.js";
 import type { AgentWorkOrderEnvelope } from "./deps.js";
 import type { AgentProfile } from "../subagent/profile.js";
 import type {
@@ -445,6 +448,13 @@ export interface AgentRuntime {
    * 确定性台账行承担。绝不打断进行中回合。
    */
   enqueueAgentWorkOrderBatchQc(input: EnqueueAgentWorkOrderBatchQcInput): void;
+  /**
+   * 批次质检触发（幂等自查）：本会话 batchId 批次全部收口且未质检过 → 开质检轮；
+   * 否则空转。闸门（确定性台账行）+ 同批并发串行都在实现里。活回执投递与
+   * resume 清扫共用这一入口——清扫路径不经过 bootstrap，绕过它崩溃过的批次
+   * 永远开不了质检（评审 A1/B4）。
+   */
+  maybeEnqueueAgentWorkOrderBatchQc(input: MaybeEnqueueAgentWorkOrderBatchQcInput): Promise<void>;
   /** Session 常驻池使用的 runtime busy 权威事实，包含 queue/drain/reservation。 */
   hasActiveOrQueuedTurnWork(): boolean;
   /** Session 常驻池使用的后台 Bash/Agent/Workflow running 权威事实。 */

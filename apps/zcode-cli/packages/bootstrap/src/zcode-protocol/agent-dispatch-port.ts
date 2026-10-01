@@ -402,6 +402,8 @@ export function createProtocolAgentDispatchPort(
             text: envelope.task,
             workOrderId: envelope.workOrderId,
             agentName: namedProfile?.name ?? workerTitleSeed,
+            // 员工工号（批次质检打回重派按号点名，改名不误派）；无名工位没有工号。
+            ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
             targetSessionId,
             envelope,
           },

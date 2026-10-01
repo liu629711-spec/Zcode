@@ -234,7 +234,9 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
       : status === "cancelled"
         ? "The target agent's turn was interrupted before it could produce a final answer. No answer was delivered; you may re-dispatch the task or report the interruption to the user."
         : `The target agent's turn failed before producing a final answer${
-            input.outcome.reason ? `: ${input.outcome.reason}` : "."
+            input.outcome.reason
+              ? `: ${neutralizeEnvelopeTags(neutralizeBatchQcTags(input.outcome.reason))}`
+              : "."
           }${
             // 已自动重试过一次仍失败（2026-10-01 员工可靠性批）：明说，别让派单方
             // 再用同样的方式盲试——要么换路子，要么如实报告用户。
@@ -255,7 +257,13 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
 /** 质检清单里的一张工单：来自发起方派单台账的同批行（触发侧已过滤）。 */
 export interface BatchQcOrder {
   workOrderId: string;
+  /**
+   * 员工名（台账行 payload 顶层的 agentName）。信封里的 fromAgentName 是**发起方**
+   * 署名（驻场时是老板档案名、用户直派时是空串）——读它必然派错人（评审 B1）。
+   */
   agentName: string;
+  /** 员工工号（打回重派按号点名，改名不误派；台账行在场时随行）。 */
+  agentId?: string;
   task: string;
 }
 
@@ -291,10 +299,14 @@ export function buildBatchQcEnvelopeText(input: {
         ? `${task.slice(0, BATCH_QC_TASK_MAX_CHARS - 1)}…`
         : task;
     const agentLabel = escapeEnvelopeAttribute(order.agentName.trim() || "agent");
-    return `<order id="${order.workOrderId}" agent="${agentLabel}">${clipped}</order>`;
+    return `<order id="${order.workOrderId}" agent="${agentLabel}"${
+      order.agentId ? ` agent-id="${escapeEnvelopeAttribute(order.agentId)}"` : ""
+    }>${clipped}</order>`;
   });
   return [
-    `<batch-qc id="${input.batchId}"${title ? ` title="${escapeEnvelopeAttribute(title)}"` : ""}>`,
+    // batchId 是模型回传的任意字符串（AgentDispatch 工具 batch_id，端口只 trim）——
+    // 与 title 同样过属性转义，员工答案里种 batch_id 也伪造不了信封结构（评审 B2）。
+    `<batch-qc id="${escapeEnvelopeAttribute(input.batchId)}"${title ? ` title="${escapeEnvelopeAttribute(title)}"` : ""}>`,
     ...orderLines,
     "</batch-qc>",
     "",
@@ -303,7 +315,7 @@ export function buildBatchQcEnvelopeText(input: {
     "2. 逐单验货：对照工单任务核对回执答案；凡能落到工作区的（代码/文件改动），以实际文件为准复核，不轻信员工的自我报告。",
     "3. 回执缺失、答案与任务对不上号、或答案自相矛盾的，如实标注「无法核实」，不要猜、不要补。",
     "4. 被中断（cancelled）的单是用户自己叫停的，不参与打回，结论里如实说明即可。",
-    "5. 不合格的单（打回）：用 AgentDispatch 工具重派给同一位员工（agent 名与本清单一致），batch_id 与 batch_title 必须原样沿用本批次，任务正文 = 原任务全文 + 换行 + 「【质检打回】」+ 具体不合格原因与修改要求。整个批次最多打回这一轮，重派的单不再自动质检。",
+    "5. 不合格的单（打回）：用 AgentDispatch 工具重派给同一位员工——agent 参数优先用清单里的 agent-id（工号，员工改名也能找到人），没有工号才用 agent 名；batch_id 与 batch_title 必须原样沿用本批次，任务正文 = 原任务全文 + 换行 + 「【质检打回】」+ 具体不合格原因与修改要求。整个批次最多打回这一轮，重派的单不再自动质检。",
     "6. 没有问题就什么都不重派；拿不准的不要打回，写进结论里留给用户判断。",
     "7. 最后用中文给用户一段大白话验收结论：每单一行（通过 / 已打回重派 / 无法核实 + 一句原因），最后一句总评。不要贴大段代码或长篇复述。",
   ].join("\n");

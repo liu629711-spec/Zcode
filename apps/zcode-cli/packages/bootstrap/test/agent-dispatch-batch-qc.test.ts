@@ -1,153 +1,113 @@
 // ============================================================
-// 批次质检触发（纪律协议批）的可运行检查。驱动**真实** maybeStartBatchQc：
-// 假台账复刻 session_inputs 的行形状（agentWorkOrderDispatch / 闸门行），
-// 老板侧假 runtime 记录质检开轮并**模拟 core 落闸门行**（触发侧串行链 +
-// 台账行合起来才构成「每批只质检一次」）。验证：
-//  1. 同批派单行全部收口 → 质检恰好开一次，清单按工单号定序、批次标题随行；
-//  2. 闸门行已在（含 discarded）→ 不开（重派回执到货不再二检）；
-//  3. 同批还有一张 admitted → 不开（批次没收口）；
-//  4. 信封无批次 → 直通不开；
-//  5. 并发两次触发（同批两张回执同时销账）→ 串行链 + 闸门只放一次。
+// 批次质检触发（纪律协议批）的端到端可运行检查：驱动**真实**
+// scheduleWorkOrderReceiptRelay + 真实 deliverWorkOrderReceipt 链路——员工侧假
+// runtime 复刻 core 的事件分发时序，老板侧假 runtime 记录收到的回执与质检触发
+// （触发判定本体在 core runtime 上，由 work-order-batch-qc.test.ts 钉住；这里钉
+// 「回执投递后触发入口被走到、且带对批次」这条接线）。验证：
+//  1. 带批次的回执落终态 → 老板侧质检触发入口被调用、batchId 正确；
+//  2. 散单（无批次）→ 不触发。
+// 每条测试结尾必须退订：默认看门狗 30 分钟，不退订会把测试进程吊住。
 // 运行：npx tsx --test apps/zcode-cli/packages/bootstrap/test/agent-dispatch-batch-qc.test.ts
 // ============================================================
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { maybeStartBatchQc } from "../src/zcode-protocol/agent-dispatch-receipts.js";
+import { SessionEventType } from "@zcode/contracts";
+import { scheduleWorkOrderReceiptRelay } from "../src/zcode-protocol/agent-dispatch-receipts.js";
 
+const WORK_ORDER_INPUT_ID_PREFIX = "workorder-";
+const INPUT_ID = `${WORK_ORDER_INPUT_ID_PREFIX}wo-1`;
 const BOSS_SESSION = "sess-boss";
+const WORKER_SESSION = "sess-worker";
 const BATCH_ID = "batch-1";
 
-interface LedgerRow {
-  id: string;
-  sessionID: string;
-  kind: string;
-  delivery: string;
-  payload: { text: string; [key: string]: unknown };
-  admittedSequence: number;
-  status: "admitted" | "discarded";
-  time: { created: number; updated: number };
-}
-
-function dispatchRow(workOrderId: string, status: "admitted" | "discarded"): LedgerRow {
+function makeWorkerRuntime() {
+  const sinks = new Set<{ onSessionEvent: (event: never) => void }>();
   return {
-    id: `agentWorkOrderDispatch:${workOrderId}`,
-    sessionID: BOSS_SESSION,
-    kind: "agentWorkOrderDispatch",
-    delivery: "queue",
-    payload: {
-      text: "carrier",
-      workOrderId,
-      envelope: {
-        workOrderId,
-        fromAgentName: `员工-${workOrderId}`,
-        fromSessionId: "sess-worker",
-        task: `任务${workOrderId}`,
-        batchId: BATCH_ID,
-        batchTitle: "登录页整改",
-      },
+    async notifyEventSinks(event: { type: SessionEventType; payload: Record<string, unknown> }) {
+      for (const sink of sinks) {
+        await sink.onSessionEvent(event as never);
+      }
     },
-    admittedSequence: 1,
-    status,
-    time: { created: 0, updated: 0 },
+    subscribeEvents(input: { onSessionEvent: (event: never) => void }) {
+      const sink = { onSessionEvent: input.onSessionEvent };
+      sinks.add(sink);
+      return () => {
+        sinks.delete(sink);
+      };
+    },
+    getActiveTurnInfo() {
+      return undefined;
+    },
+    hasActiveOrQueuedTurnWork() {
+      return false;
+    },
   };
 }
 
-function gateRow(): LedgerRow {
+function makeBossRuntime() {
+  const receipts: string[] = [];
+  const qcTriggers: string[] = [];
   return {
-    id: `agentWorkOrderBatchQc:${BATCH_ID}`,
-    sessionID: BOSS_SESSION,
-    kind: "agentWorkOrderBatchQc",
-    delivery: "queue",
-    payload: { text: "gate" },
-    admittedSequence: 9,
-    status: "admitted",
-    time: { created: 0, updated: 0 },
+    receipts,
+    qcTriggers,
+    enqueueAgentWorkOrderReceipt() {
+      receipts.push("receipt");
+    },
+    maybeEnqueueAgentWorkOrderBatchQc(input: { batchId: string }) {
+      qcTriggers.push(input.batchId);
+      return Promise.resolve();
+    },
   };
 }
 
-function harness(rows: LedgerRow[]) {
-  const store = {
-    rows,
-    async listSessionInputs() {
-      return this.rows;
-    },
-  };
-  const qcCalls: Array<{ batchId: string; batchTitle?: string; orders: unknown[] }> = [];
-  const boss = {
-    // 模拟 core 的闸门落行：质检一旦开轮，闸门行立刻可见（并发触发的锚）。
-    enqueueAgentWorkOrderBatchQc(input: { batchId: string; batchTitle?: string; orders: unknown[] }) {
-      qcCalls.push(input);
-      store.rows.push(gateRow());
-    },
-  };
+function harness(input: { envelopeBatchId?: string }) {
+  const worker = makeWorkerRuntime();
+  const boss = makeBossRuntime();
   const context = {
     logger: undefined,
-    deps: { sessionStore: store },
     sessions: new Map([
       [BOSS_SESSION, { app: { runtime: boss, sessionId: BOSS_SESSION }, traceContext: undefined }],
     ]),
   };
   const deps = { activateSessionRecord: async () => ({}) as never };
-  const trigger = (envelope: { batchId?: string }) =>
-    maybeStartBatchQc(context as never, deps, {
+  const unsubscribe = scheduleWorkOrderReceiptRelay(context as never, deps, {
+    targetRecord: {
+      app: { runtime: worker, sessionId: WORKER_SESSION },
+      traceContext: undefined,
+    } as never,
+    inputId: INPUT_ID,
+    envelope: {
+      workOrderId: "wo-1",
       fromSessionId: BOSS_SESSION,
-      envelope: { batchId: BATCH_ID, ...envelope } as never,
-    });
-  return { qcCalls, trigger };
+      ...(input.envelopeBatchId === undefined ? {} : { batchId: input.envelopeBatchId }),
+    } as never,
+    agentName: "worker",
+    watchdogMs: 5,
+  });
+  return { worker, boss, unsubscribe };
 }
 
-test("同批全部收口：质检开一次，清单按工单号定序、批次标题随行", async () => {
-  const { qcCalls, trigger } = harness([
-    dispatchRow("wo-2", "discarded"),
-    dispatchRow("wo-1", "discarded"),
-    { ...gateRow(), id: "别的批次闸门" },
-  ]);
-  await trigger({ batchId: BATCH_ID });
-  assert.equal(qcCalls.length, 1);
-  assert.equal(qcCalls[0]?.batchId, BATCH_ID);
-  assert.equal(qcCalls[0]?.batchTitle, "登录页整改");
-  assert.deepEqual(
-    qcCalls[0]?.orders.map((order) => (order as { workOrderId: string }).workOrderId),
-    ["wo-1", "wo-2"],
-  );
+test("带批次的回执落终态：质检触发入口被走到、batchId 正确（receipt 照常投递）", async () => {
+  const { worker, boss, unsubscribe } = harness({ envelopeBatchId: BATCH_ID });
+  await worker.notifyEventSinks({
+    type: SessionEventType.TurnComplete,
+    payload: { inputId: INPUT_ID, resultType: "success", response: "done" },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(boss.receipts, ["receipt"]);
+  assert.deepEqual(boss.qcTriggers, [BATCH_ID]);
+  unsubscribe();
 });
 
-test("闸门行已在（discarded 也算）：重派回执到货不再二检", async () => {
-  const { qcCalls, trigger } = harness([
-    dispatchRow("wo-1", "discarded"),
-    { ...gateRow(), status: "discarded" },
-  ]);
-  await trigger({});
-  assert.equal(qcCalls.length, 0);
-});
-
-test("同批还有 admitted 行：批次没收口，不开质检", async () => {
-  const { qcCalls, trigger } = harness([
-    dispatchRow("wo-1", "discarded"),
-    dispatchRow("wo-2", "admitted"),
-  ]);
-  await trigger({});
-  assert.equal(qcCalls.length, 0);
-});
-
-test("信封无批次：直通不开", async () => {
-  const { qcCalls, trigger } = harness([dispatchRow("wo-1", "discarded")]);
-  await trigger({ batchId: undefined });
-  assert.equal(qcCalls.length, 0);
-});
-
-test("并发两次触发（同批两单同时销账）：串行链 + 闸门只放一次", async () => {
-  const { qcCalls, trigger } = harness([
-    dispatchRow("wo-1", "discarded"),
-    dispatchRow("wo-2", "discarded"),
-  ]);
-  await Promise.all([trigger({}), trigger({})]);
-  assert.equal(qcCalls.length, 1);
-});
-
-test("台账里没有本批派单行：不开（防孤儿批次）", async () => {
-  const { qcCalls, trigger } = harness([]);
-  await trigger({});
-  assert.equal(qcCalls.length, 0);
+test("散单（信封无批次）：不触发质检", async () => {
+  const { worker, boss, unsubscribe } = harness({});
+  await worker.notifyEventSinks({
+    type: SessionEventType.TurnComplete,
+    payload: { inputId: INPUT_ID, resultType: "success", response: "done" },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(boss.receipts, ["receipt"]);
+  assert.deepEqual(boss.qcTriggers, []);
+  unsubscribe();
 });

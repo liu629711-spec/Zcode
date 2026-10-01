@@ -16,7 +16,7 @@ import {
   type SessionId,
 } from "@zcode/contracts";
 import type { ModelSelection } from "@zcode/shared";
-import type { BatchQcOrder, WorkOrderReceiptOutcome } from "@zcode/core";
+import type { WorkOrderReceiptOutcome } from "@zcode/core";
 
 import type {
   ZCodeProtocolAgentServerContext,
@@ -293,7 +293,7 @@ async function deliverWorkOrderReceipt(
     outcome: WorkOrderReceiptOutcome;
   },
 ): Promise<void> {
-  await deliverWorkOrderReceiptInner(context, deps, input);
+  const initiatorRecord = await deliverWorkOrderReceiptInner(context, deps, input);
   // 销账（终审评委A/B 共同 P1）：回执已到达发起方，派单台账行收口——
   // 不收口的话，之后任何一次 resume 都会为早已完成的工单合成假失败。
   // status 枚举没有"已兑现"，用 discarded + 专用 reason 表示收口。
@@ -307,13 +307,14 @@ async function deliverWorkOrderReceipt(
   } catch {
     // 收口失败 ≠ 回执失败；清扫侧按"有回执行即不合成"兜底。
   }
-  // 批次质检（纪律协议批）：本单销账后批次可能刚好全部收口——触发侧自查
-  // （闸门行 + 同批派单行全收口），不满足就是空转一次查询。质检失败不影响回执。
+  // 批次质检（纪律协议批）：本单销账后批次可能刚好全部收口。触发自查在 core
+  // runtime 上（闸门行 + 收口判定 + 同批并发串行），resume 清扫路径共用同一入口；
+  // 判定不满足就是空转一次查询。质检失败不影响回执。
   if (input.envelope.batchId) {
     try {
-      await maybeStartBatchQc(context, deps, {
-        fromSessionId: input.envelope.fromSessionId,
-        envelope: input.envelope,
+      await initiatorRecord.app.runtime.maybeEnqueueAgentWorkOrderBatchQc({
+        batchId: input.envelope.batchId,
+        traceContext: initiatorRecord.traceContext,
       });
     } catch (error) {
       context.logger?.warn("Failed to start batch QC after receipt delivery", {
@@ -337,7 +338,7 @@ async function deliverWorkOrderReceiptInner(
     targetSessionId: string;
     outcome: WorkOrderReceiptOutcome;
   },
-): Promise<void> {
+): Promise<ZCodeProtocolSessionRecord> {
   const initiatorRecord =
     context.sessions.get(input.envelope.fromSessionId) ??
     (await deps.activateSessionRecord(input.envelope.fromSessionId));
@@ -358,129 +359,5 @@ async function deliverWorkOrderReceiptInner(
     targetSessionId: input.targetSessionId,
     workOrderId: input.envelope.workOrderId,
   });
-}
-
-// ── 批次质检（纪律协议批）：批次全部收口后自动开一轮验货 ──────────────
-
-/**
- * 闸门台账行的确定性 id。与 core enqueueAgentWorkOrderBatchQc 的派生规则一致
- * （`agentWorkOrderBatchQc:<batchId>`）：触发侧查行在先、core 落行在后，两侧
- * 必须同一拼法，否则闸门失效、每张回执都会重开质检轮。
- */
-function batchQcLedgerId(batchId: string): string {
-  return `agentWorkOrderBatchQc:${batchId}`;
-}
-
-/**
- * 同批发单并发交活时，最后两张回执的投递可能交错：都先查闸门再落行会双双放行。
- * 触发按 `${fromSessionId}:${batchId}` 串行——前一个触发跑完（含落行）才轮到
- * 下一个，后者必见闸门行而跳过。Map 只在本进程内记账，跨重启由台账行兜住。
- */
-const batchQcTriggerChains = new Map<string, Promise<void>>();
-
-/**
- * 批次收口触发：同批派单台账行全部收口（无一 admitted）且闸门行不存在（任意
- * 状态——resume 清扫会把残余收口为 discarded，行仍在）时，为发起方开一轮质检。
- * 「每批只质检一次」是硬边界：打回重派的单回执到达时闸门已在，不会二次质检。
- * 崩溃窗口（闸门行已落、质检轮未跑）不补跑：与回执同档 best-effort。
- */
-export async function maybeStartBatchQc(
-  context: ZCodeProtocolAgentServerContext,
-  deps: ReceiptRelayDeps,
-  input: {
-    fromSessionId: string;
-    envelope: AgentWorkOrderEnvelope;
-  },
-): Promise<void> {
-  const batchId = input.envelope.batchId;
-  if (!batchId) return;
-  const chainKey = `${input.fromSessionId}:${batchId}`;
-  const previous = batchQcTriggerChains.get(chainKey) ?? Promise.resolve();
-  const chain = previous.then(() =>
-    startBatchQcIfComplete(context, deps, { fromSessionId: input.fromSessionId, batchId }),
-  );
-  batchQcTriggerChains.set(chainKey, chain);
-  try {
-    await chain;
-  } finally {
-    if (batchQcTriggerChains.get(chainKey) === chain) {
-      batchQcTriggerChains.delete(chainKey);
-    }
-  }
-}
-
-async function startBatchQcIfComplete(
-  context: ZCodeProtocolAgentServerContext,
-  deps: ReceiptRelayDeps,
-  input: { fromSessionId: string; batchId: string },
-): Promise<void> {
-  const sessionStore = context.deps.sessionStore;
-  if (!sessionStore?.listSessionInputs) return;
-  const rows = await sessionStore.listSessionInputs({
-    sessionID: input.fromSessionId as SessionId,
-  });
-  // 闸门：本批的质检台账行已在（任意状态）→ 这批已经质检过（或已排队），绝不二开。
-  if (rows.some((record) => record.id === batchQcLedgerId(input.batchId))) return;
-  // 收口判定：同批派单行一张不缺、且全部不在 admitted（回执已销账或 resume 已收口）。
-  const batchRows = rows.filter(
-    (record) =>
-      record.kind === "agentWorkOrderDispatch" &&
-      (record.payload as Record<string, unknown> | undefined)?.envelope !== undefined &&
-      (record.payload as { envelope?: { batchId?: unknown } }).envelope?.batchId === input.batchId,
-  );
-  if (batchRows.length === 0) return;
-  if (batchRows.some((record) => record.status === "admitted")) return;
-  const orders = batchQcOrdersFromDispatchRows(batchRows, input.batchId);
-  if (orders.length === 0) return;
-  const initiatorRecord =
-    context.sessions.get(input.fromSessionId) ?? (await deps.activateSessionRecord(input.fromSessionId));
-  const batchTitle = readBatchTitleFromDispatchRows(batchRows);
-  initiatorRecord.app.runtime.enqueueAgentWorkOrderBatchQc({
-    batchId: input.batchId,
-    ...(batchTitle === undefined ? {} : { batchTitle }),
-    orders,
-    traceContext: initiatorRecord.traceContext,
-  });
-  context.logger?.info("Batch QC triggered: all work orders settled", {
-    batchId: input.batchId,
-    event: "agent_work_order_batch_qc.triggered",
-    fromSessionId: input.fromSessionId,
-    module: "bootstrap.zcode_protocol",
-    orderCount: orders.length,
-  });
-}
-
-/** 派单行 payload → 质检清单（防御性收窄；任务为空/信封畸形的行跳过，不猜测）。 */
-function batchQcOrdersFromDispatchRows(
-  rows: readonly { payload: { text: string; [key: string]: unknown } }[],
-  batchId: string,
-): BatchQcOrder[] {
-  const orders: BatchQcOrder[] = [];
-  for (const record of rows) {
-    const envelope = record.payload?.envelope;
-    if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) continue;
-    const source = envelope as Record<string, unknown>;
-    if (source.batchId !== batchId) continue;
-    const workOrderId = typeof source.workOrderId === "string" ? source.workOrderId : "";
-    const task = typeof source.task === "string" ? source.task.trim() : "";
-    const agentName = typeof source.fromAgentName === "string" ? source.fromAgentName.trim() : "";
-    if (!workOrderId || !task) continue;
-    orders.push({ workOrderId, agentName, task });
-  }
-  // 质检清单与提示词按工单号定序：同样的批次铸出同样的输入（测试可对账）。
-  orders.sort((a, b) => (a.workOrderId < b.workOrderId ? -1 : a.workOrderId > b.workOrderId ? 1 : 0));
-  return orders;
-}
-
-/** 批次人类标题取自同批任一派单行的信封（铸造侧同批同题）；取不到就缺省。 */
-function readBatchTitleFromDispatchRows(
-  rows: readonly { payload: { text: string; [key: string]: unknown } }[],
-): string | undefined {
-  for (const record of rows) {
-    const envelope = record.payload?.envelope;
-    if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) continue;
-    const title = (envelope as { batchTitle?: unknown }).batchTitle;
-    if (typeof title === "string" && title.trim()) return title.trim();
-  }
-  return undefined;
+  return initiatorRecord;
 }

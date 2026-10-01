@@ -1,0 +1,175 @@
+// ============================================================
+// 批次质检触发（纪律协议批）的可运行检查：驱动**真实**
+// maybeEnqueueAgentWorkOrderBatchQc + enqueueAgentWorkOrderBatchQc（互调用真实
+// 实现，只有 sessionStore/enqueueRuntimeCommand 是假件）。台账行用**真实 payload
+// 形状**：员工名在 payload 顶层 agentName、信封 fromAgentName 是发起方署名
+// （评审 B1 的钉子——夹具写反会让 bug 焊死在绿色里）。验证：
+//  1. 同批全部收口 → 开一次，清单按工单号定序、员工名取顶层字段、工号随行；
+//  2. 闸门行已在（任意状态）→ 不开；同批还有 admitted → 不开；孤儿批次 → 不开；
+//  3. 并发两次触发（同批两单同时销账）→ 串行链 + 闸门只放一次；
+//  4. 落闸（save）先于开轮（enqueueRuntimeCommand）——评审 A4 的真不变量；
+//  5. 闸门行 id 带会话命名空间——评审 A3。
+// 运行：npx tsx --test apps/zcode-cli/packages/core/src/runtime/methods/work-order-batch-qc.test.ts
+// ============================================================
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { WorkOrderBatchQcRuntimeCommand } from "../command-queue.js";
+import {
+  batchQcLedgerId,
+  enqueueAgentWorkOrderBatchQc,
+  maybeEnqueueAgentWorkOrderBatchQc,
+} from "./work-order-batch-qc.js";
+
+const SESSION = "sess-boss";
+const BATCH_ID = "batch-1";
+
+interface LedgerRow {
+  id: string;
+  sessionID: string;
+  kind: string;
+  delivery: string;
+  payload: { text: string; [key: string]: unknown };
+  admittedSequence: number;
+  status: "admitted" | "discarded";
+  time: { created: number; updated: number };
+}
+
+/** 与 agent-dispatch-port.ts 落账的真实 payload 形状一致（员工名在顶层、信封里是发起方署名）。 */
+function dispatchRow(workOrderId: string, status: "admitted" | "discarded"): LedgerRow {
+  return {
+    id: `agentWorkOrderDispatch:${workOrderId}`,
+    sessionID: SESSION,
+    kind: "agentWorkOrderDispatch",
+    delivery: "queue",
+    payload: {
+      text: `任务${workOrderId}`,
+      workOrderId,
+      agentName: `员工-${workOrderId}`,
+      agentId: `agent-${workOrderId}`,
+      targetSessionId: "sess-worker",
+      envelope: {
+        workOrderId,
+        fromAgentName: "老板",
+        fromSessionId: SESSION,
+        task: `任务${workOrderId}`,
+        batchId: BATCH_ID,
+        batchTitle: "登录页整改",
+      },
+    },
+    admittedSequence: 1,
+    status,
+    time: { created: 0, updated: 0 },
+  };
+}
+
+function makeRuntime(rows: LedgerRow[]) {
+  const sequence: string[] = [];
+  const qcCommands: WorkOrderBatchQcRuntimeCommand[] = [];
+  const store = {
+    rows,
+    async listSessionInputs() {
+      return this.rows;
+    },
+    saveSessionInput(input: { id: string; sessionID: string; kind: string; delivery: string; payload: object }) {
+      sequence.push(`save:${input.id}`);
+      this.rows.push(input as unknown as LedgerRow);
+      return { id: input.id };
+    },
+  };
+  const runtime = {
+    sessionId: SESSION,
+    shuttingDown: false,
+    branchGeneration: 0,
+    rootTraceContext: { traceId: "trace" },
+    logger: undefined,
+    sessionStore: store,
+    trackResidencyBlockingWork: async () => ({}),
+    enqueueRuntimeCommand(command: WorkOrderBatchQcRuntimeCommand) {
+      sequence.push(`enqueue:${command.batchId}`);
+      qcCommands.push(command);
+    },
+    qcCommands,
+    sequence,
+  };
+  (runtime as unknown as Record<string, unknown>).enqueueAgentWorkOrderBatchQc = (
+    input: Parameters<typeof enqueueAgentWorkOrderBatchQc>[1],
+  ) => enqueueAgentWorkOrderBatchQc.call(runtime as never, input);
+  return runtime as never as Record<string, unknown> & {
+    qcCommands: WorkOrderBatchQcRuntimeCommand[];
+    sequence: string[];
+  };
+}
+
+const trigger = (runtime: never, batchId = BATCH_ID) =>
+  maybeEnqueueAgentWorkOrderBatchQc.call(runtime, { batchId });
+
+test("同批全部收口：开一次，员工名取台账顶层字段、工号随行、按工单号定序", async () => {
+  const runtime = makeRuntime([dispatchRow("wo-2", "discarded"), dispatchRow("wo-1", "discarded")]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 1);
+  const command = runtime.qcCommands[0]!;
+  assert.equal(command.batchId, BATCH_ID);
+  assert.equal(command.batchTitle, "登录页整改");
+  assert.deepEqual(
+    command.orders.map((order) => order.workOrderId),
+    ["wo-1", "wo-2"],
+  );
+  // B1 钉子：员工名是台账顶层的 agentName（员工），不是信封里的发起方署名。
+  assert.equal(command.orders[0]?.agentName, "员工-wo-1");
+  assert.equal(command.orders[0]?.agentId, "agent-wo-1");
+  assert.match(command.text, /agent-id="agent-wo-1"/);
+});
+
+test("闸门行已在（discarded 也算）：不开；同批还有 admitted：不开；孤儿批次：不开", async () => {
+  const gated = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    {
+      id: batchQcLedgerId(SESSION, BATCH_ID),
+      sessionID: SESSION,
+      kind: "agentWorkOrderBatchQc",
+      delivery: "queue",
+      payload: { text: "gate" },
+      admittedSequence: 9,
+      status: "discarded",
+      time: { created: 0, updated: 0 },
+    },
+  ]);
+  await trigger(gated);
+  assert.equal(gated.qcCommands.length, 0);
+
+  const inFlight = makeRuntime([dispatchRow("wo-1", "discarded"), dispatchRow("wo-2", "admitted")]);
+  await trigger(inFlight);
+  assert.equal(inFlight.qcCommands.length, 0);
+
+  const orphan = makeRuntime([]);
+  await trigger(orphan);
+  assert.equal(orphan.qcCommands.length, 0);
+});
+
+test("并发两次触发（同批两单同时销账）：串行链 + 闸门只放一次", async () => {
+  const runtime = makeRuntime([dispatchRow("wo-1", "discarded"), dispatchRow("wo-2", "discarded")]);
+  await Promise.all([trigger(runtime), trigger(runtime)]);
+  assert.equal(runtime.qcCommands.length, 1);
+});
+
+test("落闸先于开轮（A4 真不变量）：save 一定排在 enqueueRuntimeCommand 之前", async () => {
+  const runtime = makeRuntime([dispatchRow("wo-1", "discarded")]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 1);
+  const gateIndex = runtime.sequence.findIndex((entry) =>
+    entry.startsWith(`save:${batchQcLedgerId(SESSION, BATCH_ID)}`),
+  );
+  const enqueueIndex = runtime.sequence.findIndex((entry) => entry.startsWith("enqueue:"));
+  assert.ok(gateIndex !== -1, "闸门行应已落库");
+  assert.ok(enqueueIndex !== -1);
+  assert.ok(gateIndex < enqueueIndex, "落闸必须先于开轮");
+});
+
+test("闸门行 id 带会话命名空间（A3）：跨会话撞 batchId 不共享闸门", async () => {
+  const runtime = makeRuntime([dispatchRow("wo-1", "discarded")]);
+  await trigger(runtime);
+  assert.ok(
+    runtime.sequence.some((entry) => entry.startsWith(`save:agentWorkOrderBatchQc:${SESSION}:${BATCH_ID}`)),
+  );
+});

@@ -1,8 +1,9 @@
 // ============================================================
 // 批次质检（纪律协议批）：批次全部收口后发起方会话的自动验货轮。
-// bootstrap 触发侧（agent-dispatch-receipts）在最后一张回执销账后经公共
-// AgentRuntime 接口开轮；本文件只负责排队、闸门台账行、落库 synthetic notice
-// 与按质检身份成轮。与回执轮同型（排队 + 独立成轮，绝不打断进行中回合）。
+// 触发（maybeEnqueueAgentWorkOrderBatchQc）与开轮（enqueueAgentWorkOrderBatchQc）
+// 都在 core：活回执投递（bootstrap deliverWorkOrderReceipt）与 resume 清扫
+// （steering 的重投/合成回执）两条路都调同一个入口——清扫路径不经过 bootstrap，
+// 漏掉它崩溃过的批次就永远不开质检（评审 A1/B4）。
 // ============================================================
 
 import { createMessageId, traceContextToLogContext } from "../deps.js";
@@ -23,11 +24,14 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import { isStaleBranchRuntimeCommand } from "./runtime-command-generation.js";
 import { beginForegroundExecution, finishForegroundExecution } from "./runtime-command-queue.js";
 
-/** 质检闸门台账行的确定性 id 前缀：触发侧靠「行存在（任意状态）」实现每批只质检一次。 */
-export const BATCH_QC_LEDGER_ID_PREFIX = "agentWorkOrderBatchQc:";
-
-export function batchQcLedgerId(batchId: string): string {
-  return `${BATCH_QC_LEDGER_ID_PREFIX}${batchId}`;
+/**
+ * 闸门台账行的确定性 id（会话命名空间）：`agentWorkOrderBatchQc:<sessionId>:<batchId>`。
+ * batchId 是模型回传的裸串（跨会话可能撞车，评审 A3），闸门行又是 session_input 的
+ * 全局主键——不带会话命名空间，两个老板会话复用同一 batchId 时第二个永远查不到自己的
+ * 闸门行，「每批只质检一次」被击穿。触发查询与落行两侧都用本函数，杜绝拼法漂移。
+ */
+export function batchQcLedgerId(sessionId: string, batchId: string): string {
+  return `agentWorkOrderBatchQc:${sessionId}:${batchId}`;
 }
 
 export interface EnqueueAgentWorkOrderBatchQcInput {
@@ -39,10 +43,11 @@ export interface EnqueueAgentWorkOrderBatchQcInput {
 
 /**
  * 公共入口（AgentRuntime 面上）：为一批已收口的工单开一轮自动质检。
- * 闸门（每批只此一次）由确定性台账行承担：本函数落 `agentWorkOrderBatchQc:<batchId>`，
- * 触发侧先查行（任意状态）再触发——进程内触发侧串行 + 行持久化，并发与跨重启都堵住。
- * 崩溃窗口（闸门已落、轮未跑）质检丢失不补跑：与回执同一档 best-effort，权威事实
- * 在各目标会话的留档里。
+ * 闸门（每批只此一次）由确定性台账行承担，且**落闸先于开轮**（评审 A4）：
+ * saveSessionInput 底下是同步写，命令出队前闸门行必已可见；若先开轮后落闸，
+ * 落闸失败会出现「质检已在跑而闸门缺席」的二开窗口。
+ * 崩溃窗口（闸门已落、轮未跑）质检丢失不补跑：与回执同一档 best-effort，权威
+ * 事实在各目标会话的留档里。
  */
 export function enqueueAgentWorkOrderBatchQc(
   this: AgentRuntimeInternal,
@@ -86,11 +91,11 @@ export function enqueueAgentWorkOrderBatchQc(
     text,
     traceContext,
   };
-  this.enqueueRuntimeCommand(command);
-  // 闸门台账行（durable 痕迹）：确定性 id，upsert 幂等。resume 清扫会把残余
-  // admitted 行收口为 discarded，不影响触发侧的「行存在即跳过」判定。
+  // 闸门台账行（deterministic id，upsert 幂等）**先于** enqueueRuntimeCommand：
+  // 见函数头注。resume 清扫会把残余 admitted 行收口为 discarded，不影响触发侧的
+  // 「行存在即跳过」判定；run 阶段 promote 的就是这一行（id 对齐，评审 A2/B3）。
   const admission = this.sessionStore?.saveSessionInput?.({
-    id: batchQcLedgerId(input.batchId),
+    id: batchQcLedgerId(this.sessionId, input.batchId),
     sessionID: this.sessionId,
     kind: "agentWorkOrderBatchQc",
     delivery: "queue",
@@ -101,6 +106,7 @@ export function enqueueAgentWorkOrderBatchQc(
       orders: [...input.orders],
     },
   });
+  this.enqueueRuntimeCommand(command);
   if (admission) {
     void this.trackResidencyBlockingWork(admission).catch((error) => {
       this.logger?.warn("Failed to admit agent work order batch QC to ledger", {
@@ -121,6 +127,127 @@ export function enqueueAgentWorkOrderBatchQc(
     orderCount: input.orders.length,
     sessionId: this.sessionId,
   });
+}
+
+/**
+ * 同批并发交活时，最后两张回执的触发可能交错：都先查闸门再落行会双双放行。
+ * 触发按 `${sessionId}:${batchId}` 串行——前一个跑完（含落闸）才轮到下一个，
+ * 后者必见闸门行而跳过。Map 只在本进程内记账；落闸是同步写，跨进程/重启由
+ * 台账行兜住（活投递与 resume 清扫同进程内也各自串行于本 Map）。
+ */
+const batchQcTriggerChains = new Map<string, Promise<void>>();
+
+export interface MaybeEnqueueAgentWorkOrderBatchQcInput {
+  batchId: string;
+  traceContext?: TraceContext;
+}
+
+/**
+ * 公共触发（AgentRuntime 面上）：本会话里 batchId 批次若已全部收口且未质检过，
+ * 开一轮质检；否则空转。幂等安全的自查入口——活回执投递与 resume 清扫共用。
+ */
+export async function maybeEnqueueAgentWorkOrderBatchQc(
+  this: AgentRuntimeInternal,
+  input: MaybeEnqueueAgentWorkOrderBatchQcInput,
+): Promise<void> {
+  const chainKey = `${this.sessionId}:${input.batchId}`;
+  const previous = batchQcTriggerChains.get(chainKey) ?? Promise.resolve();
+  const chain = previous.then(() => startBatchQcIfComplete.call(this, input));
+  batchQcTriggerChains.set(chainKey, chain);
+  try {
+    await chain;
+  } finally {
+    if (batchQcTriggerChains.get(chainKey) === chain) {
+      batchQcTriggerChains.delete(chainKey);
+    }
+  }
+}
+
+async function startBatchQcIfComplete(
+  this: AgentRuntimeInternal,
+  input: MaybeEnqueueAgentWorkOrderBatchQcInput,
+): Promise<void> {
+  const sessionStore = this.sessionStore;
+  if (!sessionStore?.listSessionInputs) return;
+  const rows = await sessionStore.listSessionInputs({ sessionID: this.sessionId });
+  // 闸门：本批的质检台账行已在（任意状态）→ 这批已经质检过（或已排队），绝不二开。
+  if (rows.some((record) => record.id === batchQcLedgerId(this.sessionId, input.batchId))) {
+    return;
+  }
+  // 收口判定：同批派单行一张不缺、且全部不在 admitted（回执已销账或 resume 已收口）。
+  const batchRows = rows.filter(
+    (record) =>
+      record.kind === "agentWorkOrderDispatch" &&
+      (record.payload as { envelope?: { batchId?: unknown } } | undefined)?.envelope !==
+        undefined &&
+      (record.payload as { envelope?: { batchId?: unknown } }).envelope?.batchId ===
+        input.batchId,
+  );
+  if (batchRows.length === 0) return;
+  if (batchRows.some((record) => record.status === "admitted")) return;
+  const orders = batchQcOrdersFromDispatchRows(batchRows, input.batchId);
+  if (orders.length === 0) return;
+  const batchTitle = readBatchTitleFromDispatchRows(batchRows);
+  this.enqueueAgentWorkOrderBatchQc({
+    batchId: input.batchId,
+    ...(batchTitle === undefined ? {} : { batchTitle }),
+    orders,
+    ...(input.traceContext === undefined ? {} : { traceContext: input.traceContext }),
+  });
+  this.logger?.info("Batch QC triggered: all work orders settled", {
+    batchId: input.batchId,
+    event: "agent_work_order_batch_qc.triggered",
+    module: "core.runtime",
+    orderCount: orders.length,
+    sessionId: this.sessionId,
+  });
+}
+
+/**
+ * 派单行 payload → 质检清单（防御性收窄；任务为空/信封畸形的行跳过，不猜测）。
+ * 员工名读 payload **顶层**的 agentName（员工真名）——信封里的 fromAgentName 是
+ * 发起方署名，读它打回必派错人（评审 B1）；工号同源，改名不误派。
+ */
+function batchQcOrdersFromDispatchRows(
+  rows: readonly { payload: { text: string; [key: string]: unknown } }[],
+  batchId: string,
+): BatchQcOrder[] {
+  const orders: BatchQcOrder[] = [];
+  for (const record of rows) {
+    const payload = record.payload;
+    const envelope = payload?.envelope;
+    if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) continue;
+    const envelopeRecord = envelope as Record<string, unknown>;
+    if (envelopeRecord.batchId !== batchId) continue;
+    const workOrderId =
+      typeof envelopeRecord.workOrderId === "string" ? envelopeRecord.workOrderId : "";
+    const task = typeof envelopeRecord.task === "string" ? envelopeRecord.task.trim() : "";
+    const agentName = typeof payload.agentName === "string" ? payload.agentName.trim() : "";
+    const agentId = typeof payload.agentId === "string" ? payload.agentId.trim() : "";
+    if (!workOrderId || !task) continue;
+    orders.push({
+      workOrderId,
+      agentName,
+      ...(agentId ? { agentId } : {}),
+      task,
+    });
+  }
+  // 质检清单与提示词按工单号定序：同样的批次铸出同样的输入（测试可对账）。
+  orders.sort((a, b) => (a.workOrderId < b.workOrderId ? -1 : a.workOrderId > b.workOrderId ? 1 : 0));
+  return orders;
+}
+
+/** 批次人类标题取自同批任一派单行的信封（铸造侧同批同题）；取不到就缺省。 */
+function readBatchTitleFromDispatchRows(
+  rows: readonly { payload: { text: string; [key: string]: unknown } }[],
+): string | undefined {
+  for (const record of rows) {
+    const envelope = record.payload?.envelope;
+    if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) continue;
+    const title = (envelope as { batchTitle?: unknown }).batchTitle;
+    if (typeof title === "string" && title.trim()) return title.trim();
+  }
+  return undefined;
 }
 
 /**
@@ -154,9 +281,11 @@ export async function runWorkOrderBatchQcCommand(
       traceContext: command.traceContext,
       visibility: "model-only",
     });
+    // 落库账本行就是闸门行（id 同 batchQcLedgerId）——promote 对准它，别用
+    // command.id（那行不存在，promote 会对着空气开枪，评审 A2/B3）。
     await this.sessionStore
       ?.markSessionInputPromoted?.({
-        id: String(command.id),
+        id: batchQcLedgerId(this.sessionId, command.batchId),
         sessionID: this.sessionId,
         promotedMessageID: messageID,
       })

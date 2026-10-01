@@ -1425,6 +1425,10 @@ export async function discardPersistedPendingSteerInputs(
           typeof record.payload.workOrderId === "string" ? record.payload.workOrderId : "",
         ),
     );
+    // 批次质检（纪律协议批）：清扫重投/合成的回执涉及哪些批次——它们的派单行
+    // 在下面被收口，批次可能就此"全部收口"，收尾要补跑质检触发（评审 A1/B4：
+    // 清扫路径不经过 bootstrap 的投递路，漏掉这里崩溃过的批次永远不开质检）。
+    const qcBatchIds = new Set<string>();
     for (const record of admitted) {
       if (record.status !== "admitted") continue;
       if (record.kind === "agentWorkOrderReceipt" || record.kind === "agentWorkOrderDispatch") {
@@ -1436,6 +1440,9 @@ export async function discardPersistedPendingSteerInputs(
         });
         const receipt = redeliverableWorkOrderReceipt(record);
         if (!receipt) continue;
+        if (typeof receipt.envelope.batchId === "string") {
+          qcBatchIds.add(receipt.envelope.batchId);
+        }
         if (
           record.kind === "agentWorkOrderDispatch" &&
           receiptWorkOrderIds.has(receipt.workOrderId)
@@ -1459,6 +1466,21 @@ export async function discardPersistedPendingSteerInputs(
         status: "discarded",
         reason: "session_resumed",
       });
+    }
+    // 收尾补跑：闸门行 + 全收口判定在 runtime 入口里（幂等，重复触发是空转）。
+    for (const batchId of qcBatchIds) {
+      try {
+        await this.maybeEnqueueAgentWorkOrderBatchQc({ batchId, traceContext });
+      } catch (error) {
+        this.logger?.warn("Failed to trigger batch QC after resume sweep", {
+          batchId,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "agent_work_order_batch_qc.sweep_trigger_failed",
+          module: "core.runtime",
+          sessionId: this.sessionId,
+          status: "failed",
+        });
+      }
     }
   } catch (error) {
     this.logger?.warn("Failed to sweep admitted session inputs on resume", {
