@@ -15,27 +15,35 @@ import type { PersonaSpec } from "@zcode/dynamic-workflow";
 /** 报错里最多列多少个可用员工名（全名单可能很长，bounded 诚实）。 */
 const AVAILABLE_NAMES_MAX = 12;
 
-/** 点名了员工但解析失败时抛出；not_found 带可用员工名单（照派单同名错误的先例），歧义带撞名双方。 */
+/** 点名了员工但解析失败时抛出；not_found 带可用员工名单（照派单同名错误的先例，截断亮明），歧义带撞名双方。 */
 export class WorkflowActorProfileError extends Error {
   readonly profileName: string;
   readonly kind: "not_found" | "ambiguous";
   /** not_found = 名册里可点名的员工名（截断诚实）；ambiguous = 撞名的双方。 */
   readonly names?: readonly string[];
+  /** 名册总人数（not_found 时在场）；名单被截断时报错亮明「只列前 N」。 */
+  readonly totalNames?: number;
 
   constructor(
     kind: "not_found" | "ambiguous",
     profileName: string,
     names?: readonly string[],
+    totalNames?: number,
   ) {
+    const listed =
+      kind === "not_found" && totalNames !== undefined && totalNames > (names?.length ?? 0)
+        ? `${(names ?? []).join("、")}……（名册共 ${totalNames} 人，只列前 ${names?.length ?? 0}）`
+        : (names ?? []).join("、");
     super(
       kind === "not_found"
-        ? `图纸里点名的员工「${profileName}」不在名册里（可能被改名或删除）。可点名的员工：${(names ?? []).join("、") || "（名册是空的）"}。请改用其中一员，或删掉这个 profile 引用改用普通 persona。`
+        ? `图纸里点名的员工「${profileName}」不在名册里（可能被改名或删除）。可点名的员工：${listed || "（名册是空的）"}。请改用其中一员，或删掉这个 profile 引用改用普通 persona。`
         : `图纸里点名的员工「${profileName}」在名册里撞了名（${(names ?? []).join("、")}）。请改用唯一的员工名，或按工号点名。`,
     );
     this.name = "WorkflowActorProfileError";
     this.profileName = profileName;
     this.kind = kind;
     if (names !== undefined) this.names = names;
+    if (totalNames !== undefined) this.totalNames = totalNames;
   }
 }
 
@@ -58,16 +66,21 @@ export function resolveWorkflowActorProfile(
   if (resolution.kind === "ambiguous") {
     throw new WorkflowActorProfileError("ambiguous", wanted, resolution.matchedNames);
   }
-  const availableNames = profiles
-    .filter(
-      (profile) =>
-        profile.source === "project" ||
-        profile.source === "user" ||
-        profile.source === "built-in",
-    )
+  const identityProfiles = profiles.filter(
+    (profile) =>
+      profile.source === "project" ||
+      profile.source === "user" ||
+      profile.source === "built-in",
+  );
+  const availableNames = identityProfiles
     .map((profile) => profile.name)
     .slice(0, AVAILABLE_NAMES_MAX);
-  throw new WorkflowActorProfileError("not_found", wanted, availableNames);
+  throw new WorkflowActorProfileError(
+    "not_found",
+    wanted,
+    availableNames,
+    identityProfiles.length,
+  );
 }
 
 /**

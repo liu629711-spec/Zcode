@@ -606,9 +606,10 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
             }) => {
               // 班底进图纸（2026-10-01）：persona.profile 点名的员工在这里展开——
               // 引擎只透传名字（app-free），名册在宿主。点名了但解析不出（缺失/歧义）
-              // 直接抛错让 run 大声失败，绝不悄悄退化成匿名工人；没点名时一切照旧。
-              // ponytail: 员工记忆本（profile.memory）暂未接进 actor 会话（见
-              // workflow-actor-profile.ts 的天花板注释），班底在图纸里暂时有脸没记性。
+              // 直接抛错让该步响亮失败，绝不悄悄退化成匿名工人；没点名时一切照旧。
+              // ponytail: 员工的记忆本/工具限制/权限模式三件都不随行（有脸、有嗓子、
+              // 暂时没记性也没戴工具镣铐），升级路径见 workflow-actor-profile.ts 的
+              // 天花板注释；真机需求出现先接哪个，等老板拍板。
               const actorProfile = resolveWorkflowActorProfile(
                 persona,
                 getRuntime().getAgentProfiles(),
@@ -634,6 +635,10 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
                   {
                     actorProfileName: actorProfile?.name,
                     event: "workflow_actor.profile_model_fallback",
+                    // 记下档案里配的是哪个模型（provider/model 两段），排障不用翻档案反推。
+                    profileModelId: actorProfile?.modelSelection
+                      ? `${actorProfile.modelSelection.providerId}/${actorProfile.modelSelection.modelId}`
+                      : undefined,
                     module: "bootstrap.app",
                     sessionId,
                   },

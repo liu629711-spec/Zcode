@@ -68,6 +68,23 @@ test("resolveWorkflowActorProfile：not_found 报错带可用员工名单（照�
   );
 });
 
+test("resolveWorkflowActorProfile：名单超过 12 个时截断亮明总数（评审 R1）", () => {
+  const bigRoster = Array.from({ length: 15 }, (_, index) =>
+    profile({ name: `员工-${index}` }),
+  );
+  assert.throws(
+    () => resolveWorkflowActorProfile({ profile: "不存在的员工" }, bigRoster),
+    (error: unknown) => {
+      if (!(error instanceof WorkflowActorProfileError) || error.kind !== "not_found") return false;
+      return (
+        error.names?.length === 12 &&
+        error.totalNames === 15 &&
+        error.message.includes("名册共 15 人，只列前 12")
+      );
+    },
+  );
+});
+
 test("resolveWorkflowActorProfile：撞名 → 歧义抛错并带双方名字", () => {
   assert.throws(
     () => resolveWorkflowActorProfile({ profile: "同名" }, ROSTER),
