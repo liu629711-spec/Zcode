@@ -13,6 +13,8 @@ export const RuntimeInputPresentationSchema = z.enum([
   "agent_work_order",
   // 派单回执轮（D29/D3）：发起方会话里回执 carrier 的落库形态标记。
   "agent_work_order_receipt",
+  // 批次质检轮（纪律协议批）：批次全部收口后在发起方会话自动开的验货轮。
+  "agent_work_order_batch_qc",
 ]);
 export type RuntimeInputPresentation = z.infer<typeof RuntimeInputPresentationSchema>;
 

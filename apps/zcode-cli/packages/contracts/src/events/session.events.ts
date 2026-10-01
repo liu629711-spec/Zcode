@@ -293,7 +293,13 @@ export type WorkflowNotificationMeta =
 export interface BackgroundResultOriginMeta {
   /** `workflow` 是 dynamic-workflow run（workId ≡ runId），复用整条后台通知管线。 */
   /** `agent_work_order_receipt` 是派单回执轮（D29/D3，workId ≡ workOrderId），复用后台结果轮头链。 */
-  backgroundSource: "bash" | "subagent" | "workflow" | "agent_work_order_receipt";
+  /** `agent_work_order_batch_qc` 是批次质检轮（纪律协议批，workId ≡ batchId），同一族。 */
+  backgroundSource:
+    | "bash"
+    | "subagent"
+    | "workflow"
+    | "agent_work_order_receipt"
+    | "agent_work_order_batch_qc";
   workId: string;
   title: string;
   /** 只在 backgroundSource === "workflow" 的单条通知轮上在场；manifest 渲染的唯一数据源。 */

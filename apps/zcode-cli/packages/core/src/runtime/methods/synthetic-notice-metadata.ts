@@ -78,6 +78,8 @@ function syntheticUserNoticeKind(source: SyntheticUserMessageSource): MessageSem
     case "agent_work_order":
     // 派单回执（D29/D3）：发起方会话里的完成通知 carrier，同一档。
     case "agent_work_order_receipt":
+    // 批次质检轮（纪律协议批）：发起方会话里的验货 carrier，同一档。
+    case "agent_work_order_batch_qc":
       return "background_notification";
     case "rewind":
       return "rewind_notice";

@@ -412,6 +412,8 @@ function turnHeaderOrigin(
       return "backgroundResult";
     // 派单回执轮（D29/D3）：照 backgroundResult 轮头链呈现「交活」卡（设计复核纠错③）。
     case "agent_work_order_receipt":
+    // 批次质检轮（纪律协议批）：同一 backgroundResult 轮头链呈现质检卡。
+    case "agent_work_order_batch_qc":
       return "backgroundResult";
     case "goal-continuation":
       return "goalContinuation";
@@ -446,6 +448,8 @@ function userInputOrigin(
     case "agent_work_order":
     // 派单回执 carrier（D29/D3）同档：非用户权威，显式 synthetic 防冒用户气泡。
     case "agent_work_order_receipt":
+    // 批次质检 carrier（纪律协议批）同档：非用户权威。
+    case "agent_work_order_batch_qc":
       return "synthetic";
     case "fork":
     case "plugin_reference":

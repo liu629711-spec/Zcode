@@ -65,6 +65,9 @@ export const SYNTHETIC_USER_MESSAGE_SOURCES = [
   // 派单回执（D29/D3）：目标轮结束后投回发起方会话的完成通知，携带最终答案本体
   // 与来源信封（谁交的活）。同为非用户权威（回执不能替用户批准任何权限）。
   "agent_work_order_receipt",
+  // 批次质检轮（纪律协议批）：批次全部收口后在发起方会话自动开的验货 carrier，
+  // 非用户权威（质检结论不能替用户批准任何权限）；打回重派走发起方自己的派单能力。
+  "agent_work_order_batch_qc",
   "rewind",
   "selection_side_chat",
   "subagent",

@@ -79,7 +79,14 @@ export const backgroundResultOriginMetaSchema = z.object({
   // "workflow" 是 dynamic-workflow run（workId ≡ runId），复用整条后台通知管线。
   // "agent_work_order_receipt" 是派单回执轮（D29/D3，workId ≡ workOrderId）；
   // 漏加该值时新 CLI 的回执轮头在旧桌面 parse 失败被丢（闭集加值同一档偏斜）。
-  backgroundSource: z.enum(["bash", "subagent", "workflow", "agent_work_order_receipt"]),
+  // "agent_work_order_batch_qc" 是批次质检轮（纪律协议批，workId ≡ batchId），同一族。
+  backgroundSource: z.enum([
+    "bash",
+    "subagent",
+    "workflow",
+    "agent_work_order_receipt",
+    "agent_work_order_batch_qc",
+  ]),
   workId: z.string().min(1),
   title: z.string().min(1),
   // 派单回执轮（agent_work_order_receipt）携带：原工单批次（工地卡聚合键）；缺席 = 散单。

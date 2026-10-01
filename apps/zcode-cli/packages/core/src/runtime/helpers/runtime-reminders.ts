@@ -103,6 +103,8 @@ export function runtimeMetadataForSyntheticUserMessageSource(
     source === "agent_work_order" ||
     // 派单回执（D29/D3）：正文自带 <work-order-receipt> 信封，同一族。
     source === "agent_work_order_receipt" ||
+    // 批次质检轮（纪律协议批）：正文自带 <batch-qc> 信封，同一族。
+    source === "agent_work_order_batch_qc" ||
     source === "shared_context"
   ) {
     return legacySyntheticRuntimeMetadata();

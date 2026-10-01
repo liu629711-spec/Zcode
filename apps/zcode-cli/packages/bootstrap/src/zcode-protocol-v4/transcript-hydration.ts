@@ -1293,11 +1293,14 @@ function backgroundResultOriginMetaOfMessage(
   // 静默退化成一条无标题 model-only 消息，工具卡→详情页的关联键随之丢失。
   // "agent_work_order_receipt" 是派单回执轮（D29/D3，workId ≡ workOrderId）：漏掉它，
   // 回执轮在冷恢复后退化为无标题行，发起方看不到「谁交的活」。
+  // "agent_work_order_batch_qc" 是批次质检轮（纪律协议批，workId ≡ batchId）：漏掉它，
+  // 质检卡在冷恢复后同样退化为无标题行，老板看不到质检结论。
   if (
     (backgroundSource !== "bash" &&
       backgroundSource !== "subagent" &&
       backgroundSource !== "workflow" &&
-      backgroundSource !== "agent_work_order_receipt") ||
+      backgroundSource !== "agent_work_order_receipt" &&
+      backgroundSource !== "agent_work_order_batch_qc") ||
     !workId ||
     !title
   ) {
@@ -1854,7 +1857,9 @@ export function synthesizeEventsFromMessages(
             input: wakeSource === "background_task" ? textOfMessage(message.parts) : "",
             inputVisibility: "model-only",
             inputSource: wakeSource,
-            ...(wakeSource === "background_task" || wakeSource === "agent_work_order_receipt"
+            ...(wakeSource === "background_task" ||
+            wakeSource === "agent_work_order_receipt" ||
+            wakeSource === "agent_work_order_batch_qc"
               ? { originMeta: backgroundResultOriginMetaOfMessage(message) }
               : {}),
             // 工单唤醒轮（D29/D5）：冷恢复同样带卡片元数据，漏掉它工单卡就只在

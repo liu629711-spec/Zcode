@@ -26,6 +26,8 @@ export const zcodeSyntheticUserMessageSourceSchema = z.enum([
   "agent_work_order",
   // 派单（D29/D3）回执 carrier 的来源；同上必须与 contracts 同词表。
   "agent_work_order_receipt",
+  // 批次质检轮（纪律协议批）carrier 的来源；同上必须与 contracts 同词表。
+  "agent_work_order_batch_qc",
   "rewind",
   "selection_side_chat",
   "subagent",

@@ -34,6 +34,8 @@ function mapTurnHeaderOrigin(
       return "backgroundResult";
     // 派单回执轮（D29/D3）：与 event-normalizer 同表同词，live/cold 一致。
     case "agent_work_order_receipt":
+    // 批次质检轮（纪律协议批）：同一 backgroundResult 轮头链（workId ≡ batchId）。
+    case "agent_work_order_batch_qc":
       return "backgroundResult";
     case "goal-continuation":
       return "goalContinuation";
@@ -63,6 +65,8 @@ function mapUserInputOrigin(
     case "agent_work_order":
     // 派单回执 carrier（D29/D3）同档：非用户权威，显式 synthetic 防冒用户气泡。
     case "agent_work_order_receipt":
+    // 批次质检 carrier（纪律协议批）同档：非用户权威。
+    case "agent_work_order_batch_qc":
       return "synthetic";
     case "fork":
     case "plugin_reference":
