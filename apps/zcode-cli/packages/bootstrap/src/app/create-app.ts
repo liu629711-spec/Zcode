@@ -604,12 +604,10 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
               escalatePort,
               modelRequestAdmission,
             }) => {
-              // 班底进图纸（2026-10-01）：persona.profile 点名的员工在这里展开——
-              // 引擎只透传名字（app-free），名册在宿主。点名了但解析不出（缺失/歧义）
-              // 直接抛错让该步响亮失败，绝不悄悄退化成匿名工人；没点名时一切照旧。
-              // ponytail: 员工的记忆本/工具限制/权限模式三件都不随行（有脸、有嗓子、
-              // 暂时没记性也没戴工具镣铐），升级路径见 workflow-actor-profile.ts 的
-              // 天花板注释；真机需求出现先接哪个，等老板拍板。
+              // 岗位禁令随行（2026-10-01 拍板，评审 R 后口径）：员工带**岗位禁令**
+              // 进图纸（只读是岗位属性，进图纸不失效），**不带**记忆本/权限模式
+              // （有脸有嗓子，暂时没记性——升级路径见 workflow-actor-profile.ts 的
+              // 天花板注释；真机需求出现先接哪个，等老板拍板）。
               const actorProfile = resolveWorkflowActorProfile(
                 persona,
                 getRuntime().getAgentProfiles(),

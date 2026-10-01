@@ -104,11 +104,10 @@ export function profileModelSelection(input: {
  * 脚本的 system（若给了）是**本步骤的附加要求**，追加在身份之后——图纸作者
  * 不该（也不能）改写员工的性格说明书，只能给这一步加要求。整体为空（无引用
  * 且脚本没给 system）返回 undefined，配置侧按「字段缺席」处理。
- * ponytail: 员工的记忆本（profile.memory）、工具限制（profile.tools）与权限
- * 模式都不随行——actor 会话保持图纸工人的标配工具面，班底在图纸里"有脸、
- * 有嗓子（模型），暂时没记性、也没戴工牌上的工具镣铐"。记忆需要
- * projectAgentPersona 身份管道，工具面需要与减法表求交的产品裁决；真机
- * 需求出现先接哪个，等老板拍板。
+ * ponytail: 员工的**记忆本**（profile.memory）与**权限模式**不随行（2026-10-01
+ * 拍板）：actor 会话还没有记忆身份管道（projectAgentPersona + 记忆工具白名单
+ * 联动），且图纸并行扇出会让同一本记忆多写者互踩——真有需求先做只读；
+ * 工具限制已随行（workflow-actor-tools.ts 的合成，含控制管线豁免）。
  */
 export function composeWorkflowActorPersona(
   profile: AgentProfile,

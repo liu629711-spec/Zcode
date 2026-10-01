@@ -33,6 +33,7 @@ import {
 } from "@zcode/contracts";
 import { collectDisabledPaths } from "../skill-command-overrides.js";
 import { parseProviderQualifiedModelSelection } from "./provider-registry-selection.js";
+import { WORKFLOW_ACTOR_CONTROL_TOOLS } from "./workflow-actor-tools.js";
 import type { ZCodeAppOptions } from "./types.js";
 
 export interface ScriptWorkflowAgentRuntimeDeps {
@@ -249,6 +250,10 @@ function createRuntimeDeps(
 /**
  * 两条白名单来源都在场时取**交集**（评审 B6）：脚本的 opts.tools 是作者显式要的
  * 更窄面，员工岗位白名单不该把它悄悄放宽；任一缺席 = 跟随另一条（现状语义）。
+ * 交集后再并回控制管线（评审 R 复核：脚本作者不可能知道隐形管线，交集会把它
+ * 剥掉）；交集为空时管线仍在——actor 至少能交件喊人，响亮失败而不是哑奔。
+ * ponytail: 今天 dwf actor 的 opts.tools 恒空，此路径不可达；哪天脚本支持
+ * per-agent 工具面，空交集的语义（现在=只剩管线）要重新拍板。
  */
 function intersectToolAllowlists(
   scriptTools: readonly string[] | undefined,
@@ -258,5 +263,11 @@ function intersectToolAllowlists(
   if (profileTools === undefined) return scriptTools;
   const profileSet = new Set(profileTools);
   const intersected = scriptTools.filter((tool) => profileSet.has(tool));
-  return intersected.length > 0 ? intersected : undefined;
+  if (intersected.length === 0) return [...WORKFLOW_ACTOR_CONTROL_TOOLS];
+  return [
+    ...new Set([
+      ...intersected,
+      ...WORKFLOW_ACTOR_CONTROL_TOOLS,
+    ]),
+  ];
 }

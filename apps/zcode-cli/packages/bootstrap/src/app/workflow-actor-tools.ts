@@ -36,7 +36,7 @@ export interface WorkflowActorProfileToolLimits {
  * 工作流引擎才知道的隐形管线），所以合成白名单时必须显式并回（照 core
  * tool-allowlist.ts 给 subagent_child 补回 RespondToCoordinator 的同款先例）。
  */
-const WORKFLOW_ACTOR_CONTROL_TOOLS = ["submit_result", "escalate"] as const;
+export const WORKFLOW_ACTOR_CONTROL_TOOLS = ["submit_result", "escalate"] as const;
 
 /** AgentRuntimeConfig 的工具面切片。 */
 export interface WorkflowActorToolPolicy {
@@ -98,7 +98,14 @@ export function workflowActorToolPolicy(
   const narrowed =
     (profileAllowlist !== undefined && profileAllowlist.length > 0) ||
     profileDisallowed.length > 0;
-  const toolDisallowlist = [...new Set([...ACTOR_DISALLOWED_TOOLS, ...profileDisallowed])];
+  // 控制管线**双面豁免**（评审 R 复核）：既不进岗位禁令的并集（禁了 submit_result
+  // 等于 typed ask 永远交不了件，run 白烧轮次——那不是岗位规矩是打断管线），
+  // 也一定在白名单并回里（见下）。escalate 单独被禁还勉强算"永不上报"的刻意
+  // 配置，但管线是一个整体，一起豁免语义才立得住。
+  const profileDisallowedEffective = profileDisallowed.filter(
+    (tool) => !(WORKFLOW_ACTOR_CONTROL_TOOLS as readonly string[]).includes(tool),
+  );
+  const toolDisallowlist = [...new Set([...ACTOR_DISALLOWED_TOOLS, ...profileDisallowedEffective])];
   // 岗位白名单在场：actor 只能用「白名单 − 安全底线 ∪ 控制管线」。白名单里混进
   // 底线工具时，底线赢——岗位规矩再宽也请不回"问人/递归编排/越界读"这三类；
   // 控制管线再窄也要在，否则 typed ask 交不了件、卡住喊不了人（评审 A1/B1）。
