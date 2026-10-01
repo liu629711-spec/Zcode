@@ -179,6 +179,26 @@ export function AgentWorkOrderBatchCard({
           </div>
         ))}
       </div>
+      {batch.qc ? (
+        // 批次质检（纪律协议批）：状态灯一行。结论全文在旁边的「质检 · 标题」卡里
+        // （质检轮自己渲染），工地卡不重复贴正文。
+        <div className="flex items-center gap-2 border-t border-card-border/60 px-3 py-1.5">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              STATUS_DOT[batch.qc.running ? "running" : "done"],
+            )}
+          />
+          <span className="text-ui-xs text-foreground-subtle">
+            {intl.formatMessage({
+              id: batch.qc.running
+                ? "chat.workOrderBatch.qc.running"
+                : "chat.workOrderBatch.qc.done",
+            })}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

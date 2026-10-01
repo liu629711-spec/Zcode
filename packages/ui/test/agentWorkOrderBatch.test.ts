@@ -284,3 +284,91 @@ test("selectWorkOrderBatches：被中断的回执是 cancelled，不再画成红
   assert.equal(byId("wo-2").status, "cancelled", "被中断 ≠ 干砸");
   assert.equal(byId("wo-3").status, "failed");
 });
+
+// ============================================================
+// 批次质检（纪律协议批）：质检轮证据进批次模型。
+// ============================================================
+
+function qcTurn(key: string, batch: { batchId: string; batchTitle?: string }, state = "completedSuccess"): ConversationTurnRenderUnit {
+  return unit(key, {
+    header: turnHeaderRow({
+      turnId: key,
+      origin: "backgroundResult",
+      state,
+      originMeta: {
+        backgroundSource: "agent_work_order_batch_qc",
+        workId: batch.batchId,
+        title: `质检 · ${batch.batchTitle}`,
+        batchId: batch.batchId,
+        ...(batch.batchTitle ? { batchTitle: batch.batchTitle } : {}),
+      },
+    }),
+  });
+}
+
+test("selectWorkOrderBatches：质检轮把工地卡跟到质检卡旁，完成态画质检完成灯", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "code-plus", task: "拆组件", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle }, { workOrderId: "wo-1", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "code-plus", delivery: "started" }),
+      dispatchRow("call-2", { agent: "code-plus", task: "补样式", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle }, { workOrderId: "wo-2", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "code-plus", delivery: "started" }),
+    ]),
+    receiptTurn("receipt-1", BATCH, "wo-1", "code-plus 交活", "好了"),
+    receiptTurn("receipt-2", BATCH, "wo-2", "code-plus 交活", "也好了"),
+    qcTurn("qc-turn", BATCH),
+  ];
+  const batches = selectWorkOrderBatches(units);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0]?.hostUnitKey, "qc-turn");
+  assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", running: false });
+});
+
+test("selectWorkOrderBatches：在跑的质检轮 → qc.running true（状态灯讲「正在质检」）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+      dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+    ]),
+    qcTurn("qc-turn", BATCH, "running"),
+  ];
+  const batches = selectWorkOrderBatches(units);
+  assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", running: true });
+});
+
+test("selectWorkOrderBatches：质检轮里的打回重派工单行照常聚进工地卡", () => {
+  const rework = dispatchRow(
+    "call-qc-1",
+    { agent: "code-plus", task: "拆组件\n【质检打回】样式不对", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle },
+    { workOrderId: "wo-3", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "code-plus", delivery: "queued" },
+  );
+  // 质检轮自己的轮里带打回重派的工具行（同一 unit）。
+  const qcWithRework = unit("qc-turn", {
+    header: qcTurn("qc-turn", BATCH).header,
+    assistantWorkRows: [rework],
+  });
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+      dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+    ]),
+    qcWithRework,
+  ];
+  const batches = selectWorkOrderBatches(units);
+  assert.equal(batches.length, 1);
+  const keys = batches[0]?.orders.map((order) => order.key);
+  assert.ok(keys?.includes("wo-3"), "打回重派单应进批次");
+  assert.equal(batches[0]?.hostUnitKey, "qc-turn");
+});
+
+test("selectWorkOrderBatchRenderInfo：质检轮是 host 也是 member（工地卡挂载靠 member 集；member 压制不波及质检卡）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+      dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+    ]),
+    qcTurn("qc-turn", BATCH),
+  ];
+  const info = selectWorkOrderBatchRenderInfo(units);
+  const qcInfo = info.get("qc-turn")?.find((entry) => entry.batch.batchId === BATCH.batchId);
+  assert.equal(qcInfo?.isHost, true);
+  assert.equal(qcInfo?.isMember, true);
+});

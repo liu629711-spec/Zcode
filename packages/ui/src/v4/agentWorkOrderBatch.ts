@@ -1,5 +1,8 @@
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
-import { resolveAgentWorkOrderReceiptMeta } from "@/v4/agentWorkOrderTurn.js";
+import {
+  resolveAgentWorkOrderBatchQcMeta,
+  resolveAgentWorkOrderReceiptMeta,
+} from "@/v4/agentWorkOrderTurn.js";
 import { parseFailedReceiptAgentName, parseReceiptDelivererName } from "@/v4/workOrderForward.js";
 
 // ============================================================
@@ -50,7 +53,16 @@ export interface WorkOrderBatchModel {
   title?: string;
   orders: WorkOrderBatchOrder[];
   /**
-   * 批次卡挂载轮 = 批次证据**最后**出现的轮（最新回执）：工地卡是一块活状态板，
+   * 批次质检（纪律协议批）：质检轮的证据在场才有。质检结论正文在质检轮自己的
+   * 「质检 · 标题」卡里渲染，工地卡只画状态灯（进行中/已完成），不重复贴结论。
+   */
+  qc?: {
+    /** 质检轮 unit（工地卡 host 跟着它走到质检卡旁边）。 */
+    unitKey: string;
+    running: boolean;
+  };
+  /**
+   * 批次卡挂载轮 = 批次证据**最后**出现的轮（最新回执/质检轮）：工地卡是一块活状态板，
    * 永远贴在批次活动的前沿，而不是钉在派单轮上被后续内容越顶越远。
    */
   hostUnitKey: string;
@@ -114,6 +126,7 @@ function receiptSnippet(unit: ConversationTurnRenderUnit): string | undefined {
 interface BatchDraft {
   title?: string;
   orders: Map<string, WorkOrderBatchOrder>;
+  qc?: { unitKey: string; running: boolean };
   memberUnitKeys: Set<string>;
   hostUnitKey: string;
 }
@@ -156,6 +169,16 @@ export function selectWorkOrderBatches(
   };
 
   for (const unit of units) {
+    // 证据零：质检轮（纪律协议批）。批次收口后的自动验货：工地卡跟着走到质检卡
+    // 旁边并画状态灯；**不 continue**——质检轮里的打回重派 AgentDispatch 工具行
+    // 是新订单证据，落到下面的工单行扫描里照常聚合。
+    const qc = resolveAgentWorkOrderBatchQcMeta(unit.header);
+    if (qc?.batchId) {
+      const draft = ensureDraft(qc.batchId, unit.key);
+      draft.title ??= qc.batchTitle;
+      draft.qc = { unitKey: unit.key, running: unit.header?.state === "running" };
+    }
+
     // 证据一：回执轮头（发起方会话）。终态权威，先到先记账也行——合并规则让回执赢。
     const receipt = resolveAgentWorkOrderReceiptMeta(unit.header);
     if (receipt?.batchId) {
@@ -225,6 +248,7 @@ export function selectWorkOrderBatches(
       batchId,
       ...(draft.title ? { title: draft.title } : {}),
       orders: [...draft.orders.values()],
+      ...(draft.qc ? { qc: draft.qc } : {}),
       hostUnitKey: draft.hostUnitKey,
     });
   }
@@ -259,6 +283,13 @@ function collectMemberUnitKeys(
   const memberUnitKeys = new Set<string>();
   const orderKeys = new Set(batch.orders.map((order) => order.key));
   for (const unit of units) {
+    // 质检轮是批次证据轮（工地卡跟到它旁边挂载）——必须进 member 集，否则
+    // 挂载表里没有这个 key、工地卡会消失。member 的压制只作用于回执散卡
+    // （isAgentWorkOrderReceiptResult 把门），质检轮自己的「质检」标题卡照常渲染。
+    if (resolveAgentWorkOrderBatchQcMeta(unit.header)?.batchId === batch.batchId) {
+      memberUnitKeys.add(unit.key);
+      continue;
+    }
     const receipt = resolveAgentWorkOrderReceiptMeta(unit.header);
     if (receipt?.batchId === batch.batchId && orderKeys.has(receipt.workOrderId)) {
       memberUnitKeys.add(unit.key);

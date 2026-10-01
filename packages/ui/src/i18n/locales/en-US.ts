@@ -7002,6 +7002,10 @@ const enUS: Record<string, string> = {
   "chat.workOrderBatch.status.completed": "Completed",
   "chat.workOrderBatch.status.cancelled": "Interrupted",
   "chat.workOrderBatch.status.failed": "Failed",
+  // Batch QC (discipline batch): status row on the batch card; the verdict body
+  // lives in the QC turn's own titled card.
+  "chat.workOrderBatch.qc.running": "Quality check running…",
+  "chat.workOrderBatch.qc.done": "Quality check complete",
 };
 
 export default enUS;

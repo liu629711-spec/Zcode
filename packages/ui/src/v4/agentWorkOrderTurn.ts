@@ -19,6 +19,36 @@ export function resolveAgentWorkOrderMeta(
 /** 回执轮（发起方）的来源取值：CLI 在 originMeta.backgroundSource 上权威给出。 */
 export const AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE = "agent_work_order_receipt";
 
+/** 批次质检轮（发起方，纪律协议批）的来源取值：同上，CLI 权威给出。 */
+export const AGENT_WORK_ORDER_BATCH_QC_BACKGROUND_SOURCE = "agent_work_order_batch_qc";
+
+/** 批次质检轮头里与批次对账的元数据（originMeta.workId ≡ batchId；结论走本轮正文）。 */
+export interface AgentWorkOrderBatchQcMeta {
+  batchId: string;
+  title: string;
+  batchTitle?: string;
+}
+
+/**
+ * 批次质检轮的对账元数据（发起方会话）。来源不符或缺 workId 一律 undefined
+ * （调用方退回普通渲染，不从标题反推批次）。
+ */
+export function resolveAgentWorkOrderBatchQcMeta(
+  header: TurnHeaderRow | undefined,
+): AgentWorkOrderBatchQcMeta | undefined {
+  if (header?.origin !== "backgroundResult") return undefined;
+  const originMeta = header.originMeta;
+  if (originMeta?.backgroundSource !== AGENT_WORK_ORDER_BATCH_QC_BACKGROUND_SOURCE) {
+    return undefined;
+  }
+  if (!originMeta.workId.trim()) return undefined;
+  return {
+    batchId: originMeta.workId,
+    title: originMeta.title,
+    ...(originMeta.batchTitle ? { batchTitle: originMeta.batchTitle } : {}),
+  };
+}
+
 /** 派单回执轮头里与工单对账的元数据（originMeta.workId ≡ workOrderId；批次同源于信封）。 */
 export interface AgentWorkOrderReceiptMeta {
   workOrderId: string;

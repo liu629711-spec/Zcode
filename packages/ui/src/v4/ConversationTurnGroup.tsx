@@ -932,6 +932,9 @@ const BACKGROUND_RESULT_TITLE_SOURCES: ReadonlySet<string> = new Set([
   // 派单回执（D29/D3）：标题由 CLI 权威铸造（"<交活方> 交活"，失败/中断按终态改口），
   // 这里只需放行；漏了它回执轮会退化成无标题行（见上方事故记录）。
   "agent_work_order_receipt",
+  // 批次质检轮（纪律协议批）：标题由 CLI 权威铸造（"质检 · <批次标题>"），
+  // 结论正文就是本轮的 assistant 文本；漏了它质检卡退化成无标题行。
+  "agent_work_order_batch_qc",
 ]);
 
 function resolveBackgroundResultTitle(unit: ConversationTurnRenderUnit): string | undefined {
