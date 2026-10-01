@@ -266,6 +266,8 @@ function batchQcOrdersFromDispatchRows(
       agentName,
       ...(agentId ? { agentId } : {}),
       task,
+      // 评审单标记随行（混批兜底成质检时，质检要求据此豁免评审单不打回）。
+      ...(envelopeRecord.review === true ? { review: true } : {}),
     });
   }
   // 质检清单与提示词按工单号定序：同样的批次铸出同样的输入（测试可对账）。
@@ -287,9 +289,10 @@ function readBatchTitleFromDispatchRows(
 }
 
 /**
- * 质检轮：落库 synthetic notice（provider 可见、UI 不画气泡；轮头卡走
- * backgroundResult 链）→ 以质检身份独立成轮。不带 workorder- 前缀身份、
- * 不带 denylist——打回重派靠发起方自己的 AgentDispatch，嵌套上限只限工单轮。
+ * 质检/合议轮：落库 synthetic notice（provider 可见、UI 不画气泡；轮头卡走
+ * backgroundResult 链）→ 以该身份独立成轮。不带 workorder- 前缀身份；普通质检
+ * 轮不带 denylist——打回重派靠发起方自己的 AgentDispatch，嵌套上限只限工单轮；
+ * 合议轮（review）则把 AgentDispatch 送进 denylist（见下方 spread）。
  */
 export async function runWorkOrderBatchQcCommand(
   this: AgentRuntimeInternal,

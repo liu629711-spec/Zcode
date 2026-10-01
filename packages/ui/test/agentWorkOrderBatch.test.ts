@@ -303,7 +303,8 @@ function qcTurn(
       originMeta: {
         backgroundSource: "agent_work_order_batch_qc",
         workId: batch.batchId,
-        title: `质检 · ${batch.batchTitle}`,
+        // 标题与口味同源同铸（buildBatchQcTitle）：合议批的轮头标题就是「合议 · X」。
+        title: `${options?.review ? "合议" : "质检"} · ${batch.batchTitle}`,
         batchId: batch.batchId,
         ...(batch.batchTitle ? { batchTitle: batch.batchTitle } : {}),
         ...(options?.review ? { qcKind: "review" as const } : {}),

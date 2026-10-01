@@ -8,7 +8,11 @@
 //  2. 闸门行已在（任意状态）→ 不开；同批还有 admitted → 不开；孤儿批次 → 不开；
 //  3. 并发两次触发（同批两单同时销账）→ 串行链 + 闸门只放一次；
 //  4. 落闸（save）先于开轮（enqueueRuntimeCommand）——评审 A4 的真不变量；
-//  5. 闸门行 id 带会话命名空间——评审 A3。
+//  5. 闸门行 id 带会话命名空间——评审 A3；
+//  6. 评审会批（2026-10-02）：全评审单 → 合议口味、混批/旧批 → 质检、合议轮
+//     选项带 toolDisallowlist（禁派单是机制不是提示词空话）。触发入口与 resume
+//     清扫（steering 的 discardPersistedPendingSteerInputs）是同一个
+//     maybeEnqueueAgentWorkOrderBatchQc，这里即覆盖清扫路径的口味推导。
 // 运行：npx tsx --test apps/zcode-cli/packages/core/src/runtime/methods/work-order-batch-qc.test.ts
 // ============================================================
 
@@ -19,6 +23,7 @@ import {
   batchQcLedgerId,
   enqueueAgentWorkOrderBatchQc,
   maybeEnqueueAgentWorkOrderBatchQc,
+  runWorkOrderBatchQcCommand,
 } from "./work-order-batch-qc.js";
 
 const SESSION = "sess-boss";
@@ -215,9 +220,57 @@ test("混批（评审单 + 施工单）收敛为质检口味：旧批次与畸�
   assert.equal(mixed.qcCommands[0]!.review, undefined);
   assert.equal(mixed.qcCommands[0]!.originMeta.qcKind, undefined);
   assert.match(mixed.qcCommands[0]!.text, /质检要求/);
+  // 混批兜底成质检时，评审单在清单里带 review="true" 属性，质检要求豁免其不打回。
+  assert.match(mixed.qcCommands[0]!.text, /<order id="wo-1" agent="员工-wo-1" agent-id="agent-wo-1" review="true">/);
+  assert.match(mixed.qcCommands[0]!.text, /同样不参与打回/);
 
   const legacy = makeRuntime([dispatchRow("wo-1", "discarded")]);
   await trigger(legacy);
   assert.equal(legacy.qcCommands[0]!.review, undefined);
   assert.match(legacy.qcCommands[0]!.text, /质检要求/);
+});
+
+test("合议轮禁派单是机制不是空话：review 命令的轮选项带 toolDisallowlist，质检轮不带", async () => {
+  // 复用 startBatchQcIfComplete（活回执投递与 resume 清扫共用同一入口）的产出，
+  // 直接驱动真实 runWorkOrderBatchQcCommand，捕获 executeTurnCommand 收到的选项。
+  const captured: Record<string, unknown>[] = [];
+  const makeRunRuntime = (command: WorkOrderBatchQcRuntimeCommand) =>
+    ({
+      sessionId: SESSION,
+      shuttingDown: false,
+      branchGeneration: 0,
+      rootTraceContext: { traceId: "trace" },
+      activeForegroundExecution: undefined,
+      messageHistory: { addUser: () => undefined },
+      persistSyntheticUserNoticeForSession: async () => undefined,
+      sessionStore: undefined,
+      executeTurnCommand: async (_text: string, _x: unknown, options: Record<string, unknown>) => {
+        captured.push(options);
+      },
+    }) as never;
+  const buildCommand = (review: boolean): WorkOrderBatchQcRuntimeCommand =>
+    ({
+      branchGeneration: 0,
+      createdAt: new Date(),
+      id: "cmd-1",
+      mode: "work-order-batch-qc",
+      originMeta: {
+        backgroundSource: "agent_work_order_batch_qc",
+        workId: BATCH_ID,
+        title: review ? "合议 · 登录页整改" : "质检 · 登录页整改",
+        batchId: BATCH_ID,
+      },
+      orders: [{ workOrderId: "wo-1", agentName: "a", task: "t" }],
+      batchId: BATCH_ID,
+      ...(review ? { review: true } : {}),
+      priority: "next",
+      source: "agent_work_order_batch_qc",
+      text: "envelope",
+      traceContext: { traceId: "trace" },
+    }) as unknown as WorkOrderBatchQcRuntimeCommand;
+  await runWorkOrderBatchQcCommand.call(makeRunRuntime(buildCommand(true)), buildCommand(true));
+  await runWorkOrderBatchQcCommand.call(makeRunRuntime(buildCommand(false)), buildCommand(false));
+  assert.equal(captured.length, 2);
+  assert.deepEqual(captured[0]!.toolDisallowlist, ["AgentDispatch"]);
+  assert.equal(captured[1]!.toolDisallowlist, undefined);
 });

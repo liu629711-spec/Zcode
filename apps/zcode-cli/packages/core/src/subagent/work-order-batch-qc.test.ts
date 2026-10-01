@@ -168,6 +168,9 @@ test("buildBatchQcEnvelopeText：评审会批走合议要求——禁派单、�
   assert.match(text, /AgentDispatch 对你禁用/);
   assert.match(text, /结论交给用户裁决/);
   assert.match(text, /每位评审一行/);
+  assert.match(text, /如实标注缺席/);
+  // 「有条件通过」的归类教给合议模型，弱模型不犯嘀咕。
+  assert.match(text, /有条件通过」计入通过一类/);
   // 合议没有打回权：打回字样不得出现在合议指令里。
   assert.ok(!text.includes("打回"));
 });

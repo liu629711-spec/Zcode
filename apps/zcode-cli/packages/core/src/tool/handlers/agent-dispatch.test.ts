@@ -182,4 +182,36 @@ test("说明书规则表覆盖 §三总表（2026-09-30 重写）：自派禁令
   assert.match(rules, /pass the user's words verbatim as model/);
   assert.match(rules, /arrives as a separate receipt/);
   assert.match(rules, /nesting is not allowed/);
+  // 评审会（2026-10-02）：同批评审单、评审人挑选、不抢写合议、失败重派保口味。
+  assert.match(rules, /REVIEW orders in ONE batch/);
+  assert.match(rules, /NEVER the agent who did the work being reviewed/);
+  assert.match(rules, /one-line acknowledgment/);
+  assert.match(rules, /do not write the full synthesis yourself/);
+  assert.match(rules, /keep review=true and the original batch_id\/batch_title/);
+  assert.match(rules, /must carry a short title/);
+});
+
+test("契约 refine：review=true 必须带 batch_title（评审单自成一批，散评审单当场拒绝）", () => {
+  const refused = AgentDispatchInputSchema.safeParse({
+    agent: "code-reviewer",
+    task: "评审登录页",
+    review: true,
+  });
+  assert.equal(refused.success, false);
+  if (!refused.success) {
+    assert.ok(
+      refused.error.issues.some((issue) => issue.message.includes("review=true requires batch_title")),
+    );
+  }
+  assert.equal(
+    AgentDispatchInputSchema.safeParse({
+      agent: "code-reviewer",
+      task: "评审登录页",
+      review: true,
+      batch_title: "登录页",
+    }).success,
+    true,
+  );
+  // 普通单不受牵连：不带 review 照旧无需 batch_title。
+  assert.equal(AgentDispatchInputSchema.safeParse({ agent: "code-plus", task: "干活" }).success, true);
 });

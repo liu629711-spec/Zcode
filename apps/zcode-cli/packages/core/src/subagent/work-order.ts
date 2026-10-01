@@ -276,6 +276,8 @@ export interface BatchQcOrder {
   /** 员工工号（打回重派按号点名，改名不误派；台账行在场时随行）。 */
   agentId?: string;
   task: string;
+  /** 评审单标记（评审会批）：混批兜底成质检时，质检要求据此豁免评审单不打回。 */
+  review?: boolean;
 }
 
 /**
@@ -317,14 +319,14 @@ export function buildBatchQcEnvelopeText(input: {
     const agentLabel = escapeEnvelopeAttribute(order.agentName.trim() || "agent");
     return `<order id="${order.workOrderId}" agent="${agentLabel}"${
       order.agentId ? ` agent-id="${escapeEnvelopeAttribute(order.agentId)}"` : ""
-    }>${clipped}</order>`;
+    }${order.review === true ? ` review="true"` : ""}>${clipped}</order>`;
   });
   const requirements = input.review
     ? [
         "合议要求（自动合议，不是用户发言）：",
         "1. 本批是评审会：上列每张工单都是评审单，各评审人的意见就在本会话历史里（<work-order-receipt> 信封，信封 id 与上列 order 的 id 一一对应）。先逐单找到意见。",
         "2. 你只合议、不动手：不要改文件、不要重派工单（AgentDispatch 对你禁用）、不要替用户做决定——结论交给用户裁决。",
-        "3. 结论分四段：①总体结论（全体通过 / 有分歧 / 全体不通过）②每位评审一行：名字 + 结论 + 一句话立场 ③分歧点：谁与谁不一致、差在哪（没有就写「无」）④你的建议：一句话，供用户拍板。",
+        "3. 结论分四段：①总体结论（全体通过 / 有分歧 / 全体不通过；「有条件通过」计入通过一类，但结论里必须写清条件）②每位评审一行：名字 + 结论 + 一句话立场 ③分歧点：谁与谁不一致、差在哪（没有就写「无」）④你的建议：一句话，供用户拍板。",
         "4. 有评审缺席（找不到回执 / 失败 / 被中断）就如实标注缺席，其余人照常合议；评审意见与工作区实际产物对不上号的，如实指出。",
         "5. 全程用本会话用户的语言，大白话，不贴大段原文。",
       ]
@@ -333,7 +335,7 @@ export function buildBatchQcEnvelopeText(input: {
         "1. 上列每张工单的回执都在本会话历史里（<work-order-receipt> 信封，信封 id 与上列 order 的 id 一一对应）。先逐单找到回执。",
         "2. 逐单验货：对照工单任务核对回执答案；凡能落到工作区的（代码/文件改动），以实际文件为准复核，不轻信员工的自我报告。",
         "3. 回执缺失、答案与任务对不上号、或答案自相矛盾的，如实标注「无法核实」，不要猜、不要补。",
-        "4. 被中断（cancelled）的单是用户自己叫停的，不参与打回，结论里如实说明即可。",
+        "4. 被中断（cancelled）的单是用户自己叫停的，不参与打回，结论里如实说明即可；评审单（review=\"true\"，输出的是评审意见）同样不参与打回，只核对意见是否与任务对应。",
         "5. 不合格的单（打回）：用 AgentDispatch 工具重派给同一位员工——agent 参数优先用清单里的 agent-id（工号，员工改名也能找到人），没有工号才用 agent 名；batch_id 与 batch_title 必须原样沿用本批次，任务正文 = 原任务全文 + 换行 + 「【质检打回】」+ 具体不合格原因与修改要求。整个批次最多打回这一轮，重派的单不再自动质检。",
         "6. 没有问题就什么都不重派；拿不准的不要打回，写进结论里留给用户判断。",
         "7. 最后用本会话用户的语言给一段大白话验收结论：每单一行（通过 / 已打回重派 / 无法核实 + 一句原因），最后一句总评。不要贴大段代码或长篇复述。",
