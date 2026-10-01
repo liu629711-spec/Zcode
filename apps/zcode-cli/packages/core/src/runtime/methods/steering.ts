@@ -1344,6 +1344,7 @@ function redeliverableWorkOrderReceipt(record: {
     typeof value === "object" && value !== null && !Array.isArray(value);
   const workOrderId = typeof payload.workOrderId === "string" ? payload.workOrderId : undefined;
   const agentName = typeof payload.agentName === "string" ? payload.agentName : "";
+  const agentId = typeof payload.agentId === "string" ? payload.agentId : undefined;
   const targetSessionId =
     typeof payload.targetSessionId === "string" ? payload.targetSessionId : "";
   const envelope = isRecord(payload.envelope) ? payload.envelope : undefined;
@@ -1368,6 +1369,7 @@ function redeliverableWorkOrderReceipt(record: {
   return {
     workOrderId,
     agentName,
+    ...(agentId ? { agentId } : {}),
     targetSessionId,
     envelope: {
       workOrderId: envelope.workOrderId,

@@ -124,8 +124,10 @@ export function enqueueAgentWorkOrderReceipt(
       outcome: input.outcome,
       envelope: input.envelope,
       // 重投所需的最小身份（audit 2026-10-01 对账批）：崩溃后 resume 清扫重投
-      // 回执时，从 payload 就能重建回执轮，不用反解析信封文本。
+      // 回执时，从 payload 就能重建回执轮，不用反解析信封文本。agentId 也在场
+      // （评委C P2-1）：重投的失败卡按工号重派，改名顶名不误派。
       agentName: input.agentName,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
       targetSessionId: input.targetSessionId,
     },
   });
