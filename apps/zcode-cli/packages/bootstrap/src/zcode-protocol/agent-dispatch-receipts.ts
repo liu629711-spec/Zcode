@@ -13,6 +13,7 @@ import {
   WORK_ORDER_INPUT_ID_PREFIX,
   type AgentWorkOrderEnvelope,
   type SessionEvent,
+  type SessionId,
 } from "@zcode/contracts";
 import type { ModelSelection } from "@zcode/shared";
 import type { WorkOrderReceiptOutcome } from "@zcode/core";
@@ -191,10 +192,13 @@ export function scheduleWorkOrderReceiptRelay(
         targetSessionId: input.targetRecord.app.sessionId,
         workOrderId: input.envelope.workOrderId,
       });
+      // fire 先退订（终审评委A P1-2）：fire 与事件终态竞态时，重试腿的终态会同时
+      // 命中本订阅与 leg2 新订阅造成双投；退订后本订阅不再收事件。
+      unsubscribe();
       handleTerminalOutcome({
         status: "failed",
-        reason:
-          "work order receipt timed out: the target session may have been closed or interrupted before finishing",
+        // 大白话直出（终审评委B）：这行会进老板的失败卡（generic 句式带原原因）。
+        reason: "工单等回执超时：目标会话可能已被关闭或中断，这单没有留下结果。",
       });
     }, input.watchdogMs ?? WATCHDOG_MS_DEFAULT);
   };
@@ -279,6 +283,33 @@ async function retryWorkOrderOnce(
 }
 
 async function deliverWorkOrderReceipt(
+  context: ZCodeProtocolAgentServerContext,
+  deps: ReceiptRelayDeps,
+  input: {
+    envelope: AgentWorkOrderEnvelope;
+    agentName: string;
+    agentId?: string;
+    targetSessionId: string;
+    outcome: WorkOrderReceiptOutcome;
+  },
+): Promise<void> {
+  await deliverWorkOrderReceiptInner(context, deps, input);
+  // 销账（终审评委A/B 共同 P1）：回执已到达发起方，派单台账行收口——
+  // 不收口的话，之后任何一次 resume 都会为早已完成的工单合成假失败。
+  // status 枚举没有"已兑现"，用 discarded + 专用 reason 表示收口。
+  try {
+    await context.deps.sessionStore?.settleSessionInput?.({
+      id: `agentWorkOrderDispatch:${input.envelope.workOrderId}`,
+      sessionID: input.envelope.fromSessionId as SessionId,
+      status: "discarded",
+      reason: "receipt_delivered",
+    });
+  } catch {
+    // 收口失败 ≠ 回执失败；清扫侧按"有回执行即不合成"兜底。
+  }
+}
+
+async function deliverWorkOrderReceiptInner(
   context: ZCodeProtocolAgentServerContext,
   deps: ReceiptRelayDeps,
   input: {

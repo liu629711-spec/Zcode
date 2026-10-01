@@ -71,16 +71,18 @@ export function ReceiptFailureNotice({
   const titleName = parseReceiptDelivererName(title) ?? parseFailedReceiptAgentName(title);
   const task = meta.task?.trim();
   const dispatchWorkOrder = context.onDispatchAgentWorkOrder;
-  // 目标按工号优先：工号在名册里即按号派（改名不影响）；否则退回名字对号。
-  // 两个都落空（员工被删/无名工位）→ 只说明，不给按钮。
+  // 目标按工号优先（终审评委B P2）：工号在场时它就是权威——在册按号派（改名
+  // 不影响）；不在册说明员工被删，**绝不退回按名**（旧名可能被新员工顶了，会派错
+  // 人）。只有无工号的旧回执才按名字对号。两个都落空 → 只说明，不给按钮。
   const rosterEntry = meta.agentId
     ? directory.find((agent) => agent.agentId === meta.agentId)
     : undefined;
-  const nameEntry = titleName
-    ? directory.find(
-        (agent) => agent.name.trim().toLowerCase() === titleName.trim().toLowerCase(),
-      )
-    : undefined;
+  const nameEntry =
+    !meta.agentId && titleName
+      ? directory.find(
+          (agent) => agent.name.trim().toLowerCase() === titleName.trim().toLowerCase(),
+        )
+      : undefined;
   const target = rosterEntry?.name ?? nameEntry?.name ?? titleName;
   const redispatchBatchId = meta.batchId ?? batchId;
   const redispatchBatchTitle = meta.batchTitle ?? batchTitle;

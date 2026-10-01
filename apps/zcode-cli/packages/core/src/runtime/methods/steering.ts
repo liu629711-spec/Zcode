@@ -1378,9 +1378,19 @@ function redeliverableWorkOrderReceipt(record: {
       ...(typeof envelope.batchId === "string" ? { batchId: envelope.batchId } : {}),
       ...(typeof envelope.batchTitle === "string" ? { batchTitle: envelope.batchTitle } : {}),
     },
+    // 终态全字段透传（终审评委A P2-3）：completed 的答案本体（转交靠它）、
+    // failed 的结构化线索（大白话/一键重派靠它）都不能在重投时丢。
     outcome: {
       status: outcomeKnown ? (status as "completed" | "cancelled" | "failed") : "failed",
       ...(reason ? { reason } : {}),
+      ...(outcomeKnown && status === "completed" && typeof outcome?.response === "string"
+        ? { response: outcome.response }
+        : {}),
+      ...(typeof outcome?.failureCode === "string" ? { failureCode: outcome.failureCode } : {}),
+      ...(typeof outcome?.failureModelId === "string"
+        ? { failureModelId: outcome.failureModelId }
+        : {}),
+      ...(outcome?.retried === true ? { retried: true } : {}),
     },
   };
 }
@@ -1394,17 +1404,18 @@ export async function discardPersistedPendingSteerInputs(
   // 子进程随 CLI 重启已死，其未消费通知不可恢复）。留痕（discarded/session_resumed）
   // 不静默，用户/诊断可查「这条输入去哪了」。
   try {
+    // 工单族去重必须看**全部状态**的回执行：已送达的回执是 promoted，只查 admitted
+    // 会漏掉它们，让早已完成的工单被合成假失败（终审评委A/B 共同 P1）。
     const admitted =
       (await this.sessionStore?.listSessionInputs?.({
         sessionID: this.sessionId,
-        status: "admitted",
       })) ?? [];
     // 对账批（audit 2026-10-01）：工单族 admission 不再一律丢弃。
     // - 回执（agentWorkOrderReceipt）：payload 带完整 outcome/envelope，崩溃只丢了
-    //   内存队列——重投，老板照样拿到真实终态（含一键重派）。
-    // - 派单（agentWorkOrderDispatch）且没有同 workOrderId 的回执 admission：这单
-    //   崩溃时还没跑出回执，合成一条超时失败回执；有回执的派单已有真实终态，照旧丢。
-    // 其余 admitted 照旧 discarded（session_resumed）。
+    //   内存队列——重投，老板照样拿到真实终态（含答案本体与结构化失败线索）。
+    // - 派单（agentWorkOrderDispatch）且没有同 workOrderId 的回执行（任意状态）：
+    //   这单崩溃时还没跑出回执，合成一条超时失败回执；有回执的派单已有真实终态。
+    // 其余 admitted 照旧 discarded（session_resumed）；非 admitted 一律不动。
     const receiptWorkOrderIds = new Set(
       admitted
         .filter((record) => record.kind === "agentWorkOrderReceipt")
@@ -1413,6 +1424,7 @@ export async function discardPersistedPendingSteerInputs(
         ),
     );
     for (const record of admitted) {
+      if (record.status !== "admitted") continue;
       if (record.kind === "agentWorkOrderReceipt" || record.kind === "agentWorkOrderDispatch") {
         await this.sessionStore?.settleSessionInput?.({
           id: record.id,
