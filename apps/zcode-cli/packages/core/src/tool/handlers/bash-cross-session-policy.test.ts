@@ -114,3 +114,10 @@ test("权限服务认 denied 硬墙：压过 yolo 直通（真机事故：确认
   );
   assert.equal(plain.decision, "allow");
 });
+
+test("动态词兜底也认短旗标（审计 P1-1）：$x -p 混淆不再漏网", () => {
+  assert.equal(isCrossSessionCliInvocation("x=zcode; $x -p hi"), true);
+  assert.equal(isCrossSessionCliInvocation("$(which zcode) -c"), true);
+  // 长旗标路径不回归。
+  assert.equal(isCrossSessionCliInvocation("z=zcode; $z --resume sess_1"), true);
+});

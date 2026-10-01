@@ -82,7 +82,10 @@ export function isCrossSessionCliInvocation(command: string, depth = 0): boolean
 function rawTextGuard(text: string): boolean {
   return (
     /\bzcode(?:\.(?:exe|cmd|ps1|cjs|mjs|js))?\b/i.test(text) &&
-    /--resume|--continue|--fork|--prompt/.test(text)
+    // 短旗标 -p/-c 也要认（审计 2026-10-01 P1-1）：动态词命令（$x -p hi）走不到
+    // argv 结构化路径，只看原文——漏短旗标等于漏掉无头建会话的主要拼法。
+    // 误伤（如 grep -c zcode 恰好带动态词）方向是多弹确认，可接受。
+    /--resume|--continue|--fork|--prompt/.test(text) || /(^|\s)-[pc]\b/.test(text)
   );
 }
 

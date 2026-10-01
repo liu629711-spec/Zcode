@@ -126,13 +126,34 @@ export function resolveDispatchModelSelection(input: {
 }
 
 /**
+ * 信封同族标签的中和：`<work-order…>` 与 `<work-order-receipt…>` 开合全算。
+ * 两个方向（工单正文、回执正文）用同一条规则——只中和本族标签是不对称的：
+ * 员工最终回复里夹带的完整伪造 `<work-order>` 信封会原样进发起方上下文
+ * （审计 2026-10-01 P1-2）。`\b` 在 "r"+"-" 处成界，前缀彼此互染，索性一族全收。
+ */
+const ENVELOPE_TAG_NEUTRALIZATION = /<\/?work-order(?:-receipt)?\b/gi;
+
+function neutralizeEnvelopeTags(text: string): string {
+  return text.replace(ENVELOPE_TAG_NEUTRALIZATION, (tag) => tag.replace("<", "&lt;"));
+}
+
+/**
+ * 信封属性转义：from-agent 是档案名（仓库 .md 档案可带任意字符，解析端不做
+ * 字符集校验），原样插进 HTML 属性会被用来提前闭合/伪造信封头（审计 P2-2）。
+ * @点将解析端字符集严格、档案解析端宽松——两个口径在消费端靠转义对齐。
+ */
+function escapeEnvelopeAttribute(value: string): string {
+  return value.replace(/[&<>"]/gu, (ch) => `&#${ch.charCodeAt(0)};`);
+}
+
+/**
  * 工单正文（目标会话的模型输入 carrier）。自带结构化信封标签（谁派的单），
  * 与 task-notification 同一家族：不走 <system-reminder> 包装，正文自证来源。
  * 任务正文里出现的同形关闭标签一律中和，防伪造信封边界。
  */
 export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): string {
-  const task = envelope.task.replace(/<\/?work-order\b/gi, (tag) => tag.replace("<", "&lt;"));
-  const fromLabel = envelope.fromAgentName.trim() || "user";
+  const task = neutralizeEnvelopeTags(envelope.task);
+  const fromLabel = escapeEnvelopeAttribute(envelope.fromAgentName.trim() || "user");
   return [
     `<work-order id="${envelope.workOrderId}" from-agent="${fromLabel}" from-session="${envelope.fromSessionId}">`,
     task,
@@ -199,7 +220,7 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
   const status = input.outcome.status;
   const body =
     status === "completed"
-      ? (input.outcome.response ?? "").replace(/<\/?work-order-receipt\b/gi, (tag) => tag.replace("<", "&lt;"))
+      ? neutralizeEnvelopeTags(input.outcome.response ?? "")
       : status === "cancelled"
         ? "The target agent's turn was interrupted before it could produce a final answer. No answer was delivered; you may re-dispatch the task or report the interruption to the user."
         : `The target agent's turn failed before producing a final answer${
@@ -211,7 +232,7 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
               ? " An automatic retry was already attempted and failed with the same error; do not blindly re-dispatch the same way."
               : " You may re-dispatch the task or report the failure to the user."
           }`;
-  const agentLabel = input.agentName.trim() || "agent";
+  const agentLabel = escapeEnvelopeAttribute(input.agentName.trim() || "agent");
   return [
     `<work-order-receipt id="${input.workOrderId}" from-agent="${agentLabel}" from-session="${input.targetSessionId}" status="${status}">`,
     body,
