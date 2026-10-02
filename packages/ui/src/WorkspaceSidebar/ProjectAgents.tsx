@@ -589,7 +589,7 @@ export function WorkspaceProjectAgentCreateDialog({
           })}
         </DialogTitle>
         {isEditing ? null : (
-          <div className="space-y-1.5">
+          <div className="min-w-0 space-y-1.5">
             <p className="text-ui-base font-medium text-foreground-subtle">
               {intl.formatMessage({ id: "workspaceSidebar.projectAgents" })}
             </p>
@@ -657,7 +657,7 @@ export function WorkspaceProjectAgentCreateDialog({
           </div>
         )}
         <form
-          className={isEditing ? "space-y-3" : "space-y-3 border-t pt-3"}
+          className={isEditing ? "min-w-0 space-y-3" : "min-w-0 space-y-3 border-t pt-3"}
           onSubmit={handleSubmit}
         >
           <div className="space-y-1.5">
@@ -734,7 +734,10 @@ export function WorkspaceProjectAgentCreateDialog({
               {intl.formatMessage({ id: "workspaceSidebar.projectAgentScopeHint" })}
             </p>
           )}
-          {/* 保存/取消钉在滚动容器底部：表单再长也不用滚动找按钮（真机 2026-09-30）。 */}
+          {/* 保存/取消钉在滚动容器底部：表单再长也不用滚动找按钮（真机 2026-09-30）。
+              钉底行与表单都必须 min-w-0：网格轨道被名单行的不可断行内容撑爆时，
+              轨道横向溢出弹窗，右对齐的保存按钮会被 overflow-x-hidden 裁掉
+              （真机 2026-10-02：弹窗 520 / 表单 617，保存按钮整个落在裁切盲区）。 */}
           <div className="sticky bottom-0 z-10 -mx-4 mt-2 flex justify-end gap-2 border-t border-border bg-popover px-4 pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {intl.formatMessage({ id: "common.cancel" })}
