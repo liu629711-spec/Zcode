@@ -296,7 +296,8 @@ async function clearAgentMemoryFilesEntry(params: AgentMemoryTargetParams): Prom
     throw error;
   }
   // rm 对根路径本身不跟随 symlink；配合上面的普通目录校验，越界删除无从谈起。
-  await rm(rootDir, { recursive: true, force: true });
+  // maxRetries 兜 Windows 上与员工并发写相撞的 EPERM/ENOTEMPTY 瞬时失败（评审 A P2）。
+  await rm(rootDir, { recursive: true, force: true, maxRetries: 3 });
 }
 
 export function createMemoryService(): IMemoryService {

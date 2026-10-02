@@ -136,7 +136,7 @@ export function AgentMemorySection({
 
   const openEditor = useCallback(
     async (fileName: string) => {
-      if (editingBusy || deletingFile !== null) {
+      if (editingBusy || deletingFile !== null || clearingNotebook) {
         return;
       }
       const requestId = editorRequestRef.current + 1;
@@ -165,7 +165,7 @@ export function AgentMemorySection({
         toast(getErrorMessage(caught));
       }
     },
-    [deletingFile, editingBusy, memoryService, memoryTarget],
+    [clearingNotebook, deletingFile, editingBusy, memoryService, memoryTarget],
   );
 
   const saveEditor = useCallback(async () => {
@@ -252,8 +252,11 @@ export function AgentMemorySection({
     setClearingNotebook(true);
     try {
       await memoryService.clearAgentMemoryFiles(memoryTarget);
-      // 同页签重置一遍：编辑器跟着收起，与本子目录整体消失保持一致。
-      switchNotebook(notebook);
+      // 编辑器直接收起，不借 switchNotebook：清空期间用户可能已切到另一本子，
+      // 强行同页签重置会把人拽回去（评审 B P2）。
+      setEditingFile(null);
+      setEditingContent("");
+      setEditingLoading(false);
       await refreshCatalog();
     } catch (caught) {
       toast(getErrorMessage(caught));
@@ -271,7 +274,6 @@ export function AgentMemorySection({
     memoryTarget,
     notebook,
     refreshCatalog,
-    switchNotebook,
   ]);
 
   return (
@@ -294,7 +296,7 @@ export function AgentMemorySection({
           </span>
         ) : null}
       </div>
-      <div className="flex items-center gap-1" data-testid="agent-memory-notebook-switch">
+      <div className="flex flex-wrap items-center gap-1" data-testid="agent-memory-notebook-switch">
         {(["workspace", "personal"] as const).map((key) => (
           <button
             key={key}
@@ -413,7 +415,7 @@ export function AgentMemorySection({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      disabled={editingBusy || deletingFile !== null}
+                      disabled={editingBusy || deletingFile !== null || clearingNotebook}
                       onClick={() => void openEditor(file.name)}
                     >
                       {intl.formatMessage({ id: "workspaceSidebar.agentMemory.editAction" })}
@@ -423,7 +425,7 @@ export function AgentMemorySection({
                       variant="ghost"
                       size="sm"
                       className="text-destructive hover:text-destructive"
-                      disabled={editingBusy || deletingFile !== null}
+                      disabled={editingBusy || deletingFile !== null || clearingNotebook}
                       data-testid={testId(TID_PROJECT_AGENT_MEMORY_FILE_DELETE, file.name)}
                       onClick={() => void deleteMemoryFile(file.name)}
                     >

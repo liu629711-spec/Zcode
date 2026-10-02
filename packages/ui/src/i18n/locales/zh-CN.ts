@@ -1558,9 +1558,9 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.agentMemory.clearTitle.workspace": "清空工作区本子？",
   "workspaceSidebar.agentMemory.clearTitle.personal": "清空随身本子？",
   "workspaceSidebar.agentMemory.clearDescription.workspace":
-    "「{name}」在这个工作区记下的项目记忆会全部删除，找不回来。他的随身本子（您的习惯）不受影响；若他正在干活，进行中的记忆要等收口写回后才彻底清掉。",
+    "「{name}」在这个工作区记下的项目记忆会全部删除，找不回来。他的随身本子（你的习惯）不受影响；若他正在干活，进行中的记忆要等收口写回后才彻底清掉。",
   "workspaceSidebar.agentMemory.clearDescription.personal":
-    "随身本子只有一个，跟着人走：清空后「{name}」在所有工作区都会忘记您的习惯，找不回来。他的工作区本子不受影响。",
+    "随身本子只有一个，跟着人走：清空后「{name}」在所有工作区都会忘记你的习惯，找不回来。他的工作区本子不受影响。",
   "workspaceSidebar.noConversations": "还没有任务",
   "workspaceSidebar.noProjects": "尚未打开项目",
   "workspaceSidebar.viewByWorkspace": "按项目",
@@ -3734,7 +3734,8 @@ const zhCN: Record<string, string> = {
   "settings.subagents.toggleAria": "切换 {name}",
   "settings.subagents.delete.title": "删除子智能体",
   "settings.subagents.delete.description": "确定要删除子智能体「{name}」吗？此操作无法撤销。",
-  "settings.subagents.delete.clearNotebooks": "同时清空他的记事本（工作区本子和随身本子）",
+  "settings.subagents.delete.clearNotebooks": "同时清空他的记事本（当前工作区本子和随身本子）",
+  "settings.subagents.delete.clearNotebooksFailed": "记事本没能清干净：{message}",
   "settings.subagents.form.description":
     "保存后会写入运行时实际读取的用户级 Markdown profile 目录。",
   "settings.subagents.form.name.label": "名称",

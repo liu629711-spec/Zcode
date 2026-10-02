@@ -1497,6 +1497,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
           { name: agent.name },
         ),
         confirmLabel: intl.formatMessage({ id: "common.delete" }),
+        confirmVariant: "destructive",
         checkbox: {
           label: intl.formatMessage({ id: "settings.subagents.delete.clearNotebooks" }),
           onCheckedChange: (checked) => {
@@ -1515,25 +1516,29 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
         });
         if (clearNotebooks) {
           // 档案已删，本子还在盘上：按号定位（与记忆面板同一判据）逐本收走。
-          // ponytail: 只清当前工作区的工作区本子 + 随身本子；该员工在别的工作区
-          // 留下的本子副本不在这里枚举（打开那个工作区后可在记忆面板清）。
+          // ponytail: 设置页只够得着当前工作区的工作区本子 + 随身本子；该员工在
+          // 别的工作区留下的本子副本不在这里枚举（打开那个工作区后可在记忆面板清）。
           const baseTarget = {
             agentName: agent.name,
             ...(agent.agentId ? { agentId: agent.agentId } : {}),
           };
           const clearErrors: string[] = [];
-          try {
-            await localHostServices.memoryService.clearAgentMemoryFiles({
-              ...baseTarget,
-              scope: resolveAgentMemoryPanelScope(agent.memory, "workspace"),
-              ...(targetWorkspacePath ? { workspacePath: targetWorkspacePath } : {}),
-            });
-          } catch (workspaceClearError) {
-            clearErrors.push(
-              workspaceClearError instanceof Error
-                ? workspaceClearError.message
-                : String(workspaceClearError),
-            );
+          // user 级页签没有工作区路径：工作区本子在各工作区里，这里一个都够不着，
+          // 调了必抛错——直接跳过，不算清空失败（评审 A P1：user 档案必现裸错误）。
+          if (targetWorkspacePath) {
+            try {
+              await localHostServices.memoryService.clearAgentMemoryFiles({
+                ...baseTarget,
+                scope: resolveAgentMemoryPanelScope(agent.memory, "workspace"),
+                workspacePath: targetWorkspacePath,
+              });
+            } catch (workspaceClearError) {
+              clearErrors.push(
+                workspaceClearError instanceof Error
+                  ? workspaceClearError.message
+                  : String(workspaceClearError),
+              );
+            }
           }
           try {
             await localHostServices.memoryService.clearAgentMemoryFiles({
@@ -1548,10 +1553,15 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
                 : String(personalClearError),
             );
           }
-          const firstClearError = clearErrors[0];
-          if (firstClearError) {
-            // 档案删除已成功，本子清不干净不该让整次操作报错回滚——但要说出来。
-            toast(firstClearError);
+          if (clearErrors.length > 0) {
+            // 档案删除已成功，本子清不干净不该让整次操作报错回滚——但要说出来
+            // （评审 A/B P2：裸 fs 错误串要带上下文前缀，两条都不静默丢弃）。
+            toast(
+              intl.formatMessage(
+                { id: "settings.subagents.delete.clearNotebooksFailed" },
+                { message: clearErrors.join("；") },
+              ),
+            );
           }
         }
         setEditingAgent(null);

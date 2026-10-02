@@ -3986,7 +3986,9 @@ const enUS: Record<string, string> = {
   "settings.subagents.delete.description":
     'Are you sure you want to delete the subagent "{name}"? This action cannot be undone.',
   "settings.subagents.delete.clearNotebooks":
-    "Also clear his notebooks (workspace and personal)",
+    "Also clear the agent's notebooks (this workspace and personal)",
+  "settings.subagents.delete.clearNotebooksFailed":
+    "Couldn't fully clear the notebooks: {message}",
   "settings.subagents.form.description":
     "Save writes a user-level Markdown profile into the same storage root used by the runtime.",
   "settings.subagents.form.name.label": "Name",
