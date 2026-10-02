@@ -527,10 +527,10 @@ const enUS: Record<string, string> = {
   "commandCenter.moreResults": "Show more results",
   "confirmDialog.taskDeleteTitle": "Delete this task?",
   "confirmDialog.taskDeleteDescription":
-    "Task “{taskTitle}” will be removed from this workspace, and the current record cannot be restored.",
+    "Task “{taskTitle}” will be removed from this workspace, and the current record cannot be restored. The agent's notebooks are kept.",
   "confirmDialog.archivedTaskDeleteTitle": "Delete this archived task?",
   "confirmDialog.archivedTaskDeleteDescription":
-    "Tasks will be removed from the task list and Archive.",
+    "Tasks will be removed from the task list and Archive. The agent's notebooks are kept.",
   "taskList.deleteAllArchived": "Delete all archived tasks",
   "taskList.archivedActions": "Archive actions",
   "taskList.archivedTaskCount": "{count} archived tasks",
@@ -1669,6 +1669,14 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.agentMemory.deleteTitle": "Delete this memory?",
   "workspaceSidebar.agentMemory.deleteDescription": "\"{name}\" will be deleted for good. The agent won't remember it from the next conversation on.",
   "workspaceSidebar.agentMemory.location": "Memory folder: {path}",
+  // Clearing a whole notebook (2026-10-02): the front door for a true clean slate, worded per notebook.
+  "workspaceSidebar.agentMemory.clearAction": "Clear notebook",
+  "workspaceSidebar.agentMemory.clearTitle.workspace": "Clear the workspace notebook?",
+  "workspaceSidebar.agentMemory.clearTitle.personal": "Clear the personal notebook?",
+  "workspaceSidebar.agentMemory.clearDescription.workspace":
+    "All project notes {name} wrote in this workspace will be deleted for good. The personal notebook (your habits) is untouched; if the agent is mid-task, in-flight notes may be written back until the task wraps up.",
+  "workspaceSidebar.agentMemory.clearDescription.personal":
+    "There is one personal notebook per agent, carried across workspaces: after clearing, {name} will forget your habits everywhere, for good. Workspace notebooks are untouched.",
   "workspaceSidebar.noConversations": "No tasks yet",
   "workspaceSidebar.noProjects": "No open projects",
   "workspaceSidebar.viewByWorkspace": "By project",
@@ -3977,6 +3985,8 @@ const enUS: Record<string, string> = {
   "settings.subagents.delete.title": "Delete subagent",
   "settings.subagents.delete.description":
     'Are you sure you want to delete the subagent "{name}"? This action cannot be undone.',
+  "settings.subagents.delete.clearNotebooks":
+    "Also clear his notebooks (workspace and personal)",
   "settings.subagents.form.description":
     "Save writes a user-level Markdown profile into the same storage root used by the runtime.",
   "settings.subagents.form.name.label": "Name",

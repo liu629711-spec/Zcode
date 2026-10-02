@@ -7,7 +7,7 @@ import {
   type ProjectMemoryFileSummary,
   type ProjectMemoryWorkspaceSummary,
 } from "./memory.js";
-import { lstat, readdir, realpath, unlink } from "node:fs/promises";
+import { lstat, readdir, realpath, rm, unlink } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { resolveAgentMemoryRoot, atomicWritePrivateTextFile } from "@zcode/shared/node";
 import { readProjectMemoryFileFromStableHandle } from "#src/memory/projectMemoryStableRead.js";
@@ -282,6 +282,23 @@ async function deleteAgentMemoryFileEntry(
   await unlink(filePath);
 }
 
+async function clearAgentMemoryFilesEntry(params: AgentMemoryTargetParams): Promise<void> {
+  const rootDir = resolveAgentMemoryDirectory(params);
+  try {
+    // 清空 = 删整个 key 目录：只按面板文件清单（.md）清会留下员工写进来的
+    // 非 .md 杂页。symlink 假目录在这里直接拒绝（同 requirePlainDirectory 先例）。
+    await requirePlainDirectory(rootDir);
+  } catch (error) {
+    // 本来就还没记过任何东西：清空按幂等成功处理。
+    if (isNotFoundError(error)) {
+      return;
+    }
+    throw error;
+  }
+  // rm 对根路径本身不跟随 symlink；配合上面的普通目录校验，越界删除无从谈起。
+  await rm(rootDir, { recursive: true, force: true });
+}
+
 export function createMemoryService(): IMemoryService {
   async function listProjectMemories(): Promise<ProjectMemoryWorkspaceSummary[]> {
     let projectsRoot: string;
@@ -411,5 +428,6 @@ export function createMemoryService(): IMemoryService {
     readAgentMemoryFile: readAgentMemoryFileEntry,
     writeAgentMemoryFile: writeAgentMemoryFileEntry,
     deleteAgentMemoryFile: deleteAgentMemoryFileEntry,
+    clearAgentMemoryFiles: clearAgentMemoryFilesEntry,
   };
 }

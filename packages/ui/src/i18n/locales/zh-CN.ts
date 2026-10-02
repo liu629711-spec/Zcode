@@ -480,9 +480,10 @@ const zhCN: Record<string, string> = {
   "commandCenter.empty.recentTasks": "暂无最近任务",
   "commandCenter.moreResults": "查看更多结果",
   "confirmDialog.taskDeleteTitle": "删除这个任务？",
-  "confirmDialog.taskDeleteDescription": "任务“{taskTitle}”会从当前工作区移除，现有记录无法恢复。",
+  "confirmDialog.taskDeleteDescription":
+    "任务“{taskTitle}”会从当前工作区移除，现有记录无法恢复。他的记事本仍会保留。",
   "confirmDialog.archivedTaskDeleteTitle": "删除这个归档任务？",
-  "confirmDialog.archivedTaskDeleteDescription": "任务将从任务列表和归档列表中移除。",
+  "confirmDialog.archivedTaskDeleteDescription": "任务将从任务列表和归档列表中移除。他的记事本仍会保留。",
   "taskList.deleteAllArchived": "删除所有归档任务",
   "taskList.archivedActions": "归档操作",
   "taskList.archivedTaskCount": "{count} 个归档任务",
@@ -1552,6 +1553,14 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.agentMemory.deleteTitle": "删除这条记忆？",
   "workspaceSidebar.agentMemory.deleteDescription": "「{name}」会被删掉，找不回来。智能体下个会话就不再记得它。",
   "workspaceSidebar.agentMemory.location": "记事本位置：{path}",
+  // 清空整本（2026-10-02 拍板）：彻底失忆的正门，按本子分话。
+  "workspaceSidebar.agentMemory.clearAction": "清空本子",
+  "workspaceSidebar.agentMemory.clearTitle.workspace": "清空工作区本子？",
+  "workspaceSidebar.agentMemory.clearTitle.personal": "清空随身本子？",
+  "workspaceSidebar.agentMemory.clearDescription.workspace":
+    "「{name}」在这个工作区记下的项目记忆会全部删除，找不回来。他的随身本子（您的习惯）不受影响；若他正在干活，进行中的记忆要等收口写回后才彻底清掉。",
+  "workspaceSidebar.agentMemory.clearDescription.personal":
+    "随身本子只有一个，跟着人走：清空后「{name}」在所有工作区都会忘记您的习惯，找不回来。他的工作区本子不受影响。",
   "workspaceSidebar.noConversations": "还没有任务",
   "workspaceSidebar.noProjects": "尚未打开项目",
   "workspaceSidebar.viewByWorkspace": "按项目",
@@ -3725,6 +3734,7 @@ const zhCN: Record<string, string> = {
   "settings.subagents.toggleAria": "切换 {name}",
   "settings.subagents.delete.title": "删除子智能体",
   "settings.subagents.delete.description": "确定要删除子智能体「{name}」吗？此操作无法撤销。",
+  "settings.subagents.delete.clearNotebooks": "同时清空他的记事本（工作区本子和随身本子）",
   "settings.subagents.form.description":
     "保存后会写入运行时实际读取的用户级 Markdown profile 目录。",
   "settings.subagents.form.name.label": "名称",

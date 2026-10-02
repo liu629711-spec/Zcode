@@ -73,6 +73,7 @@ export function AgentMemorySection({
   const [editingLoading, setEditingLoading] = useState(false);
   const [editingBusy, setEditingBusy] = useState(false);
   const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [clearingNotebook, setClearingNotebook] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -228,6 +229,51 @@ export function AgentMemorySection({
     [files],
   );
 
+  // 清空整本（2026-10-02 拍板的「彻底失忆正门」）：删整个本子目录，确认框按
+  // 本子分话——工作区本子只丢项目记忆；随身本子全店一份，所有工作区一起失忆。
+  const clearNotebook = useCallback(async () => {
+    if (editingBusy || deletingFile !== null || clearingNotebook) {
+      return;
+    }
+    const confirmed = await confirmDialog({
+      title: intl.formatMessage({
+        id: `workspaceSidebar.agentMemory.clearTitle.${notebook}`,
+      }),
+      description: intl.formatMessage(
+        { id: `workspaceSidebar.agentMemory.clearDescription.${notebook}` },
+        { name: agent.name },
+      ),
+      confirmLabel: intl.formatMessage({ id: "workspaceSidebar.agentMemory.clearAction" }),
+      confirmVariant: "destructive",
+    });
+    if (!confirmed) {
+      return;
+    }
+    setClearingNotebook(true);
+    try {
+      await memoryService.clearAgentMemoryFiles(memoryTarget);
+      // 同页签重置一遍：编辑器跟着收起，与本子目录整体消失保持一致。
+      switchNotebook(notebook);
+      await refreshCatalog();
+    } catch (caught) {
+      toast(getErrorMessage(caught));
+    } finally {
+      setClearingNotebook(false);
+    }
+  }, [
+    agent.name,
+    clearingNotebook,
+    confirmDialog,
+    deletingFile,
+    editingBusy,
+    intl,
+    memoryService,
+    memoryTarget,
+    notebook,
+    refreshCatalog,
+    switchNotebook,
+  ]);
+
   return (
     <section
       className="space-y-3 border-t pt-3"
@@ -265,6 +311,16 @@ export function AgentMemorySection({
             {intl.formatMessage({ id: `workspaceSidebar.agentMemory.notebook.${key}` })}
           </button>
         ))}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="ml-auto text-destructive hover:text-destructive"
+          disabled={state !== "ready" || editingBusy || deletingFile !== null || clearingNotebook}
+          onClick={() => void clearNotebook()}
+        >
+          {intl.formatMessage({ id: "workspaceSidebar.agentMemory.clearAction" })}
+        </Button>
       </div>
       <p className="text-ui-sm text-foreground-subtle">
         {intl.formatMessage({ id: "workspaceSidebar.agentMemory.hint" })}

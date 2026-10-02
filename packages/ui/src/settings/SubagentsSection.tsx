@@ -62,6 +62,7 @@ import {
 } from "@/settings/SubagentReasoningField.js";
 import { refreshLoadedSubagentsStoreForWorkspace } from "@/store/subagentsStore.js";
 import { notifyAgentRosterChanged } from "@/WorkspaceSidebar/agentRosterInvalidation.js";
+import { resolveAgentMemoryPanelScope } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { requestProjectAgentRenameRelink } from "@/store/projectAgentProfileActionStore.js";
 import {
   PluginScopeMenu,
@@ -1486,6 +1487,9 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       if (!isEditableUserAgent(agent)) {
         return;
       }
+      // 辞退时的本子处置（2026-10-02 拍板）：默认保留；勾选才一并清空两本
+      // （正门同记忆面板的「清空本子」，删的是整个本子目录）。
+      let clearNotebooks = false;
       const confirmed = await confirmDialog({
         title: intl.formatMessage({ id: "settings.subagents.delete.title" }),
         description: intl.formatMessage(
@@ -1493,6 +1497,12 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
           { name: agent.name },
         ),
         confirmLabel: intl.formatMessage({ id: "common.delete" }),
+        checkbox: {
+          label: intl.formatMessage({ id: "settings.subagents.delete.clearNotebooks" }),
+          onCheckedChange: (checked) => {
+            clearNotebooks = checked;
+          },
+        },
       });
       if (!confirmed) {
         return;
@@ -1503,6 +1513,47 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
           agentId: agent.id,
           filePath: agent.path,
         });
+        if (clearNotebooks) {
+          // 档案已删，本子还在盘上：按号定位（与记忆面板同一判据）逐本收走。
+          // ponytail: 只清当前工作区的工作区本子 + 随身本子；该员工在别的工作区
+          // 留下的本子副本不在这里枚举（打开那个工作区后可在记忆面板清）。
+          const baseTarget = {
+            agentName: agent.name,
+            ...(agent.agentId ? { agentId: agent.agentId } : {}),
+          };
+          const clearErrors: string[] = [];
+          try {
+            await localHostServices.memoryService.clearAgentMemoryFiles({
+              ...baseTarget,
+              scope: resolveAgentMemoryPanelScope(agent.memory, "workspace"),
+              ...(targetWorkspacePath ? { workspacePath: targetWorkspacePath } : {}),
+            });
+          } catch (workspaceClearError) {
+            clearErrors.push(
+              workspaceClearError instanceof Error
+                ? workspaceClearError.message
+                : String(workspaceClearError),
+            );
+          }
+          try {
+            await localHostServices.memoryService.clearAgentMemoryFiles({
+              ...baseTarget,
+              scope: resolveAgentMemoryPanelScope(agent.memory, "personal"),
+              ...(targetWorkspacePath ? { workspacePath: targetWorkspacePath } : {}),
+            });
+          } catch (personalClearError) {
+            clearErrors.push(
+              personalClearError instanceof Error
+                ? personalClearError.message
+                : String(personalClearError),
+            );
+          }
+          const firstClearError = clearErrors[0];
+          if (firstClearError) {
+            // 档案删除已成功，本子清不干净不该让整次操作报错回滚——但要说出来。
+            toast(firstClearError);
+          }
+        }
         setEditingAgent(null);
         setShowForm(false);
         await Promise.all([refresh(), refreshMentionStore()]);
@@ -1512,7 +1563,15 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
         setOperatingAgentId(null);
       }
     },
-    [confirmDialog, intl, refresh, refreshMentionStore, subagentsService],
+    [
+      confirmDialog,
+      intl,
+      localHostServices,
+      refresh,
+      refreshMentionStore,
+      subagentsService,
+      targetWorkspacePath,
+    ],
   );
 
   const handleToggle = useCallback(

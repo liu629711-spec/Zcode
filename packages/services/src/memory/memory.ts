@@ -52,6 +52,13 @@ export interface IMemoryService {
 
   /** 删除单条记忆文件（不可恢复；索引 MEMORY.md 被删后智能体下个会话会自己重建）。 */
   deleteAgentMemoryFile(params: AgentMemoryTargetParams & { fileName: string }): Promise<void>;
+
+  /**
+   * 清空整本记事本（不可恢复）：删除整个 key 目录，包括员工塞进来、面板列表
+   * 看不见的非 .md 杂页。本子本来就不存在时按幂等成功处理。目录不存在或清空后，
+   * 智能体下次会话按空索引注入、首次写入自动重建（读路径不现造目录，D25）。
+   */
+  clearAgentMemoryFiles(params: AgentMemoryTargetParams): Promise<void>;
 }
 
 /** 记忆面板的目标定位：档案名 + 记忆范围 + 工作区（user 档案不需要工作区）。 */
