@@ -1,14 +1,15 @@
 import { sep } from "node:path";
 
 import { formatMemoryIndexContent } from "../memory/index-content.js";
-import type { AgentMemoryScope } from "./profile.js";
 
-const PERSISTENT_AGENT_MEMORY_PROMPT_TEMPLATE = [
-  "# Persistent Agent Memory",
+/**
+ * 双层记忆的共用说明书主体（2026-10-02 老板拍板「工作区记忆属于工作区，个人记忆
+ * 属于个人」）：types/how-to-save/when-to-access 这些写记忆的通用纪律只有一份，
+ * 两本本子各自只挂自己的根路径、分工规矩与索引——整段模板贴两份会把 token 翻倍。
+ */
+const PERSISTENT_AGENT_MEMORY_PROMPT_BODY = [
   "",
-  "You have a persistent, file-based memory system at `<MEMORY_ROOT>/`. This directory already exists — write to it directly with the Write tool (do not run mkdir or check for its existence).",
-  "",
-  "You should build up this memory system over time so that future conversations can have a complete picture of who the user is, how they'd like to collaborate with you, what behaviors to avoid or repeat, and the context behind the work the user gives you.",
+  "You should build up these memory systems over time so that future conversations can have a complete picture of who the user is, how they'd like to collaborate with you, what behaviors to avoid or repeat, and the context behind the work the user gives you.",
   "",
   "If the user explicitly asks you to remember something, save it immediately as whichever type fits best. If they ask you to forget something, find and remove the relevant entry.",
   "",
@@ -70,8 +71,8 @@ const PERSISTENT_AGENT_MEMORY_PROMPT_TEMPLATE = [
   '    user: check the Linear project "INGEST" if you want context on these tickets, that\'s where we track all pipeline bugs',
   '    assistant: [saves reference memory: pipeline bugs are tracked in Linear project "INGEST"]',
   "",
-  "    user: the Grafana board at grafana.internal/d/api-latency is what oncall watches — if you're touching request handling, that's the thing that'll page someone",
-  "    assistant: [saves reference memory: grafana.internal/d/api-latency is the oncall latency dashboard — check it when editing request-path code]",
+  "    user: the Grafana board at grafana.internal/d/api-latency is what oncall watches — it's the thing that'll page someone.",
+  "    assistant: [saves reference memory: pipeline alerts page the oncall via that Grafana board]",
   "    </examples>",
   "</type>",
   "</types>",
@@ -90,7 +91,7 @@ const PERSISTENT_AGENT_MEMORY_PROMPT_TEMPLATE = [
   "",
   "Saving a memory is a two-step process:",
   "",
-  "**Step 1** — write the memory to its own file (e.g., `user_role.md`, `feedback_testing.md`) using this frontmatter format:",
+  "**Step 1** — pick the right notebook first (see the division of labor above), then write the memory to its own file (e.g., `user_role.md`, `feedback_testing.md`) using this frontmatter format:",
   "",
   "```markdown",
   "---",
@@ -105,9 +106,9 @@ const PERSISTENT_AGENT_MEMORY_PROMPT_TEMPLATE = [
   "",
   "In the body, link to related memories with `[[name]]`, where `name` is the other memory's `name:` slug. Link liberally — a `[[name]]` that doesn't match an existing memory yet is fine; it marks something worth writing later, not an error.",
   "",
-  "**Step 2** — add a pointer to that file in `MEMORY.md`. `MEMORY.md` is an index, not a memory — each entry should be one line, under ~150 characters: `- [Title](file.md) — one-line hook`. It has no frontmatter. Never write memory content directly into `MEMORY.md`.",
+  "**Step 2** — add a pointer to that file in that notebook's `MEMORY.md`. `MEMORY.md` is an index, not a memory — each entry should be one line, under ~150 characters: `- [Title](file.md) — one-line hook`. It has no frontmatter. Never write memory content directly into `MEMORY.md`.",
   "",
-  "- `MEMORY.md` is always loaded into your conversation context — lines after 200 will be truncated, so keep the index concise",
+  "- Each `MEMORY.md` is always loaded into your conversation context — lines after 200 will be truncated, so keep the indexes concise",
   "- Keep the name, description, and type fields in memory files up-to-date with the content",
   "- Organize memory semantically by topic, not chronologically",
   "- Update or remove memories that turn out to be wrong or outdated",
@@ -135,39 +136,53 @@ const PERSISTENT_AGENT_MEMORY_PROMPT_TEMPLATE = [
   "Memory is one of several persistence mechanisms available to you as you assist the user in a given conversation. The distinction is often that memory can be recalled in future conversations and should not be used for persisting information that is only useful within the scope of the current conversation.",
   "- When to use or update a plan instead of memory: If you are about to start a non-trivial implementation task and would like to reach alignment with the user on your approach you should use a Plan rather than saving this information to memory. Similarly, if you already have a plan within the conversation and you have changed your approach persist that change by updating the plan rather than saving a memory.",
   "- When to use or update tasks instead of memory: When you need to break your work in current conversation into discrete steps or keep track of your progress use tasks instead of saving to memory. Tasks are great for persisting information about the work that needs to be done in the current conversation, but memory should be reserved for information that will be useful in future conversations.",
-  "",
-  "<SCOPE_GUIDANCE>",
 ].join("\n");
 
-const SCOPE_GUIDANCE: Record<AgentMemoryScope, string> = {
-  // user 档的分账规矩（身份轴终局 §九⑤，与预置班底说明书的 MEMORY_ACCOUNTING_RULE
-  // 同一口径）：随身本只收跟人走的事，项目里的事留在对话与项目文件——缓解「项目特定
-  // 事实写进随身记忆造成跨项目串味」的已知天花板。
-  user:
-    "- Since this memory is user-scope, keep learnings general since they apply across all projects. Accounting rule: this notebook travels with you across projects, so only save what follows the user — personal preferences, forms of address, and things true across projects; facts, conventions, and decisions specific to the current project stay in the conversation or in project files, never in this memory.",
-  project:
-    "- Since this memory is project-scope and shared with your team via version control, tailor your memories to this project",
-  local:
-    "- Since this memory is local-scope (not checked into version control), tailor your memories to this project and machine",
-};
+function notebookRootLine(rootDir: string): string {
+  return rootDir.endsWith(sep) ? rootDir : `${rootDir}${sep}`;
+}
 
-export function buildPersistentAgentMemoryPrompt(input: {
-  indexContent: string;
-  rootDir: string;
-  scope: AgentMemoryScope;
+/**
+ * 双层记忆说明书（2026-10-02 老板拍板）：工作区本子记项目里的活，随身本子记老板的
+ * 习惯——活不串、人还认得。两本各挂各的根路径与索引；「桌子」铁规矩顺带立下：
+ * 员工可写的只有当前工作区和这两本本子（真机实证：弱模型看着 user 记忆根在
+ * 家目录，就把 PRD 产出也写进了家目录）。
+ */
+export function buildAgentMemoryPrompt(input: {
+  workspace: { rootDir: string; indexContent: string };
+  personal: { rootDir: string; indexContent: string };
 }): string {
-  const memoryRoot = input.rootDir.endsWith(sep) ? input.rootDir : `${input.rootDir}${sep}`;
-  const indexContent = formatMemoryIndexContent(input.indexContent);
-  const prompt = PERSISTENT_AGENT_MEMORY_PROMPT_TEMPLATE.replace(
-    "<MEMORY_ROOT>/",
-    memoryRoot,
-  ).replace("<SCOPE_GUIDANCE>", SCOPE_GUIDANCE[input.scope]);
+  const workspaceIndex = formatMemoryIndexContent(input.workspace.indexContent);
+  const personalIndex = formatMemoryIndexContent(input.personal.indexContent);
   return [
-    prompt,
+    "# Persistent Agent Memory (two notebooks)",
     "",
-    "## MEMORY.md",
+    "You keep TWO persistent notebooks. Both locations already exist for writing purposes — save to them directly with the Write tool (do not run mkdir or check for their existence).",
     "",
-    indexContent ||
-      "Your MEMORY.md is currently empty. When you save new memories, they will appear here.",
+    "## Notebook 1 — Workspace notebook (this project's work)",
+    "",
+    `Root: \`${notebookRootLine(input.workspace.rootDir)}\``,
+    "",
+    "This notebook belongs to THIS workspace and stays here. Save: facts, decisions, progress, dead ends, and conventions specific to the current project and the current job. Project memories from other workspaces must NOT leak in here, and this notebook's content must NOT be carried to other workspaces.",
+    "",
+    "## Notebook 2 — Personal notebook (travels with you)",
+    "",
+    `Root: \`${notebookRootLine(input.personal.rootDir)}\``,
+    "",
+    "This notebook travels with you across all projects. Save ONLY what follows the user personally: how they address you and others, their preferences, collaboration style, and things true across every project. NEVER save project-specific facts, decisions, or work-in-progress here — that is what Notebook 1 is for. When in doubt, it belongs in Notebook 1.",
+    "",
+    "## Your desks (hard rule)",
+    "",
+    "The only places you ever write files are: the current workspace directory (for deliverables and work products) and these two notebooks (for memory). The user's home directory and any other absolute path outside the workspace are NOT your desks — never write deliverables, drafts, or scratch files there.",
+    "",
+    PERSISTENT_AGENT_MEMORY_PROMPT_BODY,
+    "",
+    "## Workspace notebook MEMORY.md",
+    "",
+    workspaceIndex || "Your workspace notebook's MEMORY.md is currently empty. When you save new workspace memories, they will appear here.",
+    "",
+    "## Personal notebook MEMORY.md",
+    "",
+    personalIndex || "Your personal notebook's MEMORY.md is currently empty. When you save personal memories (user preferences, forms of address), they will appear here.",
   ].join("\n");
 }
