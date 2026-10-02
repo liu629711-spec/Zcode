@@ -162,6 +162,11 @@ export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): st
   const task = neutralizeEnvelopeTags(envelope.task);
   const fromLabel = escapeEnvelopeAttribute(envelope.fromAgentName.trim() || "user");
   const lines = [
+    // 首行定调（2026-10-02 真机：两个本地弱模型的首轮都回成寒暄/角色扮演）——
+    // 弱模型对开头权重最高，先一句话钉死「这是工单、收到即干」，再给结构化信封。
+    envelope.review === true
+      ? "评审工单：你是评审人。读完立即评审，只评审不动手，最后产出评审结论。"
+      : "施工工单：收到即干——立即执行下面的任务，不要回复确认或寒暄。",
     `<work-order id="${envelope.workOrderId}" from-agent="${fromLabel}" from-session="${envelope.fromSessionId}">`,
     task,
     "</work-order>",
@@ -181,18 +186,18 @@ export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): st
     // 桌子铁规矩（2026-10-02 真机实证：弱模型把 PRD 产出写进老板家目录的绝对路径）
     // ——产出一律写进当前工作区；记忆另有专属柜子（双层记忆说明书里给路径）。
     "产出要求：所有产出文件一律写进你当前的工作区目录内（用相对路径）；用户主目录与任何工作区外的绝对路径不是你的桌子，不要往那里写文件。",
-    // 立即执行（2026-10-02 真机：弱模型收单只回「随时可以开工」的寒暄就结束回合，
-    // 店长被迫查盘后发返工单重派）——工单即任务，收单即动手；只说不做判未完成。
-    // 评审单不适用：评审要求里已明说「只评审，不动手」。
-    ...(envelope.review === true
-      ? []
-      : [
-          "执行要求：工单即任务——收到后立即动手执行，直到任务完成或确实被阻塞；只回复「收到」「随时可以开工」之类的确认或寒暄视为未完成，会被打回重派。",
-        ]),
     // 语言随工单（真机 2026-09-30）：弱模型拿着英文系统提示，中文工单也回英文，
     // 还自由发挥成自我介绍。信封后缀一行硬要求：语言跟工单走，没交代的事不做。
     // 放在标签外——事件面把标签内原文当「任务正文」透出，里面不能掺指令。
     "回复要求：使用与上面工单正文相同的语言；工单未交代的事项不要自行发挥。",
+    // 立即执行（2026-10-02 真机：两个本地弱模型的首轮都回成寒暄）压轴——
+    // 弱模型对结尾权重也最高：最后一行必须是「收到即干」，不是「不要发挥」。
+    // 评审单不适用：评审要求里已明说「只评审，不动手」。
+    ...(envelope.review === true
+      ? []
+      : [
+          "执行要求：工单即任务——收到后立即动手执行，直到任务完成或确实被阻塞；只回复「收到」「随时可以开工」「在的」之类的确认或寒暄视为未完成，会被打回重派。",
+        ]),
   );
   return lines.join("\n");
 }
