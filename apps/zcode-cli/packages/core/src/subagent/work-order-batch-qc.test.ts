@@ -139,6 +139,8 @@ test("buildWorkOrderEnvelopeText：评审单带评审要求块，且在信封标
   assert.match(text, /评审要求（本单是评审单：你是评审人，不是施工人）：/);
   assert.match(text, /只评审，不动手/);
   assert.match(text, /最不放心的地方/);
+  // 结论格式行协议（2026-10-02 圆桌卡）：第一行「评审结论：X」是 UI 徽章的结构化依据。
+  assert.match(text, /第一行只写格式行「评审结论：通过」或「评审结论：不通过」或「评审结论：有条件通过」/);
   // 指令在标签外：事件面把标签内原文当任务正文透出，里面不能掺指令。
   const closing = text.indexOf("</work-order>");
   const reviewBlock = text.indexOf("评审要求");
