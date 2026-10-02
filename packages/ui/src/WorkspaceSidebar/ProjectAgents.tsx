@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog.js";
 import { Input } from "@/components/ui/input.js";
 import { Textarea } from "@/components/ui/textarea.js";
 import { toast } from "@/components/ui/toast.js";
+import { onAgentRosterChanged } from "@/WorkspaceSidebar/agentRosterInvalidation.js";
 import { logger } from "@/logger.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
@@ -154,6 +155,15 @@ export function useWorkspaceProjectAgents(params: {
   useEffect(() => {
     void reload();
   }, [reload]);
+  // 跨界面失效（2026-10-02）：设置页增删改档案后广播一声，侧栏重拉名单——
+  // 否则删掉的人还留在名册里，@ 面板吃的目录快照跟着说谎。
+  useEffect(
+    () =>
+      onAgentRosterChanged(() => {
+        void reload();
+      }),
+    [reload],
+  );
 
   const createAgent = useCallback(
     async (

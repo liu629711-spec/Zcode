@@ -61,6 +61,7 @@ import {
   type SubagentReasoningFieldState,
 } from "@/settings/SubagentReasoningField.js";
 import { refreshLoadedSubagentsStoreForWorkspace } from "@/store/subagentsStore.js";
+import { notifyAgentRosterChanged } from "@/WorkspaceSidebar/agentRosterInvalidation.js";
 import { requestProjectAgentRenameRelink } from "@/store/projectAgentProfileActionStore.js";
 import {
   PluginScopeMenu,
@@ -1415,6 +1416,9 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       workspaceIdentity: targetWorkspaceIdentity,
       subagentsService,
     });
+    // 跨界面失效（2026-10-02）：本页的增删改也要通知侧栏重拉员工名单——
+    // 否则删掉的人还留在名册里，@ 面板吃的目录快照跟着说谎。
+    notifyAgentRosterChanged();
   }, [subagentsService, targetWorkspaceIdentity, targetWorkspacePath]);
 
   const handleSave = useCallback(
