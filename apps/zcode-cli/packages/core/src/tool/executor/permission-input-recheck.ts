@@ -8,6 +8,7 @@ import {
 
 import type { PermissionDecisionResult, PermissionContext } from "../../permission/service.js";
 import type { ExecutableToolCall, ToolEntry } from "../types.js";
+import { applyEmployeeDeskPermission } from "./employee-desk-permission.js";
 import { applyMemoryFilePermission, targetsMemoryFile } from "./memory-file-permission.js";
 import {
   resolveRuntimePermissionCapability,
@@ -61,6 +62,15 @@ export async function recheckPermissionHookModifiedInput(input: {
     workingDirectory: input.deps.getWorkingDirectory(),
     workspaceRoot: input.deps.getWorkspaceRoot(),
   });
+  // 员工桌子闸与首判同源：hook 改过 input 之后，桌外写入照样改判 ask 并进审批闸。
+  decision = applyEmployeeDeskPermission({
+    decision,
+    executionInput: input.modifiedInput,
+    toolName: input.toolCall.name,
+    workingDirectory: input.deps.getWorkingDirectory(),
+    workspaceRoot: input.deps.getWorkspaceRoot(),
+    desk: input.deps.employeeDesk,
+  });
 
   if (decision.decision === "deny") {
     return {
@@ -71,6 +81,7 @@ export async function recheckPermissionHookModifiedInput(input: {
   if (
     decision.decision !== "ask" ||
     (decision.ruleId !== "rule.project.ask" &&
+      decision.ruleId !== "guard.employeeDesk" &&
       !targetsMemoryFile({
         executionInput: input.modifiedInput,
         memoryRoot: input.deps.getMemoryRoot?.(),

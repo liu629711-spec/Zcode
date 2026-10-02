@@ -17,6 +17,7 @@ import { normalizeToolExecutionInput } from "../input-normalization.js";
 import { resolveToolApproval } from "./approval-gate.js";
 import { createErrorResult, createPermissionErrorResult } from "./errors.js";
 import { emitPermissionDenied, emitPermissionRequested, emitPermissionResolved } from "./events.js";
+import { applyEmployeeDeskPermission } from "./employee-desk-permission.js";
 import { applyPreToolPermissionDecision, runPermissionRequestHooks } from "./hook-flow.js";
 import { racePermissionResponders } from "./permission-responder-race.js";
 import {
@@ -98,6 +99,16 @@ export async function resolveToolPermission(
     toolName: toolCall.name,
     workingDirectory: deps.getWorkingDirectory(),
     workspaceRoot: deps.getWorkspaceRoot(),
+  });
+  // 员工桌子闸（2026-10-02）：驻场员工写「工作区 ∪ 随身记事本」之外 → ask 压 yolo。
+  // personalNotebookRoot 缺席 = 非驻场员工（老板会话），闸整体不生效。
+  permissionDecision = applyEmployeeDeskPermission({
+    decision: permissionDecision,
+    executionInput,
+    toolName: toolCall.name,
+    workingDirectory: deps.getWorkingDirectory(),
+    workspaceRoot: deps.getWorkspaceRoot(),
+    desk: deps.employeeDesk,
   });
 
   deps.logger?.debug("Tool permission evaluated", {

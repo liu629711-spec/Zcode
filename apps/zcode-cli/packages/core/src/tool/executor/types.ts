@@ -134,6 +134,8 @@ export interface ToolExecutorOptions {
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot?: () => string;
   getMemoryRoot?: () => string | undefined;
+  /** 员工桌子闸：驻场员工会话才带；见 ToolExecutorDeps.employeeDesk。 */
+  employeeDesk?: { personalNotebookRoot: string };
   traceContext?: TraceContext;
   mode?: CollaborationMode;
   getMode?: () => CollaborationMode;
@@ -239,6 +241,12 @@ export interface ToolExecutorDeps {
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   getMemoryRoot?: () => string | undefined;
+  /**
+   * 员工桌子闸（2026-10-02）：驻场员工会话才带——personalNotebookRoot 是随身记事本
+   * 根；权限流据此把「工作区 ∪ 随身本」之外的 Write/Edit 放行改判为 ask（压 yolo）。
+   * 缺席 = 非驻场会话（老板），闸不生效。
+   */
+  employeeDesk?: { personalNotebookRoot: string };
   runtimeScope: ToolRuntimeScope;
   traceContext?: TraceContext;
   getMode: () => CollaborationMode;

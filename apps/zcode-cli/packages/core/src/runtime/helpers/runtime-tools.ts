@@ -22,8 +22,36 @@ import {
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
 import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
+import { resolveAgentMemoryRoot } from "@zcode/shared/node";
+import type { MemoryRuntimeConfig } from "../types.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
+
+/**
+ * 员工桌子闸的随身本子根（2026-10-02 双层记忆）：驻场员工会话（persona 在场）且
+ * 记忆总开关开启时，权限流把「工作区 ∪ 随身本」之外的 Write/Edit 放行改判为 ask
+ * （压完全访问——搬货出店老板必须当场点头）。非 persona 会话返回 undefined，
+ * 闸不生效；随身本子目录还不会提前建（D25 读路径不现造目录，落点由首次写入落盘）。
+ */
+function resolveEmployeeDesk(
+  runtime: AgentRuntimeInternal,
+): { personalNotebookRoot: string } | undefined {
+  const persona = runtime.config.projectAgentPersona;
+  const memory = runtime.config.memory as MemoryRuntimeConfig | undefined;
+  if (!persona || memory?.enabled !== true || memory.use === false || !memory.storageRoot) {
+    return undefined;
+  }
+  return {
+    personalNotebookRoot: resolveAgentMemoryRoot({
+      agentName: persona.name,
+      ...(persona.agentId ? { agentId: persona.agentId } : {}),
+      scope: "user",
+      storageRoot: memory.storageRoot,
+      workspaceRoot: runtime.workspaceRoot,
+    }),
+  };
+}
+
 const EMPTY_RUNTIME_HOOK_CONFIG = {
   enabled: false,
   events: {},
@@ -226,6 +254,7 @@ function createRuntimeToolExecutor(
     deliveryKind: runtime.config.deliveryKind,
     getMemoryRoot: () =>
       deps.memoryRoot ?? resolveEnabledProjectMemoryRoot(runtime.config, runtime.workspaceRoot),
+    employeeDesk: resolveEmployeeDesk(runtime),
     runtimeScope: runtime.config.taskType === "subagent_child" ? "subagent" : "main",
     permissionTimeoutMs: runtime.config.permissionTimeoutMs,
     sessionId: runtime.sessionId,
