@@ -103,11 +103,16 @@ export function mapPersonaToRuntimeConfig(
   options: { includeModelSelection: boolean },
 ): PersonaRuntimeConfigFragment {
   const agentId = normalizeAgentId(persona.agentId);
+  // 通配符归一（2026-10-02 真机事故）：档案的 tools=["*"] 语义是「全部工具」——
+  // 原样塞进 toolAllowlist 会变成一张只含名为 * 的白名单，员工会话只剩记忆装配
+  // 补进的 Write/Edit（回执自述「没有读文件工具、跑不了 shell」）。通配在装配点
+  // 展开=不设白名单；具体名单照旧透传。
+  const allowAllTools = persona.tools?.includes("*") ?? false;
   return {
     ...(options.includeModelSelection && persona.modelSelection
       ? { modelSelection: persona.modelSelection }
       : {}),
-    ...(persona.tools?.length ? { toolAllowlist: [...persona.tools] } : {}),
+    ...(persona.tools?.length && !allowAllTools ? { toolAllowlist: [...persona.tools] } : {}),
     ...(persona.disallowedTools?.length
       ? { toolDisallowlist: [...persona.disallowedTools] }
       : {}),

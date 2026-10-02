@@ -140,6 +140,31 @@ test("mapPersonaToRuntimeConfig：create 路径全字段映射（模型/工具/�
   );
 });
 
+test("mapPersonaToRuntimeConfig：tools=[\"*\"] 通配展开为不设白名单（2026-10-02 真机事故）", () => {
+  // 班底档案 tools=["*"] 语义是「全部工具」：原样塞进 toolAllowlist 会变成一张只含
+  // 名为 * 的白名单，员工只剩记忆装配补进的 Write/Edit（读不了文件、跑不了 shell）。
+  const fragment = mapPersonaToRuntimeConfig(
+    {
+      name: "code-builder",
+      systemPrompt: "你是施工员",
+      memoryScope: "user",
+      tools: ["*"],
+    },
+    { includeModelSelection: false },
+  );
+  assert.equal(fragment.toolAllowlist, undefined);
+  assert.equal(fragment.toolDisallowlist, undefined);
+  // 档案快照面保持原样（消费方自行理解通配）。
+  assert.deepEqual(fragment.projectAgentPersona.tools, ["*"]);
+
+  // 通配与具体名单混用时，通配赢（语义=全部工具）。
+  const mixed = mapPersonaToRuntimeConfig(
+    { name: "a", systemPrompt: "x", tools: ["*", "Read"] },
+    { includeModelSelection: false },
+  );
+  assert.equal(mixed.toolAllowlist, undefined);
+});
+
 test("mapPersonaToRuntimeConfig：resume/fork 回灌不映射模型（模型只由 entry 恢复），工具面随身份", () => {
   const fragment = mapPersonaToRuntimeConfig(
     {
