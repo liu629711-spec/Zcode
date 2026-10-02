@@ -8,8 +8,14 @@
  * 标题+右侧等宽进度）。数据来自 selectWorkOrderBatches（纯函数），这里只管画。
  * 「转交」已随 2026-10-02 的接力收口决策移除（见 workOrderForward.ts 头注）。
  */
-import type { ReactNode } from "react";
-import { Gavel, UsersRound, Workflow as WorkflowIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Gavel,
+  UsersRound,
+  Workflow as WorkflowIcon,
+} from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
 import { STATUS_DOT } from "@/components/workflow-graph/run-status-presentation.js";
@@ -39,6 +45,9 @@ const STATUS_DOT_KEY: Record<WorkOrderBatchOrder["status"], keyof typeof STATUS_
   cancelled: "pending",
   failed: "failed",
 };
+
+/** 收纳状态按批次记（会话流滚动会重挂卡片，组件内 useState 会丢）：会话生命周期内有效。 */
+const collapsedBatches = new Map<string, boolean>();
 
 const QC_STATE_DOT: Record<
   NonNullable<WorkOrderBatchModel["qc"]>["state"],
@@ -87,7 +96,7 @@ function AgentChip({ name }: { name: string }) {
   );
 }
 
-/** 卡壳表头：图标 + 种类词 + 标题 + 右侧等宽进度与整卡状态灯（两构图共用）。 */
+/** 卡壳表头：图标 + 种类词 + 标题 + 右侧等宽进度与整卡状态灯 + 收纳开关（两构图共用）。 */
 function CardShell({
   icon,
   kindId,
@@ -95,6 +104,8 @@ function CardShell({
   completed,
   total,
   overallDot,
+  collapsed,
+  onToggleCollapsed,
   children,
 }: {
   icon: ReactNode;
@@ -103,6 +114,8 @@ function CardShell({
   completed: number;
   total: number;
   overallDot: keyof typeof STATUS_DOT;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   children: ReactNode;
 }) {
   const { intl } = useZCodeIntl();
@@ -111,7 +124,14 @@ function CardShell({
       className="w-full overflow-hidden rounded-xl border border-card-border bg-card shadow-xs"
       data-testid="agent-work-order-batch-card"
     >
-      <div className="flex w-full min-w-0 items-center gap-2 border-b border-card-border/60 px-3.5 py-3">
+      {/* 整条头栏都是开关（老板拍板：不找小箭头）；chevron 只是状态指示器。 */}
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        aria-expanded={!collapsed}
+        data-testid="agent-work-order-batch-collapse"
+        className="flex w-full min-w-0 cursor-pointer items-center gap-2 border-b border-card-border/60 px-3.5 py-3 text-left font-[inherit] transition-colors hover:bg-surface-hover/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
+      >
         {icon}
         <span className="shrink-0 text-ui-base font-medium text-foreground-subtle">
           {intl.formatMessage({ id: kindId })}
@@ -135,8 +155,18 @@ function CardShell({
             {intl.formatMessage({ id: "chat.workOrderBatch.progress" })}
           </span>
         </span>
-      </div>
-      {children}
+        <span
+          aria-hidden="true"
+          className="flex size-6 shrink-0 items-center justify-center text-foreground-subtle"
+        >
+          {collapsed ? (
+            <ChevronRight className="size-3.5" />
+          ) : (
+            <ChevronDown className="size-3.5" />
+          )}
+        </span>
+      </button>
+      {collapsed ? null : children}
     </div>
   );
 }
@@ -400,6 +430,14 @@ export function AgentWorkOrderBatchCard({
   /** 行内重派能力与名册都从这里来；缺席=动作位不渲染。 */
   context?: ConversationRowRenderContext;
 }) {
+  const [collapsed, setCollapsed] = useState(() => collapsedBatches.get(batch.batchId) ?? false);
+  const toggleCollapsed = () => {
+    setCollapsed((current) => {
+      const next = !current;
+      collapsedBatches.set(batch.batchId, next);
+      return next;
+    });
+  };
   const completed = batch.orders.filter((order) => order.status === "completed").length;
   const failed = batch.orders.some((order) => order.status === "failed");
   const settledCount = batch.orders.filter(
@@ -421,6 +459,8 @@ export function AgentWorkOrderBatchCard({
       completed={completed}
       total={batch.orders.length}
       overallDot={overallDot}
+      collapsed={collapsed}
+      onToggleCollapsed={toggleCollapsed}
     >
       {batch.review ? (
         <ReviewCouncilBody batch={batch} context={context} />
