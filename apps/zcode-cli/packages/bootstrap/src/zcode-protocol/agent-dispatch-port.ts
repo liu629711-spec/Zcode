@@ -19,6 +19,10 @@ import {
 } from "@zcode/contracts";
 import type { ModelSelection, ZCodeSessionPersona, ZCodeWorkspaceRef } from "@zcode/shared";
 import {
+  zcodeAgentDispatchCheckTaskRetiredResultSchema,
+  zcodeProtocolMethods,
+} from "@zcode/shared";
+import {
   isSelfDispatch,
   resolveDispatchModelSelection,
   resolveWorkOrderTarget,
@@ -26,9 +30,10 @@ import {
 } from "@zcode/core";
 import { scheduleWorkOrderReceiptRelay } from "./agent-dispatch-receipts.js";
 
-import type {
-  ZCodeProtocolAgentServerContext,
-  ZCodeProtocolSessionRecord,
+import {
+  ProtocolRequestError,
+  type ZCodeProtocolAgentServerContext,
+  type ZCodeProtocolSessionRecord,
 } from "./server-types.js";
 
 export interface ProtocolAgentDispatchPortDeps {
@@ -156,6 +161,37 @@ export async function findLatestPersonaSessionId(
 }
 
 /**
+ * 复用前的工位退役反查：任务索引里已删/已归档的会话不再复用（2026-10-02 拍板：
+ * 派单只续用侧栏看得见的工位）。tombstone/归档只记账、不动 CLI 会话行，本进程
+ * 看不见，必须问 Host。查询失败 fail-open：这里守的是可见性优化而非授权边界
+ * （对照 automation-port 的 fail-closed），退化为修复前的复用行为，不能让派单炸。
+ */
+export async function isReuseSessionRetired(
+  context: Pick<ZCodeProtocolAgentServerContext, "requestClient" | "logger">,
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const result = await context.requestClient(
+      zcodeProtocolMethods.agentDispatchCheckTaskRetired,
+      { targetTaskId: sessionId },
+      zcodeAgentDispatchCheckTaskRetiredResultSchema,
+    );
+    return result.retired;
+  } catch (error) {
+    if (error instanceof ProtocolRequestError && error.code === -32601) {
+      // 旧 Host：方法未上线是能力差异，按未退役继续，两端同版本后自然生效。
+      return false;
+    }
+    context.logger?.warn("Failed to check task retirement before dispatch reuse", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "agentDispatch.reuse_retired_check.failed",
+      sessionId,
+    });
+    return false;
+  }
+}
+
+/**
  * 批次（工地卡）身份的进程内登记：同一发起轮内并发多张工单彼此拿不到对方的
  * 派单结果（scheduler 并行跑），batch_id 传不回去——同轮同 batch_title 必须在这里
  * 领到同一个 batchId，跨轮续批则靠模型回传 batch_id（结果回显）。键以发起轮
@@ -276,6 +312,11 @@ export function createProtocolAgentDispatchPort(
               namedProfile,
             )
           : undefined;
+        if (targetSessionId && (await isReuseSessionRetired(context, targetSessionId))) {
+          // 工位已收走（任务已删/已归档，侧栏看不见）：不复用隐身会话，
+          // 落到下面的新建分支开新工位。
+          targetSessionId = undefined;
+        }
       }
       if (!targetSessionId) {
         // 既有 createSession persona 链开新段；工作区用发起方自己的 workspace ref

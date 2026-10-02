@@ -56,6 +56,7 @@ import {
   zcodePluginsUninstallResultSchema,
   zcodePluginsValidateResultSchema,
   zcodePluginsDescribeResultSchema,
+  zcodeAgentDispatchCheckTaskRetiredParamsSchema,
   zcodeAutomationCheckTaskBindingParamsSchema,
   zcodeAutomationCreateParamsSchema,
   zcodeAutomationDeleteParamsSchema,
@@ -2740,6 +2741,34 @@ export function createZCodeAgentService(
                 targetTaskId: parsed.data.targetTaskId,
               });
               await client.respond(request.id, { bound });
+            } catch (error) {
+              await client.respondError(request.id, {
+                code: -32603,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          })();
+          return;
+        }
+
+        if (request.method === zcodeProtocolMethods.agentDispatchCheckTaskRetired) {
+          const parsed = zcodeAgentDispatchCheckTaskRetiredParamsSchema.safeParse(request.params);
+          if (!parsed.success) {
+            void client.respondError(request.id, {
+              code: -32602,
+              message: "Invalid agent dispatch task retirement params",
+              data: parsed.error.flatten(),
+            });
+            return;
+          }
+          void (async () => {
+            try {
+              const retirement = await automationTaskIndexRepo.getTaskRetirement({
+                workspacePath: workspace.workspacePath,
+                workspaceIdentity: workspace.workspaceIdentity,
+                taskId: parsed.data.targetTaskId,
+              });
+              await client.respond(request.id, retirement);
             } catch (error) {
               await client.respondError(request.id, {
                 code: -32603,

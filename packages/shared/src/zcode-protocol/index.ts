@@ -3528,6 +3528,23 @@ export type ZCodeAutomationDeleteProtocolParams = z.infer<typeof zcodeAutomation
 export const zcodeAutomationDeleteResultSchema = z.object({ deleted: z.boolean() }).strict();
 export type ZCodeAutomationDeleteProtocolResult = z.infer<typeof zcodeAutomationDeleteResultSchema>;
 
+// ---- AgentDispatch 复用前的工位退役反查 ----
+// 任务索引的删除 tombstone / 归档只记账、不清理 CLI 会话行，派单复用最近 persona
+// 会话前必须反问 Host「这行任务还在不在侧栏」。known=false 表示任务索引里没有
+// 这一行（旧数据/未入册），按未退役处理。
+export const zcodeAgentDispatchCheckTaskRetiredParamsSchema = z
+  .object({ targetTaskId: nonEmptyString })
+  .strict();
+export type ZCodeAgentDispatchCheckTaskRetiredProtocolParams = z.infer<
+  typeof zcodeAgentDispatchCheckTaskRetiredParamsSchema
+>;
+export const zcodeAgentDispatchCheckTaskRetiredResultSchema = z
+  .object({ retired: z.boolean(), known: z.boolean() })
+  .strict();
+export type ZCodeAgentDispatchCheckTaskRetiredProtocolResult = z.infer<
+  typeof zcodeAgentDispatchCheckTaskRetiredResultSchema
+>;
+
 // ---- Off-Peak（闲时任务）会话内创建协议----
 // 与 automation 兄弟并列（独立域，禁止互相复用标记/表）。workspace 由 host 端从
 // 当前 session 注入，不进协议参数（对称 automation/create）。permissionMode 只开放产品
@@ -3678,6 +3695,8 @@ export const zcodeProtocolMethods = {
   automationCheckTaskBinding: "automation/checkTaskBinding",
   automationList: "automation/list",
   automationDelete: "automation/delete",
+  // AgentDispatch 复用前的工位退役反查（CLI→Host 单向问答，automation/checkTaskBinding 同款）。
+  agentDispatchCheckTaskRetired: "agentDispatch/checkTaskRetired",
   // Off-Peak 会话内创建：与 automation 兄弟并列的独立方法族。
   offPeakCreate: "offPeak/create",
   offPeakList: "offPeak/list",

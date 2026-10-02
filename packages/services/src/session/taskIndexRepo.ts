@@ -1836,6 +1836,37 @@ export class TaskIndexRepo {
   }
 
   /**
+   * 派单复用前的工位退役反查：该任务行是否已删/已归档。
+   * tombstone 与归档都只在本索引记账、不清理 CLI 会话行（deleteArchivedTask 注释口径），
+   * 派单侧看不见，必须拿 taskId 来问。known=false = 任务索引里没有这行。
+   */
+  async getTaskRetirement(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<{ retired: boolean; known: boolean }> {
+    await this.ensureReady();
+    const row = this.getDatabase()
+      .prepare(
+        `SELECT deleted, archived
+        FROM tasks
+        WHERE workspace_key = @workspace_key
+          AND task_id = @task_id`,
+      )
+      .get({
+        workspace_key: workspaceKey({
+          workspacePath: params.workspacePath,
+          workspaceIdentity: params.workspaceIdentity,
+        }),
+        task_id: params.taskId,
+      }) as { deleted: number; archived: number } | undefined;
+    if (!row) {
+      return { retired: false, known: false };
+    }
+    return { retired: row.deleted === 1 || row.archived === 1, known: true };
+  }
+
+  /**
    * 列出某条 automation 产生的所有 cron session（用于 automation 详情展开、关联查询）。
    * 走 cron_automation_id 索引列，只返回未删除的 session，按创建时间倒序。
    */
