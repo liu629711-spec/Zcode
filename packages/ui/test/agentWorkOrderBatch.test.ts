@@ -3,6 +3,7 @@ import test from "node:test";
 import type { TurnHeaderRow } from "@zcode/shared/zcode-protocol-v4";
 import type { ConversationTurnRenderUnit } from "../src/v4/conversationTurnRenderUnits.js";
 import {
+  extractReviewVerdict,
   selectWorkOrderBatchRenderInfo,
   selectWorkOrderBatches,
 } from "../src/v4/agentWorkOrderBatch.js";
@@ -339,6 +340,36 @@ test("selectWorkOrderBatches：在跑的质检轮 → qc.state running（状态�
   ];
   const batches = selectWorkOrderBatches(units);
   assert.deepEqual(batches[0]?.qc, { unitKey: "qc-turn", state: "running" });
+});
+
+test("selectWorkOrderBatches：派单行 input.review=true → batch.review=true（圆桌构图的依据，结构化非文本反推）", () => {
+  const reviewTurn = dispatchTurn("review-dispatch", [
+    dispatchRow("call-1", { agent: "code-reviewer", task: "评审登录页", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle, review: true }, { workOrderId: "wo-1", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "code-reviewer", delivery: "started" }),
+    dispatchRow("call-2", { agent: "frontend-design", task: "评审登录页", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle, review: true }, { workOrderId: "wo-2", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "frontend-design", delivery: "started" }),
+  ]);
+  const reviewed = selectWorkOrderBatches([reviewTurn]);
+  assert.equal(reviewed.length, 1);
+  assert.equal(reviewed[0]?.review, true);
+
+  const buildTurn = dispatchTurn("build-dispatch", [
+    dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle }, { workOrderId: "wo-1", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "a", delivery: "started" }),
+    dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId, batch_title: BATCH.batchTitle }, { workOrderId: "wo-2", batchId: BATCH.batchId, batchTitle: BATCH.batchTitle, agentName: "b", delivery: "started" }),
+  ]);
+  const built = selectWorkOrderBatches([buildTurn]);
+  assert.equal(built[0]?.review, undefined);
+});
+
+test("extractReviewVerdict：只认第一行格式行，自由文本一律不猜", () => {
+  assert.equal(extractReviewVerdict(["评审结论：通过", "理由……"].join(String.fromCharCode(10))), "pass");
+  assert.equal(extractReviewVerdict(["评审结论：不通过", "…"].join(String.fromCharCode(10))), "fail");
+  assert.equal(extractReviewVerdict(["评审结论：有条件通过", "…"].join(String.fromCharCode(10))), "conditional");
+  assert.equal(extractReviewVerdict("评审结论:通过"), "pass");
+  // 格式行不在前三行内 / 不是三选一 / 缺席：宁可不戴徽章也不猜。
+  // 格式行在前三行内仍认（弱模型可能先寒暄一句）；拖到第四行外就不认了。
+  assert.equal(extractReviewVerdict(["好的。", "评审结论：通过"].join(String.fromCharCode(10))), "pass");
+  assert.equal(extractReviewVerdict(["一", "二", "三", "评审结论：通过"].join(String.fromCharCode(10))), undefined);
+  assert.equal(extractReviewVerdict("评审结论：差不多通过"), undefined);
+  assert.equal(extractReviewVerdict(undefined), undefined);
 });
 
 test("selectWorkOrderBatches：评审会批的合议轮 → qc.review=true（合议词表的依据，不从标题反推）", () => {

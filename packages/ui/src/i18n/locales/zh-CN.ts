@@ -6686,6 +6686,14 @@ const zhCN: Record<string, string> = {
   "chat.workOrderBatch.qcReview.done": "合议完成",
   "chat.workOrderBatch.qcReview.failed": "合议未完成",
   "chat.workOrderBatch.qcReview.station": "合议",
+  // 圆桌评审会卡（2026-10-02 重设计）：桌牌/席位/结论徽章/发言记录。
+  "chat.workOrderBatch.review.title": "评审会",
+  "chat.workOrderBatch.review.subject": "评审对象",
+  "chat.workOrderBatch.review.verdict.pass": "通过",
+  "chat.workOrderBatch.review.verdict.fail": "不通过",
+  "chat.workOrderBatch.review.verdict.conditional": "有条件通过",
+  "chat.workOrderBatch.review.notes": "评审意见",
+  "chat.workOrderBatch.review.councilWaiting": "评审到齐后自动合议",
 };
 
 export default zhCN;

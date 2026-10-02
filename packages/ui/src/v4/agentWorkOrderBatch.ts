@@ -22,6 +22,29 @@ export type WorkOrderBatchOrderStatus =
   | "cancelled"
   | "failed";
 
+/**
+ * 评审结论（圆桌卡徽章，2026-10-02）：从评审人回执**第一行格式行**提取——
+ * 「评审结论：通过 / 不通过 / 有条件通过」（评审要求块的协议行，CLI 下发）。
+ * 提取不出（旧数据/模型没守格式）一律 undefined：宁可不戴徽章，也不从
+ * 自由文本里猜结论。
+ */
+export type ReviewVerdict = "pass" | "fail" | "conditional";
+
+export function extractReviewVerdict(text: string | undefined): ReviewVerdict | undefined {
+  if (!text) return undefined;
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 3);
+  for (const line of lines) {
+    const match = /^评审结论\s*[：:]\s*(有条件通过|不通过|通过)\s*$/u.exec(line);
+    if (match) {
+      const verdict = match[1];
+      if (verdict === "通过") return "pass";
+      if (verdict === "不通过") return "fail";
+      return "conditional";
+    }
+  }
+  return undefined;
+}
+
 /** 批次里的一张工单：先由派单行给出台账（dispatched/queued），回执到了更新终态。 */
 export interface WorkOrderBatchOrder {
   key: string;
@@ -45,6 +68,8 @@ export interface WorkOrderBatchOrder {
   retried?: boolean;
   /** 交活方工号（重派按号找人）；随失败回执证据进批次模型。 */
   agentId?: string;
+  /** 评审结论徽章（仅评审单的 completed 回执带；提取不出缺席——不从文本猜）。 */
+  verdict?: ReviewVerdict;
 }
 
 export interface WorkOrderBatchModel {
@@ -52,6 +77,11 @@ export interface WorkOrderBatchModel {
   /** 批次人类短标题（模型给 batch_title）；缺席时卡片退回通用标题。 */
   title?: string;
   orders: WorkOrderBatchOrder[];
+  /**
+   * 评审会批（2026-10-02）：派单行的 review=true 工具入参或合议轮头在场即成立——
+   * 卡片据此换圆桌构图；普通施工批保持工地竖轨。缺席 = 工地。
+   */
+  review?: boolean;
   /**
    * 批次质检（纪律协议批）：质检轮的证据在场才有。质检结论正文在质检轮自己的
    * 「质检 · 标题」卡里渲染，工地卡只画状态灯（进行中/已完成/未完成——轮失败或
@@ -109,6 +139,10 @@ function readString(record: Record<string, unknown> | undefined, key: string): s
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function readBooleanTrue(record: Record<string, unknown> | undefined, key: string): boolean {
+  return record?.[key] === true;
+}
+
 /** 回执标题里的交活方名字：completed 直接解；失败/中断按 CLI 后缀解，解不出留空。 */
 function receiptAgentNameFromTitle(title: string): string {
   return parseReceiptDelivererName(title) ?? parseFailedReceiptAgentName(title) ?? "";
@@ -130,6 +164,7 @@ function receiptSnippet(unit: ConversationTurnRenderUnit): string | undefined {
 interface BatchDraft {
   title?: string;
   orders: Map<string, WorkOrderBatchOrder>;
+  review?: boolean;
   qc?: { unitKey: string; state: "running" | "done" | "failed"; review?: boolean };
   memberUnitKeys: Set<string>;
   hostUnitKey: string;
@@ -180,6 +215,8 @@ export function selectWorkOrderBatches(
     if (qc?.batchId) {
       const draft = ensureDraft(qc.batchId, unit.key);
       draft.title ??= qc.batchTitle;
+      // 合议轮头本身就是评审会证据（合议只对评审会批开）。
+      if (qc.review) draft.review = true;
       draft.qc = {
         unitKey: unit.key,
         state:
@@ -224,6 +261,13 @@ export function selectWorkOrderBatches(
           ...(receipt.failureReason ? { failureReason: receipt.failureReason } : {}),
           ...(receipt.retried ? { retried: true } : {}),
           ...(receipt.agentId ? { agentId: receipt.agentId } : {}),
+          // 评审结论徽章（圆桌卡）：只认第一行格式行，提取不出不带。
+          ...(parseReceiptDelivererName(receipt.title)
+            ? (() => {
+                const verdict = extractReviewVerdict(receiptFullText(unit));
+                return verdict ? { verdict } : {};
+              })()
+            : {}),
         },
         unit.key,
       );
@@ -241,6 +285,10 @@ export function selectWorkOrderBatches(
       if (!batchId) continue;
       const draft = ensureDraft(batchId, unit.key);
       draft.title ??= title;
+      // 评审会证据：派单工具入参带 review=true（CLI 权威铸造，结构化非文本反推）。
+      if (readBooleanTrue(input, "review") || readBooleanTrue(output, "review")) {
+        draft.review = true;
+      }
       const workOrderId = readString(output, "workOrderId");
       mergeOrder(
         draft,
@@ -262,6 +310,7 @@ export function selectWorkOrderBatches(
       batchId,
       ...(draft.title ? { title: draft.title } : {}),
       orders: [...draft.orders.values()],
+      ...(draft.review ? { review: true } : {}),
       ...(draft.qc ? { qc: draft.qc } : {}),
       hostUnitKey: draft.hostUnitKey,
     });

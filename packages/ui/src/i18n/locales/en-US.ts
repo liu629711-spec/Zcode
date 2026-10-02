@@ -7013,6 +7013,14 @@ const enUS: Record<string, string> = {
   "chat.workOrderBatch.qcReview.done": "Council complete",
   "chat.workOrderBatch.qcReview.failed": "Council incomplete",
   "chat.workOrderBatch.qcReview.station": "Council",
+  // Roundtable council card (2026-10-02 redesign): subject plaque, seats, verdict badges, notes.
+  "chat.workOrderBatch.review.title": "Review council",
+  "chat.workOrderBatch.review.subject": "Under review",
+  "chat.workOrderBatch.review.verdict.pass": "Pass",
+  "chat.workOrderBatch.review.verdict.fail": "Reject",
+  "chat.workOrderBatch.review.verdict.conditional": "Conditional pass",
+  "chat.workOrderBatch.review.notes": "Reviewer notes",
+  "chat.workOrderBatch.review.councilWaiting": "Convenes automatically once every review is in",
 };
 
 export default enUS;
