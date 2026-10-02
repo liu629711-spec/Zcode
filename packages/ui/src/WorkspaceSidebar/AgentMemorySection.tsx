@@ -14,10 +14,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert.js";
 import { Button } from "@/components/ui/button.js";
 import { Textarea } from "@/components/ui/textarea.js";
 import { toast } from "@/components/ui/toast.js";
+import { cn } from "@/components/lib/utils.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { formatMemoryUpdatedAt } from "@/settings/memoryUpdatedAt.js";
+import { resolveAgentMemoryPanelScope } from "@/WorkspaceSidebar/projectAgentsModel.js";
 
 type MemorySectionState = "loading" | "ready" | "error";
 
@@ -77,7 +79,17 @@ export function AgentMemorySection({
     return () => window.clearInterval(interval);
   }, []);
 
-  const scope = agent.memory ?? "project";
+  // 双层记忆（2026-10-02 拍板）：面板两个页签——工作区本子（跟项目走的活）与
+  // 随身本子（跟人走的习惯）。默认看工作区本子；换本子即换目录，编辑器跟着收起。
+  const [notebook, setNotebook] = useState<"workspace" | "personal">("workspace");
+  const switchNotebook = useCallback((next: "workspace" | "personal") => {
+    setNotebook(next);
+    setEditingFile(null);
+    setEditingContent("");
+    setEditingLoading(false);
+  }, []);
+
+  const scope = resolveAgentMemoryPanelScope(agent.memory, notebook);
 
   // 记事本定位（D26）：有号就按号，与 core 的记忆注入共用同一判据
   // （shared/node resolveAgentMemoryKey）。两边必须落在同一个目录，否则就是
@@ -235,6 +247,24 @@ export function AgentMemorySection({
             )}
           </span>
         ) : null}
+      </div>
+      <div className="flex items-center gap-1" data-testid="agent-memory-notebook-switch">
+        {(["workspace", "personal"] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={notebook === key}
+            onClick={() => switchNotebook(key)}
+            className={cn(
+              "rounded-md px-2 py-1 text-ui-sm transition-colors",
+              notebook === key
+                ? "bg-brand/10 font-medium text-foreground"
+                : "text-foreground-subtle hover:bg-surface-hover",
+            )}
+          >
+            {intl.formatMessage({ id: `workspaceSidebar.agentMemory.notebook.${key}` })}
+          </button>
+        ))}
       </div>
       <p className="text-ui-sm text-foreground-subtle">
         {intl.formatMessage({ id: "workspaceSidebar.agentMemory.hint" })}

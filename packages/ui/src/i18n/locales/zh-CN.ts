@@ -1538,6 +1538,9 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.projectAgentDeleteDescriptionUserMemory": "「{name}」的档案（他是谁、会什么）会被删除。他的记事本跟着你的账号走、存在用户数据里，不会被删",
   "workspaceSidebar.projectAgentMissing": "找不到这个智能体的档案，可能已被删除或改名",
   "workspaceSidebar.agentMemory.title": "记忆",
+  // 双层记忆（2026-10-02）：面板页签——工作区本子跟项目，随身本子跟人。
+  "workspaceSidebar.agentMemory.notebook.workspace": "工作区本子",
+  "workspaceSidebar.agentMemory.notebook.personal": "随身本子",
   "workspaceSidebar.agentMemory.hint":
     "改动（包括智能体自己写的）从下个会话开始生效：每次会话开场只读一次记忆。",
   "workspaceSidebar.agentMemory.loading": "正在加载记忆…",

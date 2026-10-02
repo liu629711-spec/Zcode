@@ -1654,6 +1654,10 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.projectAgentDeleteDescriptionUserMemory": "The profile of \"{name}\" (who they are and what they can do) will be deleted. Their memory notes travel with your account and are kept",
   "workspaceSidebar.projectAgentMissing": "Couldn't find this agent's profile. It may have been deleted or renamed",
   "workspaceSidebar.agentMemory.title": "Memory",
+  // Two-layer memory (2026-10-02): panel tabs - workspace notebook follows the project,
+  // personal notebook follows the person.
+  "workspaceSidebar.agentMemory.notebook.workspace": "Workspace notebook",
+  "workspaceSidebar.agentMemory.notebook.personal": "Personal notebook",
   "workspaceSidebar.agentMemory.hint":
     "Changes (including ones the agent writes itself) take effect from the next conversation: memory is read once at the start of each conversation.",
   "workspaceSidebar.agentMemory.loading": "Loading memory…",

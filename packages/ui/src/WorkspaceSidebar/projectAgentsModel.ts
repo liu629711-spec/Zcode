@@ -245,6 +245,21 @@ export function buildAgentMemoryDirectoryHint(
 }
 
 /**
+ * 双层记忆（2026-10-02 拍板）的面板页签 → services scope：随身页签恒为 user；
+ * 工作区页签按档案 scope 落位，其中 **user 档案的工作区层按 project 落**——与
+ * core 的 resolveAgentMemoryLayers 同一判据（旧口径「user=整本搬去家目录」已废）。
+ * 两边必须同源，否则就是「面板空白而员工在别处写」的老漂移。
+ */
+export function resolveAgentMemoryPanelScope(
+  profileScope: AgentSummary["memory"],
+  notebook: "workspace" | "personal",
+): NonNullable<AgentSummary["memory"]> {
+  if (notebook === "personal") return "user";
+  const scope = profileScope ?? "project";
+  return scope === "user" ? "project" : scope;
+}
+
+/**
  * createSession.persona 载荷：随会话创建一次性进入 runtime config。
  * 即 shared 的 ZCodeSessionPersona（单一来源，防两处形状漂移）：
  * G2 起除 name/systemPrompt/memoryScope 外还携带档案的模型/工具/颜色，

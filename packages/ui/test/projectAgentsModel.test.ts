@@ -10,6 +10,7 @@ import {
   buildRetitledPersonaTitle,
   derivePersonaChatBadge,
   findLatestPersonaChatRow,
+  resolveAgentMemoryPanelScope,
   findLatestArchivedPersonaChatRow,
   findPersonaRowIdsByTitlePrefix,
   getPersonaChatBadge,
@@ -984,4 +985,14 @@ test("derivePersonaChatBadge：标题反推命中现役档案时顺手把号带�
     [{ name: "ui-pro", agentId: "id-1", color: "purple" }],
   );
   assert.deepEqual(badge, { name: "ui-pro", agentId: "id-1", color: "purple" });
+});
+
+test("resolveAgentMemoryPanelScope（双层记忆）：随身页签恒 user，工作区页签 user 档案回落 project", () => {
+  assert.equal(resolveAgentMemoryPanelScope("project", "workspace"), "project");
+  assert.equal(resolveAgentMemoryPanelScope("local", "workspace"), "local");
+  // 旧口径 user=整本搬家已废：工作区层照常落 <ws>/.zcode/agent-memory/。
+  assert.equal(resolveAgentMemoryPanelScope("user", "workspace"), "project");
+  assert.equal(resolveAgentMemoryPanelScope(undefined, "workspace"), "project");
+  assert.equal(resolveAgentMemoryPanelScope("project", "personal"), "user");
+  assert.equal(resolveAgentMemoryPanelScope("user", "personal"), "user");
 });
