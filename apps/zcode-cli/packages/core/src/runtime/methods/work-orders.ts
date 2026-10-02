@@ -116,6 +116,12 @@ export async function runWorkOrderCommand(
   if (isStaleBranchRuntimeCommand(this, command)) return;
   const foregroundExecution = beginForegroundExecution.call(this, command);
   try {
+    // 工单必须先于上下文初始化入史（2026-10-02 真机破案：fresh 会话首轮
+    // contextInitialized=false，先 addUser 后 init 会被 messageHistory.init 整体
+    // 清场——工单从模型请求里消失，员工对着空气报到"在的，老板"；返工单走
+    // 已初始化的 rebuild 路径所以总能进，造成"要派两次"）。与 background-
+    // notifications / goal-state-reminder 的先 ensure 后入史同一先例，幂等。
+    await this.ensureContextInitialized(command.traceContext);
     const messageID = createMessageId();
     // 工单卡元数据（D29/D5）：落库与 TurnStarted 用**同一份有界值**（boundAgentWorkOrderMeta
     // 的铸造侧承诺）。工具路径的 task 没有上限，信封若原样落库，冷恢复的
