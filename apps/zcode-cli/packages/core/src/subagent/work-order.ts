@@ -162,11 +162,10 @@ export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): st
   const task = neutralizeEnvelopeTags(envelope.task);
   const fromLabel = escapeEnvelopeAttribute(envelope.fromAgentName.trim() || "user");
   const lines = [
-    // 首行定调（2026-10-02 真机：两个本地弱模型的首轮都回成寒暄/角色扮演）——
-    // 弱模型对开头权重最高，先一句话钉死「这是工单、收到即干」，再给结构化信封。
-    envelope.review === true
-      ? "评审工单：你是评审人。读完立即评审，只评审不动手，最后产出评审结论。"
-      : "施工工单：收到即干——立即执行下面的任务，不要回复确认或寒暄。",
+    // 首行定调在投影前缀层（system-reminder/incoming-message.ts 的
+    // WORK_ORDER_PREFIX：模型视角真正的第一行）——信封不再重复前置命令，
+    // 2026-10-02 真机实证：定调行放信封里会被投影包装压在"非用户权威"声明后，
+    // 永远当不上第一行。评审单的类型框架由下方评审要求块承担。
     `<work-order id="${envelope.workOrderId}" from-agent="${fromLabel}" from-session="${envelope.fromSessionId}">`,
     task,
     "</work-order>",

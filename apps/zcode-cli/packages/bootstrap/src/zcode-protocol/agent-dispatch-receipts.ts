@@ -206,6 +206,22 @@ export function scheduleWorkOrderReceiptRelay(
     onSessionEvent: (event: SessionEvent) => {
       const outcome = receiptOutcomeFromSessionEvent(event, input.inputId);
       if (!outcome) return;
+      // 遥测（2026-10-02 A/B 联合调研）：工单轮的工具调用数只记不拦——为
+      // "零动作工单轮"的机械判定攒基线（本地弱模型首轮寒暄实证，三个模型一致）。
+      const payload = event.payload;
+      const toolCallCount =
+        typeof payload === "object" && payload !== null && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>).toolCallCount
+          : undefined;
+      context.logger?.info("Agent work order turn reached terminal state", {
+        event: "agent_work_order.turn_tool_calls",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        outcomeStatus: outcome.status,
+        targetSessionId: input.targetRecord.app.sessionId,
+        toolCallCount: typeof toolCallCount === "number" ? toolCallCount : undefined,
+        workOrderId: input.envelope.workOrderId,
+      });
       unsubscribe();
       handleTerminalOutcome(outcome);
     },

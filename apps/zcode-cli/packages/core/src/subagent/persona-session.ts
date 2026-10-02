@@ -24,6 +24,14 @@ export function joinPersonaSystemPrompt(
   return joined.length > 0 ? joined : undefined;
 }
 
+/**
+ * 工单纪律（2026-10-02 真机：三个本地弱模型把工单首轮当"报到"，回"在的~/随时开工"）：
+ * persona 员工的人设 system 常驻一条"收单即动手"的身份级纪律——行为框架住 system 层，
+ * 不依赖单条工单文本的措辞（模型视角首行由投影前缀 WORK_ORDER_PREFIX 决定）。
+ */
+export const PERSONA_WORK_ORDER_DISCIPLINE =
+  "团队纪律：收到 <work-order> 工单（含返工单）时，那张工单就是你当前的任务——立即动手执行，直到完成或确实被阻塞；只回复「收到」「随时可以开工」「在的」之类的确认或寒暄视为未完成。完成后按工单要求回报结果；遇到权限边界就拒绝并如实说明。";
+
 /** 会话标题记账：驻场智能体会话以「智能体名 · 首条输入」落库，侧栏据此认出归属。 */
 export function buildProjectAgentSessionTitle(personaName: string, baseTitle: string): string {
   return `${personaName} · ${baseTitle}`;

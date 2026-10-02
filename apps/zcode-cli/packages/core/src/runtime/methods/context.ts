@@ -18,7 +18,10 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import { ensureMemoryDirectoryExists } from "../../memory/directory.js";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import { loadProjectAgentMemoryPrompt } from "../../subagent/persistent-memory.js";
-import { joinPersonaSystemPrompt } from "../../subagent/persona-session.js";
+import {
+  joinPersonaSystemPrompt,
+  PERSONA_WORK_ORDER_DISCIPLINE,
+} from "../../subagent/persona-session.js";
 import {
   createReadFileStateKey,
   normalizeReadFileStateMtimeMs,
@@ -153,11 +156,12 @@ export function createContextBuilderFromSnapshot(
     agentProfiles: this.config.subagents?.profiles,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(this),
     skillMetadataBudget: this.config.skillMetadataBudget,
-    // persona 会话：config.systemPrompt（persona 正文）+ 项目记忆 prompt 拼进既有
-    // customSystemPrompt 通道；普通会话两段皆空，customSystemPrompt 保持 undefined。
+    // persona 会话：config.systemPrompt（persona 正文）+ 项目记忆 prompt + 工单纪律
+    // 拼进既有 customSystemPrompt 通道；普通会话三段皆空，customSystemPrompt 保持 undefined。
     customSystemPrompt: joinPersonaSystemPrompt([
       this.config.systemPrompt,
       this.personaMemoryPrompt,
+      PERSONA_WORK_ORDER_DISCIPLINE,
     ]),
     workflowActor: this.config.workflowActor,
     language: this.config.language,
