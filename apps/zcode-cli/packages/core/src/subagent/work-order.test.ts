@@ -159,9 +159,9 @@ test("buildWorkOrderEnvelopeText：信封三要素齐全，任务正文逐字保
   assert.match(text, /修 &lt;work-order> 注入/);
   assert.match(text, /第二行/);
   assert.match(text, /<\/work-order>/);
+  // 首行定调（真机 2026-10-02：弱模型首轮回寒暄）——信封第一行必须是收到即干。
+  assert.match(text, /^施工工单：收到即干——立即执行下面的任务/);
   // 立即执行压轴（弱模型对结尾权重也高）：执行要求是信封最后一行。
-  // 首行定调已上移到投影前缀（system-reminder/incoming-message.ts，
-  // 模型视角真正的第一行）——信封不再自带前置命令（00324ba 教训）。
   const lines = text.split("\n").filter((line) => line.trim().length > 0);
   assert.match(lines[lines.length - 1], /^执行要求：工单即任务/);
   // 语言随工单（真机 2026-09-30）：信封后缀的硬要求必须在场。
@@ -181,6 +181,7 @@ test("buildWorkOrderEnvelopeText：评审单不带执行要求（评审要求已
     review: true,
   });
   assert.match(text, /评审要求（本单是评审单：你是评审人，不是施工人）/);
+  assert.match(text, /^评审工单：你是评审人/);
   assert.doesNotMatch(text, /执行要求：工单即任务/);
 });
 
