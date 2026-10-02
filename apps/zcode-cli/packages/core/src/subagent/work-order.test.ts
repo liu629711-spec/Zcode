@@ -161,6 +161,22 @@ test("buildWorkOrderEnvelopeText：信封三要素齐全，任务正文逐字保
   assert.match(text, /<\/work-order>/);
   // 语言随工单（真机 2026-09-30）：信封后缀的硬要求必须在场。
   assert.match(text, /回复要求：使用与上面工单正文相同的语言/);
+  // 立即执行（真机 2026-10-02：弱模型收单只回「随时可以开工」的寒暄就收工）：
+  // 交付单信封必须带「工单即任务，收单即动手」的硬要求。
+  assert.match(text, /执行要求：工单即任务——收到后立即动手执行/);
+  assert.match(text, /视为未完成，会被打回重派/);
+});
+
+test("buildWorkOrderEnvelopeText：评审单不带执行要求（评审要求已明说只评审不动手）", () => {
+  const text = buildWorkOrderEnvelopeText({
+    workOrderId: "wo-review",
+    fromAgentName: "lead",
+    fromSessionId: "sess-9",
+    task: "评审这次改动",
+    review: true,
+  });
+  assert.match(text, /评审要求（本单是评审单：你是评审人，不是施工人）/);
+  assert.doesNotMatch(text, /执行要求：工单即任务/);
 });
 
 test("buildWorkOrderEnvelopeText：匿名发起方退化为 user，关闭标签中和不挑大小写", () => {
