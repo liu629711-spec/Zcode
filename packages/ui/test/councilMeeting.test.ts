@@ -6,8 +6,11 @@
 //  3. 决议（镜像内核）：首轮全票早退；分裂进二轮；二轮过半制+一票否决；
 //     票没交齐绝不假报终局（running）；
 //  4. 裁决卡分区：共识/分歧按最新一轮票面；没交票席位进 pending（区分
-//     失败/中断/等新一轮/无裁定行）；盲区=分了座但从未有效发言；
-//  5. 过程流：同人同轮短发言合并（裁定取最后），长发言/跨轮不合并。
+//     失败/中断/等新一轮/无裁定行）；盲区=分了座但从未有效发言（判据
+//     everSpoke——二轮回执失败但首轮说过话的不算盲区，第一声保留）；
+//  5. 过程流：同人同轮短发言合并（裁定取最后），长发言/跨轮不合并；
+//  6. 权威决议：主席合议轮带 councilOutcome 即收口（缺裁定行/缺席弃权收口的
+//     会议不再卡「进行中」），票面复算如实保留。
 //
 // 本文件只依赖相对路径的纯函数模块（无 @/ 别名、无 React）。
 //
@@ -60,6 +63,31 @@ function seatReceiptUnit(spec: ReceiptSpec): CouncilEvidenceUnit {
       },
     },
     latestAssistantTextRow: spec.text ? { text: spec.text } : undefined,
+  };
+}
+
+/** 主席合议轮轮头（CLI 权威下发决议的载体）。 */
+function moderationUnit(
+  councilId: string,
+  round: 1 | 2,
+  outcome?: "approved" | "rejected" | "deadlocked",
+): CouncilEvidenceUnit {
+  unitSeq += 1;
+  return {
+    key: `moderation-${unitSeq}`,
+    header: {
+      origin: "backgroundResult",
+      state: "running",
+      originMeta: {
+        backgroundSource: "agent_work_order_batch_qc",
+        workId: councilId,
+        title: "合议 · 圆桌会",
+        councilId,
+        councilRound: round,
+        councilPhase: "moderation",
+        ...(outcome ? { councilOutcome: outcome } : {}),
+      },
+    },
   };
 }
 
@@ -353,6 +381,89 @@ test("裁决卡分区：共识/分歧按最新一轮票面；盲区=分了座但
     }),
   ])[0];
   assert.equal(bounded?.consensus[0]?.snippet, `${"很".repeat(79)}…`);
+});
+
+test("盲区与第一声：首轮交过活的席位二轮失败不算盲区，首轮发言保留不消声", () => {
+  const meeting = selectCouncilMeetings([
+    seatReceiptUnit({
+      councilId: "c12",
+      seatIndex: 0,
+      lens: "impact",
+      title: "小甲 交活",
+      text: `影响面点名三处。\n${VERDICT_APPROVE}`,
+    }),
+    // 第二轮：小甲回执被中断（内核按缺席弃权计，首轮发言仍是听过的证据）。
+    seatReceiptUnit({
+      councilId: "c12",
+      seatIndex: 0,
+      lens: "impact",
+      title: "小甲的工单被中断",
+      round: 2,
+    }),
+    // 对照组：边界席从未交过活 → 仍是盲区。
+    seatReceiptUnit({
+      councilId: "c12",
+      seatIndex: 1,
+      lens: "edge",
+      title: "小乙 的工单被中断",
+      round: 2,
+    }),
+  ])[0];
+  const seat0 = meeting?.seats.find((seat) => seat.index === 0);
+  assert.equal(seat0?.everSpoke, true);
+  assert.equal(seat0?.status, "cancelled");
+  assert.equal(seat0?.statement, undefined);
+  assert.equal(seat0?.firstStatement, "影响面点名三处。");
+  assert.ok(seat0?.firstUnitKey);
+  // 盲区只有从未发声的边界席；影响面席虽然二轮失败但首轮说过话，不在列。
+  assert.deepEqual(
+    meeting?.blindSpots.map((spot) => [spot.lens, spot.agentNames]),
+    [["edge", ["小乙"]]],
+  );
+});
+
+test("权威决议：主席合议轮带 councilOutcome 即收口，票面不齐不再卡「进行中」", () => {
+  // 一席交活失败 + 主席轮已到：内核按缺席弃权收口为 deadlocked——
+  // UI 终态让位于权威字段，复算票面如实（只有一席有裁定行）。
+  const closedModeration = moderationUnit("c13", 1, "deadlocked");
+  const closed = selectCouncilMeetings([
+    seatReceiptUnit({
+      councilId: "c13",
+      seatIndex: 0,
+      lens: "impact",
+      title: "A 交活",
+      text: `行\n${VERDICT_APPROVE}`,
+    }),
+    seatReceiptUnit({
+      councilId: "c13",
+      seatIndex: 1,
+      lens: "requirement",
+      title: "B 的工单被中断",
+    }),
+    closedModeration,
+  ])[0];
+  assert.equal(closed?.status, "deadlocked");
+  assert.equal(closed?.votesComplete, false);
+  assert.equal(closed?.hostUnitKey, closedModeration.key);
+
+  // 对照：同样的证据没有权威决议时仍是 running（复算口径不越权）。
+  const open = selectCouncilMeetings([
+    seatReceiptUnit({
+      councilId: "c14",
+      seatIndex: 0,
+      lens: "impact",
+      title: "A 交活",
+      text: `行\n${VERDICT_APPROVE}`,
+    }),
+    seatReceiptUnit({
+      councilId: "c14",
+      seatIndex: 1,
+      lens: "requirement",
+      title: "B 的工单被中断",
+    }),
+    moderationUnit("c14", 1),
+  ])[0];
+  assert.equal(open?.status, "running");
 });
 
 test("过程流：同人同轮短发言合并（裁定取最后），长发言/跨轮不合并；轮次换类型徽章", () => {

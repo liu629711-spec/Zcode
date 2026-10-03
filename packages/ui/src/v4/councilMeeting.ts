@@ -49,7 +49,7 @@ export type CouncilMeetingViewStatus =
 
 export type CouncilSeatReceiptStatus = "completed" | "failed" | "cancelled";
 
-/** 一个席位：座次+员工+攻角是稳定的，发言/裁定按「最近一次回执」更新。 */
+/** 一个席位：座次+员工+攻角是稳定的，发言/裁定按「最近一次回执」更新；曾否发声与第一声终身保留。 */
 export interface CouncilMeetingSeatModel {
   index: number;
   /** 员工真名（回执标题权威解出；解不出为空串，UI 退灰占位）。 */
@@ -64,6 +64,12 @@ export interface CouncilMeetingSeatModel {
   verdict?: CouncilVerdict;
   /** 最近一次回执所在轮的 unit key（回原话定位用）。 */
   unitKey: string;
+  /** 本席是否曾交过活（任一轮 completed 回执出现过）——盲区判定看它，不看最近一次。 */
+  everSpoke: boolean;
+  /** 首次交活的发言正文（最近一次回执失败/中断时第一声仍在，不消声不进盲区）。 */
+  firstStatement?: string;
+  /** 首次交活回执所在轮的 unit key（回第一声原话用）。 */
+  firstUnitKey?: string;
 }
 
 /** 裁决卡里的一条立场（共识/分歧共用）：立场+信心+一句话，可回原话。 */
@@ -129,7 +135,10 @@ export interface CouncilMeetingModel {
   seats: CouncilMeetingSeatModel[];
   /** 最新一轮票面（每席一票，同人后到回执覆盖先到的）。 */
   tally: CouncilMeetingTally;
-  /** 最新一轮是否所有已知席位都交了票（没交齐=进行中，绝不假报终局）。 */
+  /**
+   * 最新一轮是否所有已知席位都交了有效票（复算票面的完整度描述，不再 gate
+   * 终态——主席合议轮权威决议在册即收口，缺裁定行/缺席收口的会议不再卡「进行中」）。
+   */
   votesComplete: boolean;
   /** 最新一轮的同意席（裁决卡共识区）。 */
   consensus: CouncilStanceEntry[];
@@ -168,6 +177,8 @@ export interface CouncilEvidenceUnit {
         readonly index: number;
         readonly lens: CouncilSeatLensId;
       };
+      /** 主席合议轮权威决议（内核绑定终局；在册即收口，复算让位）。 */
+      readonly councilOutcome?: "approved" | "rejected" | "deadlocked";
     };
   };
   readonly latestAssistantTextRow?: { readonly text?: string };
@@ -264,6 +275,8 @@ interface MeetingDraft {
   seats: Map<number, CouncilMeetingSeatModel>;
   flow: CouncilFlowEntry[];
   hostUnitKey: string;
+  /** 主席合议轮下发的权威决议（内核绑定终局；在册即收口）。 */
+  closedOutcome?: "approved" | "rejected" | "deadlocked";
 }
 
 /** 回执终态口径同工地卡：标题解出交活方=completed；被中断=cancelled；其余=failed。 */
@@ -308,6 +321,9 @@ export function selectCouncilMeetings(
     const draft = ensureDraft(councilId, unit.key);
     if (originMeta.councilKind) draft.kind = originMeta.councilKind;
     if (round > draft.round) draft.round = round;
+    // 权威决议一经下发即在册（内核把缺裁定行/交活失败/派单失败都按弃权计入并
+    // 收口——复算的票面永远等不齐这样的会议，终态以主席轮下发的决议为准）。
+    if (originMeta.councilOutcome) draft.closedOutcome = originMeta.councilOutcome;
 
     if (
       originMeta.backgroundSource === "agent_work_order_receipt" &&
@@ -325,6 +341,7 @@ export function selectCouncilMeetings(
       const existing = draft.seats.get(seatIndex);
       // 回执按到达顺序覆盖：后到的回执是这一席的最近事实（重试/第二轮都成立）。
       // 名字只在这次解出时覆盖（失败回执解不出名时不抹掉已有的）。
+      const everSpoke = status === "completed" || (existing?.everSpoke ?? false);
       draft.seats.set(seatIndex, {
         index: seatIndex,
         agentName: agentName || existing?.agentName || "",
@@ -333,6 +350,14 @@ export function selectCouncilMeetings(
         status,
         ...(status === "completed" && body ? { statement: body } : {}),
         ...(extracted ? { verdict: extracted.verdict } : {}),
+        everSpoke,
+        // 第一声终身保留：首次 completed 时铸入，之后随 existing 原样携带
+        // （后到回执覆盖 statement，不覆盖 first*）。
+        ...(existing?.firstStatement !== undefined
+          ? { firstStatement: existing.firstStatement, firstUnitKey: existing.firstUnitKey }
+          : status === "completed" && body
+            ? { firstStatement: body, firstUnitKey: unit.key }
+            : {}),
         unitKey: unit.key,
       });
       draft.flow.push({
@@ -381,18 +406,22 @@ function buildCouncilMeetingModel(
     else tally.abstain += 1;
     if (verdict.veto) tally.vetoes += 1;
   }
-  // 交齐 = 全部已知席位都在最新一轮交了有效票；没交齐绝不假报终局。
+  // 交齐 = 全部已知席位都在最新一轮交了有效票；没交齐绝不假报终局。主席合议轮
+  // 的权威决议在册时终态让位（复算只补中间过程票面——本字段不再 gate 终态）。
   const votesComplete = seats.length > 0 && verdicts.length === seats.length;
-  const status: CouncilMeetingViewStatus = !votesComplete
-    ? "running"
-    : (() => {
-        const outcome = resolveCouncilViewDecision(tally, round);
-        return outcome === "deliberate" ? "running" : outcome;
-      })();
+  const status: CouncilMeetingViewStatus =
+    draft.closedOutcome ??
+    (!votesComplete
+      ? "running"
+      : (() => {
+          const outcome = resolveCouncilViewDecision(tally, round);
+          return outcome === "deliberate" ? "running" : outcome;
+        })());
 
   const toEntry = (seat: CouncilMeetingSeatModel): CouncilStanceEntry => {
     const verdict = seat.verdict;
-    const statement = seat.statement ?? "";
+    // 最近一次回执失败/中断的席位发言退回第一声（原话不消声）。
+    const statement = seat.statement ?? seat.firstStatement ?? "";
     return {
       seatIndex: seat.index,
       agentName: seat.agentName,
@@ -431,11 +460,11 @@ function buildCouncilMeetingModel(
       unitKey: seat.unitKey,
     }));
 
-  // 盲区：攻角分了座但从未有效发言（从未 completed 过——第二轮没跟上但首轮说过
-  // 话的角度已经听到了，不算盲区）。
+  // 盲区：攻角分了座但从未有效发言（判据 = everSpoke——第二轮没跟上但首轮说过
+  // 话的攻角已经听到了，不算盲区）。
   const blindSpots: CouncilBlindSpot[] = [];
   for (const seat of seats) {
-    if (seat.status === "completed") continue;
+    if (seat.everSpoke) continue;
     const spot = blindSpots.find((candidate) => candidate.lens === seat.lens);
     if (spot) {
       if (seat.agentName && !spot.agentNames.includes(seat.agentName)) {
