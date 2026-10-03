@@ -371,6 +371,26 @@ export function createProtocolAgentDispatchPort(
       const targetRecord =
         context.sessions.get(targetSessionId) ??
         (await deps.activateSessionRecord(targetSessionId));
+      // 工位卡标题随最近一张工单刷新（2026-10-03 老板验收反馈）：续用的旧工位标题
+      // 可能还挂着建桌时的杂题——真机实证 frontend-design 的工位卡叫 "Selection
+      // side chat"，老板找不到第四席去哪了（席位其实发言交活都正常）。新工位本来
+      // 就落「智能体名 · 短标题」，续用工位对齐同一格式；工单标题盖过旧杂题是有意
+      // 行为：工位卡语义 = 这个员工最近在干的活。
+      if (namedProfile && !createdSession) {
+        await targetRecord.app
+          .setCustomSessionTitle({
+            title: `${namedProfile} · ${workerTitleSeed.slice(0, 60)}`,
+            traceContext: targetRecord.traceContext,
+          })
+          .catch((error) => {
+            context.logger?.warn("Failed to refresh reused desk title", {
+              errorMessage: error instanceof Error ? error.message : String(error),
+              event: "agent_dispatch.desk_title_refresh_failed",
+              module: "bootstrap.zcode_protocol",
+              targetSessionId,
+            });
+          });
+      }
       // 复用会话同样跟随发起会话当前模型（2026-10-02 拍板）：前口径是「会话常驻
       // 有效就不传 per-order 覆盖、让会话自己跑」，那等于员工各押各的供应商——
       // 现在除了本单指定，一律带 per-order 覆盖（老板当前模型），员工会话自己的
