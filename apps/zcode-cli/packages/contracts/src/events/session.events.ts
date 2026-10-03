@@ -2,6 +2,7 @@ import type { ExecutionOutputPreview } from "../interfaces/execution.port.js";
 import type { RuntimeInputPresentation } from "../interfaces/runtime-input-presentation.js";
 import type {
   CouncilMeetingKind,
+  CouncilMeetingOutcome,
   CouncilMeetingPhase,
   CouncilMeetingRound,
   CouncilSeatLensId,
@@ -335,6 +336,11 @@ export interface BackgroundResultOriginMeta {
   councilPhase?: CouncilMeetingPhase;
   /** 席位回执轮携带：本回执的座次与攻角（圆桌卡按座次入席）。 */
   councilSeat?: { index: number; lens: CouncilSeatLensId };
+  /**
+   * 主席合议轮（councilPhase=moderation）携带：内核绑定决议（权威终局）——
+   * UI 卡片终态以此为准，复算让位（缺席 = 旧轮头，UI 退回复算口径）。
+   */
+  councilOutcome?: CouncilMeetingOutcome;
   /**
    * 派单**失败**回执（agent_work_order_receipt）携带：原工单任务原文（有界，
    * 同 agentWorkOrderMeta 的上限）——失败卡「一键重派」的权威数据源，UI 不从文本反推。

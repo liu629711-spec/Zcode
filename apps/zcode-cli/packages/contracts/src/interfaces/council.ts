@@ -47,6 +47,12 @@ export type CouncilMeetingPhase = "seating" | "deliberation" | "tally" | "modera
 /** 审议轮次（内核封顶 2：首轮非全票才开质询轮）。 */
 export type CouncilMeetingRound = 1 | 2;
 
+/**
+ * 决议终态闭集（主席合议轮随 originMeta.councilOutcome 权威下发）：内核
+ * resolveCouncilDecision 的终局三态；"deliberate" 不是终局（转第 2 轮），不下发。
+ */
+export type CouncilMeetingOutcome = "approved" | "rejected" | "deadlocked";
+
 /** 圆桌会的一个席位：员工真名（派单对象）+ 分到的攻角。 */
 export interface CouncilMeetingSeat {
   /** 座次（0 起）：buildCouncilSeatPlan 的 index 原样随行，重开会议不换座。 */

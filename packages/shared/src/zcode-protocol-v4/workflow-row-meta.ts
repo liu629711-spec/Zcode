@@ -111,6 +111,9 @@ export const backgroundResultOriginMetaSchema = z.object({
       lens: z.enum(["impact", "requirement", "edge", "cost", "minimal"]),
     })
     .optional(),
+  // 主席合议轮（councilPhase=moderation）携带：内核绑定决议（权威终局）。zod 剥
+  // 未知键，不加即冷恢复后圆桌卡终态退回 UI 复算口径（与内核缺席弃权收口脱节）。
+  councilOutcome: z.enum(["approved", "rejected", "deadlocked"]).optional(),
   // 失败回执（2026-10-01 员工可靠性批）携带：原工单任务原文 + 结构化失败线索——
   // 失败卡大白话与「一键重派」的唯一数据源；zod 剥离未知键，不加即静默丢。
   // 上界与发射侧对齐：task 同 contracts 的 AGENT_WORK_ORDER_TASK_MAX_CHARS（8192），
