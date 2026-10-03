@@ -44,6 +44,7 @@ import {
   cronUpdateToolEntry,
 } from "./cron.js";
 import { agentDispatchToolEntry } from "./agent-dispatch.js";
+import { councilConveneToolEntry } from "./council-convene.js";
 import { offPeakCreateToolEntry, offPeakListToolEntry } from "./off-peak.js";
 import {
   createEnterPlanModeToolEntry,
@@ -92,6 +93,9 @@ export const builtInTools: ToolEntry[] = [
   cronDeleteToolEntry,
   // 派单（D29/D1）：跨会话工单投递；端口在场才注册（includeAgentDispatch）。
   agentDispatchToolEntry,
+  // 圆桌会（真会议）召集工具：与 AgentDispatch 同门（同一派单端口驱动；工单轮/
+  // 子代理不注册）。会议的席位单走的也是派单端口，嵌套纪律同门执法。
+  councilConveneToolEntry,
   offPeakCreateToolEntry,
   offPeakListToolEntry,
   enterPlanModeToolEntry,
@@ -178,6 +182,12 @@ interface RegisterBuiltInToolsOptions {
   includeAutomation?: boolean;
   /** 派单（D29）会话内工具面；由 AgentDispatchPort 在场驱动，工单轮/子代理不注册。 */
   includeAgentDispatch?: boolean;
+  /**
+   * 圆桌会（真会议）召集工具面；与 includeAgentDispatch 同门（同一派单端口驱动，
+   * 门值在 runtime-tools.ts 并排）。工具面只盖「提议开会」这次批准；席位单走端口的
+   * council* 直派后门，模型面不暴露会议编排参数。
+   */
+  includeCouncilConvene?: boolean;
   /** Off-Peak 会话内创建工具面；由 host 的 offPeakToolEnabled flag（灰度/远程门）驱动。 */
   includeOffPeak?: boolean;
   /**
@@ -254,6 +264,9 @@ export function registerBuiltInTools(
       continue;
     }
     if (entry.metadata.name === "AgentDispatch" && options.includeAgentDispatch !== true) {
+      continue;
+    }
+    if (entry.metadata.name === "CouncilConvene" && options.includeCouncilConvene !== true) {
       continue;
     }
     if (

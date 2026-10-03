@@ -52,6 +52,11 @@ import {
   enqueueAgentWorkOrderBatchQc,
   maybeEnqueueAgentWorkOrderBatchQc,
 } from "./work-order-batch-qc.js";
+import {
+  addCouncilInterjection,
+  maybeAdvanceCouncilRound,
+  setCouncilMeetingPaused,
+} from "./council-meeting.js";
 import { enqueueSubagentMessage } from "./subagent-messages.js";
 import {
   acquireForegroundPromotionLease,
@@ -270,6 +275,9 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.enqueueAgentWorkOrderReceipt = enqueueAgentWorkOrderReceipt;
   proto.enqueueAgentWorkOrderBatchQc = enqueueAgentWorkOrderBatchQc;
   proto.maybeEnqueueAgentWorkOrderBatchQc = maybeEnqueueAgentWorkOrderBatchQc;
+  proto.maybeAdvanceCouncilRound = maybeAdvanceCouncilRound;
+  proto.setCouncilMeetingPaused = setCouncilMeetingPaused;
+  proto.addCouncilInterjection = addCouncilInterjection;
   proto.enqueueSubagentMessage = enqueueSubagentMessage;
   proto.drainPendingRuntimeCommandsForActiveLoop = drainPendingRuntimeCommandsForActiveLoop;
   proto.sealBackgroundTaskNotifications = sealBackgroundTaskNotifications;

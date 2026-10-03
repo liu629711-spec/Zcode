@@ -74,6 +74,11 @@ import type {
   EnqueueAgentWorkOrderBatchQcInput,
   MaybeEnqueueAgentWorkOrderBatchQcInput,
 } from "./methods/work-order-batch-qc.js";
+import type {
+  AddCouncilInterjectionInput,
+  MaybeAdvanceCouncilRoundInput,
+  SetCouncilMeetingPausedInput,
+} from "./methods/council-meeting.js";
 import type { AgentWorkOrderEnvelope } from "./deps.js";
 import type { AgentProfile } from "../subagent/profile.js";
 import type {
@@ -162,6 +167,11 @@ export class AgentRuntime {
   private modelIoDir?: string;
   private providerRuntimeHeadersPort?: AgentRuntimeDeps["providerRuntimeHeadersPort"];
   private browserControlPort?: AgentRuntimeDeps["browserControlPort"];
+  /**
+   * 跨会话派单端口（D29/D2）：圆桌会编排（席位补交单/第 2 轮直派）经它复用
+   * 目标解析/台账/回执订阅全链路，绝不绕行 runtime.enqueueAgentWorkOrder。
+   */
+  private agentDispatchPort?: AgentRuntimeDeps["agentDispatchPort"];
   /** 模型请求准入端口；随每次模型请求进调用上下文。 */
   private modelRequestAdmission?: AgentRuntimeDeps["modelRequestAdmission"];
   private sessionModelSelection: ModelSelection | undefined;
@@ -284,6 +294,7 @@ export class AgentRuntime {
     this.providerRuntimeHeadersPort = deps.providerRuntimeHeadersPort;
     this.browserControlPort = deps.browserControlPort;
     this.modelRequestAdmission = deps.modelRequestAdmission;
+    this.agentDispatchPort = deps.agentDispatchPort;
     // 旧会话的选择缺失不能阻断历史恢复；不在这里制造默认模型。
     this.sessionModelSelection =
       config.modelSelection && cloneModelSelection(config.modelSelection);
@@ -455,6 +466,23 @@ export interface AgentRuntime {
    * 永远开不了质检（评审 A1/B4）。
    */
   maybeEnqueueAgentWorkOrderBatchQc(input: MaybeEnqueueAgentWorkOrderBatchQcInput): Promise<void>;
+  /**
+   * 圆桌会（真会议）收票推进（幂等自查）：本轮全部席位回执到齐 → 解析裁定行收票
+   * （缺行补交一次，仍缺按弃权如实标注）→ 代码算票出决议：首轮全票早退、否则第 2
+   * 轮匿名质询、终轮过半判定 → 主席合成轮出决议卡。触发在 bootstrap 回执投递与
+   * 解除暂停（setCouncilMeetingPaused）；闸门（每轮只此一次）由确定性台账行承担。
+   */
+  maybeAdvanceCouncilRound(input: MaybeAdvanceCouncilRoundInput): Promise<void>;
+  /**
+   * 圆桌会控场：暂停/恢复。暂停冻结下一轮派单与推进（进行中的席位发言自然跑完）；
+   * 恢复时立即自查推进一次（冻结期间到齐的回执此刻收票）。
+   */
+  setCouncilMeetingPaused(input: SetCouncilMeetingPausedInput): Promise<void>;
+  /**
+   * 圆桌会控场：主持人插话作为材料注入下一轮席位信封（未点名全体可见，@点名
+   * 只进被点席位）。会议未开/已终态时忽略。
+   */
+  addCouncilInterjection(input: AddCouncilInterjectionInput): Promise<void>;
   /** Session 常驻池使用的 runtime busy 权威事实，包含 queue/drain/reservation。 */
   hasActiveOrQueuedTurnWork(): boolean;
   /** Session 常驻池使用的后台 Bash/Agent/Workflow running 权威事实。 */

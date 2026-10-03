@@ -96,6 +96,9 @@ function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentR
     // 派单（D29）：跨会话工单端口在场即注册；子代理不暴露（与 automation 同规则）。
     // 嵌套上限=1 另由工单轮 denylist + handler 终审 + 端口自检执法。
     includeAgentDispatch: Boolean(deps.agentDispatchPort) && runtime.config.taskType !== "subagent_child",
+    // 圆桌会（真会议）召集工具：与派单同门（席位单走同一派单端口），同门同规则。
+    includeCouncilConvene:
+      Boolean(deps.agentDispatchPort) && runtime.config.taskType !== "subagent_child",
     // offPeakPort 只在 host 下发 offPeakToolEnabled 时注入（灰度/远程门在 host 端），
     // 端口存在即代表曝光允许；subagent 子会话与 automation 同规则不暴露。
     includeOffPeak: Boolean(deps.offPeakPort) && runtime.config.taskType !== "subagent_child",

@@ -35,6 +35,7 @@ import type {
   ContextBuilder,
   ContextBuildResult,
 } from "./deps.js";
+import type { AgentDispatchPort } from "@zcode/contracts";
 import type {
   ActiveTurnSteeringState,
   ActiveTurnStartReservation,
@@ -121,6 +122,8 @@ export interface AgentRuntimeInternal
   workingDirectory: string;
   workspaceRoot: string;
   sessionStore?: SessionStorePort;
+  /** 跨会话派单端口（D29/D2）；圆桌会编排的席位补交单/第 2 轮直派经它走全链路。 */
+  agentDispatchPort?: AgentDispatchPort;
   sessionMailboxPort?: SessionMailboxPort;
   sessionPersisted: boolean;
   needsPlanModeExitReminder: boolean;

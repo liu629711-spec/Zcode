@@ -11,6 +11,7 @@ import { runControlOnlyTurnCommand } from "./control-only-turn.js";
 import { runWorkOrderCommand } from "./work-orders.js";
 import { runWorkOrderReceiptCommand } from "./work-order-receipts.js";
 import { runWorkOrderBatchQcCommand } from "./work-order-batch-qc.js";
+import { runCouncilModerationCommand } from "./council-meeting.js";
 import { createTurnCancelledError } from "../helpers/index.js";
 import { executeTargetContinuationCommand } from "./target.js";
 import { runActiveTargetContinuationLoop } from "./target-continuation-loop.js";
@@ -72,6 +73,11 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
       if (firstCommand.mode === "work-order-batch-qc") {
         // 质检同样独占成轮：轮身份（batchId/originMeta）必须逐批携带。
         await runWorkOrderBatchQcCommand.call(this, firstCommand);
+        continue;
+      }
+      if (firstCommand.mode === "council-moderation") {
+        // 圆桌会主席合成轮独占成轮：轮身份（councilId/originMeta）必须逐场携带。
+        await runCouncilModerationCommand.call(this, firstCommand);
         continue;
       }
       if (commands.length !== 1) {

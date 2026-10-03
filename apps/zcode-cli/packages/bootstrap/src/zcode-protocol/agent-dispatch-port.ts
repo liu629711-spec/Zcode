@@ -279,6 +279,20 @@ export function createProtocolAgentDispatchPort(
         ...(batchTitle ? { batchTitle } : {}),
         // 评审单标记（评审会批）：随信封落台账——批次收口时触发侧据它判合议口味。
         ...(input.review === true ? { review: true } : {}),
+        // 圆桌会席位单（真会议，2026-10-03）：council* 五参逐字随信封落台账——
+        // 发起方的收票推进（maybeAdvanceCouncilRound）按 councilId:round 聚拢席位单、
+        // 回执轮头 originMeta.council* 据它对号。与 batchId 互斥（召集方代码保证）。
+        ...(input.councilId
+          ? {
+              councilId: input.councilId,
+              ...(input.councilKind ? { councilKind: input.councilKind } : {}),
+              ...(input.councilRound ? { councilRound: input.councilRound } : {}),
+              ...(input.councilSeatIndex !== undefined
+                ? { councilSeatIndex: input.councilSeatIndex }
+                : {}),
+              ...(input.councilSeatLens ? { councilSeatLens: input.councilSeatLens } : {}),
+            }
+          : {}),
       };
 
       // 人类短标题（模型派单时给的 title；缺席回落任务正文）：工位落行首输入、
@@ -485,6 +499,8 @@ export function createProtocolAgentDispatchPort(
         workOrderId: envelope.workOrderId,
         ...(batchId ? { batchId } : {}),
         ...(batchTitle ? { batchTitle } : {}),
+        // 圆桌会身份回显（席位单必在）：召集方代码据它对账收票进度。
+        ...(envelope.councilId ? { councilId: envelope.councilId } : {}),
       };
     },
   };

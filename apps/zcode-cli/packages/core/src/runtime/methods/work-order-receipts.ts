@@ -74,6 +74,25 @@ export function enqueueAgentWorkOrderReceipt(
     // 批次（工地卡）随回执轮头下发：发起方 UI 据它把同批回执归进一张工地卡。
     ...(input.envelope.batchId ? { batchId: input.envelope.batchId } : {}),
     ...(input.envelope.batchTitle ? { batchTitle: input.envelope.batchTitle } : {}),
+    // 圆桌会（真会议）随轮头下发：席位回执轮带 councilId/类型/轮次/阶段 + 座次与
+    // 攻角——UI 据它把同场会议的发言聚成圆桌卡并按座次入席（batchId 同纪律）。
+    ...(input.envelope.councilId
+      ? {
+          councilId: input.envelope.councilId,
+          ...(input.envelope.councilKind ? { councilKind: input.envelope.councilKind } : {}),
+          ...(input.envelope.councilRound ? { councilRound: input.envelope.councilRound } : {}),
+          councilPhase: "deliberation" as const,
+          ...(input.envelope.councilSeatIndex !== undefined &&
+          input.envelope.councilSeatLens !== undefined
+            ? {
+                councilSeat: {
+                  index: input.envelope.councilSeatIndex,
+                  lens: input.envelope.councilSeatLens,
+                },
+              }
+            : {}),
+        }
+      : {}),
     // 失败回执的结构化线索（2026-10-01 员工可靠性批）：原工单任务原文（一键重派
     // 的权威数据源，有界同 agentWorkOrderMeta）+ 根因分类码/被拒模型/已重试——
     // UI 讲大白话的依据，不从回执文本反推。completed/cancelled 不带。

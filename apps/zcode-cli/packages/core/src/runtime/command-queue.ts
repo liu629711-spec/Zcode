@@ -2,6 +2,8 @@ import type { TraceContext, TurnState } from "./deps.js";
 import type {
   AgentWorkOrderEnvelope,
   BackgroundResultOriginMeta,
+  CouncilMeetingKind,
+  CouncilMeetingRound,
   WorkflowLaunchMeta,
 } from "@zcode/contracts";
 import type {
@@ -25,6 +27,7 @@ export type RuntimeCommandMode =
   | "work-order"
   | "work-order-receipt"
   | "work-order-batch-qc"
+  | "council-moderation"
   | "control-only-turn";
 export type RuntimeCommandId = string & {
   readonly __runtimeCommandId: unique symbol;
@@ -174,6 +177,33 @@ export interface WorkOrderBatchQcRuntimeCommand extends RuntimeCommandBase {
 }
 
 /**
+ * 圆桌会主席合成轮命令（真会议 2026-10-03）：会议收口后在发起方会话自动开的
+ * 一次合成轮——主席模型只组织决议卡（共识/分歧/盲区/建议下一步），不代笔票数。
+ * 与 work-order-batch-qc 同家族但独立成轮：轮身份（councilId/originMeta）必须
+ * 逐场携带。落 presentation/source 用 batch-qc 家族标签（闭集不动，UI 靠
+ * originMeta.council* 分流圆桌卡）；主席轮禁派单（toolDisallowlist，机制层掐死
+ * 「主席替会议派工单」）。
+ */
+export interface CouncilModerationRuntimeCommand extends RuntimeCommandBase {
+  readonly branchGeneration: number;
+  readonly mode: "council-moderation";
+  readonly source: "agent_work_order_batch_qc";
+  /** 会议身份（≡ originMeta.workId；单场会议只开一次主席轮）。 */
+  readonly councilId: string;
+  readonly kind: CouncilMeetingKind;
+  /** 收票轮次（主席轮整理的就是这一轮的票）。 */
+  readonly round: CouncilMeetingRound;
+  /** 议题原话（信封里已带，这里供日志/对账）。 */
+  readonly motion: string;
+  /** 会议短标题（缺席 = 按类型默认标题）。 */
+  readonly title?: string;
+  /** 后台结果轮头卡元信息（councilPhase="moderation"）。 */
+  readonly originMeta: BackgroundResultOriginMeta;
+  /** 信封拼装后的主席正文（票数明细 + 匿名发言 + 整理要求）。 */
+  readonly text: string;
+}
+
+/**
  * 一条排队的 controlOnly 用户轮：GUI「配置」
  * 已经把 run 修订掉了，这条命令只负责把这件事记进会话。它不进模型轮，却要落一条 user 消息，而
  * user 消息插不进一个正在跑的 turn（provider 语法：assistant 的 tool_use 与 tool_result 之间
@@ -181,7 +211,7 @@ export interface WorkOrderBatchQcRuntimeCommand extends RuntimeCommandBase {
  * 通知之前；带 branchGeneration，rewind 后丢弃。
  */
 export interface ControlOnlyTurnRuntimeCommand extends RuntimeCommandBase {
-  readonly branchGeneration: number;
+  branchGeneration: number;
   readonly mode: "control-only-turn";
   /** 进 runtime history 与持久消息的规范句（模型下一回合读它）。 */
   readonly text: string;
@@ -201,6 +231,7 @@ export type RuntimeCommand =
   | WorkOrderRuntimeCommand
   | WorkOrderReceiptRuntimeCommand
   | WorkOrderBatchQcRuntimeCommand
+  | CouncilModerationRuntimeCommand
   | ControlOnlyTurnRuntimeCommand;
 
 export interface RuntimeCommandQueue {

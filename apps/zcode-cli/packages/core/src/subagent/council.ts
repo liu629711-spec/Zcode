@@ -104,6 +104,13 @@ export const COUNCIL_VERDICT_INSTRUCTION = [
 ].join("\n");
 
 /**
+ * 席位工单的首行（开头钉死，与裁定行的压轴钉死同一经验）：弱模型对首行权重最高，
+ * 先一句话钉死「这是圆桌会发言、直接进议题」，压过工单家族的寒暄/角色扮演惯性。
+ * 载体（buildWorkOrderEnvelopeText 的 councilId 分支）把它排在 <work-order> 之前。
+ */
+export const COUNCIL_SEAT_FIRST_LINE = "圆桌会发言：直接进入议题，不许寒暄不确认。";
+
+/**
  * 从一段发言里解析裁定行：全文取**最后一个**匹配（信封钉死裁定行在结尾，
  * 中途改主意以后说的为准）。缺行或槽位越界 → undefined，由调用方退回重询。
  * 容忍全角/半角冒号与分隔符、多余空格；立场词之外的变体（"同意"等）一律不认

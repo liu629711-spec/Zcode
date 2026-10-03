@@ -45,6 +45,11 @@ import type {
   EnqueueAgentWorkOrderBatchQcInput,
   MaybeEnqueueAgentWorkOrderBatchQcInput,
 } from "./methods/work-order-batch-qc.js";
+import type {
+  AddCouncilInterjectionInput,
+  MaybeAdvanceCouncilRoundInput,
+  SetCouncilMeetingPausedInput,
+} from "./methods/council-meeting.js";
 import type { RuntimeCommand, RuntimeCommandId } from "./command-queue.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
@@ -195,6 +200,9 @@ export interface AgentRuntimeCoreMethods {
   maybeEnqueueAgentWorkOrderBatchQc(
     input: MaybeEnqueueAgentWorkOrderBatchQcInput,
   ): Promise<void>;
+  maybeAdvanceCouncilRound(input: MaybeAdvanceCouncilRoundInput): Promise<void>;
+  setCouncilMeetingPaused(input: SetCouncilMeetingPausedInput): Promise<void>;
+  addCouncilInterjection(input: AddCouncilInterjectionInput): Promise<void>;
   enqueueSubagentMessage(input: EnqueueSubagentMessageInput): undefined;
   drainPendingRuntimeCommandsForActiveLoop(): Promise<{
     backgroundSubagentResultConsumed: boolean;

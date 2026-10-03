@@ -5,6 +5,7 @@
 import type { AgentProfile } from "./profile.js";
 import type { ModelSelection } from "@zcode/shared";
 import { WORK_ORDER_INPUT_ID_PREFIX, type AgentWorkOrderEnvelope } from "@zcode/contracts";
+import { COUNCIL_SEAT_FIRST_LINE, COUNCIL_VERDICT_INSTRUCTION } from "./council.js";
 
 // 前缀单一来源在 contracts（turn-loop state 与 bootstrap 端口自检共用同一词表）。
 export { WORK_ORDER_INPUT_ID_PREFIX };
@@ -136,7 +137,11 @@ const ENVELOPE_TAG_NEUTRALIZATION = /<\/?work-order(?:-receipt)?\b/gi;
  */
 const BATCH_QC_TAG_NEUTRALIZATION = /<\/?batch-qc\b/gi;
 
-function neutralizeEnvelopeTags(text: string): string {
+/**
+ * 工单家族标签中和（导出给圆桌会编排侧）：席位发言/回执答案里夹带的同形标签在
+ * 嵌进下一轮信封材料前也要中和——两个方向用同一条规则，口径不分家。
+ */
+export function neutralizeEnvelopeTags(text: string): string {
   return text.replace(ENVELOPE_TAG_NEUTRALIZATION, (tag) => tag.replace("<", "&lt;"));
 }
 
@@ -154,12 +159,38 @@ function escapeEnvelopeAttribute(value: string): string {
 }
 
 /**
+ * 圆桌会席位单（真会议）的工单正文（目标会话的模型输入 carrier）。与施工/评审单
+ * 同一 <work-order> 家族但口味三分支：首行钉死「直接进议题」（COUNCIL_SEAT_FIRST_LINE，
+ * 内核协议常量）；不打执行/产出要求（发言工单不是施工单，别把评审人支去写文件）；
+ * 压轴钉死裁定行（COUNCIL_VERDICT_INSTRUCTION）——弱模型对结尾权重最高，裁定行
+ * 必须是整份输入的最后一行。任务正文（议题/材料/攻角 brief/匿名质询材料）由
+ * 编排侧（subagent/council-meeting.ts）构造，从这里过一遍同族标签中和。
+ */
+function buildCouncilSeatEnvelopeText(envelope: AgentWorkOrderEnvelope, task: string): string {
+  const fromLabel = escapeEnvelopeAttribute(envelope.fromAgentName.trim() || "user");
+  return [
+    COUNCIL_SEAT_FIRST_LINE,
+    `<work-order id="${envelope.workOrderId}" from-agent="${fromLabel}" from-session="${envelope.fromSessionId}">`,
+    task,
+    "</work-order>",
+    // 语言跟随工单正文（攻角 brief 是中文）：先钉语言，再钉裁定行（裁定行词表是中文）。
+    "回复要求：使用与上面工单正文相同的语言；工单未交代的事项不要自行发挥。",
+    COUNCIL_VERDICT_INSTRUCTION,
+  ].join("\n");
+}
+
+/**
  * 工单正文（目标会话的模型输入 carrier）。自带结构化信封标签（谁派的单），
  * 与 task-notification 同一家族：不走 <system-reminder> 包装，正文自证来源。
  * 任务正文里出现的同形关闭标签一律中和，防伪造信封边界。
  */
 export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): string {
   const task = neutralizeEnvelopeTags(envelope.task);
+  // 圆桌会席位单（真会议）：信封带 councilId 即按发言口味组装（与 review 互斥——
+  // 席位单不设 batchId/batchTitle 也不设 review，编排侧保证）。
+  if (envelope.councilId) {
+    return buildCouncilSeatEnvelopeText(envelope, task);
+  }
   const fromLabel = escapeEnvelopeAttribute(envelope.fromAgentName.trim() || "user");
   const lines = [
     // 首行定调（2026-10-02 真机：两个本地弱模型的首轮都回成寒暄/角色扮演）——

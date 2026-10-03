@@ -326,6 +326,29 @@ async function deliverWorkOrderReceipt(
       });
     }
   }
+  // 圆桌会（真会议）：席位单销账后按 councilId:round 触发收票推进——本轮全部
+  // 席位回执到齐才真的推进（判定/重询/算票/主席轮都在 core runtime 上，闸门行
+  // + 同会串行）。触发时把刚投递的终态带上（回执行落账是 fire-and-forget，
+  // 推进侧需要即时回退）；判定不满足就是空转一次查询。推进失败不影响回执。
+  if (input.envelope.councilId) {
+    try {
+      await initiatorRecord.app.runtime.maybeAdvanceCouncilRound({
+        councilId: input.envelope.councilId,
+        ...(input.envelope.councilRound ? { round: input.envelope.councilRound } : {}),
+        workOrderId: input.envelope.workOrderId,
+        outcome: input.outcome,
+        traceContext: initiatorRecord.traceContext,
+      });
+    } catch (error) {
+      context.logger?.warn("Failed to advance council round after receipt delivery", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "council_meeting.advance_trigger_failed",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        workOrderId: input.envelope.workOrderId,
+      });
+    }
+  }
 }
 
 async function deliverWorkOrderReceiptInner(
