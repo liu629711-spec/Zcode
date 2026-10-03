@@ -65,7 +65,9 @@ import { ConversationFileSummaryPanel } from "@/v4/ConversationFileSummaryPanel.
 import { WorkflowNotificationToolRow } from "@/v4/WorkflowNotificationToolRow.js";
 import { AgentWorkOrderTurnCard } from "@/v4/AgentWorkOrderTurnCard.js";
 import { AgentWorkOrderBatchCard } from "@/v4/AgentWorkOrderBatchCard.js";
+import { CouncilMeetingCard } from "@/v4/CouncilMeetingCard.js";
 import type { WorkOrderBatchRenderInfo } from "@/v4/agentWorkOrderBatch.js";
+import type { CouncilMeetingModel } from "@/v4/councilMeeting.js";
 import {
   AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE,
   resolveAgentWorkOrderMeta,
@@ -106,6 +108,11 @@ interface ConversationTurnGroupProps {
    * 自己的散卡（工单卡/回执卡）。缺席 = 散单或单张批次，一切照旧。
    */
   workOrderBatch?: WorkOrderBatchRenderInfo[];
+  /**
+   * 本轮挂载的圆桌会（真会议）摘要卡，由 Timeline 用 selectCouncilMeetingRenderInfo
+   * 对全轮列表算出（host = 与会议相关的最新证据轮）：缺席 = 本轮没有会议证据。
+   */
+  councilMeeting?: CouncilMeetingModel;
   /** 仅由 Timeline 注入给当前 live turn；历史 turn 永远不携带运行时 retry。 */
   apiRetry?: ApiRetryState | null;
   context: ConversationRowRenderContext;
@@ -1187,6 +1194,7 @@ function ConversationBackgroundResultWork({
 function ConversationTurnGroupImpl({
   unit,
   workOrderBatch,
+  councilMeeting,
   apiRetry = null,
   context,
   onFork,
@@ -1568,6 +1576,11 @@ function ConversationTurnGroupImpl({
             <AgentWorkOrderBatchCard key={batch.batchId} batch={batch} context={context} />
           ))
         : null}
+      {councilMeeting ? (
+        // 圆桌会（真会议）摘要卡：同工地卡一样挂在本轮内容**收尾**、贴着与会议
+        // 相关的最新证据轮（活边）；一行收敛，点开进评审专区。
+        <CouncilMeetingCard meeting={councilMeeting} />
+      ) : null}
     </section>
   );
 }

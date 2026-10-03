@@ -33,6 +33,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { ConversationTurnGroup } from "@/v4/ConversationTurnGroup.js";
 import { selectWorkOrderBatchRenderInfo } from "@/v4/agentWorkOrderBatch.js";
+import { selectCouncilMeetingRenderInfo } from "@/v4/councilMeeting.js";
 import { ConversationPendingGuideList } from "@/v4/ConversationPendingGuideList.js";
 import type { AssistantFeedbackHandler } from "@/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
@@ -431,6 +432,12 @@ function ConversationTimelineImpl({
   // 列表——算好每轮的挂载/抑制信息传给 ConversationTurnGroup，散单/单张批次为空表。
   const workOrderBatchInfoByUnitKey = useMemo(
     () => selectWorkOrderBatchRenderInfo(renderUnits),
+    [renderUnits],
+  );
+  // 圆桌会（真会议）摘要卡：按 councilId 跨轮聚拢席位回执（同工地卡，只有这里
+  // 看得见全轮列表），挂在与会议相关的最新证据轮上。
+  const councilMeetingByUnitKey = useMemo(
+    () => selectCouncilMeetingRenderInfo(renderUnits),
     [renderUnits],
   );
   const hasRunningUnit = useMemo(() => renderUnits.some((unit) => unit.isRunning), [renderUnits]);
@@ -1848,6 +1855,7 @@ function ConversationTimelineImpl({
                       <ConversationTurnGroup
                         unit={unit}
                         workOrderBatch={workOrderBatchInfoByUnitKey.get(unit.key)}
+                        councilMeeting={councilMeetingByUnitKey.get(unit.key)}
                         apiRetry={null}
                         context={rowContext}
                         onFork={onFork}
@@ -1879,6 +1887,7 @@ function ConversationTimelineImpl({
                   <ConversationTurnGroup
                     unit={liveUnit}
                     workOrderBatch={workOrderBatchInfoByUnitKey.get(liveUnit.key)}
+                    councilMeeting={councilMeetingByUnitKey.get(liveUnit.key)}
                     apiRetry={apiRetry}
                     context={rowContext}
                     onFork={onFork}
