@@ -143,6 +143,7 @@ import { WorkspaceHookPendingBanner } from "@/v4/WorkspaceHookPendingBanner.js";
 import { ConversationStatusPanel } from "@/v4/ConversationStatusPanel.js";
 import { SessionSubscriptionErrorPanel } from "@/v4/SessionSubscriptionErrorPanel.js";
 import { ConversationTimeline } from "@/v4/ConversationTimeline.js";
+import { CouncilStageLayer } from "@/v4/CouncilTableStage.js";
 import { ConversationShareImportNotice } from "@/v4/ConversationShareImportNotice.js";
 import { ConversationShareConfirmationDock } from "@/v4/ConversationShareConfirmationDock.js";
 import { ConversationShareSuccessDock } from "@/v4/ConversationShareSuccessDock.js";
@@ -4998,6 +4999,13 @@ export function SessionPane({
           </SessionPluginReferenceIconBoundary>
         )}
       </div>
+      {/* 圆桌画布两态挂载（刀2）：本会话证据里有被打开的会议时叠不透明圆桌层，
+          盖住会话视图（含 pane 头）；没有就什么都不画，会话态原样。 */}
+      <CouncilStageLayer
+        sessionId={sessionId}
+        workspacePath={workspacePath}
+        {...(workspaceIdentity ? { workspaceIdentity } : {})}
+      />
     </div>
   );
 }

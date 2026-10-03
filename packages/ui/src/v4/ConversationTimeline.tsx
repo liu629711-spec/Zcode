@@ -37,6 +37,7 @@ import {
   selectCouncilMeetingRenderInfo,
   selectCouncilSuppressedUnitKeys,
 } from "@/v4/councilMeeting.js";
+import { useCouncilStageStore } from "@/store/councilStageStore.js";
 import { ConversationPendingGuideList } from "@/v4/ConversationPendingGuideList.js";
 import type { AssistantFeedbackHandler } from "@/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
@@ -449,6 +450,23 @@ function ConversationTimelineImpl({
     () => selectCouncilMeetingRenderInfo(renderUnits),
     [renderUnits],
   );
+  // 圆桌画布数据桥（刀2）：全量会议模型同步给 councilStageStore（画布层开/
+  // 关都不停更——timeline 在层下继续活着）。挂载轮 Map 的 value 集即全量：
+  // 每场会议的 hostUnitKey 各不相同。
+  const councilStageMeetings = useMemo(
+    () => [...councilMeetingByUnitKey.values()],
+    [councilMeetingByUnitKey],
+  );
+  const syncCouncilMeetings = useCouncilStageStore(
+    (state) => state.syncCouncilMeetings,
+  );
+  const clearCouncilMeetings = useCouncilStageStore(
+    (state) => state.clearCouncilMeetings,
+  );
+  useEffect(() => {
+    syncCouncilMeetings(sessionKey, councilStageMeetings);
+    return () => clearCouncilMeetings(sessionKey);
+  }, [clearCouncilMeetings, councilStageMeetings, sessionKey, syncCouncilMeetings]);
   const hasRunningUnit = useMemo(() => renderUnits.some((unit) => unit.isRunning), [renderUnits]);
   const turnNavigatorQueryRowIds = useMemo(
     () =>
