@@ -341,6 +341,7 @@ test("首轮全票通过：早退终局 + 主席轮一次 + 闸门幂等", async
   assert.equal(command.mode, "council-moderation");
   assert.equal(command.originMeta.councilId, COUNCIL);
   assert.equal(command.originMeta.councilPhase, "moderation");
+  assert.equal(command.originMeta.councilOutcome, "approved");
   assert.equal(command.originMeta.title, "圆桌会 · 登录页方案");
   // 决议落库：轮闸门行带票数明细；全票通过没有第 2 轮派单。
   const gate = runtime.store.rows.find(
@@ -483,6 +484,72 @@ test("缺裁定行：重询一次（补交行在册不再重询）；仍缺按�
     ],
   );
   // 1 通过 + 1 弃权：首轮非全票 → 进第 2 轮（弃权拖垮早退）。
+  assert.equal((meetingCouncil(runtime) as { status: string }).status, "running");
+});
+
+test("补交闸行落账失败不重发：补交派单行在账即照常收票，原始单不被冒充", async () => {
+  const { port, calls } = makePort();
+  const runtime = makeRuntime(
+    [
+      meetingRow(),
+      dispatchRow("wo-a", 0, 1, "discarded"),
+      dispatchRow("wo-b", 1, 1, "discarded"),
+      receiptRow("wo-a", 0, 1, { status: "completed", response: VERDICT_APPROVE }),
+      receiptRow("wo-b", 1, 1, { status: "completed", response: "我觉得不行，但忘了写裁定行" }),
+    ],
+    port,
+  );
+  // 账本抖动：councilSeatRequery 闸行永远写不进（补交已派出但闸缺席）。
+  const realSave = runtime.store.saveSessionInput.bind(runtime.store);
+  runtime.store.saveSessionInput = async (input: Parameters<typeof realSave>[0]) => {
+    if (input.kind === "councilSeatRequery") throw new Error("ledger down");
+    return realSave(input);
+  };
+  // 第一次推进：补交派出（wo-minted-1），闸行落账失败只放弃本轮推进。
+  await advance(runtime as never, {
+    round: 1,
+    workOrderId: "wo-b",
+    outcome: { status: "completed", response: "我觉得不行，但忘了写裁定行" },
+  });
+  assert.equal(
+    calls.filter((call) => call.task.includes("裁定行补交")).length,
+    1,
+  );
+  // 补交派单行+回执入账（闸行缺席）：不重发补交，按补交回执收票（仍缺行 → 弃权）；
+  // 原始单按入账序仍是 wo-b——主席材料不会混进裸裁定行。
+  runtime.store.rows.push(
+    dispatchRow("wo-minted-1", 1, 1, "discarded"),
+    receiptRow("wo-minted-1", 1, 1, { status: "completed", response: "还是没写" }, 2),
+  );
+  await advance(runtime as never, {
+    round: 1,
+    workOrderId: "wo-minted-1",
+    outcome: { status: "completed", response: "还是没写" },
+  });
+  assert.equal(
+    calls.filter((call) => call.task.includes("裁定行补交")).length,
+    1,
+    "补交不重发",
+  );
+  const gate = runtime.store.rows.find(
+    (row: LedgerRow) => row.id === councilRoundLedgerId(SESSION, COUNCIL, 1),
+  ) as LedgerRow | undefined;
+  assert.ok(gate);
+  const votes = gate!.payload.votes as {
+    index: number;
+    stance: string;
+    source: string;
+    workOrderId?: string;
+  }[];
+  assert.deepEqual(
+    votes.map((vote) => [vote.index, vote.stance, vote.source, vote.workOrderId]),
+    [
+      [0, "approve", "verdict_line", "wo-a"],
+      [1, "abstain", "missing_verdict", "wo-b"],
+    ],
+  );
+  // 1 通过 + 1 弃权 → 进第 2 轮（还没有主席轮）。
+  assert.equal(runtime.moderationCommands.length, 0);
   assert.equal((meetingCouncil(runtime) as { status: string }).status, "running");
 });
 

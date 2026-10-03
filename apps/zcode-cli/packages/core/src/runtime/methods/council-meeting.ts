@@ -409,10 +409,13 @@ async function advanceCouncilRoundLocked(
   const seats = [...meeting.seats].sort((a, b) => a.index - b.index);
   if (seats.length === 0) return;
 
-  const dispatchRows = rows.filter((row) => {
-    if (row.kind !== "agentWorkOrderDispatch") return false;
-    return envelopeSeatsRound(readEnvelope(row), input.councilId, round) !== undefined;
-  });
+  const dispatchRows = rows
+    .filter((row) => {
+      if (row.kind !== "agentWorkOrderDispatch") return false;
+      return envelopeSeatsRound(readEnvelope(row), input.councilId, round) !== undefined;
+    })
+    // 原始单/补交单按入账序区分：补交永远晚于原始单派出。
+    .sort((a, b) => a.admittedSequence - b.admittedSequence);
   // 席位单还有未交活的（派单行仍 admitted）→ 本轮没收齐，等下一张回执再推进。
   if (dispatchRows.some((row) => row.status === "admitted")) return;
 
@@ -456,15 +459,21 @@ async function advanceCouncilRoundLocked(
     const requeryPayload = requeryRow
       ? (requeryRow.payload as Record<string, unknown>)
       : undefined;
+    // 补交已派出（在飞/已完成）的证据 = 闸行 **或** 本席多出来的派单行：派单行
+    // 由端口在派单返回前落账（bootstrap agent-dispatch-port），闸行 best-effort
+    // 写失败时派单行仍是「补交已派出」的在账凭据——据它不再重发，杜绝「无闸门
+    // 的补交无限重发模型调用」。
+    const requeryDispatchRow = seatRows.length > 1 ? seatRows[seatRows.length - 1] : undefined;
     const requeryWorkOrderId =
       typeof requeryPayload?.requeryWorkOrderId === "string"
         ? requeryPayload.requeryWorkOrderId
-        : undefined;
-    // 原始席位单 = 本席派单行里排除补交单（补交也落派单台账行，同轮同座次）。
-    const originalRow =
-      requeryWorkOrderId === undefined
-        ? seatRows[0]
-        : seatRows.find((row) => readEnvelope(row)?.workOrderId !== requeryWorkOrderId);
+        : requeryDispatchRow &&
+            typeof readEnvelope(requeryDispatchRow)?.workOrderId === "string"
+          ? (readEnvelope(requeryDispatchRow)!.workOrderId as string)
+          : undefined;
+    // 原始席位单 = 本席本轮最早的派单行（补交单永远晚于原始单入账——先派单后
+    // 落闸的时序再也冒充不了原始单，主席材料不会混进裸裁定行）。
+    const originalRow = seatRows[0];
     const originalWorkOrderId =
       originalRow && typeof readEnvelope(originalRow)?.workOrderId === "string"
         ? (readEnvelope(originalRow)!.workOrderId as string)
@@ -528,8 +537,9 @@ async function advanceCouncilRoundLocked(
       });
       continue;
     }
-    // 缺行/畸形 → 对该席重询一次（信封指名只补裁定行）；重询行在册即不再重询。
-    if (!requeryRow) {
+    // 缺行/畸形 → 对该席重询一次（信封指名只补裁定行）；补交已派出（闸行或
+    // 补交派单行在账）即不再重询。
+    if (!requeryRow && requeryDispatchRow === undefined) {
       const requeryId = councilSeatRequeryLedgerId(this.sessionId, input.councilId, round, seat.index);
       let requeryPayload: Record<string, unknown>;
       if (!this.agentDispatchPort) {
@@ -571,7 +581,8 @@ async function advanceCouncilRoundLocked(
           };
         }
       }
-      // 补交行先落闸再等回执：写不进就放弃本轮推进（无闸门的补交会无限重发）。
+      // 补交闸行 best-effort 落账：写不进就放弃本轮推进——补交派单行已在账，
+      // 回执一到照常收票；两处都写不进才会重发（代价是一次快速失败的派单重试）。
       try {
         await store.saveSessionInput({
           id: requeryId,
@@ -594,7 +605,7 @@ async function advanceCouncilRoundLocked(
       pendingRequery = true;
       continue;
     }
-    if (requeryRow.payload.dispatchFailed === true || !requeryWorkOrderId) {
+    if (requeryPayload?.dispatchFailed === true || !requeryWorkOrderId) {
       seatVerdicts.push({
         vote: {
           index: seat.index,
@@ -961,6 +972,11 @@ async function enqueueCouncilModerationTurn(
     councilKind: input.kind,
     councilRound: input.round,
     councilPhase: "moderation",
+    // 内核绑定决议随轮头权威下发（contracts CouncilMeetingOutcome）：缺席弃权
+    // 收口的会议 UI 复算永远等不齐票，卡片终态以此为准，复算只补中间过程票面。
+    ...(input.outcome === "approved" || input.outcome === "rejected" || input.outcome === "deadlocked"
+      ? { councilOutcome: input.outcome }
+      : {}),
   };
   const command: CouncilModerationRuntimeCommand = {
     branchGeneration: this.branchGeneration,
