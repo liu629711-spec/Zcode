@@ -2,7 +2,7 @@
 // 语义：admitted（已接受）→ promoted（与 user message/parts 同事务落 transcript）
 // / cancelled / discarded / failed。promotion 的原子性是硬要求：杜绝
 // 「queue 已消费但 transcript 无 user message」的孤儿窗口（旧 drain 跨 store 无事务）。
-import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import type {
   MessageInfo,
   MessagePart,
@@ -332,27 +332,27 @@ export async function settleSessionInput(
 
 export async function listSessionInputs(
   db: DatabaseSync,
-  input: { sessionID: SessionId; status?: SessionInputStatus; kind?: string },
+  input: { sessionID: SessionId; status?: SessionInputStatus },
 ): Promise<SessionInputRecord[]> {
-  const clauses = ["session_id = ?"];
-  const values: SQLInputValue[] = [input.sessionID];
-  if (input.status) {
-    clauses.push("status = ?");
-    values.push(input.status);
-  }
-  if (input.kind) {
-    clauses.push("kind = ?");
-    values.push(input.kind);
-  }
-  const rows = db
-    .prepare(
-      `
-        select * from session_input
-        where ${clauses.join(" and ")}
-        order by admitted_sequence
-        `,
-    )
-    .all(...values) as unknown as SessionInputRow[];
+  const rows = (input.status
+    ? db
+        .prepare(
+          `
+            select * from session_input
+            where session_id = ? and status = ?
+            order by admitted_sequence
+            `,
+        )
+        .all(input.sessionID, input.status)
+    : db
+        .prepare(
+          `
+            select * from session_input
+            where session_id = ?
+            order by admitted_sequence
+            `,
+        )
+        .all(input.sessionID)) as unknown as SessionInputRow[];
   return rows.map(decodeSessionInputRow);
 }
 

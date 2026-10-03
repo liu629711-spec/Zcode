@@ -29,7 +29,6 @@ import {
   extractCouncilVerdict,
   selectCouncilMeetingRenderInfo,
   selectCouncilMeetings,
-  selectCouncilSuppressedUnitKeys,
   type CouncilEvidenceUnit,
 } from "../src/v4/councilMeeting.js";
 
@@ -558,101 +557,4 @@ test("非圆桌轮与无席位回执只注册会议存在，不进席位；host 
   const renderInfo = selectCouncilMeetingRenderInfo(units);
   assert.equal(renderInfo.size, 1);
   assert.equal(renderInfo.get("moderation")?.councilId, "c9");
-});
-
-test("主会话白名单（刀1）：主席轮正文入模（moderatorSummary），证据轮收敛=抑制集+挂载轮", () => {
-  const first = seatReceiptUnit({
-    councilId: "c10",
-    seatIndex: 0,
-    lens: "impact",
-    title: "A 交活",
-    text: `结论一致。
-${VERDICT_APPROVE}`,
-  });
-  const second = seatReceiptUnit({
-    councilId: "c10",
-    seatIndex: 1,
-    lens: "edge",
-    title: "B 交活",
-    text: `有异议。
-${VERDICT_REJECT}`,
-  });
-  const moderation = moderationUnit("c10", 2, "rejected");
-  const moderationWithText: CouncilEvidenceUnit = {
-    ...moderation,
-    key: "moderation-c10",
-    latestAssistantTextRow: { text: "打回：分歧未解决，先补边界用例。" },
-  };
-  const units: CouncilEvidenceUnit[] = [first, second, moderationWithText];
-
-  // 主席轮决议正文随轮头证据入模：白名单收敛后这是它唯一的呈现位。
-  const meeting = selectCouncilMeetings(units)[0];
-  assert.equal(meeting?.moderatorSummary?.text, "打回：分歧未解决，先补边界用例。");
-  assert.equal(meeting?.hostUnitKey, "moderation-c10");
-
-  // 白名单：证据轮全部不内联渲染，只有挂载轮（主席轮）保留画入口卡。
-  const suppressed = selectCouncilSuppressedUnitKeys(units);
-  assert.equal(suppressed.size, 2);
-  assert.ok(suppressed.has(first.key));
-  assert.ok(suppressed.has(second.key));
-  assert.ok(!suppressed.has("moderation-c10"));
-});
-
-test("主会话白名单：会议进行中挂载轮=最新回执轮，其余回执轮抑制；非圆桌轮永不抑制", () => {
-  const first = seatReceiptUnit({
-    councilId: "c11",
-    seatIndex: 0,
-    lens: "cost",
-    title: "A 交活",
-    text: `预算可控。
-${VERDICT_APPROVE}`,
-  });
-  const second = seatReceiptUnit({
-    councilId: "c11",
-    seatIndex: 1,
-    lens: "minimal",
-    title: "B 交活",
-    text: `改动最小。
-${VERDICT_APPROVE}`,
-  });
-  // 非圆桌回执轮（无 councilId）。
-  const nonCouncil: CouncilEvidenceUnit = {
-    key: "plain-receipt",
-    header: {
-      origin: "backgroundResult",
-      state: "completedSuccess",
-      originMeta: {
-        backgroundSource: "agent_work_order_receipt",
-        workId: "wo-plain",
-        title: "D 交活",
-      },
-    },
-  };
-  const units: CouncilEvidenceUnit[] = [first, second, nonCouncil];
-
-  const meeting = selectCouncilMeetings([first, second])[0];
-  assert.equal(meeting?.hostUnitKey, second.key);
-  assert.equal(meeting?.moderatorSummary, undefined);
-
-  const suppressed = selectCouncilSuppressedUnitKeys(units);
-  assert.equal(suppressed.size, 1);
-  assert.ok(suppressed.has(first.key));
-  assert.ok(!suppressed.has(second.key)); // 挂载轮：入口卡在这里
-  assert.ok(!suppressed.has(nonCouncil.key)); // 非圆桌轮照常渲染
-});
-
-test("主会话白名单：主席轮正文缺席（旧轮头/流式空窗）不铸 moderatorSummary", () => {
-  const units: CouncilEvidenceUnit[] = [
-    seatReceiptUnit({
-      councilId: "c12",
-      seatIndex: 0,
-      lens: "impact",
-      title: "A 交活",
-      text: `行。
-${VERDICT_APPROVE}`,
-    }),
-    moderationUnit("c12", 1, "approved"),
-  ];
-  const meeting = selectCouncilMeetings(units)[0];
-  assert.equal(meeting?.moderatorSummary, undefined);
 });

@@ -56,10 +56,6 @@ import type {
   ZCodeSessionRuntimePreferencesResult,
   ZCodeSessionStateSnapshot,
   ZCodeSessionSubagentsResult,
-  ZCodeCouncilListResult,
-  ZCodeCouncilInterjectResult,
-  ZCodeCouncilPauseResult,
-  ZCodeCouncilEvidenceResult,
   ZCodeStateUpdatedNotification,
   ZCodeTaskClientMode,
   ZCodeBrowserAmbientContext,
@@ -214,29 +210,6 @@ export interface ZCodeAgentListSessionsParams extends ZCodeAgentWorkspaceTarget 
   runtimePolicy?: ZCodeAgentRuntimePolicy;
   includeArchived?: boolean;
   limit?: number;
-}
-
-export interface ZCodeAgentCouncilListParams extends ZCodeAgentWorkspaceTarget {}
-
-export interface ZCodeAgentCouncilEvidenceParams extends ZCodeAgentWorkspaceTarget {
-  /** 召集方会话（台账行带）：证据轮只存在于它的消息里。 */
-  sessionId: string;
-  councilId: string;
-}
-
-export interface ZCodeAgentCouncilPauseParams extends ZCodeAgentWorkspaceTarget {
-  /** 召集方会话：控场方法挂在它的 runtime 上。 */
-  sessionId: string;
-  councilId: string;
-  paused: boolean;
-}
-
-export interface ZCodeAgentCouncilInterjectParams extends ZCodeAgentWorkspaceTarget {
-  sessionId: string;
-  councilId: string;
-  text: string;
-  /** 点名座位（0 起）；缺席 = 全体席位可见。 */
-  targetSeatIndexes?: number[];
 }
 
 export interface ZCodeAgentListSessionSubagentsParams extends ZCodeAgentSessionTarget {
@@ -616,16 +589,6 @@ export interface IZCodeAgentService {
   listSessionSubagents(
     params: ZCodeAgentListSessionSubagentsParams,
   ): Promise<ZCodeSessionSubagentsResult>;
-  /** 会议室侧栏分组（council/list）：workspace 级只读，枚举圆桌会台账行。 */
-  listCouncilMeetings(params: ZCodeAgentCouncilListParams): Promise<ZCodeCouncilListResult>;
-  /** 圆桌会独立页（council/evidence）：按召集方会话+会议 id 只读轮证据。 */
-  getCouncilEvidence(
-    params: ZCodeAgentCouncilEvidenceParams,
-  ): Promise<ZCodeCouncilEvidenceResult>;
-  pauseCouncilMeeting(params: ZCodeAgentCouncilPauseParams): Promise<ZCodeCouncilPauseResult>;
-  interjectCouncilMeeting(
-    params: ZCodeAgentCouncilInterjectParams,
-  ): Promise<ZCodeCouncilInterjectResult>;
   getAppUsageStats(params: ZCodeAgentAppUsageParams): Promise<AppUsageSnapshot>;
   getTaskTokenUsage(params: ZCodeAgentTaskTokenUsageParams): Promise<ZCodeTaskTokenUsageResult>;
   readSession(params: ZCodeAgentReadSessionParams): Promise<ZCodeSessionStateSnapshot>;

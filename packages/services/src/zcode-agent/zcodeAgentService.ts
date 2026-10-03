@@ -82,10 +82,6 @@ import {
   zcodeSessionCompactResultSchema,
   zcodeSessionEventsResultSchema,
   zcodeSessionGoalResultSchema,
-  zcodeCouncilInterjectResultSchema,
-  zcodeCouncilEvidenceResultSchema,
-  zcodeCouncilListResultSchema,
-  zcodeCouncilPauseResultSchema,
   zcodeSessionListResultSchema,
   zcodeSessionSubagentsResultSchema,
   zcodeSessionMessagesResultSchema,
@@ -158,8 +154,6 @@ import type {
   ZCodeAgentTestModelConnectivityParams,
   ZCodeAgentGoalParams,
   ZCodeAgentGrantWorkspaceHookTrustParams,
-  ZCodeAgentCouncilListParams,
-  ZCodeAgentCouncilEvidenceParams,
   ZCodeAgentInitializeResult,
   ZCodeAgentListSessionsParams,
   ZCodeAgentListSessionSubagentsParams,
@@ -231,8 +225,7 @@ import type {
   ZCodeAgentConnectionFlowParams,
   ZCodeAgentSessionsIndexSubscribeParams,
   ZCodeAgentWorkspaceConfigSubscribeParams,
-  ZCodeAgentCouncilInterjectParams,
-  ZCodeAgentCouncilPauseParams,} from "./zcodeAgent.js";
+} from "./zcodeAgent.js";
 import {
   backgroundBashOutputResultSchema,
   v4BackgroundBashOutputParamsSchema,
@@ -3680,54 +3673,6 @@ export function createZCodeAgentService(
           endedLimit: params.endedLimit ?? 20,
         },
         zcodeSessionSubagentsResultSchema,
-      );
-    },
-
-    async listCouncilMeetings(params: ZCodeAgentCouncilListParams) {
-      const client = await getReadOnlyClient(params);
-      return client.request(
-        zcodeProtocolMethods.councilList,
-        { workspace: buildWorkspaceRef(params) },
-        zcodeCouncilListResultSchema,
-      );
-    },
-
-    async getCouncilEvidence(params: ZCodeAgentCouncilEvidenceParams) {
-      const client = await getReadOnlyClient(params);
-      return client.request(
-        zcodeProtocolMethods.councilEvidence,
-        {
-          sessionId: params.sessionId,
-          councilId: params.councilId,
-        },
-        zcodeCouncilEvidenceResultSchema,
-      );
-    },
-
-    async pauseCouncilMeeting(params: ZCodeAgentCouncilPauseParams) {
-      const client = await getReadOnlyClient(params);
-      return client.request(
-        zcodeProtocolMethods.councilPause,
-        {
-          sessionId: params.sessionId,
-          councilId: params.councilId,
-          paused: params.paused,
-        },
-        zcodeCouncilPauseResultSchema,
-      );
-    },
-
-    async interjectCouncilMeeting(params: ZCodeAgentCouncilInterjectParams) {
-      const client = await getReadOnlyClient(params);
-      return client.request(
-        zcodeProtocolMethods.councilInterject,
-        {
-          sessionId: params.sessionId,
-          councilId: params.councilId,
-          text: params.text,
-          ...(params.targetSeatIndexes ? { targetSeatIndexes: params.targetSeatIndexes } : {}),
-        },
-        zcodeCouncilInterjectResultSchema,
       );
     },
 

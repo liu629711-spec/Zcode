@@ -150,11 +150,6 @@ export interface CouncilMeetingModel {
   blindSpots: CouncilBlindSpot[];
   /** 过程流：全部席位回执按到达顺序（同人同轮短发言已合并）。 */
   flow: CouncilFlowEntry[];
-  /**
-   * 主席合议轮的决议正文（主会话白名单收敛后，这是它唯一的呈现位——
-   * 时间线不再内联渲染主席轮全文，点开专区才看得到）。
-   */
-  moderatorSummary?: { text: string };
   /** 卡片挂载轮 = 最后一个 contributing 证据轮（活边，同工地卡纪律）。 */
   hostUnitKey: string;
 }
@@ -282,8 +277,6 @@ interface MeetingDraft {
   hostUnitKey: string;
   /** 主席合议轮下发的权威决议（内核绑定终局；在册即收口）。 */
   closedOutcome?: "approved" | "rejected" | "deadlocked";
-  /** 主席合议轮的决议正文（后到覆盖先到；一场会议至多一个主席轮）。 */
-  moderatorText?: string;
 }
 
 /** 回执终态口径同工地卡：标题解出交活方=completed；被中断=cancelled；其余=failed。 */
@@ -331,11 +324,6 @@ export function selectCouncilMeetings(
     // 权威决议一经下发即在册（内核把缺裁定行/交活失败/派单失败都按弃权计入并
     // 收口——复算的票面永远等不齐这样的会议，终态以主席轮下发的决议为准）。
     if (originMeta.councilOutcome) draft.closedOutcome = originMeta.councilOutcome;
-    // 主席轮的决议正文：白名单收敛后时间线不画主席轮内联内容，正文进专区。
-    if (originMeta.councilPhase === "moderation") {
-      const text = receiptFullText(unit);
-      if (text) draft.moderatorText = text;
-    }
 
     if (
       originMeta.backgroundSource === "agent_work_order_receipt" &&
@@ -503,7 +491,6 @@ function buildCouncilMeetingModel(
     pending,
     blindSpots,
     flow: mergeCouncilFlowEntries(draft.flow),
-    ...(draft.moderatorText ? { moderatorSummary: { text: draft.moderatorText } } : {}),
     hostUnitKey: draft.hostUnitKey,
   };
 }
@@ -543,26 +530,4 @@ export function selectCouncilMeetingRenderInfo(
     byHostUnitKey.set(meeting.hostUnitKey, meeting);
   }
   return byHostUnitKey;
-}
-
-/**
- * 主会话白名单（2026-10-03 圆桌会独立界面刀1）：圆桌会证据轮一律不内联渲染——
- * 席位回执轮只剩轮头卡、主席轮只剩全文，都是 Zone 级内容，收敛出入口卡。
- * 返回「整轮不渲染」的 unit key 集合 = 圆桌证据轮 − 各会议的挂载轮（挂载轮
- * 由 ConversationTurnGroup 只画入口卡）；Timeline 传下去，TurnGroup 据此返回 null。
- */
-export function selectCouncilSuppressedUnitKeys(
-  units: readonly CouncilEvidenceUnit[],
-): Set<string> {
-  const hostUnitKeys = new Set(
-    selectCouncilMeetings(units).map((meeting) => meeting.hostUnitKey),
-  );
-  const suppressed = new Set<string>();
-  for (const unit of units) {
-    const originMeta =
-      unit.header?.origin === "backgroundResult" ? unit.header.originMeta : undefined;
-    if (!originMeta?.councilId || hostUnitKeys.has(unit.key)) continue;
-    suppressed.add(unit.key);
-  }
-  return suppressed;
 }

@@ -1,24 +1,43 @@
 /**
- * 圆桌会评审专区段组件（四段式拆出的两段，2026-10-03 圆桌会刀2 起共用）：
- * ① 局势条：状态灯 + 轮次 pill + 票数条（同意/打回/弃权比例，语义色）；
- *   专区弹层与圆桌画布顶部局势带共用这一段。
- * 主席结论段：收口结果卡口径的结论摘要正文。
- * （原专区弹层与控场条已由圆桌画布两态视图承接：刀2 把「打开会议」收敛为
- *   进入圆桌画布，抽屉复用本文件的段组件与裁决卡/过程流，弹层壳删除。）
+ * 圆桌会评审专区（四段式弹层）：一行摘要卡点开后的会议全貌。
+ * ① 局面条：状态灯 + 轮次 pill + 票数条（同意/打回/弃权比例，语义色）——本文件；
+ * ② 裁决卡：共识/分歧/盲区/建议下一步——见 CouncilMeetingVerdict.tsx；
+ * ③ 过程流（默认折叠）：席位发言时间线——见 CouncilMeetingFlow.tsx；
+ * ④ 控场条：暂停/恢复+插话（可@点名）——本文件。v4 命令面（shared
+ *    zcode-protocol-v4）还没有圆桌会控场命令——按钮按红线给明确禁用态+tooltip
+ *    说明，不做假按钮；命令接入后按宿主注入的能力收敛禁用态。
  * 数据只来自 CouncilMeetingModel（纯函数聚合 originMeta.council*），这里只管画。
  */
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
+import { Button } from "@/components/ui/button.js";
+import { Input } from "@/components/ui/input.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog.js";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip.js";
+import { CirclePause, CirclePlay, SendHorizontal } from "lucide-react";
 import { STATUS_DOT } from "@/components/workflow-graph/run-status-presentation.js";
 import type { CouncilMeetingModel } from "@/v4/councilMeeting.js";
 import {
   COUNCIL_STATUS_BADGE_CLASS,
   COUNCIL_STATUS_DOT_KEY,
 } from "@/v4/councilMeetingVisuals.js";
+import { CouncilVerdictCard } from "@/v4/CouncilMeetingVerdict.js";
+import { CouncilProcessFlow } from "@/v4/CouncilMeetingFlow.js";
 
-// ── ① 局势条 ────────────────────────────────────────────────────────
+// ── ① 局面条 ────────────────────────────────────────────────────────
 
-export function CouncilStatusStrip({ meeting }: { meeting: CouncilMeetingModel }) {
+function CouncilStatusStrip({ meeting }: { meeting: CouncilMeetingModel }) {
   const { intl } = useZCodeIntl();
   const votes = meeting.tally;
   const total = votes.approve + votes.reject + votes.abstain;
@@ -124,24 +143,121 @@ export function CouncilStatusStrip({ meeting }: { meeting: CouncilMeetingModel }
   );
 }
 
-// ── 主席结论（收口结果卡口径：结论摘要；白名单收敛后时间线不再内联渲染）──
+// ── ④ 控场条 ────────────────────────────────────────────────────────
 
-export function CouncilModeratorSummary({ meeting }: { meeting: CouncilMeetingModel }) {
+/**
+ * 控场能力（暂停/恢复/插话）在 v4 命令面（shared zcode-protocol-v4 command）里
+ * 还没有对应命令：全部控件明确禁用 + tooltip 说明，绝不渲染点了没反应的假按钮。
+ * 命令接入后：按钮 onClick 走宿主注入的命令回调，禁用态按能力缺席收敛。
+ */
+function CouncilControlBar() {
   const { intl } = useZCodeIntl();
-  const text = meeting.moderatorSummary?.text;
-  if (!text) return null;
+  const unavailable = intl.formatMessage({
+    id: "chat.council.controls.unavailable",
+  });
   return (
-    <section
-      aria-label={intl.formatMessage({ id: "chat.council.section.conclusion" })}
-      className="rounded-xl border border-card-border bg-card px-3.5 py-3"
-      data-testid="council-zone-conclusion"
-    >
-      <div className="text-ui-2xs font-medium text-foreground-subtlest">
-        {intl.formatMessage({ id: "chat.council.section.conclusion" })}
-      </div>
-      <p className="mt-1.5 min-w-0 whitespace-pre-wrap break-words text-ui-xs leading-4 text-foreground-subtle">
-        {text}
-      </p>
-    </section>
+    <TooltipProvider>
+      <section
+        aria-label={intl.formatMessage({ id: "chat.council.section.controls" })}
+        className="flex flex-wrap items-center gap-2 border-t border-card-border/60 px-3.5 py-3"
+        data-testid="council-zone-controls"
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button type="button" variant="outline" size="sm" disabled>
+                <CirclePause aria-hidden="true" className="size-3.5" />
+                {intl.formatMessage({ id: "chat.council.controls.pause" })}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{unavailable}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button type="button" variant="outline" size="sm" disabled>
+                <CirclePlay aria-hidden="true" className="size-3.5" />
+                {intl.formatMessage({ id: "chat.council.controls.resume" })}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{unavailable}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex min-w-0 flex-1 basis-48">
+              <Input
+                type="text"
+                disabled
+                aria-label={intl.formatMessage({
+                  id: "chat.council.controls.interjectAria",
+                })}
+                placeholder={intl.formatMessage({
+                  id: "chat.council.controls.interjectPlaceholder",
+                })}
+                className="min-w-0 flex-1"
+              />
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{unavailable}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button type="button" variant="secondary" size="sm" disabled>
+                <SendHorizontal aria-hidden="true" className="size-3.5" />
+                {intl.formatMessage({ id: "chat.council.controls.send" })}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{unavailable}</TooltipContent>
+        </Tooltip>
+      </section>
+    </TooltipProvider>
+  );
+}
+
+// ── 专区弹层 ─────────────────────────────────────────────────────────
+
+export function CouncilMeetingZone({
+  meeting,
+  open,
+  onOpenChange,
+}: {
+  meeting: CouncilMeetingModel;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { intl } = useZCodeIntl();
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="flex max-w-2xl flex-col gap-0 p-0"
+        data-testid="council-meeting-zone"
+      >
+        <DialogHeader className="gap-1.5 border-b border-card-border/60 px-4 py-3.5 pr-12 text-left">
+          <DialogTitle className="flex items-center gap-2">
+            {intl.formatMessage({ id: "chat.council.title" })}
+            {meeting.kind ? (
+              <span className="text-ui-sm font-normal text-foreground-subtlest">
+                {intl.formatMessage({
+                  id: `chat.council.kind.${meeting.kind}`,
+                })}
+              </span>
+            ) : null}
+          </DialogTitle>
+          <DialogDescription>
+            {intl.formatMessage({ id: "chat.council.zone.subtitle" })}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-4 py-3.5">
+          <CouncilStatusStrip meeting={meeting} />
+          <CouncilVerdictCard meeting={meeting} />
+          <CouncilProcessFlow meeting={meeting} />
+        </div>
+        <CouncilControlBar />
+      </DialogContent>
+    </Dialog>
   );
 }

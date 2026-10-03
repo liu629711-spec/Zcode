@@ -49,10 +49,6 @@ import {
   ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS,
   zcodeProtocolErrorCodes,
   zcodeProtocolMethods,
-  zcodeCouncilInterjectParamsSchema,
-  zcodeCouncilEvidenceParamsSchema,
-  zcodeCouncilListParamsSchema,
-  zcodeCouncilPauseParamsSchema,
   zcodeSessionCancelBackgroundTaskParamsSchema,
   zcodeSessionCompactParamsSchema,
   zcodeSessionCloseParamsSchema,
@@ -85,8 +81,6 @@ import {
   type ZCodeSessionRuntimePreferencesResult,
   type ZCodeModelContextBudgetStrategy,
   type ZCodeProtocolTrace,
-  type ZCodeCouncilMeetingSummary,
-  type ZCodeCouncilEvidenceUnit,
   type ZCodeSessionEvent,
   type ZCodeSessionHistoryTarget,
   type ZCodeSessionResumeParams,
@@ -103,11 +97,6 @@ import {
   shouldExposeSessionEventToProtocol,
 } from "./mapper.js";
 import { optionalModelSelectionFromString } from "./model-mapper.js";
-import {
-  extractCouncilEvidenceUnits,
-  type CouncilEvidenceSourceMessage,
-} from "./councilEvidence.js";
-import { backgroundResultOriginMetaSchema } from "@zcode/shared/zcode-protocol-v4";
 import {
   ProtocolRequestError,
   assertExpectedRevision,
@@ -1704,190 +1693,6 @@ export async function listSessions(context: ZCodeProtocolAgentServerContext, raw
     );
   }
   return { sessions };
-}
-
-/** council/list 的会话扫描上界：按 time_updated desc 取前 N 个会话再逐个翻台账
- * （圆桌会行极少，kind 过滤后每次查询只有几行）。极端远古会话里的会议会被截断——
- * ponytail: 真遇到再加台账级跨会话索引。 */
-const COUNCIL_LIST_SESSION_SCAN_LIMIT = 500;
-
-/**
- * 圆桌会（真会议）目录（council/list，2026-10-03 会议室侧栏刀1）：跨会话枚举当前
- * workspace 的会议台账行（session_input kind="councilMeeting"，载荷
- * =contracts CouncilMeetingState）。与 listSessions 同一条只读通道——台账在
- * session store sqlite，读取不需要激活任何 runtime。载荷按 unknown 防御性收窄
- * （畸形行不猜、直接跳过），输出按 timeUpdated 倒序。
- */
-export async function listCouncilMeetings(
-  context: ZCodeProtocolAgentServerContext,
-  rawParams: unknown,
-) {
-  const params = parseParams(zcodeCouncilListParamsSchema, rawParams ?? {});
-  const store = context.deps.sessionStore;
-  if (!store?.listSessions || !store?.listSessionInputs) return { meetings: [] };
-  const workspacePath = params.workspace.workspacePath;
-  // workspace 对号口径与 listSessions 相同：workspaceID 优先，缺席退 path/directory。
-  const scopeKey = params.workspace.workspaceIdentity?.trim() || workspacePath;
-  const sessions = (
-    await store.listSessions({
-      directory: workspacePath,
-      includeArchived: true,
-      limit: COUNCIL_LIST_SESSION_SCAN_LIMIT,
-    })
-  ).filter(
-    (session) =>
-      (session.workspaceID?.trim() || session.path || session.directory) === scopeKey,
-  );
-  const meetings: ZCodeCouncilMeetingSummary[] = [];
-  for (const session of sessions) {
-    const rows = await store.listSessionInputs({
-      sessionID: session.id,
-      kind: "councilMeeting",
-    });
-    for (const row of rows) {
-      const council = readCouncilMeetingPayload(row.payload);
-      if (!council) continue;
-      meetings.push({
-        councilId: council.councilId,
-        sessionId: String(session.id),
-        kind: council.kind,
-        status: council.status,
-        round: council.round,
-        ...(council.motion ? { motion: council.motion } : {}),
-        ...(council.title ? { title: council.title } : {}),
-        ...(council.paused ? { paused: true } : {}),
-        timeUpdated: row.time.updated,
-      });
-    }
-  }
-  meetings.sort((left, right) => right.timeUpdated - left.timeUpdated);
-  return { meetings };
-}
-
-/** 台账载荷 → 会议状态（防御性收窄：kind 对、council 形状缺一律不认）。 */
-function readCouncilMeetingPayload(
-  payload: unknown,
-): Pick<
-  import("@zcode/contracts").CouncilMeetingState,
-  "councilId" | "kind" | "status" | "round" | "motion"
-> & { title?: string; paused?: boolean } | null {
-  if (typeof payload !== "object" || payload === null) return null;
-  const record = payload as Record<string, unknown>;
-  const council = record.council;
-  if (typeof council !== "object" || council === null) return null;
-  const meeting = council as Record<string, unknown>;
-  if (typeof meeting.councilId !== "string" || !meeting.councilId) return null;
-  if (meeting.kind !== "plan" && meeting.kind !== "acceptance") return null;
-  if (
-    meeting.status !== "running" &&
-    meeting.status !== "approved" &&
-    meeting.status !== "rejected" &&
-    meeting.status !== "deadlocked" &&
-    meeting.status !== "cancelled" &&
-    meeting.status !== "proposed"
-  ) {
-    return null;
-  }
-  if (meeting.round !== 1 && meeting.round !== 2) return null;
-  return {
-    councilId: meeting.councilId,
-    kind: meeting.kind,
-    status: meeting.status,
-    round: meeting.round,
-    ...(typeof meeting.motion === "string" && meeting.motion ? { motion: meeting.motion } : {}),
-    ...(typeof record.title === "string" && record.title ? { title: record.title } : {}),
-    ...(record.paused === true ? { paused: true } : {}),
-  };
-}
-
-/**
- * 圆桌会证据（council/evidence，2026-10-03 独立页刀5）：读召集方会话里轮头
- * originMeta.councilId 匹配的唤醒轮（席位回执轮 + 主席合议轮）及其 assistant
- * 发言，输出与 UI CouncilEvidenceUnit 结构对齐的证据单元。与 council/list 同
- * 一条只读通道——session store 直读，不激活 runtime（冷会话即可查）。originMeta
- * 逐条过轮头 schema（畸形行不猜、直接跳过），不让一条坏行打挂整场会议的证据。
- */
-export async function readCouncilEvidence(
-  context: ZCodeProtocolAgentServerContext,
-  rawParams: unknown,
-) {
-  const params = parseParams(zcodeCouncilEvidenceParamsSchema, rawParams);
-  const store = context.deps.sessionStore;
-  if (!store?.messages) return { units: [] };
-  const messages = await store.messages({
-    sessionID: params.sessionId as SessionId,
-  });
-  const units: ZCodeCouncilEvidenceUnit[] = [];
-  for (const draft of extractCouncilEvidenceUnits(
-    messages.map(toCouncilEvidenceSourceMessage),
-    params.councilId,
-  )) {
-    const originMeta = backgroundResultOriginMetaSchema.safeParse(draft.header.originMeta);
-    if (!originMeta.success) continue;
-    units.push({
-      key: draft.key,
-      header: { origin: "backgroundResult", originMeta: originMeta.data },
-      ...(draft.latestAssistantTextRow
-        ? { latestAssistantTextRow: draft.latestAssistantTextRow }
-        : {}),
-      ...(draft.assistantTextRows ? { assistantTextRows: draft.assistantTextRows } : {}),
-    });
-  }
-  return { units };
-}
-
-/** MessageWithParts → 证据抽取窄输入面（originMeta 与投影策略在此解出）。 */
-function toCouncilEvidenceSourceMessage(
-  message: MessageWithParts,
-): CouncilEvidenceSourceMessage {
-  const messageMetadata = message.info.metadata;
-  const partMetadata = message.parts.find((part) => part.type === "text")?.metadata;
-  const candidate = messageMetadata?.originMeta ?? partMetadata?.originMeta;
-  return {
-    id: String(message.info.id),
-    role: message.info.role,
-    ...(candidate !== undefined && candidate !== null ? { originMeta: candidate } : {}),
-    parts: message.parts,
-    providerContextOnly:
-      getConversationMessageProjectionPolicy(message) === "providerContextOnly",
-  };
-}
-
-/**
- * 圆桌控场：暂停/恢复（council/pause）。定位=召集方会话 runtime（council/list
- * 同路：台账跨会话，runtime 串行链/闸门在召集方），冷会话先恢复再提交。
- * 幂等：paused 原样重放无副作用；终态会议 runtime 内自行忽略。
- */
-export async function pauseCouncilMeeting(
-  context: ZCodeProtocolAgentServerContext,
-  rawParams: unknown,
-) {
-  const params = parseParams(zcodeCouncilPauseParamsSchema, rawParams);
-  const record =
-    context.sessions.get(params.sessionId) ??
-    (await activateSessionForResume(context, { sessionId: params.sessionId })).record;
-  await record.app.runtime.setCouncilMeetingPaused({
-    councilId: params.councilId,
-    paused: params.paused,
-  });
-  return { ok: true };
-}
-
-/** 圆桌控场：插话（council/interject）——材料注入下一轮席位信封，未点名全体可见。 */
-export async function interjectCouncilMeeting(
-  context: ZCodeProtocolAgentServerContext,
-  rawParams: unknown,
-) {
-  const params = parseParams(zcodeCouncilInterjectParamsSchema, rawParams);
-  const record =
-    context.sessions.get(params.sessionId) ??
-    (await activateSessionForResume(context, { sessionId: params.sessionId })).record;
-  await record.app.runtime.addCouncilInterjection({
-    councilId: params.councilId,
-    text: params.text,
-    ...(params.targetSeatIndexes ? { targetSeatIndexes: params.targetSeatIndexes } : {}),
-  });
-  return { ok: true };
 }
 
 export async function listSessionSubagents(

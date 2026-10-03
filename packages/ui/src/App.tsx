@@ -856,10 +856,6 @@ export function App({
   const handleNavigateToAssetLibraryMain = useCallback(() => {
     setWorkspaceMainView("asset-library");
   }, []);
-  // 圆桌会独立页（刀5）同素材库先例：不进 taskNavHistory，后退走默认 taskNavBack。
-  const handleNavigateToCouncilMain = useCallback(() => {
-    setWorkspaceMainView("council");
-  }, []);
   const handleOpenAutomationConsumed = useCallback(() => {
     setOpenAutomationId(null);
     setOpenAutomationTab(null);
@@ -1143,7 +1139,6 @@ export function App({
         handleOpenAutomations={handleOpenAutomations}
         handleOpenPluginStore={handleOpenPluginStoreForScope}
         handleOpenAssetLibrary={handleNavigateToAssetLibraryMain}
-        handleOpenCouncilMain={handleNavigateToCouncilMain}
         handleManageInstalledPlugins={handleManageInstalledPlugins}
         onConnectRemote={onConnectRemote}
         onSelectRemoteProject={onSelectRemoteProject}

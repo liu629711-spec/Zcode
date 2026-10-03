@@ -23,7 +23,6 @@ import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { z } from "zod";
 export * from "../process-diagnostic.js";
 import { errorAttributionSchema } from "../zcode-protocol-v4/snapshot.js";
-import { backgroundResultOriginMetaSchema } from "../zcode-protocol-v4/workflow-row-meta.js";
 import { modelSelectionSchema } from "../model-selection.js";
 import { completeModelPropertiesDataSchema } from "../model-config.js";
 import { accountProviderUnavailableReasonSchema } from "../account-provider-state.js";
@@ -1557,119 +1556,6 @@ export const zcodeSessionSubagentsResultSchema = z
   })
   .strict();
 export type ZCodeSessionSubagentsResult = z.infer<typeof zcodeSessionSubagentsResultSchema>;
-
-// ── 圆桌会（真会议）目录查询（council/list，workspace 级只读）──────────
-// 会议室侧栏分组的数据源：跨会话枚举当前 workspace 内的圆桌会台账行
-// （session_input kind="councilMeeting"，载荷=contracts CouncilMeetingState）。
-// 状态/类型闭集与 contracts/src/interfaces/council.ts 手工同步（shared 不依赖
-// contracts，zod 边界纪律同 backgroundResultOriginMetaSchema.council*）。
-export const zcodeCouncilListParamsSchema = z
-  .object({
-    workspace: zcodeWorkspaceRefSchema,
-  })
-  .strict();
-export type ZCodeCouncilListParams = z.infer<typeof zcodeCouncilListParamsSchema>;
-
-export const zcodeCouncilMeetingSummarySchema = z
-  .object({
-    councilId: nonEmptyString,
-    /** 召集方会话（UI taskId ≡ sessionId）：点击条目打开并定位的目标。 */
-    sessionId: nonEmptyString,
-    kind: z.enum(["plan", "acceptance"]),
-    status: z.enum(["proposed", "running", "approved", "rejected", "deadlocked", "cancelled"]),
-    round: z.union([z.literal(1), z.literal(2)]),
-    /** 议题：召集时的 topic 原话（缺席 = 旧行没带，UI 退标题/通用词）。 */
-    motion: z.string().optional(),
-    /** 召集方给的短标题（缺席 = UI 退类型词）。 */
-    title: z.string().optional(),
-    /** 暂停冻结中（台账 payload.paused；缺席 = 未暂停/旧行）。 */
-    paused: z.boolean().optional(),
-    /** 台账行最近一次落账时间（epoch ms）：会议推进时随 saveSessionInput 刷新。 */
-    timeUpdated: z.number().int().nonnegative(),
-  })
-  .strict();
-export type ZCodeCouncilMeetingSummary = z.infer<typeof zcodeCouncilMeetingSummarySchema>;
-
-export const zcodeCouncilListResultSchema = z
-  .object({
-    meetings: z.array(zcodeCouncilMeetingSummarySchema),
-  })
-  .strict();
-export type ZCodeCouncilListResult = z.infer<typeof zcodeCouncilListResultSchema>;
-
-// ── 圆桌会控场（council/pause + council/interject）──────────────────
-// 圆桌界面的控场命令：暂停=冻结推进（paused 落会议台账），插话=材料注入下一轮
-// 席位信封。都由 bootstrap 定位召集方会话后直呼 runtime 方法（council/list 同路
-// ——台账是跨会话数据，定位后仍走 runtime：串行链/闸门/幂等都在那边）。
-export const zcodeCouncilPauseParamsSchema = z
-  .object({
-    /** 召集方会话：runtime 方法挂在它上面（串行链也是它的）。 */
-    sessionId: nonEmptyString,
-    councilId: nonEmptyString,
-    paused: z.boolean(),
-  })
-  .strict();
-export type ZCodeCouncilPauseParams = z.infer<typeof zcodeCouncilPauseParamsSchema>;
-
-export const zcodeCouncilPauseResultSchema = z.object({ ok: z.boolean() }).strict();
-export type ZCodeCouncilPauseResult = z.infer<typeof zcodeCouncilPauseResultSchema>;
-
-export const zcodeCouncilInterjectParamsSchema = z
-  .object({
-    sessionId: nonEmptyString,
-    councilId: nonEmptyString,
-    text: nonEmptyString,
-    /** 点名座位（0 起）；缺席 = 全体席位可见。 */
-    targetSeatIndexes: z.array(z.number().int().nonnegative()).optional(),
-  })
-  .strict();
-export type ZCodeCouncilInterjectParams = z.infer<typeof zcodeCouncilInterjectParamsSchema>;
-
-export const zcodeCouncilInterjectResultSchema = z.object({ ok: z.boolean() }).strict();
-export type ZCodeCouncilInterjectResult = z.infer<typeof zcodeCouncilInterjectResultSchema>;
-
-// ── 圆桌会证据查询（council/evidence，只读）────────────────────────
-// 圆桌会独立页（刀5）的跨会话数据洞：会议模型只能从召集方会话的轮证据聚合，
-// 而未打开过的会话没有投影。bootstrap 从 session store 直读该会话消息（council/
-// list 同一条只读通道，不激活 runtime），过滤轮头 originMeta.councilId 匹配的
-// 唤醒轮（席位回执轮 + 主席合议轮），输出与 UI CouncilEvidenceUnit（v4/
-// councilMeeting.ts）结构对齐的单元——UI 据此 selectCouncilMeetings 派生模型。
-export const zcodeCouncilEvidenceParamsSchema = z
-  .object({
-    /** 召集方会话（台账行带）。 */
-    sessionId: nonEmptyString,
-    councilId: nonEmptyString,
-  })
-  .strict();
-export type ZCodeCouncilEvidenceParams = z.infer<typeof zcodeCouncilEvidenceParamsSchema>;
-
-/** 一条圆桌会证据单元（originMeta 复用轮头 schema：UI 侧窄形状结构兼容）。 */
-export const zcodeCouncilEvidenceUnitSchema = z
-  .object({
-    key: nonEmptyString,
-    header: z
-      .object({
-        origin: z.literal("backgroundResult"),
-        originMeta: backgroundResultOriginMetaSchema,
-      })
-      .strict(),
-    latestAssistantTextRow: z
-      .object({ text: z.string().optional() })
-      .strict()
-      .optional(),
-    assistantTextRows: z
-      .array(z.object({ text: z.string().optional() }).strict())
-      .optional(),
-  })
-  .strict();
-export type ZCodeCouncilEvidenceUnit = z.infer<typeof zcodeCouncilEvidenceUnitSchema>;
-
-export const zcodeCouncilEvidenceResultSchema = z
-  .object({
-    units: z.array(zcodeCouncilEvidenceUnitSchema),
-  })
-  .strict();
-export type ZCodeCouncilEvidenceResult = z.infer<typeof zcodeCouncilEvidenceResultSchema>;
 // 驻场智能体会话 persona：v4 createSession 与 legacy session/create 共用一份定义。
 // systemPrompt 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
 // memoryScope 缺省时 core 不注入智能体记忆。
@@ -3730,12 +3616,6 @@ export const zcodeProtocolMethods = {
   sessionResume: "session/resume",
   sessionList: "session/list",
   sessionSubagents: "session/subagents",
-  // 会议室侧栏分组（2026-10-03 刀1）：workspace 级只读，枚举圆桌会台账行。
-  councilList: "council/list",
-  // 圆桌会独立页（刀5）：按召集方会话+会议 id 读轮证据（只读，不激活 runtime）。
-  councilEvidence: "council/evidence",
-  councilPause: "council/pause",
-  councilInterject: "council/interject",
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",
   sessionRead: "session/read",
   sessionMessages: "session/messages",

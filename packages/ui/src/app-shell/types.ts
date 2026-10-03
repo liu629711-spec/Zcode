@@ -122,8 +122,7 @@ export type WorkspaceMainView =
   | "automations"
   | "dispatch-desk"
   | "plugin-store"
-  | "asset-library"
-  | "council";
+  | "asset-library";
 
 export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackService"> {
   workspaceReadOnlyReason?: string;
@@ -136,7 +135,6 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleOpenAutomations: OpenAutomationsMain;
   handleOpenPluginStore: () => void;
   handleOpenAssetLibrary: () => void;
-  handleOpenCouncilMain: () => void;
   handleManageInstalledPlugins: () => void;
   workspaceShellZCodeState: WorkspaceShellZCodeState;
   theme: Theme;

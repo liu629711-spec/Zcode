@@ -24,12 +24,7 @@ function FlowEntryRow({ entry }: { entry: CouncilFlowEntry }) {
     ? SUBAGENT_COLOR_CLASS[resolveSubagentColorFromName(entry.agentName)]
     : "bg-muted";
   return (
-    // id 供圆桌画布气泡滚动定位（点气泡=在卷宗里定位这条发言）。
-    <div
-      id={`council-flow-entry-${entry.key}`}
-      className="flex min-w-0 gap-2.5 scroll-mt-2"
-      data-testid="council-flow-entry"
-    >
+    <div className="flex min-w-0 gap-2.5" data-testid="council-flow-entry">
       {/* 角色色条：每位员工固定角色色（档案色板按名取色）。 */}
       <span
         aria-hidden="true"
@@ -74,25 +69,11 @@ function FlowEntryRow({ entry }: { entry: CouncilFlowEntry }) {
 
 export function CouncilProcessFlow({
   meeting,
-  expanded: expandedProp,
-  onExpandedChange,
 }: {
   meeting: CouncilMeetingModel;
-  /**
-   * 圆桌画布抽屉受控展开（点气泡先展开再滚动定位）；不传=专区原来自管。
-   * 内部状态照常维护，两种用法共用同一份切换逻辑。
-   */
-  expanded?: boolean;
-  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const { intl } = useZCodeIntl();
-  const [fallbackExpanded, setFallbackExpanded] = useState(false);
-  const expanded = expandedProp ?? fallbackExpanded;
-  const toggle = () => {
-    const next = !expanded;
-    setFallbackExpanded(next);
-    onExpandedChange?.(next);
-  };
+  const [expanded, setExpanded] = useState(false);
   const sectionId = "council-process-flow-content";
   let lastRound = 0;
   return (
@@ -103,7 +84,7 @@ export function CouncilProcessFlow({
     >
       <button
         type="button"
-        onClick={toggle}
+        onClick={() => setExpanded((current) => !current)}
         aria-expanded={expanded}
         aria-controls={sectionId}
         data-testid="council-zone-flow-toggle"

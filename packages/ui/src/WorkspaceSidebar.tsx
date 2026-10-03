@@ -29,7 +29,6 @@ import {
   Plus,
   Search,
   Shapes,
-  UsersRound,
   X,
 } from "lucide-react";
 import {
@@ -138,7 +137,6 @@ import {
   type SidebarTaskGroupTogglePresentation,
 } from "@/WorkspaceSidebar/taskGroupTogglePresentation.js";
 import { WorkspacePurposeSection } from "@/WorkspaceSidebar/WorkspacePurposeSection.js";
-import { WorkspaceCouncilSection } from "@/WorkspaceSidebar/WorkspaceCouncilSection.js";
 import {
   useOpenProjectAgentChat,
   useWorkspaceProjectAgents,
@@ -309,11 +307,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations,
   onOpenPluginStore,
   onOpenAssetLibrary,
-  onOpenCouncilMain,
   automationsActive = false,
   pluginStoreActive = false,
   assetLibraryActive = false,
-  councilActive = false,
   onFileTreeOpenChange,
 }: {
   workspacePath: string;
@@ -365,11 +361,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
   onOpenAssetLibrary?: () => void;
-  onOpenCouncilMain?: () => void;
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
   assetLibraryActive?: boolean;
-  councilActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
@@ -1254,9 +1248,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const handleOpenAssetLibraryMain = useCallback(() => {
     onOpenAssetLibrary?.();
   }, [onOpenAssetLibrary]);
-  const handleOpenCouncilMain = useCallback(() => {
-    onOpenCouncilMain?.();
-  }, [onOpenCouncilMain]);
   const handleOpenCodingPlanUpgrade = useCallback(
     (
       providerId: string,
@@ -1877,24 +1868,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 {intl.formatMessage({ id: "workspace.openAssetLibrary" })}
               </Button>
             </ControlHintTooltip>
-            {/* 圆桌会独立页（刀5）一级入口：与素材库同款画法与位置。 */}
-            <ControlHintTooltip title={intl.formatMessage({ id: "councilWorkspace.sidebar.tooltip" })}>
-              <Button
-                variant="ghost"
-                onClick={handleOpenCouncilMain}
-                data-icon="inline-start"
-                data-testid="council-sidebar-open"
-                size="lg"
-                aria-pressed={councilActive}
-                className={cn(
-                  "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
-                  councilActive && "bg-selected text-foreground",
-                )}
-              >
-                <UsersRound className="size-4" />
-                {intl.formatMessage({ id: "workspace.openCouncil" })}
-              </Button>
-            </ControlHintTooltip>
           </div>
 
           <div className="relative flex min-h-0 flex-1 flex-col">
@@ -2217,15 +2190,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               </div>
             </div>
           </div>
-
-          {/* 会议室（圆桌会刀1）：当前工作区的圆桌会目录，进行中/已收口两小节；
-              点击打开召集方会话并自动展开会议专区。不可拖拽排序（不进 purpose
-              可排序组，保持 purpose 首选项持久化形状不变）。 */}
-          <WorkspaceCouncilSection
-            workspacePath={workspacePath}
-            workspaceIdentity={workspaceIdentity}
-            onSelectTask={handleTaskRowSelect}
-          />
 
           <WorkspaceProjectAgentCreateDialog
             open={projectAgentCreateTarget !== null || projectAgentEditTarget !== null}
