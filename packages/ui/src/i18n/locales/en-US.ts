@@ -5874,6 +5874,8 @@ const enUS: Record<string, string> = {
   "chat.slash.emptyResults": "No matching slash commands",
   // Errors
   "chat.error.connectionLost": "Connection to agent lost",
+  "chat.agentWorkOrder.card.expand": "Show all",
+  "chat.agentWorkOrder.card.collapse": "Collapse",
   "chat.error.processExited": "Agent process exited unexpectedly",
   "chat.error.dismiss": "Dismiss error",
   "chat.error.retry": "Retry",

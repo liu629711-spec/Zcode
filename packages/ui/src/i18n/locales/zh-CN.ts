@@ -5613,6 +5613,8 @@ const zhCN: Record<string, string> = {
   "chat.mention.sessions.searchHint": "输入内容以搜索近期会话",
   "chat.slash.title": "命令与能力",
   "chat.slash.searchHint": "输入内容以搜索命令、技能或子智能体",
+  "chat.agentWorkOrder.card.expand": "展开全部",
+  "chat.agentWorkOrder.card.collapse": "收起",
   "chat.slash.app.side.description": "新建并打开一个辅助对话",
   "chat.slash.commands.title": "命令",
   "chat.slash.skills.title": "技能",
