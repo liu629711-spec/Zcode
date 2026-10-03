@@ -96,6 +96,21 @@ export const backgroundResultOriginMetaSchema = z.object({
   // UI 词表换合议）；缺席 = 批次质检轮。取值与 contracts 的 BackgroundResultOriginMeta
   // .qcKind 保持同步；zod 剥离未知键，不加即冷恢复后合议卡退化成质检卡。
   qcKind: z.enum(["review"]).optional(),
+  // 圆桌会（真会议）随轮头下发：席位回执轮与主席合议轮都带 councilId，UI 据它把
+  // 同场会议的发言聚成圆桌卡。zod 剥离未知键，不加即冷恢复后圆桌卡散架（batchId
+  // 同纪律）。闭集与 contracts 的 BackgroundResultOriginMeta.council* 保持同步：
+  // councilRound 对齐内核 2 轮封顶；councilSeat.lens 对齐 core COUNCIL_SEAT_LENSES
+  // 的 id（contracts/src/interfaces/council.ts 是词表单据）。
+  councilId: z.string().min(1).max(128).optional(),
+  councilKind: z.enum(["plan", "acceptance"]).optional(),
+  councilRound: z.union([z.literal(1), z.literal(2)]).optional(),
+  councilPhase: z.enum(["seating", "deliberation", "tally", "moderation"]).optional(),
+  councilSeat: z
+    .object({
+      index: z.number().int().nonnegative(),
+      lens: z.enum(["impact", "requirement", "edge", "cost", "minimal"]),
+    })
+    .optional(),
   // 失败回执（2026-10-01 员工可靠性批）携带：原工单任务原文 + 结构化失败线索——
   // 失败卡大白话与「一键重派」的唯一数据源；zod 剥离未知键，不加即静默丢。
   // 上界与发射侧对齐：task 同 contracts 的 AGENT_WORK_ORDER_TASK_MAX_CHARS（8192），

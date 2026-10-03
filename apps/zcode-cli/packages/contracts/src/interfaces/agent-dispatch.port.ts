@@ -2,6 +2,12 @@
 // Agent Dispatch Port - cross-session work order boundary (D29/D2)
 // ============================================================
 
+import type {
+  CouncilMeetingKind,
+  CouncilMeetingRound,
+  CouncilSeatLensId,
+} from "./council.js";
+
 /**
  * 派单的 inputId/queryId 统一前缀：工单唤醒轮的身份信号之一。
  * core turn-loop（denylist 兜底）与协议端口（自检）都认它，
@@ -34,6 +40,20 @@ export interface AgentWorkOrderEnvelope {
    * 质检轮。缺席 = 普通施工单。
    */
   review?: boolean;
+  /**
+   * 圆桌会席位单（真会议，2026-10-03）：本单是某场圆桌会某轮的一个席位。与
+   * batchId 互斥使用（席位单按 councilId 聚合，不进工地卡）；缺席 = 普通工单。
+   * councilId 是全场分组键，回执轮头 originMeta.council* 与它对号。
+   */
+  councilId?: string;
+  /** 会议类型（plan=方案评审 / acceptance=验收）；与 councilId 同进退。 */
+  councilKind?: CouncilMeetingKind;
+  /** 本单所属审议轮次（内核封顶 2）；与 councilId 同进退。 */
+  councilRound?: CouncilMeetingRound;
+  /** 本单席位座次（buildCouncilSeatPlan 的 index 原样随行）。 */
+  councilSeatIndex?: number;
+  /** 本单席位攻角；回执据此把发言归位到圆桌卡的对应席位。 */
+  councilSeatLens?: CouncilSeatLensId;
 }
 
 export interface AgentDispatchRequest {
@@ -66,6 +86,16 @@ export interface AgentDispatchRequest {
   batchId?: string;
   /** 评审单标记（工具输入 review 逐字透传）；缺席 = 普通施工单。 */
   review?: boolean;
+  /**
+   * 圆桌会席位单（真会议）：由召集方**代码**在用户批准后逐席直派（CouncilConvene
+   * 工具路径不把会议编排交给模型）——席位解析、round 推进与收票都在代码侧，模型
+   * 面不暴露这些参数。信封的 council* 字段逐字来自这里。
+   */
+  councilId?: string;
+  councilKind?: CouncilMeetingKind;
+  councilRound?: CouncilMeetingRound;
+  councilSeatIndex?: number;
+  councilSeatLens?: CouncilSeatLensId;
   /** 发起方档案名/工号（信封署名；执行器注入）。 */
   sourceAgentId?: string;
   sourceAgentName?: string;
@@ -88,6 +118,8 @@ export interface AgentDispatchResult {
   batchId?: string;
   /** 批次标题回显（与 batchId 同进退）。 */
   batchTitle?: string;
+  /** 圆桌会身份回显（席位单必在）：召集方代码据它对账收票进度。 */
+  councilId?: string;
 }
 
 /**

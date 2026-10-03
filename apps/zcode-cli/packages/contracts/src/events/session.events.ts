@@ -1,5 +1,11 @@
 import type { ExecutionOutputPreview } from "../interfaces/execution.port.js";
 import type { RuntimeInputPresentation } from "../interfaces/runtime-input-presentation.js";
+import type {
+  CouncilMeetingKind,
+  CouncilMeetingPhase,
+  CouncilMeetingRound,
+  CouncilSeatLensId,
+} from "../interfaces/council.js";
 /* eslint-disable max-lines -- session event 契约集中在单文件导出，避免 app/agent 协议类型分散后漂移。 */
 // ============================================================
 // Session Events - All event types for the agent loop
@@ -314,6 +320,21 @@ export interface BackgroundResultOriginMeta {
    * backgroundResultOriginMetaSchema.qcKind 闭集保持同步。
    */
   qcKind?: "review";
+  /**
+   * 圆桌会（真会议）随轮头下发（2026-10-03）：席位回执轮与主席合议轮都带
+   * councilId——UI 据它把同场会议的发言聚成圆桌卡（对照 batchId 的工地卡聚合）。
+   * 缺席 = 非圆桌轮。取值与 shared 的 backgroundResultOriginMetaSchema.council*
+   * 闭集保持同步（zod 剥未知键，漏加即冷恢复后圆桌卡散架）。
+   */
+  councilId?: string;
+  /** 会议类型（plan=方案评审 / acceptance=验收）；与 councilId 同进退。 */
+  councilKind?: CouncilMeetingKind;
+  /** 本轮所属审议轮次（内核封顶 2）；与 councilId 同进退。 */
+  councilRound?: CouncilMeetingRound;
+  /** 会议阶段（席位回执=deliberation；主席合议轮=moderation）；与 councilId 同进退。 */
+  councilPhase?: CouncilMeetingPhase;
+  /** 席位回执轮携带：本回执的座次与攻角（圆桌卡按座次入席）。 */
+  councilSeat?: { index: number; lens: CouncilSeatLensId };
   /**
    * 派单**失败**回执（agent_work_order_receipt）携带：原工单任务原文（有界，
    * 同 agentWorkOrderMeta 的上限）——失败卡「一键重派」的权威数据源，UI 不从文本反推。
