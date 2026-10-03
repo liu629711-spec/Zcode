@@ -152,6 +152,11 @@ export async function findLatestPersonaSessionId(
     if (!personaMatchesProfile(session.persona, profile)) continue;
     // workspace 护栏：目录前缀判据（同 UI），别的 workspace 的同名档案会话不参与。
     if (!normalizeWorkspacePath(session.directory).startsWith(normalizedWorkspace)) continue;
+    // 工位必须落在侧栏看得见的会话上（2026-10-03 真机实证）：划词侧聊
+    // （selection_side_chat）等工作会话不进主会话列表，续用它们=给员工造
+    // 隐身工位——frontend-design 的席位发言交活都正常，卡片却永远找不到。
+    // 只认 interactive；档案的最新交互会话不是正经工位时，落到新建分支开新的。
+    if (session.taskType !== "interactive") continue;
     const updatedAt = session.time.updated;
     if (!latest || updatedAt > latest.updatedAt) {
       latest = { sessionId: session.id, updatedAt };
@@ -379,7 +384,7 @@ export function createProtocolAgentDispatchPort(
       if (namedProfile && !createdSession) {
         await targetRecord.app
           .setCustomSessionTitle({
-            title: `${namedProfile} · ${workerTitleSeed.slice(0, 60)}`,
+            title: `${namedProfile.name} · ${workerTitleSeed.slice(0, 60)}`,
             traceContext: targetRecord.traceContext,
           })
           .catch((error) => {
