@@ -14,7 +14,7 @@
  *
  * 两态挂载见 CouncilStageLayer（会话 pane 顶部叠不透明层，退回即摘）。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Gavel, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
@@ -41,13 +41,16 @@ import { useWorkspaceCouncilMeetings } from "@/hooks/useWorkspaceCouncilMeetings
 import { useCouncilFocusStore } from "@/store/councilFocusStore.js";
 import { useCouncilStageStore } from "@/store/councilStageStore.js";
 import {
+  councilSeatClashPairs,
   councilSeatLampState,
   councilSeatPositions,
   councilStageBubbles,
   COUNCIL_TABLE_CENTER,
   isCouncilMeetingClosed,
   type CouncilSeatLampState,
+  type CouncilSeatPosition,
 } from "@/v4/councilStageModel.js";
+import { useCouncilControls } from "@/hooks/useCouncilControls.js";
 
 // ── 两态挂载层 ──────────────────────────────────────────────────────
 
@@ -98,6 +101,7 @@ export function CouncilStageLayer({
     >
       <CouncilStageSession
         meeting={meeting}
+        sessionId={sessionId}
         workspacePath={workspacePath}
         {...(workspaceIdentity ? { workspaceIdentity } : {})}
         onExit={closeCouncilStage}
@@ -135,11 +139,13 @@ function CouncilStageSubject({
 /** 画布会话体：只在画布打开时挂载（台账查询随层启停，不给会话添常驻轮询）。 */
 function CouncilStageSession({
   meeting,
+  sessionId,
   workspacePath,
   workspaceIdentity,
   onExit,
 }: {
   meeting: CouncilMeetingModel;
+  sessionId: string | null;
   workspacePath: string;
   workspaceIdentity?: string;
   onExit: () => void;
@@ -153,6 +159,64 @@ function CouncilStageSession({
   });
   const directoryEntry =
     directory.find((candidate) => candidate.councilId === meeting.councilId) ?? null;
+
+  // 控场（刀3）：paused 权威态在台账（council/list 带 paused），本地乐观翻牌
+  // 抢即时反馈；busy 期间控件再禁用。打字即暂停=插话框首字符自动 pause。
+  const controls = useCouncilControls({
+    workspacePath,
+    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+  });
+  const directoryPaused = directoryEntry?.paused ?? false;
+  const [localPaused, setLocalPaused] = useState<boolean | null>(null);
+  const [interjectText, setInterjectText] = useState("");
+  const [controlError, setControlError] = useState(false);
+  const paused = meeting.status === "running" ? (localPaused ?? directoryPaused) : false;
+  const controlsBusy = controls.busy;
+  const togglePause = useCallback(() => {
+    if (!sessionId || controlsBusy) return;
+    const next = !paused;
+    setLocalPaused(next);
+    controls
+      .pause({ sessionId, councilId: meeting.councilId, paused: next })
+      .then(() => setControlError(false))
+      .catch(() => {
+        setLocalPaused(!next);
+        setControlError(true);
+      });
+  }, [controls, controlsBusy, meeting.councilId, paused, sessionId]);
+  const sendInterjection = useCallback(() => {
+    const text = interjectText.trim();
+    if (!sessionId || !text || controlsBusy) return;
+    controls
+      .interject({ sessionId, councilId: meeting.councilId, text })
+      .then(() => {
+        setInterjectText("");
+        setControlError(false);
+      })
+      .catch(() => setControlError(true));
+  }, [controls, controlsBusy, interjectText, meeting.councilId, sessionId]);
+  // 打字即暂停（借 caucus pauseOnType）：首字符自动 pause 一次，恢复走暂停按钮。
+  const interjectInputRef = useRef(false);
+  const handleInterjectInput = useCallback(
+    (text: string) => {
+      setInterjectText(text);
+      if (
+        text.length > 0 &&
+        !interjectInputRef.current &&
+        meeting.status === "running" &&
+        !paused &&
+        !controlsBusy &&
+        sessionId
+      ) {
+        interjectInputRef.current = true;
+        setLocalPaused(true);
+        controls
+          .pause({ sessionId, councilId: meeting.councilId, paused: true })
+          .catch(() => setLocalPaused(false));
+      }
+    },
+    [controls, controlsBusy, meeting.status, paused, sessionId],
+  );
 
   // 气泡→卷宗定位：先把抽屉/过程流展开再滚（DOM 提交在宏任务后才生效）。
   const locateInDrawer = useCallback((entryKey: string) => {
@@ -208,7 +272,11 @@ function CouncilStageSession({
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <CouncilTableCanvas meeting={meeting} onLocate={locateInDrawer} />
+        <CouncilTableCanvas
+          meeting={meeting}
+          running={meeting.status === "running"}
+          onLocate={locateInDrawer}
+        />
         {drawerOpen ? (
           <aside
             aria-label={intl.formatMessage({ id: "chat.council.stage.drawer" })}
@@ -236,7 +304,16 @@ function CouncilStageSession({
         ) : null}
       </div>
 
-      <CouncilStageControlBar meeting={meeting} />
+      <CouncilStageControlBar
+        meeting={meeting}
+        paused={paused}
+        busy={controlsBusy}
+        error={controlError}
+        interjectText={interjectText}
+        onInterjectInput={handleInterjectInput}
+        onPauseToggle={togglePause}
+        onInterjectSend={sendInterjection}
+      />
     </section>
   );
 }
@@ -252,9 +329,11 @@ const SEAT_LAMP_DOT_CLASS: Record<CouncilSeatLampState, string> = {
 
 function CouncilTableCanvas({
   meeting,
+  running,
   onLocate,
 }: {
   meeting: CouncilMeetingModel;
+  running: boolean;
   onLocate: (entryKey: string) => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -264,6 +343,15 @@ function CouncilTableCanvas({
     [seats.length],
   );
   const bubbles = useMemo(() => councilStageBubbles(meeting), [meeting]);
+  const clashPairs = useMemo(() => councilSeatClashPairs(seats), [seats]);
+  const positionBySeatIndex = useMemo(() => {
+    const map = new Map<number, CouncilSeatPosition>();
+    seats.forEach((seat, index) => {
+      const position = positions[index];
+      if (position) map.set(seat.index, position);
+    });
+    return map;
+  }, [positions, seats]);
   const closed = isCouncilMeetingClosed(meeting);
   return (
     <div
@@ -309,6 +397,10 @@ function CouncilTableCanvas({
           const position = positions[index];
           if (!position) return null;
           const lamp = councilSeatLampState(seat);
+          const lampClass =
+            lamp === "thinking" && running
+              ? SEAT_LAMP_DOT_CLASS.thinking + " animate-pulse"
+              : SEAT_LAMP_DOT_CLASS[lamp];
           const colorClass = seat.agentName
             ? SUBAGENT_COLOR_CLASS[resolveSubagentColorFromName(seat.agentName)]
             : "bg-muted text-foreground-subtle";
@@ -335,7 +427,7 @@ function CouncilTableCanvas({
                   aria-hidden="true"
                   className={cn(
                     "absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-background",
-                    SEAT_LAMP_DOT_CLASS[lamp],
+                    lampClass,
                   )}
                 />
               </span>
@@ -352,6 +444,40 @@ function CouncilTableCanvas({
           );
         })}
       </ul>
+
+      {/* 分歧弦（刀4）：立场相异的席位对之间拉暖色弦；装饰层 aria-hidden，
+          立场信息在卷宗裁决卡可读。animate-pulse 占一个动画预算名额。 */}
+      {clashPairs.length > 0 ? (
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          data-testid="council-stage-clash-lines"
+        >
+          {clashPairs.map((pair) => {
+            const from = positionBySeatIndex.get(pair.seatIndexA);
+            const to = positionBySeatIndex.get(pair.seatIndexB);
+            if (!from || !to) return null;
+            return (
+              <line
+                key={`${pair.seatIndexA}-${pair.seatIndexB}`}
+                x1={from.xPct}
+                y1={from.yPct}
+                x2={to.xPct}
+                y2={to.yPct}
+                stroke="var(--color-warning)"
+                strokeWidth={1.5}
+                strokeDasharray="3 2"
+                strokeLinecap="round"
+                opacity={0.55}
+                className="animate-pulse"
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+        </svg>
+      ) : null}
 
       {/* 桌心：进行中=当前+上一条发言气泡；收口=裁决石+只读回放。 */}
       <div

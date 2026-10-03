@@ -82,7 +82,9 @@ import {
   zcodeSessionCompactResultSchema,
   zcodeSessionEventsResultSchema,
   zcodeSessionGoalResultSchema,
+  zcodeCouncilInterjectResultSchema,
   zcodeCouncilListResultSchema,
+  zcodeCouncilPauseResultSchema,
   zcodeSessionListResultSchema,
   zcodeSessionSubagentsResultSchema,
   zcodeSessionMessagesResultSchema,
@@ -227,7 +229,8 @@ import type {
   ZCodeAgentConnectionFlowParams,
   ZCodeAgentSessionsIndexSubscribeParams,
   ZCodeAgentWorkspaceConfigSubscribeParams,
-} from "./zcodeAgent.js";
+  ZCodeAgentCouncilInterjectParams,
+  ZCodeAgentCouncilPauseParams,} from "./zcodeAgent.js";
 import {
   backgroundBashOutputResultSchema,
   v4BackgroundBashOutputParamsSchema,
@@ -3684,6 +3687,33 @@ export function createZCodeAgentService(
         zcodeProtocolMethods.councilList,
         { workspace: buildWorkspaceRef(params) },
         zcodeCouncilListResultSchema,
+      );
+    },
+
+    async pauseCouncilMeeting(params: ZCodeAgentCouncilPauseParams) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        zcodeProtocolMethods.councilPause,
+        {
+          sessionId: params.sessionId,
+          councilId: params.councilId,
+          paused: params.paused,
+        },
+        zcodeCouncilPauseResultSchema,
+      );
+    },
+
+    async interjectCouncilMeeting(params: ZCodeAgentCouncilInterjectParams) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        zcodeProtocolMethods.councilInterject,
+        {
+          sessionId: params.sessionId,
+          councilId: params.councilId,
+          text: params.text,
+          ...(params.targetSeatIndexes ? { targetSeatIndexes: params.targetSeatIndexes } : {}),
+        },
+        zcodeCouncilInterjectResultSchema,
       );
     },
 

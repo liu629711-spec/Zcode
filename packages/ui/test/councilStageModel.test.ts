@@ -24,6 +24,7 @@ import { test } from "node:test";
 import type { CouncilEvidenceUnit } from "../src/v4/councilMeeting.js";
 import { selectCouncilMeetings } from "../src/v4/councilMeeting.js";
 import {
+  councilSeatClashPairs,
   councilSeatLampState,
   councilSeatPositions,
   councilStageBubbles,
@@ -271,6 +272,21 @@ test("收口判定：终局三态收口，running 不收口", () => {
   assert.equal(isCouncilMeetingClosed({ status: "approved" }), true);
   assert.equal(isCouncilMeetingClosed({ status: "rejected" }), true);
   assert.equal(isCouncilMeetingClosed({ status: "deadlocked" }), true);
+});
+
+test("分歧弦席位对：立场相异拉弦，弃权与缺席不拉", () => {
+  const seats = [
+    { index: 0, verdict: { stance: "approve" as const, confidence: "high" as const, veto: false } },
+    { index: 1, verdict: { stance: "reject" as const, confidence: "medium" as const, veto: false } },
+    { index: 2, verdict: { stance: "approve" as const, confidence: "low" as const, veto: true } },
+    { index: 3, verdict: undefined },
+  ];
+  assert.deepEqual(councilSeatClashPairs(seats), [
+    { seatIndexA: 0, seatIndexB: 1 },
+    { seatIndexA: 1, seatIndexB: 2 },
+  ]);
+  const unanimous = [seats[0], seats[0], seats[0]];
+  assert.deepEqual(councilSeatClashPairs(unanimous), []);
 });
 
 // ── 测试脚手架 ──────────────────────────────────────────────────────

@@ -130,6 +130,36 @@ export function councilStoneConclusionLine(
     : line;
 }
 
+/** 分歧弦（刀4）：最近一次裁定立场相异的席位对——只有 通过↔打回 拉弦，弃权不拉。 */
+export interface CouncilStageClashPair {
+  seatIndexA: number;
+  seatIndexB: number;
+}
+
+export function councilSeatClashPairs(
+  seats: ReadonlyArray<Pick<CouncilMeetingSeatModel, "index" | "verdict">>,
+): CouncilStageClashPair[] {
+  const voiced: Array<{ index: number; stance: "approve" | "reject" }> = [];
+  for (const seat of seats) {
+    if (seat.verdict?.stance === "approve" || seat.verdict?.stance === "reject") {
+      voiced.push({ index: seat.index, stance: seat.verdict.stance });
+    }
+  }
+  const pairs: CouncilStageClashPair[] = [];
+  for (let left = 0; left < voiced.length; left += 1) {
+    const first = voiced[left];
+    if (!first) continue;
+    for (let right = left + 1; right < voiced.length; right += 1) {
+      const second = voiced[right];
+      if (!second) continue;
+      if (first.stance !== second.stance) {
+        pairs.push({ seatIndexA: first.index, seatIndexB: second.index });
+      }
+    }
+  }
+  return pairs;
+}
+
 /** 会议是否已收口（终局四态去 running）：收口=桌心裁决石+只读回放。 */
 export function isCouncilMeetingClosed(
   meeting: Pick<CouncilMeetingModel, "status">,

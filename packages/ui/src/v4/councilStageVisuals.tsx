@@ -125,18 +125,37 @@ export function CouncilVerdictStone({ meeting }: { meeting: CouncilMeetingModel 
 }
 
 /**
- * 底栏控场条：暂停/催一句/插话。控场能力在 v4 命令面（shared
- * zcode-protocol-v4 command）里没有对应命令：全部控件明确禁用 + tooltip 说明，
- * 绝不渲染点了没反应的假按钮（刀1 专区同口径）。命令接入后按宿主注入的能力
- * 收敛禁用态，收口态保持只读。右侧=票数速览+收口徽章。
+ * 底栏控场条（刀3 接通）：暂停/恢复 + 插话。命令走 council/pause +
+ * council/interject（协议链路 2026-10-03 接通）；收口态保持只读；催一句尚无
+ * 对应命令，维持明确禁用+tooltip（不做假按钮）。打字即暂停由父层 onInterjectInput
+ * 处理（首字符自动 pause）；paused 权威态在台账，父层带乐观翻牌。
  */
-export function CouncilStageControlBar({ meeting }: { meeting: CouncilMeetingModel }) {
+export function CouncilStageControlBar({
+  meeting,
+  paused,
+  busy,
+  error,
+  interjectText,
+  onInterjectInput,
+  onPauseToggle,
+  onInterjectSend,
+}: {
+  meeting: CouncilMeetingModel;
+  paused: boolean;
+  busy: boolean;
+  error: boolean;
+  interjectText: string;
+  onInterjectInput: (text: string) => void;
+  onPauseToggle: () => void;
+  onInterjectSend: () => void;
+}) {
   const { intl } = useZCodeIntl();
   const unavailable = intl.formatMessage({
     id: "chat.council.controls.unavailable",
   });
-  const votes = meeting.tally;
   const closed = isCouncilMeetingClosed(meeting);
+  const controlsEnabled = !closed && !busy;
+  const votes = meeting.tally;
   return (
     <TooltipProvider>
       <section
@@ -147,13 +166,35 @@ export function CouncilStageControlBar({ meeting }: { meeting: CouncilMeetingMod
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="inline-flex">
-              <Button type="button" variant="outline" size="sm" disabled>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!controlsEnabled}
+                onClick={onPauseToggle}
+                aria-pressed={paused}
+                data-testid="council-stage-pause"
+              >
                 <CirclePause aria-hidden="true" className="size-3.5" />
-                {intl.formatMessage({ id: "chat.council.controls.pause" })}
+                {intl.formatMessage({
+                  id: paused
+                    ? "chat.council.controls.resume"
+                    : "chat.council.controls.pause",
+                })}
               </Button>
             </span>
           </TooltipTrigger>
-          <TooltipContent>{unavailable}</TooltipContent>
+          {controlsEnabled ? (
+            <TooltipContent>
+              {intl.formatMessage({
+                id: paused
+                  ? "chat.council.controls.resumeHint"
+                  : "chat.council.controls.pauseHint",
+              })}
+            </TooltipContent>
+          ) : (
+            <TooltipContent>{unavailable}</TooltipContent>
+          )}
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -171,7 +212,15 @@ export function CouncilStageControlBar({ meeting }: { meeting: CouncilMeetingMod
             <span className="inline-flex min-w-0 flex-1 basis-48">
               <Input
                 type="text"
-                disabled
+                disabled={!controlsEnabled}
+                value={interjectText}
+                onChange={(event) => onInterjectInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && interjectText.trim().length > 0) {
+                    event.preventDefault();
+                    onInterjectSend();
+                  }
+                }}
                 aria-label={intl.formatMessage({
                   id: "chat.council.controls.interjectAria",
                 })}
@@ -179,22 +228,49 @@ export function CouncilStageControlBar({ meeting }: { meeting: CouncilMeetingMod
                   id: "chat.council.controls.interjectPlaceholder",
                 })}
                 className="min-w-0 flex-1"
+                data-testid="council-stage-interject"
               />
             </span>
           </TooltipTrigger>
-          <TooltipContent>{unavailable}</TooltipContent>
+          <TooltipContent>
+            {intl.formatMessage({ id: "chat.council.controls.typingPauses" })}
+          </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="inline-flex">
-              <Button type="button" variant="secondary" size="sm" disabled>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={!controlsEnabled || interjectText.trim().length === 0}
+                onClick={onInterjectSend}
+                data-testid="council-stage-send"
+              >
                 <SendHorizontal aria-hidden="true" className="size-3.5" />
                 {intl.formatMessage({ id: "chat.council.controls.send" })}
               </Button>
             </span>
           </TooltipTrigger>
-          <TooltipContent>{unavailable}</TooltipContent>
+          <TooltipContent>
+            {intl.formatMessage({ id: "chat.council.controls.typingPauses" })}
+          </TooltipContent>
         </Tooltip>
+        {error ? (
+          <span
+            role="status"
+            className="shrink-0 rounded-[4px] bg-destructive/10 px-1.5 py-0.5 text-ui-2xs text-destructive"
+          >
+            {intl.formatMessage({ id: "chat.council.controls.error" })}
+          </span>
+        ) : paused ? (
+          <span
+            role="status"
+            className="shrink-0 rounded-[4px] bg-warning/10 px-1.5 py-0.5 text-ui-2xs text-foreground-subtle"
+          >
+            {intl.formatMessage({ id: "chat.council.controls.autoPaused" })}
+          </span>
+        ) : null}
         <span className="min-w-0 flex-1" />
         {closed ? (
           <span

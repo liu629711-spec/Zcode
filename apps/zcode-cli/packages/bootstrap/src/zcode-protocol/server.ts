@@ -31,10 +31,12 @@ import {
   forkSession,
   generateWorkspaceText,
   goalSession,
+  interjectCouncilMeeting,
   getTaskTokenUsage,
   getUsageStats,
   listCouncilMeetings,
   listSessions,
+  pauseCouncilMeeting,
   listSessionSubagents,
   readEvents,
   readMessages,
@@ -577,6 +579,10 @@ export class ZCodeProtocolAgentServer {
         return await listSessionSubagents(this.context, request.params);
       case zcodeProtocolMethods.councilList:
         return await listCouncilMeetings(this.context, request.params);
+      case zcodeProtocolMethods.councilPause:
+        return await pauseCouncilMeeting(this.context, request.params);
+      case zcodeProtocolMethods.councilInterject:
+        return await interjectCouncilMeeting(this.context, request.params);
       case zcodeProtocolMethods.sessionRead:
         return await readSession(this.context, request.params);
       case zcodeProtocolMethods.sessionMessages:

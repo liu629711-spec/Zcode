@@ -49,7 +49,9 @@ import {
   ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS,
   zcodeProtocolErrorCodes,
   zcodeProtocolMethods,
+  zcodeCouncilInterjectParamsSchema,
   zcodeCouncilListParamsSchema,
+  zcodeCouncilPauseParamsSchema,
   zcodeSessionCancelBackgroundTaskParamsSchema,
   zcodeSessionCompactParamsSchema,
   zcodeSessionCloseParamsSchema,
@@ -1746,6 +1748,7 @@ export async function listCouncilMeetings(
         round: council.round,
         ...(council.motion ? { motion: council.motion } : {}),
         ...(council.title ? { title: council.title } : {}),
+        ...(council.paused ? { paused: true } : {}),
         timeUpdated: row.time.updated,
       });
     }
@@ -1760,7 +1763,7 @@ function readCouncilMeetingPayload(
 ): Pick<
   import("@zcode/contracts").CouncilMeetingState,
   "councilId" | "kind" | "status" | "round" | "motion"
-> & { title?: string } | null {
+> & { title?: string; paused?: boolean } | null {
   if (typeof payload !== "object" || payload === null) return null;
   const record = payload as Record<string, unknown>;
   const council = record.council;
@@ -1786,7 +1789,45 @@ function readCouncilMeetingPayload(
     round: meeting.round,
     ...(typeof meeting.motion === "string" && meeting.motion ? { motion: meeting.motion } : {}),
     ...(typeof record.title === "string" && record.title ? { title: record.title } : {}),
+    ...(record.paused === true ? { paused: true } : {}),
   };
+}
+
+/**
+ * 圆桌控场：暂停/恢复（council/pause）。定位=召集方会话 runtime（council/list
+ * 同路：台账跨会话，runtime 串行链/闸门在召集方），冷会话先恢复再提交。
+ * 幂等：paused 原样重放无副作用；终态会议 runtime 内自行忽略。
+ */
+export async function pauseCouncilMeeting(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+) {
+  const params = parseParams(zcodeCouncilPauseParamsSchema, rawParams);
+  const record =
+    context.sessions.get(params.sessionId) ??
+    (await activateSessionForResume(context, { sessionId: params.sessionId })).record;
+  await record.app.runtime.setCouncilMeetingPaused({
+    councilId: params.councilId,
+    paused: params.paused,
+  });
+  return { ok: true };
+}
+
+/** 圆桌控场：插话（council/interject）——材料注入下一轮席位信封，未点名全体可见。 */
+export async function interjectCouncilMeeting(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+) {
+  const params = parseParams(zcodeCouncilInterjectParamsSchema, rawParams);
+  const record =
+    context.sessions.get(params.sessionId) ??
+    (await activateSessionForResume(context, { sessionId: params.sessionId })).record;
+  await record.app.runtime.addCouncilInterjection({
+    councilId: params.councilId,
+    text: params.text,
+    ...(params.targetSeatIndexes ? { targetSeatIndexes: params.targetSeatIndexes } : {}),
+  });
+  return { ok: true };
 }
 
 export async function listSessionSubagents(

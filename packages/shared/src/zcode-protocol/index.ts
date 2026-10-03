@@ -1581,6 +1581,8 @@ export const zcodeCouncilMeetingSummarySchema = z
     motion: z.string().optional(),
     /** 召集方给的短标题（缺席 = UI 退类型词）。 */
     title: z.string().optional(),
+    /** 暂停冻结中（台账 payload.paused；缺席 = 未暂停/旧行）。 */
+    paused: z.boolean().optional(),
     /** 台账行最近一次落账时间（epoch ms）：会议推进时随 saveSessionInput 刷新。 */
     timeUpdated: z.number().int().nonnegative(),
   })
@@ -1593,6 +1595,37 @@ export const zcodeCouncilListResultSchema = z
   })
   .strict();
 export type ZCodeCouncilListResult = z.infer<typeof zcodeCouncilListResultSchema>;
+
+// ── 圆桌会控场（council/pause + council/interject）──────────────────
+// 圆桌界面的控场命令：暂停=冻结推进（paused 落会议台账），插话=材料注入下一轮
+// 席位信封。都由 bootstrap 定位召集方会话后直呼 runtime 方法（council/list 同路
+// ——台账是跨会话数据，定位后仍走 runtime：串行链/闸门/幂等都在那边）。
+export const zcodeCouncilPauseParamsSchema = z
+  .object({
+    /** 召集方会话：runtime 方法挂在它上面（串行链也是它的）。 */
+    sessionId: nonEmptyString,
+    councilId: nonEmptyString,
+    paused: z.boolean(),
+  })
+  .strict();
+export type ZCodeCouncilPauseParams = z.infer<typeof zcodeCouncilPauseParamsSchema>;
+
+export const zcodeCouncilPauseResultSchema = z.object({ ok: z.boolean() }).strict();
+export type ZCodeCouncilPauseResult = z.infer<typeof zcodeCouncilPauseResultSchema>;
+
+export const zcodeCouncilInterjectParamsSchema = z
+  .object({
+    sessionId: nonEmptyString,
+    councilId: nonEmptyString,
+    text: nonEmptyString,
+    /** 点名座位（0 起）；缺席 = 全体席位可见。 */
+    targetSeatIndexes: z.array(z.number().int().nonnegative()).optional(),
+  })
+  .strict();
+export type ZCodeCouncilInterjectParams = z.infer<typeof zcodeCouncilInterjectParamsSchema>;
+
+export const zcodeCouncilInterjectResultSchema = z.object({ ok: z.boolean() }).strict();
+export type ZCodeCouncilInterjectResult = z.infer<typeof zcodeCouncilInterjectResultSchema>;
 // 驻场智能体会话 persona：v4 createSession 与 legacy session/create 共用一份定义。
 // systemPrompt 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
 // memoryScope 缺省时 core 不注入智能体记忆。
@@ -3655,6 +3688,8 @@ export const zcodeProtocolMethods = {
   sessionSubagents: "session/subagents",
   // 会议室侧栏分组（2026-10-03 刀1）：workspace 级只读，枚举圆桌会台账行。
   councilList: "council/list",
+  councilPause: "council/pause",
+  councilInterject: "council/interject",
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",
   sessionRead: "session/read",
   sessionMessages: "session/messages",

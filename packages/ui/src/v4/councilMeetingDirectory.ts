@@ -16,6 +16,8 @@ export interface CouncilMeetingSummaryLike {
   status: "proposed" | "running" | "approved" | "rejected" | "deadlocked" | "cancelled";
   motion?: string;
   title?: string;
+  /** 暂停冻结中（台账 payload.paused；缺席=未暂停/旧行）。 */
+  paused?: boolean;
   timeUpdated: number;
 }
 
@@ -30,6 +32,7 @@ export interface CouncilMeetingDirectoryEntry {
   group: CouncilMeetingDirectoryGroup;
   motion?: string;
   title?: string;
+  paused?: boolean;
   timeUpdated: number;
 }
 
@@ -52,6 +55,7 @@ function toEntry(meeting: CouncilMeetingSummaryLike): CouncilMeetingDirectoryEnt
     group: groupOf(meeting.status),
     ...(meeting.motion ? { motion: meeting.motion } : {}),
     ...(meeting.title ? { title: meeting.title } : {}),
+    ...(meeting.paused ? { paused: true } : {}),
     timeUpdated: meeting.timeUpdated,
   };
 }
