@@ -50,6 +50,7 @@ import {
   zcodeProtocolErrorCodes,
   zcodeProtocolMethods,
   zcodeCouncilInterjectParamsSchema,
+  zcodeCouncilEvidenceParamsSchema,
   zcodeCouncilListParamsSchema,
   zcodeCouncilPauseParamsSchema,
   zcodeSessionCancelBackgroundTaskParamsSchema,
@@ -85,6 +86,7 @@ import {
   type ZCodeModelContextBudgetStrategy,
   type ZCodeProtocolTrace,
   type ZCodeCouncilMeetingSummary,
+  type ZCodeCouncilEvidenceUnit,
   type ZCodeSessionEvent,
   type ZCodeSessionHistoryTarget,
   type ZCodeSessionResumeParams,
@@ -101,6 +103,11 @@ import {
   shouldExposeSessionEventToProtocol,
 } from "./mapper.js";
 import { optionalModelSelectionFromString } from "./model-mapper.js";
+import {
+  extractCouncilEvidenceUnits,
+  type CouncilEvidenceSourceMessage,
+} from "./councilEvidence.js";
+import { backgroundResultOriginMetaSchema } from "@zcode/shared/zcode-protocol-v4";
 import {
   ProtocolRequestError,
   assertExpectedRevision,
@@ -1790,6 +1797,59 @@ function readCouncilMeetingPayload(
     ...(typeof meeting.motion === "string" && meeting.motion ? { motion: meeting.motion } : {}),
     ...(typeof record.title === "string" && record.title ? { title: record.title } : {}),
     ...(record.paused === true ? { paused: true } : {}),
+  };
+}
+
+/**
+ * 圆桌会证据（council/evidence，2026-10-03 独立页刀5）：读召集方会话里轮头
+ * originMeta.councilId 匹配的唤醒轮（席位回执轮 + 主席合议轮）及其 assistant
+ * 发言，输出与 UI CouncilEvidenceUnit 结构对齐的证据单元。与 council/list 同
+ * 一条只读通道——session store 直读，不激活 runtime（冷会话即可查）。originMeta
+ * 逐条过轮头 schema（畸形行不猜、直接跳过），不让一条坏行打挂整场会议的证据。
+ */
+export async function readCouncilEvidence(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+) {
+  const params = parseParams(zcodeCouncilEvidenceParamsSchema, rawParams);
+  const store = context.deps.sessionStore;
+  if (!store?.messages) return { units: [] };
+  const messages = await store.messages({
+    sessionID: params.sessionId as SessionId,
+  });
+  const units: ZCodeCouncilEvidenceUnit[] = [];
+  for (const draft of extractCouncilEvidenceUnits(
+    messages.map(toCouncilEvidenceSourceMessage),
+    params.councilId,
+  )) {
+    const originMeta = backgroundResultOriginMetaSchema.safeParse(draft.header.originMeta);
+    if (!originMeta.success) continue;
+    units.push({
+      key: draft.key,
+      header: { origin: "backgroundResult", originMeta: originMeta.data },
+      ...(draft.latestAssistantTextRow
+        ? { latestAssistantTextRow: draft.latestAssistantTextRow }
+        : {}),
+      ...(draft.assistantTextRows ? { assistantTextRows: draft.assistantTextRows } : {}),
+    });
+  }
+  return { units };
+}
+
+/** MessageWithParts → 证据抽取窄输入面（originMeta 与投影策略在此解出）。 */
+function toCouncilEvidenceSourceMessage(
+  message: MessageWithParts,
+): CouncilEvidenceSourceMessage {
+  const messageMetadata = message.info.metadata;
+  const partMetadata = message.parts.find((part) => part.type === "text")?.metadata;
+  const candidate = messageMetadata?.originMeta ?? partMetadata?.originMeta;
+  return {
+    id: String(message.info.id),
+    role: message.info.role,
+    ...(candidate !== undefined && candidate !== null ? { originMeta: candidate } : {}),
+    parts: message.parts,
+    providerContextOnly:
+      getConversationMessageProjectionPolicy(message) === "providerContextOnly",
   };
 }
 

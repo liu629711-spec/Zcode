@@ -29,6 +29,7 @@ import {
   Plus,
   Search,
   Shapes,
+  UsersRound,
   X,
 } from "lucide-react";
 import {
@@ -308,9 +309,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations,
   onOpenPluginStore,
   onOpenAssetLibrary,
+  onOpenCouncilMain,
   automationsActive = false,
   pluginStoreActive = false,
   assetLibraryActive = false,
+  councilActive = false,
   onFileTreeOpenChange,
 }: {
   workspacePath: string;
@@ -362,9 +365,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
   onOpenAssetLibrary?: () => void;
+  onOpenCouncilMain?: () => void;
   automationsActive?: boolean;
   pluginStoreActive?: boolean;
   assetLibraryActive?: boolean;
+  councilActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
@@ -1249,6 +1254,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const handleOpenAssetLibraryMain = useCallback(() => {
     onOpenAssetLibrary?.();
   }, [onOpenAssetLibrary]);
+  const handleOpenCouncilMain = useCallback(() => {
+    onOpenCouncilMain?.();
+  }, [onOpenCouncilMain]);
   const handleOpenCodingPlanUpgrade = useCallback(
     (
       providerId: string,
@@ -1867,6 +1875,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               >
                 <Shapes className="size-4" />
                 {intl.formatMessage({ id: "workspace.openAssetLibrary" })}
+              </Button>
+            </ControlHintTooltip>
+            {/* 圆桌会独立页（刀5）一级入口：与素材库同款画法与位置。 */}
+            <ControlHintTooltip title={intl.formatMessage({ id: "councilWorkspace.sidebar.tooltip" })}>
+              <Button
+                variant="ghost"
+                onClick={handleOpenCouncilMain}
+                data-icon="inline-start"
+                data-testid="council-sidebar-open"
+                size="lg"
+                aria-pressed={councilActive}
+                className={cn(
+                  "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
+                  councilActive && "bg-selected text-foreground",
+                )}
+              >
+                <UsersRound className="size-4" />
+                {intl.formatMessage({ id: "workspace.openCouncil" })}
               </Button>
             </ControlHintTooltip>
           </div>

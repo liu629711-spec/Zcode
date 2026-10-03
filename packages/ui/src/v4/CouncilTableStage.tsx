@@ -136,19 +136,25 @@ function CouncilStageSubject({
   );
 }
 
-/** 画布会话体：只在画布打开时挂载（台账查询随层启停，不给会话添常驻轮询）。 */
-function CouncilStageSession({
+/**
+ * 画布会话体：只在画布打开时挂载（台账查询随层启停，不给会话添常驻轮询）。
+ * 导出给圆桌会独立页（刀5）复用：同一张桌、同一套控场；exitMessageId 允许
+ * 独立页把退出按钮改成「返回目录」（会话内缺省仍是「返回会话」）。
+ */
+export function CouncilStageSession({
   meeting,
   sessionId,
   workspacePath,
   workspaceIdentity,
   onExit,
+  exitMessageId = "chat.council.stage.exit",
 }: {
   meeting: CouncilMeetingModel;
   sessionId: string | null;
   workspacePath: string;
   workspaceIdentity?: string;
   onExit: () => void;
+  exitMessageId?: string;
 }) {
   const { intl } = useZCodeIntl();
   const [drawerOpen, setDrawerOpen] = useState(true);
@@ -245,7 +251,7 @@ function CouncilStageSession({
             data-testid="council-stage-exit"
           >
             <ArrowLeft aria-hidden="true" className="size-3.5" />
-            {intl.formatMessage({ id: "chat.council.stage.exit" })}
+            {intl.formatMessage({ id: exitMessageId })}
           </Button>
           <CouncilStageSubject meeting={meeting} directoryEntry={directoryEntry} />
           <button

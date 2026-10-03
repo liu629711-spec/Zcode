@@ -81,3 +81,18 @@ export function councilMeetingEntrySubject(
 ): string | undefined {
   return entry.motion?.trim() || entry.title?.trim() || undefined;
 }
+
+/**
+ * 独立页（刀5）的选中对账：当前目录里找回选中会议；目录刷新后会议消失
+ * （会话被清/台账滚出窗口）就退 undefined，页面回空态——不按陈旧 id 硬画。
+ */
+export function resolveSelectedCouncilEntry(
+  directory: CouncilMeetingDirectory,
+  selectedCouncilId: string | null,
+): CouncilMeetingDirectoryEntry | undefined {
+  if (!selectedCouncilId) return undefined;
+  return (
+    directory.running.find((entry) => entry.councilId === selectedCouncilId) ??
+    directory.closed.find((entry) => entry.councilId === selectedCouncilId)
+  );
+}

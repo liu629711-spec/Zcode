@@ -114,6 +114,11 @@ const LazyAssetLibrarySection = lazy(async () => {
   const module = await import("@/asset-library/AssetLibrarySection.js");
   return { default: module.AssetLibrarySection };
 });
+// 圆桌会独立页（刀5）：与素材库同款懒加载——页面只在真正打开展厅的用户手里进主 bundle。
+const LazyCouncilWorkspacePage = lazy(async () => {
+  const module = await import("@/council/CouncilWorkspacePage.js");
+  return { default: module.CouncilWorkspacePage };
+});
 // WorkspaceShellLayout 是 memo 组件，默认 []/{} 会在缺省调用时每次创建新引用；
 // 入口缺省这些集合时复用常量，避免浅比较误判 props 变化。
 const EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY: NonNullable<
@@ -207,6 +212,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   handleOpenAutomations,
   handleOpenPluginStore,
   handleOpenAssetLibrary,
+  handleOpenCouncilMain,
   handleManageInstalledPlugins,
   onConnectRemote,
   onSelectRemoteProject,
@@ -1524,7 +1530,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     workspaceMainView !== "automations" &&
     workspaceMainView !== "plugin-store" &&
     workspaceMainView !== "dispatch-desk" &&
-    workspaceMainView !== "asset-library";
+    workspaceMainView !== "asset-library" &&
+    workspaceMainView !== "council";
   const shouldRenderWorkspaceHeader =
     shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
   // ErrorBoundary resetKeys 的数组如果每次 render 都重新创建，
@@ -1634,6 +1641,8 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                     pluginStoreActive={workspaceMainView === "plugin-store"}
                     onOpenAssetLibrary={handleOpenAssetLibrary}
                     assetLibraryActive={workspaceMainView === "asset-library"}
+                    onOpenCouncilMain={handleOpenCouncilMain}
+                    councilActive={workspaceMainView === "council"}
                     onFileTreeOpenChange={setIsSidebarFileTreeOpen}
                   />
                 </WorkflowRunOpenProvider>
@@ -1894,6 +1903,40 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                 </div>
                               </ScopedErrorBoundary>
                             </div>
+                          </AutomationsMainBreadcrumbFrame>
+                        </main>
+                      ) : workspaceMainView === "council" ? (
+                        <main className="flex h-full min-h-0 flex-1 flex-col bg-background">
+                          <AutomationsMainBreadcrumbFrame
+                            isDesktop={Boolean(isDesktop)}
+                            sectionLabel={intl.formatMessage({
+                              id: "councilWorkspace.title",
+                            })}
+                            ariaLabel={intl.formatMessage({
+                              id: "councilWorkspace.title",
+                            })}
+                          >
+                            <ScopedErrorBoundary
+                              scope="council-main"
+                              resetKeys={workspaceOnlyResetKeys}
+                              variant="panel"
+                              className="min-h-0 flex-1"
+                            >
+                              {/* 圆桌会独立页（刀5）：左侧会议台账 + 主区圆桌画布，全宽不居中。 */}
+                              <Suspense
+                                fallback={
+                                  <div className="py-12 text-center text-ui-sm text-foreground-subtle">
+                                    {intl.formatMessage({ id: "councilWorkspace.loading" })}
+                                  </div>
+                                }
+                              >
+                                <LazyCouncilWorkspacePage
+                                  workspacePath={workspaceAbsPath}
+                                  workspaceIdentity={workspaceIdentity}
+                                  onBack={showChatMainView}
+                                />
+                              </Suspense>
+                            </ScopedErrorBoundary>
                           </AutomationsMainBreadcrumbFrame>
                         </main>
                       ) : workspaceMainView === "dispatch-desk" ? (

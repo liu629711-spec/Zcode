@@ -23,6 +23,7 @@ import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { z } from "zod";
 export * from "../process-diagnostic.js";
 import { errorAttributionSchema } from "../zcode-protocol-v4/snapshot.js";
+import { backgroundResultOriginMetaSchema } from "../zcode-protocol-v4/workflow-row-meta.js";
 import { modelSelectionSchema } from "../model-selection.js";
 import { completeModelPropertiesDataSchema } from "../model-config.js";
 import { accountProviderUnavailableReasonSchema } from "../account-provider-state.js";
@@ -1626,6 +1627,49 @@ export type ZCodeCouncilInterjectParams = z.infer<typeof zcodeCouncilInterjectPa
 
 export const zcodeCouncilInterjectResultSchema = z.object({ ok: z.boolean() }).strict();
 export type ZCodeCouncilInterjectResult = z.infer<typeof zcodeCouncilInterjectResultSchema>;
+
+// ── 圆桌会证据查询（council/evidence，只读）────────────────────────
+// 圆桌会独立页（刀5）的跨会话数据洞：会议模型只能从召集方会话的轮证据聚合，
+// 而未打开过的会话没有投影。bootstrap 从 session store 直读该会话消息（council/
+// list 同一条只读通道，不激活 runtime），过滤轮头 originMeta.councilId 匹配的
+// 唤醒轮（席位回执轮 + 主席合议轮），输出与 UI CouncilEvidenceUnit（v4/
+// councilMeeting.ts）结构对齐的单元——UI 据此 selectCouncilMeetings 派生模型。
+export const zcodeCouncilEvidenceParamsSchema = z
+  .object({
+    /** 召集方会话（台账行带）。 */
+    sessionId: nonEmptyString,
+    councilId: nonEmptyString,
+  })
+  .strict();
+export type ZCodeCouncilEvidenceParams = z.infer<typeof zcodeCouncilEvidenceParamsSchema>;
+
+/** 一条圆桌会证据单元（originMeta 复用轮头 schema：UI 侧窄形状结构兼容）。 */
+export const zcodeCouncilEvidenceUnitSchema = z
+  .object({
+    key: nonEmptyString,
+    header: z
+      .object({
+        origin: z.literal("backgroundResult"),
+        originMeta: backgroundResultOriginMetaSchema,
+      })
+      .strict(),
+    latestAssistantTextRow: z
+      .object({ text: z.string().optional() })
+      .strict()
+      .optional(),
+    assistantTextRows: z
+      .array(z.object({ text: z.string().optional() }).strict())
+      .optional(),
+  })
+  .strict();
+export type ZCodeCouncilEvidenceUnit = z.infer<typeof zcodeCouncilEvidenceUnitSchema>;
+
+export const zcodeCouncilEvidenceResultSchema = z
+  .object({
+    units: z.array(zcodeCouncilEvidenceUnitSchema),
+  })
+  .strict();
+export type ZCodeCouncilEvidenceResult = z.infer<typeof zcodeCouncilEvidenceResultSchema>;
 // 驻场智能体会话 persona：v4 createSession 与 legacy session/create 共用一份定义。
 // systemPrompt 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
 // memoryScope 缺省时 core 不注入智能体记忆。
@@ -3688,6 +3732,8 @@ export const zcodeProtocolMethods = {
   sessionSubagents: "session/subagents",
   // 会议室侧栏分组（2026-10-03 刀1）：workspace 级只读，枚举圆桌会台账行。
   councilList: "council/list",
+  // 圆桌会独立页（刀5）：按召集方会话+会议 id 读轮证据（只读，不激活 runtime）。
+  councilEvidence: "council/evidence",
   councilPause: "council/pause",
   councilInterject: "council/interject",
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",

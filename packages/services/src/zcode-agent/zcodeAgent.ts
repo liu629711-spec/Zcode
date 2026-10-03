@@ -59,6 +59,7 @@ import type {
   ZCodeCouncilListResult,
   ZCodeCouncilInterjectResult,
   ZCodeCouncilPauseResult,
+  ZCodeCouncilEvidenceResult,
   ZCodeStateUpdatedNotification,
   ZCodeTaskClientMode,
   ZCodeBrowserAmbientContext,
@@ -216,6 +217,12 @@ export interface ZCodeAgentListSessionsParams extends ZCodeAgentWorkspaceTarget 
 }
 
 export interface ZCodeAgentCouncilListParams extends ZCodeAgentWorkspaceTarget {}
+
+export interface ZCodeAgentCouncilEvidenceParams extends ZCodeAgentWorkspaceTarget {
+  /** 召集方会话（台账行带）：证据轮只存在于它的消息里。 */
+  sessionId: string;
+  councilId: string;
+}
 
 export interface ZCodeAgentCouncilPauseParams extends ZCodeAgentWorkspaceTarget {
   /** 召集方会话：控场方法挂在它的 runtime 上。 */
@@ -611,6 +618,10 @@ export interface IZCodeAgentService {
   ): Promise<ZCodeSessionSubagentsResult>;
   /** 会议室侧栏分组（council/list）：workspace 级只读，枚举圆桌会台账行。 */
   listCouncilMeetings(params: ZCodeAgentCouncilListParams): Promise<ZCodeCouncilListResult>;
+  /** 圆桌会独立页（council/evidence）：按召集方会话+会议 id 只读轮证据。 */
+  getCouncilEvidence(
+    params: ZCodeAgentCouncilEvidenceParams,
+  ): Promise<ZCodeCouncilEvidenceResult>;
   pauseCouncilMeeting(params: ZCodeAgentCouncilPauseParams): Promise<ZCodeCouncilPauseResult>;
   interjectCouncilMeeting(
     params: ZCodeAgentCouncilInterjectParams,

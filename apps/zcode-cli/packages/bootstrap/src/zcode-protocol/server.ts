@@ -35,6 +35,7 @@ import {
   getTaskTokenUsage,
   getUsageStats,
   listCouncilMeetings,
+  readCouncilEvidence,
   listSessions,
   pauseCouncilMeeting,
   listSessionSubagents,
@@ -579,6 +580,8 @@ export class ZCodeProtocolAgentServer {
         return await listSessionSubagents(this.context, request.params);
       case zcodeProtocolMethods.councilList:
         return await listCouncilMeetings(this.context, request.params);
+      case zcodeProtocolMethods.councilEvidence:
+        return await readCouncilEvidence(this.context, request.params);
       case zcodeProtocolMethods.councilPause:
         return await pauseCouncilMeeting(this.context, request.params);
       case zcodeProtocolMethods.councilInterject:
