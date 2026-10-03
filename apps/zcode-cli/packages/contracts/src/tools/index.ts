@@ -19,6 +19,9 @@ export * from "./skill.js";
 export * from "./todo.js";
 export * from "./automation.js";
 export * from "./agent-dispatch.js";
+// 圆桌会（真会议）召集工具：名字常量被 core 的工具注册与条件门读走，
+// 编排参数不在这张面上（席位派单走端口 council* 五参，见 interfaces/agent-dispatch.port.ts）。
+export * from "./council-convene.js";
 export * from "./off-peak.js";
 export * from "./target.js";
 export * from "./plan-mode.js";
