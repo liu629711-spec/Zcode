@@ -1,3 +1,4 @@
+import { uuidv7 } from "@zcode/shared";
 import type { TraceContext, TurnState } from "./deps.js";
 import type {
   AgentWorkOrderEnvelope,
@@ -254,11 +255,11 @@ const RUNTIME_COMMAND_PRIORITY_ORDER: Record<RuntimeCommandPriority, number> = {
   later: 2,
 };
 
-let runtimeCommandIdSequence = 0;
-
+// 全局自增序号在进程重启后归零，而回执等命令会拿它当 session_input 主键落库——
+// 撞上历史运行留下的同名行就静默丢账（2026-10-03 真机实证：回执落账自 9/26 起全断，
+// 圆桌会收票是第一个被闷死的消费者）。uuidv7 跨重启唯一且按时间有序。
 export function createRuntimeCommandId(): RuntimeCommandId {
-  runtimeCommandIdSequence += 1;
-  return `runtime_command_${runtimeCommandIdSequence}` as RuntimeCommandId;
+  return `runtime_command_${uuidv7()}` as RuntimeCommandId;
 }
 
 export function createRuntimeCommandQueue(): RuntimeCommandQueue {

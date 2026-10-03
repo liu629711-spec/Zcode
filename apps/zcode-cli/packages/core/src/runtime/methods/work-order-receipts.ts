@@ -45,10 +45,10 @@ export interface EnqueueAgentWorkOrderReceiptInput {
  * 崩溃后残余 admission 照既有收口语义在 resume 时落 discarded——回执是 best-effort
  * 通知，权威事实永远在目标会话的留档里。
  */
-export function enqueueAgentWorkOrderReceipt(
+export async function enqueueAgentWorkOrderReceipt(
   this: AgentRuntimeInternal,
   input: EnqueueAgentWorkOrderReceiptInput,
-): void {
+): Promise<void> {
   const traceContext = input.traceContext ?? this.rootTraceContext;
   if (this.shuttingDown) {
     // teardown 期间不能再启动模型轮次；回执如实丢弃（目标会话仍有完整留档）。
@@ -132,7 +132,11 @@ export function enqueueAgentWorkOrderReceipt(
   };
   this.enqueueRuntimeCommand(command);
   // 账本 admission（durable 痕迹）：runtime 命令队列是纯内存的，崩溃后由 resume 统一收口。
-  const admission = this.sessionStore?.saveSessionInput?.({
+  // 必须 await 到底且失败可见（2026-10-03 真机实证）：原 fire-and-forget 的落账失败
+  // 无声无息——重启后命令 id 撞历史主键，回执行整整一周没进账，圆桌会收票作为
+  // 第一个依赖回执台账的消费者被闷死。
+  try {
+    const admissionResult = await this.sessionStore?.saveSessionInput?.({
     id: String(command.id),
     sessionID: this.sessionId,
     kind: "agentWorkOrderReceipt",
@@ -150,16 +154,27 @@ export function enqueueAgentWorkOrderReceipt(
       targetSessionId: input.targetSessionId,
     },
   });
-  if (admission) {
-    void this.trackResidencyBlockingWork(admission).catch((error) => {
-      this.logger?.warn("Failed to admit agent work order receipt to ledger", {
-        ...traceContextToLogContext(traceContext),
-        errorMessage: error instanceof Error ? error.message : String(error),
-        event: "session_input.admit_failed",
-        module: "core.runtime",
-        status: "failed",
-        workOrderId: input.workOrderId,
+    const admission = admissionResult;
+    if (admission) {
+      void this.trackResidencyBlockingWork(admission).catch((error) => {
+        this.logger?.warn("Failed to track receipt residency", {
+          ...traceContextToLogContext(traceContext),
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "session_input.residency_track_failed",
+          module: "core.runtime",
+          workOrderId: input.workOrderId,
+        });
       });
+    }
+  } catch (error) {
+    // 落账失败必须响亮：圆桌会收票按台账凑票，回执行缺席=会议卡死（真机教训）。
+    this.logger?.warn("Failed to admit agent work order receipt to ledger", {
+      ...traceContextToLogContext(traceContext),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "session_input.admit_failed",
+      module: "core.runtime",
+      status: "failed",
+      workOrderId: input.workOrderId,
     });
   }
   this.logger?.info("Agent work order receipt enqueued", {
@@ -183,6 +198,60 @@ export async function runWorkOrderReceiptCommand(
   command: WorkOrderReceiptRuntimeCommand,
 ): Promise<void> {
   if (isStaleBranchRuntimeCommand(this, command)) return;
+  // 圆桌会席位回执静默落账（2026-10-03 老板验收反馈）：不逐席吵醒主会话——
+  // 老板要的是最终整合结果（主席合议轮一个交付），不是每席交一回就同步一遍。
+  // 席位证据仍落库（notice 带 originMeta.council*），评审专区照常聚合；权威
+  // 推进在 maybeAdvanceCouncilRound（回执投递侧已带即时 outcome）。
+  if (command.envelope.councilId) {
+    const messageID = createMessageId();
+    this.messageHistory.addUser(command.text, runtimeInputMetadata("agent_work_order_receipt"));
+    await this.persistSyntheticUserNoticeForSession({
+      messageID,
+      metadata: {
+        envelope: command.envelope,
+        inputPresentation: "agent_work_order_receipt",
+        originMeta: command.originMeta,
+        outcome: {
+          status: command.outcome.status,
+          ...(command.outcome.reason ? { reason: command.outcome.reason } : {}),
+        },
+        visibility: "model-only",
+        ...(command.targetAgentId ? { targetAgentId: command.targetAgentId } : {}),
+        targetAgentName: command.targetAgentName,
+        targetSessionId: command.targetSessionId,
+      },
+      sessionId: this.sessionId,
+      source: "agent_work_order_receipt",
+      text: command.text,
+      traceContext: command.traceContext,
+      visibility: "model-only",
+    });
+    await this.sessionStore
+      ?.markSessionInputPromoted?.({
+        id: String(command.id),
+        sessionID: this.sessionId,
+        promotedMessageID: messageID,
+      })
+      .catch((error) => {
+        this.logger?.warn("Failed to mark council seat receipt promoted", {
+          ...traceContextToLogContext(command.traceContext),
+          commandId: command.id,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "session_input.promote_mark_failed",
+          module: "core.runtime",
+          workOrderId: command.workOrderId,
+        });
+      });
+    this.logger?.info("Council seat receipt recorded silently (no host turn)", {
+      ...traceContextToLogContext(command.traceContext),
+      event: "agent_work_order_receipt.council_silent",
+      module: "core.runtime",
+      outcomeStatus: command.outcome.status,
+      sessionId: this.sessionId,
+      workOrderId: command.workOrderId,
+    });
+    return;
+  }
   const foregroundExecution = beginForegroundExecution.call(this, command);
   try {
     const messageID = createMessageId();

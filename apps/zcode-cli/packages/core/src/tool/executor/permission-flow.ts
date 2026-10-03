@@ -18,6 +18,7 @@ import { resolveToolApproval } from "./approval-gate.js";
 import { createErrorResult, createPermissionErrorResult } from "./errors.js";
 import { emitPermissionDenied, emitPermissionRequested, emitPermissionResolved } from "./events.js";
 import { applyEmployeeDeskPermission } from "./employee-desk-permission.js";
+import { applyCouncilConveneApproval } from "./council-convene-approval.js";
 import { applyPreToolPermissionDecision, runPermissionRequestHooks } from "./hook-flow.js";
 import { racePermissionResponders } from "./permission-responder-race.js";
 import {
@@ -109,6 +110,11 @@ export async function resolveToolPermission(
     workingDirectory: deps.getWorkingDirectory(),
     workspaceRoot: deps.getWorkspaceRoot(),
     desk: deps.employeeDesk,
+  });
+  // 圆桌会召集批准闸：allow 一律升 ask（yolo 也不放行），老板当场知情 token 消耗。
+  permissionDecision = applyCouncilConveneApproval({
+    decision: permissionDecision,
+    toolName: toolCall.name,
   });
 
   deps.logger?.debug("Tool permission evaluated", {
