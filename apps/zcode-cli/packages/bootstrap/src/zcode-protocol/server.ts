@@ -33,6 +33,7 @@ import {
   goalSession,
   getTaskTokenUsage,
   getUsageStats,
+  listCouncilMeetings,
   listSessions,
   listSessionSubagents,
   readEvents,
@@ -574,6 +575,8 @@ export class ZCodeProtocolAgentServer {
         return await listSessions(this.context, request.params);
       case zcodeProtocolMethods.sessionSubagents:
         return await listSessionSubagents(this.context, request.params);
+      case zcodeProtocolMethods.councilList:
+        return await listCouncilMeetings(this.context, request.params);
       case zcodeProtocolMethods.sessionRead:
         return await readSession(this.context, request.params);
       case zcodeProtocolMethods.sessionMessages:

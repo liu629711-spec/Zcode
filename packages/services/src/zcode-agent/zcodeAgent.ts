@@ -56,6 +56,7 @@ import type {
   ZCodeSessionRuntimePreferencesResult,
   ZCodeSessionStateSnapshot,
   ZCodeSessionSubagentsResult,
+  ZCodeCouncilListResult,
   ZCodeStateUpdatedNotification,
   ZCodeTaskClientMode,
   ZCodeBrowserAmbientContext,
@@ -211,6 +212,8 @@ export interface ZCodeAgentListSessionsParams extends ZCodeAgentWorkspaceTarget 
   includeArchived?: boolean;
   limit?: number;
 }
+
+export interface ZCodeAgentCouncilListParams extends ZCodeAgentWorkspaceTarget {}
 
 export interface ZCodeAgentListSessionSubagentsParams extends ZCodeAgentSessionTarget {
   endedCursor?: string;
@@ -589,6 +592,8 @@ export interface IZCodeAgentService {
   listSessionSubagents(
     params: ZCodeAgentListSessionSubagentsParams,
   ): Promise<ZCodeSessionSubagentsResult>;
+  /** 会议室侧栏分组（council/list）：workspace 级只读，枚举圆桌会台账行。 */
+  listCouncilMeetings(params: ZCodeAgentCouncilListParams): Promise<ZCodeCouncilListResult>;
   getAppUsageStats(params: ZCodeAgentAppUsageParams): Promise<AppUsageSnapshot>;
   getTaskTokenUsage(params: ZCodeAgentTaskTokenUsageParams): Promise<ZCodeTaskTokenUsageResult>;
   readSession(params: ZCodeAgentReadSessionParams): Promise<ZCodeSessionStateSnapshot>;

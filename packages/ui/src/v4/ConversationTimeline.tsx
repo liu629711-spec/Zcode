@@ -33,7 +33,10 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { ConversationTurnGroup } from "@/v4/ConversationTurnGroup.js";
 import { selectWorkOrderBatchRenderInfo } from "@/v4/agentWorkOrderBatch.js";
-import { selectCouncilMeetingRenderInfo } from "@/v4/councilMeeting.js";
+import {
+  selectCouncilMeetingRenderInfo,
+  selectCouncilSuppressedUnitKeys,
+} from "@/v4/councilMeeting.js";
 import { ConversationPendingGuideList } from "@/v4/ConversationPendingGuideList.js";
 import type { AssistantFeedbackHandler } from "@/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@/v4/ConversationTurnNavigator.js";
@@ -435,6 +438,12 @@ function ConversationTimelineImpl({
     [renderUnits],
   );
   // 圆桌会（真会议）摘要卡：按 councilId 跨轮聚拢席位回执（同工地卡，只有这里
+  // 主会话白名单（圆桌会刀1）：圆桌证据轮（席位回执轮）整轮收敛，只有各会议的
+  // 挂载轮保留（画入口卡）。同工地卡口径：只有这里看得见全轮列表。
+  const councilSuppressedUnitKeys = useMemo(
+    () => selectCouncilSuppressedUnitKeys(renderUnits),
+    [renderUnits],
+  );
   // 看得见全轮列表），挂在与会议相关的最新证据轮上。
   const councilMeetingByUnitKey = useMemo(
     () => selectCouncilMeetingRenderInfo(renderUnits),
@@ -1851,6 +1860,7 @@ function ConversationTimelineImpl({
                       // 它们的 containing block；正文响应式内边距必须落在 turn wrapper 自身。
                       className="absolute left-0 top-0 w-full"
                       style={{ transform: `translateY(${virtualRow.start - headerSlotHeight}px)` }}
+                        councilContentSuppressed={councilSuppressedUnitKeys.has(unit.key)}
                     >
                       <ConversationTurnGroup
                         unit={unit}
@@ -1883,6 +1893,7 @@ function ConversationTimelineImpl({
                     contentWidthClassName,
                     summaryPanelInlineOffsetClassName,
                   )}
+                    councilContentSuppressed={councilSuppressedUnitKeys.has(liveUnit.key)}
                 >
                   <ConversationTurnGroup
                     unit={liveUnit}

@@ -82,6 +82,7 @@ import {
   zcodeSessionCompactResultSchema,
   zcodeSessionEventsResultSchema,
   zcodeSessionGoalResultSchema,
+  zcodeCouncilListResultSchema,
   zcodeSessionListResultSchema,
   zcodeSessionSubagentsResultSchema,
   zcodeSessionMessagesResultSchema,
@@ -154,6 +155,7 @@ import type {
   ZCodeAgentTestModelConnectivityParams,
   ZCodeAgentGoalParams,
   ZCodeAgentGrantWorkspaceHookTrustParams,
+  ZCodeAgentCouncilListParams,
   ZCodeAgentInitializeResult,
   ZCodeAgentListSessionsParams,
   ZCodeAgentListSessionSubagentsParams,
@@ -3673,6 +3675,15 @@ export function createZCodeAgentService(
           endedLimit: params.endedLimit ?? 20,
         },
         zcodeSessionSubagentsResultSchema,
+      );
+    },
+
+    async listCouncilMeetings(params: ZCodeAgentCouncilListParams) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        zcodeProtocolMethods.councilList,
+        { workspace: buildWorkspaceRef(params) },
+        zcodeCouncilListResultSchema,
       );
     },
 

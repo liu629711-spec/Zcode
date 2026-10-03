@@ -143,6 +143,28 @@ function CouncilStatusStrip({ meeting }: { meeting: CouncilMeetingModel }) {
   );
 }
 
+// ── 主席结论（收口结果卡口径：结论摘要；白名单收敛后时间线不再内联渲染）──
+
+function CouncilModeratorSummary({ meeting }: { meeting: CouncilMeetingModel }) {
+  const { intl } = useZCodeIntl();
+  const text = meeting.moderatorSummary?.text;
+  if (!text) return null;
+  return (
+    <section
+      aria-label={intl.formatMessage({ id: "chat.council.section.conclusion" })}
+      className="rounded-xl border border-card-border bg-card px-3.5 py-3"
+      data-testid="council-zone-conclusion"
+    >
+      <div className="text-ui-2xs font-medium text-foreground-subtlest">
+        {intl.formatMessage({ id: "chat.council.section.conclusion" })}
+      </div>
+      <p className="mt-1.5 min-w-0 whitespace-pre-wrap break-words text-ui-xs leading-4 text-foreground-subtle">
+        {text}
+      </p>
+    </section>
+  );
+}
+
 // ── ④ 控场条 ────────────────────────────────────────────────────────
 
 /**
@@ -253,6 +275,7 @@ export function CouncilMeetingZone({
         </DialogHeader>
         <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-4 py-3.5">
           <CouncilStatusStrip meeting={meeting} />
+          <CouncilModeratorSummary meeting={meeting} />
           <CouncilVerdictCard meeting={meeting} />
           <CouncilProcessFlow meeting={meeting} />
         </div>

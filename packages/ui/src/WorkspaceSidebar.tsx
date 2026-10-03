@@ -137,6 +137,7 @@ import {
   type SidebarTaskGroupTogglePresentation,
 } from "@/WorkspaceSidebar/taskGroupTogglePresentation.js";
 import { WorkspacePurposeSection } from "@/WorkspaceSidebar/WorkspacePurposeSection.js";
+import { WorkspaceCouncilSection } from "@/WorkspaceSidebar/WorkspaceCouncilSection.js";
 import {
   useOpenProjectAgentChat,
   useWorkspaceProjectAgents,
@@ -2190,6 +2191,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               </div>
             </div>
           </div>
+
+          {/* 会议室（圆桌会刀1）：当前工作区的圆桌会目录，进行中/已收口两小节；
+              点击打开召集方会话并自动展开会议专区。不可拖拽排序（不进 purpose
+              可排序组，保持 purpose 首选项持久化形状不变）。 */}
+          <WorkspaceCouncilSection
+            workspacePath={workspacePath}
+            workspaceIdentity={workspaceIdentity}
+            onSelectTask={handleTaskRowSelect}
+          />
 
           <WorkspaceProjectAgentCreateDialog
             open={projectAgentCreateTarget !== null || projectAgentEditTarget !== null}

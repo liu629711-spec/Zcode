@@ -6779,3 +6779,13 @@ const zhCN: Record<string, string> = {
 };
 
 export default zhCN;
+  "chat.council.status.cancelled": "已取消",
+  "chat.council.section.conclusion": "主席结论",
+  "workspaceSidebar.councilSection": "会议室",
+  "workspaceSidebar.council.running": "进行中",
+  "workspaceSidebar.council.closed": "已收口",
+  "workspaceSidebar.council.empty": "暂无会议",
+  "workspaceSidebar.council.loading": "正在获取会议…",
+  "workspaceSidebar.council.error": "会议列表获取失败",
+  "workspaceSidebar.council.retry": "重试",
+  "workspaceSidebar.council.rowAria": "打开会议：{subject}（{status}）",

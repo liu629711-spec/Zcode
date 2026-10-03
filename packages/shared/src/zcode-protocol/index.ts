@@ -1556,6 +1556,43 @@ export const zcodeSessionSubagentsResultSchema = z
   })
   .strict();
 export type ZCodeSessionSubagentsResult = z.infer<typeof zcodeSessionSubagentsResultSchema>;
+
+// ── 圆桌会（真会议）目录查询（council/list，workspace 级只读）──────────
+// 会议室侧栏分组的数据源：跨会话枚举当前 workspace 内的圆桌会台账行
+// （session_input kind="councilMeeting"，载荷=contracts CouncilMeetingState）。
+// 状态/类型闭集与 contracts/src/interfaces/council.ts 手工同步（shared 不依赖
+// contracts，zod 边界纪律同 backgroundResultOriginMetaSchema.council*）。
+export const zcodeCouncilListParamsSchema = z
+  .object({
+    workspace: zcodeWorkspaceRefSchema,
+  })
+  .strict();
+export type ZCodeCouncilListParams = z.infer<typeof zcodeCouncilListParamsSchema>;
+
+export const zcodeCouncilMeetingSummarySchema = z
+  .object({
+    councilId: nonEmptyString,
+    /** 召集方会话（UI taskId ≡ sessionId）：点击条目打开并定位的目标。 */
+    sessionId: nonEmptyString,
+    kind: z.enum(["plan", "acceptance"]),
+    status: z.enum(["proposed", "running", "approved", "rejected", "deadlocked", "cancelled"]),
+    round: z.union([z.literal(1), z.literal(2)]),
+    /** 议题：召集时的 topic 原话（缺席 = 旧行没带，UI 退标题/通用词）。 */
+    motion: z.string().optional(),
+    /** 召集方给的短标题（缺席 = UI 退类型词）。 */
+    title: z.string().optional(),
+    /** 台账行最近一次落账时间（epoch ms）：会议推进时随 saveSessionInput 刷新。 */
+    timeUpdated: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ZCodeCouncilMeetingSummary = z.infer<typeof zcodeCouncilMeetingSummarySchema>;
+
+export const zcodeCouncilListResultSchema = z
+  .object({
+    meetings: z.array(zcodeCouncilMeetingSummarySchema),
+  })
+  .strict();
+export type ZCodeCouncilListResult = z.infer<typeof zcodeCouncilListResultSchema>;
 // 驻场智能体会话 persona：v4 createSession 与 legacy session/create 共用一份定义。
 // systemPrompt 走 runtime 既有 config.systemPrompt（customSystemPrompt）通道；
 // memoryScope 缺省时 core 不注入智能体记忆。
@@ -3616,6 +3653,8 @@ export const zcodeProtocolMethods = {
   sessionResume: "session/resume",
   sessionList: "session/list",
   sessionSubagents: "session/subagents",
+  // 会议室侧栏分组（2026-10-03 刀1）：workspace 级只读，枚举圆桌会台账行。
+  councilList: "council/list",
   sessionRequestRuntimePreferences: "session/requestRuntimePreferences",
   sessionRead: "session/read",
   sessionMessages: "session/messages",

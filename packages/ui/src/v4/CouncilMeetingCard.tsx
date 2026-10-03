@@ -6,7 +6,7 @@
  * 这里只管画。与工地卡同一条纪律：挂在与会议相关的最新证据轮上（活边），
  * 状态只认证据——票没交齐一律「进行中」，绝不假报终局。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { UsersRound } from "lucide-react";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
@@ -16,6 +16,7 @@ import {
   COUNCIL_STATUS_DOT_KEY,
 } from "@/v4/councilMeetingVisuals.js";
 import { CouncilMeetingZone } from "@/v4/CouncilMeetingZone.js";
+import { useCouncilFocusStore } from "@/store/councilFocusStore.js";
 import type { CouncilMeetingModel } from "@/v4/councilMeeting.js";
 
 /** 专区弹层的开关不跨重挂持久化：会话流滚动重挂后默认收起（弹层跟着点开走）。 */
@@ -26,6 +27,15 @@ export function CouncilMeetingCard({
 }) {
   const { intl } = useZCodeIntl();
   const [zoneOpen, setZoneOpen] = useState(false);
+  // 侧栏「会议室」点入的定向打开（刀1）：本卡对上号即展开专区，一次性消费。
+  const consumeCouncilFocus = useCouncilFocusStore(
+    (state) => state.consumeCouncilFocus,
+  );
+  useEffect(() => {
+    if (consumeCouncilFocus(meeting.councilId)) {
+      setZoneOpen(true);
+    }
+  }, [consumeCouncilFocus, meeting.councilId]);
   const statusId = `chat.council.status.${meeting.status}`;
   const votes = meeting.tally;
   return (

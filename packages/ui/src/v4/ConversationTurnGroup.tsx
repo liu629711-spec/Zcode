@@ -112,6 +112,13 @@ interface ConversationTurnGroupProps {
    * 本轮挂载的圆桌会（真会议）摘要卡，由 Timeline 用 selectCouncilMeetingRenderInfo
    * 对全轮列表算出（host = 与会议相关的最新证据轮）：缺席 = 本轮没有会议证据。
    */
+  /**
+   * 主会话白名单（2026-10-03 圆桌会刀1）：本轮是圆桌会证据轮但不是挂载轮
+   * （席位回执轮）——整轮不渲染，时间线只保留入口卡。由 Timeline 用
+   * selectCouncilSuppressedUnitKeys 对全轮列表算出；挂载轮不走这面旗，
+   * 自己只画入口卡（见 councilMeeting 分支）。
+   */
+  councilContentSuppressed?: boolean;
   councilMeeting?: CouncilMeetingModel;
   /** 仅由 Timeline 注入给当前 live turn；历史 turn 永远不携带运行时 retry。 */
   apiRetry?: ApiRetryState | null;
@@ -1187,6 +1194,7 @@ function ConversationBackgroundResultWork({
         />
       ) : null}
       <TurnChatLoadingSlot apiRetry={apiRetry} eligible={showLoading} />
+  councilContentSuppressed = false,
     </div>
   );
 }
@@ -1408,7 +1416,7 @@ function ConversationTurnGroupImpl({
       data-turn-key={unit.key}
       className={cn(
         "relative mx-auto flex w-full flex-col gap-5 px-4 @md/conversation:px-6 pb-5",
-        startsWithWorkflowNotificationCard ? "pt-0" : "pt-14",
+        startsWithWorkflowNotificationCard || councilMeeting ? "pt-0" : "pt-14",
       )}
     >
       {unit.leadingBoundaryRows.map((row) => (
@@ -1424,7 +1432,7 @@ function ConversationTurnGroupImpl({
         // 轮还没产出任何内容时卡片也必须在场（running 中不能空白）。
         <AgentWorkOrderTurnCard meta={agentWorkOrderMeta} />
       ) : null}
-      {hasAssistantTurnContent ? (
+      {!councilMeeting && hasAssistantTurnContent ? (
         // deferAssistantActions 后工具栏被移到文件 summary 之后，
         // 之前 hover group 只包住工具栏自己，导致必须悬停到不可见按钮位置才出现。
         // 这里把 assistant work、summary 和工具栏放进同一轮 hover 容器，对齐旧版。
@@ -1585,4 +1593,11 @@ function ConversationTurnGroupImpl({
   );
 }
 
-export const ConversationTurnGroup = memo(ConversationTurnGroupImpl);
+export const ConversationTurnGroup = memo(function ConversationTurnGroup(
+  props: ConversationTurnGroupProps,
+) {
+  // 圆桌会证据轮白名单（刀1）：席位回执轮整轮收敛。早退发生在挂 hooks 的 Impl
+  // 之外——flag 翻转等于组件树换型，hooks 顺序永远合规。
+  if (props.councilContentSuppressed) return null;
+  return <ConversationTurnGroupImpl {...props} />;
+});

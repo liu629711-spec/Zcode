@@ -7108,3 +7108,13 @@ const enUS: Record<string, string> = {
 };
 
 export default enUS;
+  "chat.council.status.cancelled": "Cancelled",
+  "chat.council.section.conclusion": "Chair's conclusion",
+  "workspaceSidebar.councilSection": "Meeting Room",
+  "workspaceSidebar.council.running": "Running",
+  "workspaceSidebar.council.closed": "Closed",
+  "workspaceSidebar.council.empty": "No meetings yet",
+  "workspaceSidebar.council.loading": "Loading meetings…",
+  "workspaceSidebar.council.error": "Failed to load meetings",
+  "workspaceSidebar.council.retry": "Retry",
+  "workspaceSidebar.council.rowAria": "Open meeting: {subject} ({status})",

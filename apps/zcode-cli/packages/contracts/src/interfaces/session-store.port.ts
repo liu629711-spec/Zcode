@@ -1219,6 +1219,8 @@ export interface SessionStorePort {
   listSessionInputs?(input: {
     sessionID: SessionId;
     status?: SessionInputStatus;
+    /** 可选 kind 过滤（如 "councilMeeting"）：目录类查询只取单一 kind，避免全量解码 payload。 */
+    kind?: string;
   }): Promise<SessionInputRecord[]>;
   /** global createSession.firstInput 查重：由 queue_<sourceCommandId> 找回真实 session。 */
   getSessionInputById?(id: string): Promise<SessionInputRecord | null>;

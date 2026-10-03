@@ -49,6 +49,7 @@ import {
   ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS,
   zcodeProtocolErrorCodes,
   zcodeProtocolMethods,
+  zcodeCouncilListParamsSchema,
   zcodeSessionCancelBackgroundTaskParamsSchema,
   zcodeSessionCompactParamsSchema,
   zcodeSessionCloseParamsSchema,
@@ -81,6 +82,7 @@ import {
   type ZCodeSessionRuntimePreferencesResult,
   type ZCodeModelContextBudgetStrategy,
   type ZCodeProtocolTrace,
+  type ZCodeCouncilMeetingSummary,
   type ZCodeSessionEvent,
   type ZCodeSessionHistoryTarget,
   type ZCodeSessionResumeParams,
@@ -1693,6 +1695,98 @@ export async function listSessions(context: ZCodeProtocolAgentServerContext, raw
     );
   }
   return { sessions };
+}
+
+/** council/list 的会话扫描上界：按 time_updated desc 取前 N 个会话再逐个翻台账
+ * （圆桌会行极少，kind 过滤后每次查询只有几行）。极端远古会话里的会议会被截断——
+ * ponytail: 真遇到再加台账级跨会话索引。 */
+const COUNCIL_LIST_SESSION_SCAN_LIMIT = 500;
+
+/**
+ * 圆桌会（真会议）目录（council/list，2026-10-03 会议室侧栏刀1）：跨会话枚举当前
+ * workspace 的会议台账行（session_input kind="councilMeeting"，载荷
+ * =contracts CouncilMeetingState）。与 listSessions 同一条只读通道——台账在
+ * session store sqlite，读取不需要激活任何 runtime。载荷按 unknown 防御性收窄
+ * （畸形行不猜、直接跳过），输出按 timeUpdated 倒序。
+ */
+export async function listCouncilMeetings(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+) {
+  const params = parseParams(zcodeCouncilListParamsSchema, rawParams ?? {});
+  const store = context.deps.sessionStore;
+  if (!store?.listSessions || !store?.listSessionInputs) return { meetings: [] };
+  const workspacePath = params.workspace.workspacePath;
+  // workspace 对号口径与 listSessions 相同：workspaceID 优先，缺席退 path/directory。
+  const scopeKey = params.workspace.workspaceIdentity?.trim() || workspacePath;
+  const sessions = (
+    await store.listSessions({
+      directory: workspacePath,
+      includeArchived: true,
+      limit: COUNCIL_LIST_SESSION_SCAN_LIMIT,
+    })
+  ).filter(
+    (session) =>
+      (session.workspaceID?.trim() || session.path || session.directory) === scopeKey,
+  );
+  const meetings: ZCodeCouncilMeetingSummary[] = [];
+  for (const session of sessions) {
+    const rows = await store.listSessionInputs({
+      sessionID: session.id,
+      kind: "councilMeeting",
+    });
+    for (const row of rows) {
+      const council = readCouncilMeetingPayload(row.payload);
+      if (!council) continue;
+      meetings.push({
+        councilId: council.councilId,
+        sessionId: String(session.id),
+        kind: council.kind,
+        status: council.status,
+        round: council.round,
+        ...(council.motion ? { motion: council.motion } : {}),
+        ...(council.title ? { title: council.title } : {}),
+        timeUpdated: row.time.updated,
+      });
+    }
+  }
+  meetings.sort((left, right) => right.timeUpdated - left.timeUpdated);
+  return { meetings };
+}
+
+/** 台账载荷 → 会议状态（防御性收窄：kind 对、council 形状缺一律不认）。 */
+function readCouncilMeetingPayload(
+  payload: unknown,
+): Pick<
+  import("@zcode/contracts").CouncilMeetingState,
+  "councilId" | "kind" | "status" | "round" | "motion"
+> & { title?: string } | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const record = payload as Record<string, unknown>;
+  const council = record.council;
+  if (typeof council !== "object" || council === null) return null;
+  const meeting = council as Record<string, unknown>;
+  if (typeof meeting.councilId !== "string" || !meeting.councilId) return null;
+  if (meeting.kind !== "plan" && meeting.kind !== "acceptance") return null;
+  if (
+    meeting.status !== "running" &&
+    meeting.status !== "approved" &&
+    meeting.status !== "rejected" &&
+    meeting.status !== "deadlocked" &&
+    meeting.status !== "cancelled" &&
+    meeting.status !== "proposed"
+  ) {
+    return null;
+  }
+  if (meeting.round !== 1 && meeting.round !== 2) return null;
+  return {
+    councilId: meeting.councilId,
+    kind: meeting.kind,
+    status: meeting.status,
+    round: meeting.round,
+    ...(typeof meeting.motion === "string" && meeting.motion ? { motion: meeting.motion } : {}),
+    ...(typeof record.title === "string" && record.title ? { title: record.title } : {}),
+  };
 }
 
 export async function listSessionSubagents(
