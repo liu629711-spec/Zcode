@@ -12,6 +12,7 @@ import { useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  Clock,
   Gavel,
   UsersRound,
   Workflow as WorkflowIcon,
@@ -22,6 +23,7 @@ import { STATUS_DOT } from "@/components/workflow-graph/run-status-presentation.
 import { stationLampClass } from "@/components/workflow-timeline/WorkflowTimelineLedge.js";
 import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import { ReceiptFailureNotice } from "@/v4/ReceiptFailureNotice.js";
+import { formatBatchDuration } from "@/v4/agentWorkOrderBatch.js";
 import type { ConversationRowRenderContext } from "@/v4/conversationRowContext.js";
 import type {
   ReviewVerdict,
@@ -103,6 +105,7 @@ function CardShell({
   title,
   completed,
   total,
+  durationMs,
   overallDot,
   collapsed,
   onToggleCollapsed,
@@ -113,6 +116,8 @@ function CardShell({
   title?: string;
   completed: number;
   total: number;
+  /** 收口后的墙钟工时；缺席（在跑/时间残缺）不渲染——不画假数字。 */
+  durationMs?: number;
   overallDot: keyof typeof STATUS_DOT;
   collapsed: boolean;
   onToggleCollapsed: () => void;
@@ -154,6 +159,15 @@ function CardShell({
           <span className="text-ui-sm text-foreground-subtle">
             {intl.formatMessage({ id: "chat.workOrderBatch.progress" })}
           </span>
+          {durationMs !== undefined ? (
+            <span
+              className="flex items-center gap-1 font-mono text-ui-xs tabular-nums text-foreground-subtlest"
+              data-testid="agent-work-order-batch-duration"
+            >
+              <Clock aria-hidden="true" className="size-3" />
+              {formatBatchDuration(durationMs)}
+            </span>
+          ) : null}
         </span>
         <span
           aria-hidden="true"
@@ -445,6 +459,11 @@ export function AgentWorkOrderBatchCard({
   ).length;
   const allSettled = settledCount === batch.orders.length;
   const overallDot: keyof typeof STATUS_DOT = allSettled && failed ? "failed" : allSettled ? "done" : "running";
+  // 用时只在批次收口后画（AgentCore 状态条同款）：在跑时不显倒计时假数字。
+  const durationMs =
+    allSettled && batch.startedAtMs !== undefined && batch.endedAtMs !== undefined
+      ? Math.max(0, batch.endedAtMs - batch.startedAtMs)
+      : undefined;
   return (
     <CardShell
       icon={
@@ -458,6 +477,7 @@ export function AgentWorkOrderBatchCard({
       title={batch.title}
       completed={completed}
       total={batch.orders.length}
+      durationMs={durationMs}
       overallDot={overallDot}
       collapsed={collapsed}
       onToggleCollapsed={toggleCollapsed}

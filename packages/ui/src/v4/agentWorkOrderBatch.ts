@@ -77,6 +77,9 @@ export interface WorkOrderBatchModel {
   /** 批次人类短标题（模型给 batch_title）；缺席时卡片退回通用标题。 */
   title?: string;
   orders: WorkOrderBatchOrder[];
+  /** 批次墙钟（AgentCore 状态条同款）：各站轮头 startedAt 最小值 / endedAt 最大值。 */
+  startedAtMs?: number;
+  endedAtMs?: number;
   /**
    * 评审会批（2026-10-02）：派单行的 review=true 工具入参或合议轮头在场即成立——
    * 卡片据此换圆桌构图；普通施工批保持工地竖轨。缺席 = 工地。
@@ -168,6 +171,23 @@ interface BatchDraft {
   qc?: { unitKey: string; state: "running" | "done" | "failed"; review?: boolean };
   memberUnitKeys: Set<string>;
   hostUnitKey: string;
+  /** 批次墙钟（AgentCore 状态条同款）：各站轮头 startedAt 的最小值 / endedAt 的最大值。 */
+  startedAtMs?: number;
+  endedAtMs?: number;
+}
+
+/** 站头自带权威工时（startedAt/endedAt），批次卡只做 min/max 聚合，冷热同形。 */
+function trackBatchUnitTime(draft: BatchDraft, unit: ConversationTurnRenderUnit): void {
+  const startedAt = unit.header?.startedAt;
+  if (typeof startedAt === "number") {
+    draft.startedAtMs =
+      draft.startedAtMs === undefined ? startedAt : Math.min(draft.startedAtMs, startedAt);
+  }
+  const endedAt = unit.header?.endedAt;
+  if (typeof endedAt === "number") {
+    draft.endedAtMs =
+      draft.endedAtMs === undefined ? endedAt : Math.max(draft.endedAtMs, endedAt);
+  }
 }
 
 function mergeOrder(draft: BatchDraft, order: WorkOrderBatchOrder, unitKey: string): void {
@@ -195,15 +215,17 @@ export function selectWorkOrderBatches(
   units: readonly ConversationTurnRenderUnit[],
 ): WorkOrderBatchModel[] {
   const drafts = new Map<string, BatchDraft>();
-  const ensureDraft = (batchId: string, unitKey: string): BatchDraft => {
+  const ensureDraft = (batchId: string, unit: ConversationTurnRenderUnit): BatchDraft => {
     let draft = drafts.get(batchId);
     if (!draft) {
-      draft = { orders: new Map(), memberUnitKeys: new Set(), hostUnitKey: unitKey };
+      draft = { orders: new Map(), memberUnitKeys: new Set(), hostUnitKey: unit.key };
       drafts.set(batchId, draft);
+      trackBatchUnitTime(draft, unit);
       return draft;
     }
     // host 跟着最新证据走：回执每到一轮，工地卡就搬一轮——状态板贴活边。
-    draft.hostUnitKey = unitKey;
+    draft.hostUnitKey = unit.key;
+    trackBatchUnitTime(draft, unit);
     return draft;
   };
 
@@ -213,7 +235,7 @@ export function selectWorkOrderBatches(
     // 是新订单证据，落到下面的工单行扫描里照常聚合。
     const qc = resolveAgentWorkOrderBatchQcMeta(unit.header);
     if (qc?.batchId) {
-      const draft = ensureDraft(qc.batchId, unit.key);
+      const draft = ensureDraft(qc.batchId, unit);
       draft.title ??= qc.batchTitle;
       // 合议轮头本身就是评审会证据（合议只对评审会批开）。
       if (qc.review) draft.review = true;
@@ -233,7 +255,7 @@ export function selectWorkOrderBatches(
     // 证据一：回执轮头（发起方会话）。终态权威，先到先记账也行——合并规则让回执赢。
     const receipt = resolveAgentWorkOrderReceiptMeta(unit.header);
     if (receipt?.batchId) {
-      const draft = ensureDraft(receipt.batchId, unit.key);
+      const draft = ensureDraft(receipt.batchId, unit);
       draft.title ??= receipt.batchTitle;
       mergeOrder(
         draft,
@@ -283,7 +305,7 @@ export function selectWorkOrderBatches(
       const batchId = readString(output, "batchId") ?? readString(input, "batch_id");
       const title = readString(output, "batchTitle") ?? readString(input, "batch_title");
       if (!batchId) continue;
-      const draft = ensureDraft(batchId, unit.key);
+      const draft = ensureDraft(batchId, unit);
       draft.title ??= title;
       // 评审会证据：派单工具入参带 review=true（CLI 权威铸造，结构化非文本反推）。
       if (readBooleanTrue(input, "review") || readBooleanTrue(output, "review")) {
@@ -312,10 +334,29 @@ export function selectWorkOrderBatches(
       orders: [...draft.orders.values()],
       ...(draft.review ? { review: true } : {}),
       ...(draft.qc ? { qc: draft.qc } : {}),
+      ...(draft.startedAtMs !== undefined ? { startedAtMs: draft.startedAtMs } : {}),
+      ...(draft.endedAtMs !== undefined ? { endedAtMs: draft.endedAtMs } : {}),
       hostUnitKey: draft.hostUnitKey,
     });
   }
   return models;
+}
+
+/**
+ * 批次墙钟的展示格式（AgentCore 状态条同款等宽短格式）：一分钟内只显秒，跨分显
+ * m/ss，跨小时显 h/mm。数字贴在进度旁自会说话，不占词条。
+ */
+export function formatBatchDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return "—";
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  const twoDigits = (value: number) => (value < 10 ? `0${value}` : `${value}`);
+  if (hours > 0) return `${hours}h${twoDigits(minutes)}m`;
+  if (totalMinutes > 0) return `${minutes}m${twoDigits(seconds)}s`;
+  return `${seconds}s`;
 }
 
 /** 每轮的挂载/抑制信息（Timeline 算一次，ConversationTurnGroup 查表）。 */

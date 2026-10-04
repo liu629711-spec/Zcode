@@ -4,6 +4,7 @@ import type { TurnHeaderRow } from "@zcode/shared/zcode-protocol-v4";
 import type { ConversationTurnRenderUnit } from "../src/v4/conversationTurnRenderUnits.js";
 import {
   extractReviewVerdict,
+  formatBatchDuration,
   selectWorkOrderBatchRenderInfo,
   selectWorkOrderBatches,
 } from "../src/v4/agentWorkOrderBatch.js";
@@ -436,4 +437,69 @@ test("selectWorkOrderBatchRenderInfo：质检轮是 host 也是 member（工地�
   const qcInfo = info.get("qc-turn")?.find((entry) => entry.batch.batchId === BATCH.batchId);
   assert.equal(qcInfo?.isHost, true);
   assert.equal(qcInfo?.isMember, true);
+});
+
+// ── 批次墙钟（2026-10-04，AgentCore 状态条同款）：站头权威工时只做 min/max 聚合 ──
+
+function withHeaderTime(
+  unit: ConversationTurnRenderUnit,
+  startedAt: number,
+  endedAt: number,
+): ConversationTurnRenderUnit {
+  return {
+    ...unit,
+    header: unit.header
+      ? { ...unit.header, startedAt, endedAt }
+      : turnHeaderRow({ turnId: unit.turnId, origin: "backgroundResult", state: "completedSuccess", startedAt, endedAt }),
+  };
+}
+
+test("批次墙钟：startedAt 取最小、endedAt 取最大；收口批次带时间，缺席不编", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow(
+        "call-1",
+        { agent: "code-plus", task: "A", batch_title: "登录页改造" },
+        { agentName: "code-plus", delivery: "started", workOrderId: "wo-1", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+      dispatchRow(
+        "call-2",
+        { agent: "doc-writer", task: "B", batch_title: "登录页改造" },
+        { agentName: "doc-writer", delivery: "started", workOrderId: "wo-2", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+    ]),
+    withHeaderTime(receiptTurn("receipt-1", BATCH, "wo-1", "code-plus 交活", "完成"), 60_000, 125_000),
+    withHeaderTime(receiptTurn("receipt-2", BATCH, "wo-2", "doc-writer 交活", "完成"), 61_000, 185_000),
+  ];
+  const batches = selectWorkOrderBatches(units);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0]!.startedAtMs, 60_000, "最早站头开局");
+  assert.equal(batches[0]!.endedAtMs, 185_000, "最晚站头收工");
+
+    // 没有任何带时间站头的批次（只有派单行，无回执/质检轮头）：时间字段缺席。
+    const bare = selectWorkOrderBatches([
+      dispatchTurn("dispatch-turn", [
+        dispatchRow(
+          "call-1",
+          { agent: "code-plus", task: "A", batch_title: "B2" },
+          { agentName: "code-plus", delivery: "started", workOrderId: "wo-9", batchId: "batch-2", batchTitle: "B2" },
+        ),
+        dispatchRow(
+          "call-2",
+          { agent: "doc-writer", task: "B", batch_title: "B2" },
+          { agentName: "doc-writer", delivery: "started", workOrderId: "wo-10", batchId: "batch-2", batchTitle: "B2" },
+        ),
+      ]),
+    ]);
+    assert.equal(bare.length, 1);
+    assert.equal(bare[0]!.startedAtMs, undefined);
+    assert.equal(bare[0]!.endedAtMs, undefined);
+  });
+
+test("formatBatchDuration：秒/分/时三段格式与残缺兜底", () => {
+  assert.equal(formatBatchDuration(42_000), "42s");
+  assert.equal(formatBatchDuration(192_000), "3m12s");
+  assert.equal(formatBatchDuration(3_840_000), "1h04m");
+  assert.equal(formatBatchDuration(-1), "—");
+  assert.equal(formatBatchDuration(Number.NaN), "—");
 });
