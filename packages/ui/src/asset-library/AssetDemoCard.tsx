@@ -42,6 +42,7 @@ import {
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
 import { countDeliverableExternalRefs } from "@/asset-library/catalog/catalogCheck.js";
+import { loadAssetBody, mergeAssetBody } from "@/asset-library/catalog/assetBodies.js";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -56,6 +57,7 @@ import {
   PREVIEW_DESIGN_WIDTH,
 } from "./AssetPreviewFrame.js";
 import { useInView } from "./useInView.js";
+import { useAssetBody } from "./useAssetBody.js";
 
 /** locale 展示名：En 字段缺失回退中文原字段（titleEn ?? title）。 */
 export function resolveDisplayTitle(manifest: AssetManifest, locale: string): string {
@@ -106,13 +108,24 @@ export function AssetDemoCard({
   // 直接丢上下文变空白（真机：金属字等 WebGL 货空白、脱离应用单开却正常）。
   // 卸载发生在缓冲带内、卡片保持 aspect-ratio 高度，滚动不跳、重挂不闪屏。
   const { ref, inView } = useInView<HTMLDivElement>("1200px 0px");
-  const blueprintFiles = resolveBlueprintFiles(manifest);
-  const isPromptAsset = manifest.files.length === 0;
   const [codeOpen, setCodeOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [activeFileName, setActiveFileName] = useState(blueprintFiles[0]!.name);
+  const [activeFileName, setActiveFileName] = useState("");
   const [copied, setCopied] = useState(false);
-  const activeFile = blueprintFiles.find((file) => file.name === activeFileName) ?? blueprintFiles[0]!;
+  // 瘦身拆分（2026-10-05）：lazy 货（galaxy 大袋/静态 react 货）的正文按需拉，
+  // 进缓冲带或打开代码面板才触发；卡片根节点加 content-visibility 窗化，
+  // 视口外的卡浏览器直接跳过布局绘制（P2"加载更多无窗化"的另一半个解）。
+  const body = useAssetBody(manifest, inView || codeOpen);
+  const fullManifest = mergeAssetBody(manifest, body);
+  const bodyReady = body !== null;
+  const isPromptAsset = (manifest.filesCount ?? manifest.files.length) === 0;
+  const blueprintFiles = bodyReady ? resolveBlueprintFiles(fullManifest) : [];
+  const activeFile = blueprintFiles.find((file) => file.name === activeFileName) ?? blueprintFiles[0];
+  useEffect(() => {
+    if (bodyReady && activeFileName === "" && blueprintFiles[0]) {
+      setActiveFileName(blueprintFiles[0].name);
+    }
+  }, [bodyReady, activeFileName, blueprintFiles]);
 
   useEffect(() => {
     if (!copied) {
@@ -124,39 +137,50 @@ export function AssetDemoCard({
 
   // 递活消息组装（技术设计 §10 V2-2 + V3-2 chip 化）：普通货先落盘，消息 = 引用 chip +
   // 口令 + 落盘指引（不再铺代码）；失败兜底全量文本。两个按钮共用 deliver（预填不发送）。
-  const tryPrompt = buildAssetTryPrompt(manifest);
+  // lazy 货先等正文（loadAssetBody 幂等缓存，prompt 货/已装载货即时返回）。
   const sendToChat = async (
     deliver: (message: string, mention?: ComposerMentionPrefill) => void,
   ) => {
     if (isSending) return;
     setIsSending(true);
-    let message = tryPrompt;
-    let mention: ComposerMentionPrefill | undefined;
-    if (!isPromptAsset) {
+    try {
+      let merged: AssetManifest;
       try {
-        if (!platform.assetLibraryWriteFiles) {
-          throw new Error("asset_library_write_not_supported");
-        }
-        const { writtenPaths } = await platform.assetLibraryWriteFiles({
-          workspacePath,
-          relativeDir: `.zcode/asset-library/${manifest.id}`,
-          files: manifest.files.map((file) => ({ name: file.name, content: file.content })),
-        });
-        const chipMessage = buildAssetReferenceChipMessage(manifest, writtenPaths, locale);
-        message = chipMessage.text;
-        mention = chipMessage.mention;
+        merged = mergeAssetBody(manifest, await loadAssetBody(manifest));
       } catch (error) {
-        // 带上真实原因（not_supported=应用主进程是旧版需重启 / invalid_payload / write_failed），
-        // 否则用户只看到"没反应/失败"没法定位是哪层断了。
-        const reason = error instanceof Error ? error.message : String(error);
-        console.warn("[asset-library] 图纸落盘失败:", reason);
-        toast(
-          intl.formatMessage({ id: "assetLibrary.detail.writeFailedReason" }, { error: reason }),
-        );
+        // 正文拉不到（chunk 丢失/网络失败）：不递空消息，留痕等重试。
+        console.warn("[asset-library] 素材正文加载失败:", manifest.id, error);
+        return;
       }
+      let message = buildAssetTryPrompt(merged);
+      let mention: ComposerMentionPrefill | undefined;
+      if (!isPromptAsset) {
+        try {
+          if (!platform.assetLibraryWriteFiles) {
+            throw new Error("asset_library_write_not_supported");
+          }
+          const { writtenPaths } = await platform.assetLibraryWriteFiles({
+            workspacePath,
+            relativeDir: `.zcode/asset-library/${manifest.id}`,
+            files: merged.files.map((file) => ({ name: file.name, content: file.content })),
+          });
+          const chipMessage = buildAssetReferenceChipMessage(merged, writtenPaths, locale);
+          message = chipMessage.text;
+          mention = chipMessage.mention;
+        } catch (error) {
+          // 带上真实原因（not_supported=应用主进程是旧版需重启 / invalid_payload / write_failed），
+          // 否则用户只看到"没反应/失败"没法定位是哪层断了。
+          const reason = error instanceof Error ? error.message : String(error);
+          console.warn("[asset-library] 图纸落盘失败:", reason);
+          toast(
+            intl.formatMessage({ id: "assetLibrary.detail.writeFailedReason" }, { error: reason }),
+          );
+        }
+      }
+      deliver(message, mention);
+    } finally {
+      setIsSending(false);
     }
-    deliver(message, mention);
-    setIsSending(false);
   };
   const handleSendToNewChat = () => {
     void sendToChat((message, mention) => {
@@ -176,6 +200,7 @@ export function AssetDemoCard({
   };
 
   // 复制当前展开文件内容（prompt 货即口令全文）；成功 toast，失败 toast 指引手动复制。
+  // lazy 货正文未到时先拉（幂等缓存），复制目标 = 展开文件 ?? 首个文件 ?? 口令。
   const handleCopy = async () => {
     if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
       toast(
@@ -187,12 +212,16 @@ export function AssetDemoCard({
       return;
     }
     try {
-      await navigator.clipboard.writeText(activeFile.content);
+      const merged = mergeAssetBody(manifest, body ?? (await loadAssetBody(manifest)));
+      const files = resolveBlueprintFiles(merged);
+      const target = files.find((file) => file.name === activeFileName) ?? files[0];
+      if (!target) return;
+      await navigator.clipboard.writeText(target.content);
       setCopied(true);
       toast(intl.formatMessage({ id: "assetLibrary.detail.copied" }));
       // 复验拍板（2026-10-01）：原文保持上游逐字（署名必须保留、占位服务本要联网），
       // 但复制那一刻把「有外链、离线看不到」用一行说破——痛点是不知道，不是有外链。
-      const externalRefCount = countDeliverableExternalRefs(activeFile.content);
+      const externalRefCount = countDeliverableExternalRefs(target.content);
       if (externalRefCount > 0) {
         toast(
           intl.formatMessage(
@@ -230,7 +259,7 @@ export function AssetDemoCard({
     <article
       data-testid="asset-library-card"
       data-asset-id={manifest.id}
-      className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border-hover"
+      className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border-hover [content-visibility:auto] [contain-intrinsic-size:auto_520px]"
     >
       {/* V3 重设计：头部两行固定高度——第一行 序号+标题+徽标+图标操作组（不换行），
           第二行描述单独 truncate。操作全改图标（带 title），文字按钮在窄卡上挤换行
@@ -346,9 +375,9 @@ export function AssetDemoCard({
         className="w-full shrink-0 overflow-hidden rounded-xl border border-border bg-background"
         style={{ aspectRatio: `${PREVIEW_DESIGN_WIDTH} / ${PREVIEW_DESIGN_HEIGHT}` }}
       >
-        {inView ? (
+        {inView && bodyReady ? (
           <div className="h-full w-full">
-            <AssetPreviewFrame previewHtml={manifest.previewHtml} title={manifest.title} />
+            <AssetPreviewFrame previewHtml={fullManifest.previewHtml} title={manifest.title} />
           </div>
         ) : (
           <div aria-hidden="true" className="flex h-full w-full flex-col gap-2 p-3">
@@ -361,7 +390,15 @@ export function AssetDemoCard({
 
       {codeOpen ? (
         <div className="flex flex-col gap-2" data-testid="asset-library-code-panel">
-          {isPromptAsset ? (
+          {!bodyReady ? (
+            <div
+              className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 p-3 text-ui-sm text-foreground-subtle"
+              role="status"
+            >
+              <LoaderIcon className="size-3.5 animate-spin" aria-hidden="true" />
+              {intl.formatMessage({ id: "assetLibrary.loading" })}
+            </div>
+          ) : isPromptAsset ? (
             <div className="rounded-xl border border-border bg-muted/40 p-3">
               <p
                 className="whitespace-pre-wrap text-ui-sm leading-relaxed text-foreground"
@@ -403,14 +440,15 @@ export function AssetDemoCard({
                   </CodeBlockLanguageSelectorContent>
                 </CodeBlockLanguageSelector>
               ) : null}
+              {/* bodyReady 且非 prompt ⇒ 图纸非空 ⇒ activeFile 必在（窄化不了，! 兜底） */}
               <CodeBlock
-                code={activeFile.content}
-                language={activeFile.language}
+                code={activeFile!.content}
+                language={activeFile!.language}
                 // 超长文件面板内滚动，不撑破卡片（技术设计 §6）
                 contentClassName="max-h-72 overflow-auto"
                 data-testid="asset-library-code"
               >
-                <CodeBlockHeader displayFile={activeFile.name} />
+                <CodeBlockHeader displayFile={activeFile!.name} />
               </CodeBlock>
             </>
           )}

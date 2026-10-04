@@ -6,9 +6,11 @@
  * AssetPreviewFrame 的缩放舞台，与素材库看到的效果一致。监听随 chip DOM 移除自动失效
  * （WeakMap 记账 AbortController，重挂装饰先 abort 旧的，防重复监听）。
  */
+import { useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { PaletteIcon } from "lucide-react";
 import { ASSET_CATALOG } from "@/asset-library/catalog/index.js";
+import { loadAssetBody } from "@/asset-library/catalog/assetBodies.js";
 import { resolveDesignStyleZhName } from "@/asset-library/catalog/designStyleZh.js";
 import { AssetPreviewFrame } from "@/asset-library/AssetPreviewFrame.js";
 
@@ -53,7 +55,26 @@ function hideNow() {
 
 function AssetPreviewPopoverCard({ assetId }: { assetId: string }) {
   const asset = ASSET_CATALOG.find((candidate) => candidate.id === assetId);
-  if (!asset?.previewHtml || !anchorRect) {
+  // 瘦身拆分（2026-10-05）：lazy 货（bodyFrom 在场）预览 HTML 按需拉——悬停
+  // 弹出才触发，live goods 不受影响。
+  const [lazyPreviewHtml, setLazyPreviewHtml] = useState<string | null>(null);
+  useEffect(() => {
+    if (!asset?.bodyFrom) return;
+    let alive = true;
+    loadAssetBody(asset).then(
+      (body) => {
+        if (alive) setLazyPreviewHtml(body.previewHtml);
+      },
+      (error: unknown) => {
+        console.warn("[asset-library] 悬停预览正文加载失败:", asset.id, error);
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [asset]);
+  const previewHtml = asset?.bodyFrom ? lazyPreviewHtml : (asset?.previewHtml ?? null);
+  if (!asset || !previewHtml || !anchorRect) {
     return null;
   }
   const isDesignStyle = asset.category === "design-style";
@@ -88,7 +109,7 @@ function AssetPreviewPopoverCard({ assetId }: { assetId: string }) {
         className="overflow-hidden rounded-lg border border-border"
         style={{ aspectRatio: "800 / 500" }}
       >
-        <AssetPreviewFrame previewHtml={asset.previewHtml} title={title} />
+        <AssetPreviewFrame previewHtml={previewHtml} title={title} />
       </div>
     </div>
   );

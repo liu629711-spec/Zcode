@@ -72,9 +72,30 @@ export function validateCatalog(manifests: readonly AssetManifest[]): string[] {
     }
     seenIds.add(manifest.id);
 
-    for (const field of ["title", "description", "previewHtml", "prompt"] as const) {
+    // 瘦身拆分（2026-10-05）：bodyFrom 在场的货有两种形态——meta（正文未合并，
+    // previewHtml 恒空串，允许）与 merged（loadAssetBody 之后真身已合并，非空）。
+    // 非空要求只对"应该就地"的货（!lazyBody）提；**沙箱扫描对一切非空正文都做**
+    // （meta 空串扫过等于没扫，merged 真身必须被扫到——校验语义不因拆分松掉）。
+    const lazyBody = manifest.bodyFrom !== undefined;
+    for (const field of ["title", "description", "prompt"] as const) {
       if (manifest[field].trim() === "") {
         errors.push(`${label}: 必填字段 ${field} 为空`);
+      }
+    }
+    if (!lazyBody && manifest.previewHtml.trim() === "") {
+      errors.push(`${label}: 必填字段 previewHtml 为空`);
+    }
+    if (manifest.previewHtml.trim() !== "") {
+      if (EXTERNAL_REF.test(manifest.previewHtml)) {
+        errors.push(`${label}: previewHtml 含外链（src="http…"），沙箱内禁一切外链`);
+      }
+      if (REDIRECT_AND_PROTOCOL_REF.test(manifest.previewHtml)) {
+        errors.push(
+          `${label}: previewHtml 含跳转/伪协议通道（meta refresh / form action 外链 / javascript:），沙箱内禁一切出站`,
+        );
+      }
+      if (manifest.previewHtml.includes("localStorage")) {
+        errors.push(`${label}: previewHtml 含 localStorage（沙箱无源环境会抛）`);
       }
     }
     if (!ASSET_CATEGORIES.includes(manifest.category)) {
@@ -84,7 +105,10 @@ export function validateCatalog(manifests: readonly AssetManifest[]): string[] {
       errors.push(`${label}: tags 不能为空`);
     }
 
-    if (manifest.category !== "prompt" && manifest.files.length === 0) {
+    const filesCount = manifest.filesCount ?? manifest.files.length;
+    if (manifest.category !== "prompt" && filesCount === 0) {
+      // 惰性 meta 货（bodyFrom 在场）真身下放，files 字段恒空、计数在 filesCount——
+      // 报错文案统一沿用 files 口径，测试按它对号。
       errors.push(`${label}: 非 prompt 类货 files 不能为空（图纸是递活的实体）`);
     }
     // V2-4 台账：标了出处的货，site/url/license 三字段必须全填，缺一即坏货
@@ -94,17 +118,6 @@ export function validateCatalog(manifests: readonly AssetManifest[]): string[] {
           errors.push(`${label}: source.${field} 为空（台账三字段必填）`);
         }
       }
-    }
-    if (EXTERNAL_REF.test(manifest.previewHtml)) {
-      errors.push(`${label}: previewHtml 含外链（src="http…"），沙箱内禁一切外链`);
-    }
-    if (REDIRECT_AND_PROTOCOL_REF.test(manifest.previewHtml)) {
-      errors.push(
-        `${label}: previewHtml 含跳转/伪协议通道（meta refresh / form action 外链 / javascript:），沙箱内禁一切出站`,
-      );
-    }
-    if (manifest.previewHtml.includes("localStorage")) {
-      errors.push(`${label}: previewHtml 含 localStorage（沙箱无源环境会抛）`);
     }
   }
   return errors;

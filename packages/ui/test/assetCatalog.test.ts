@@ -167,9 +167,9 @@ test("UIverse 自动收录大袋：3,000+ 件全绿且与静态货架 id 不撞"
 test("UIverse 自动收录大袋：预览惰性可算且沙箱清洗生效", async () => {
   const { BULK_AUTO_ASSETS } = await import("../src/asset-library/catalog/generated/index.js");
   // 惰性 getter：首读能算出完整预览文档
-  const sample = BULK_AUTO_ASSETS[0];
+  const sample = BULK_AUTO_ASSETS[0]!;
   assert.ok(sample.previewHtml.startsWith("<!doctype html>"), "预览应为完整文档");
-  assert.ok(sample.previewHtml.includes(sample.files[0].content), "预览应内嵌图纸原文");
+  assert.ok(sample.previewHtml.includes(sample.files[0]!.content), "预览应内嵌图纸原文");
   // 抽查全袋：预览（清洗后）不再有外链 src，图纸保持上游逐字
   for (const manifest of BULK_AUTO_ASSETS) {
     assert.ok(

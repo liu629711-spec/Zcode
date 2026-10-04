@@ -50,20 +50,23 @@ import { textScrambleAsset } from "./assets/text-scramble.js";
 import { toastNotificationAsset } from "./assets/toast-notification.js";
 import { typewriterAsset } from "./assets/typewriter-text.js";
 import { waveBackgroundAsset } from "./assets/wave-background.js";
-import { REACT_PREVIEW_HTML } from "./preview-html.js";
 import { OPEN_SOURCE_ASSETS } from "./openSourceAssets.js";
 import { REACT_BITS_ASSETS } from "./reactBitsAssets.js";
 
 /**
- * react 货的 previewHtml 从构建期产物接线（scripts/build-asset-previews.mjs 生成）。
- * 产物缺失时置空串——validateCatalog 会报"必填字段 previewHtml 为空"让测试炸掉，
- * 而不是静默白屏（重新生成：仓库根 node scripts/build-asset-previews.mjs）。
+ * react 货的 previewHtml 真身在 preview-html.ts（构建期产物，
+ * scripts/build-asset-previews.mjs 生成）。瘦身拆分（2026-10-05）后这份
+ * 3.96MB 的 map 不再静态吸进本模块（mentions/composer 也 import 本模块）——
+ * 三件货只带 bodyFrom 标记，预览 HTML 经 assetBodies.ts 的 loadAssetBody
+ * 按需 dynamic import（产物缺失时报错而不是静默白屏；
+ * 重新生成：仓库根 node scripts/build-asset-previews.mjs）。
  */
 
 const reactAssets: AssetManifest[] = [flipClockAsset, glowBorderCardAsset, numberRollAsset].map(
   (asset) => ({
     ...asset,
-    previewHtml: REACT_PREVIEW_HTML[asset.id] ?? "",
+    previewHtml: "",
+    bodyFrom: "preview-html" as const,
   }),
 );
 

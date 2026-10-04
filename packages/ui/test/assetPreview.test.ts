@@ -75,13 +75,14 @@ test("产物自包含：无外链 script、无 localStorage，react 确实内联
   }
 });
 
-test("validateCatalog 对含 react 货的全目录仍全绿，且 previewHtml 已接线", () => {
+test("validateCatalog 对含 react 货的全目录仍全绿，react 货预览已下放惰性 map（瘦身拆分）", () => {
   assert.deepEqual(validateCatalog(ASSET_CATALOG), []);
   for (const asset of selfMadeReactAssets) {
-    assert.equal(
-      asset.previewHtml,
-      REACT_PREVIEW_HTML[asset.id],
-      `${asset.id}: previewHtml 应从 REACT_PREVIEW_HTML 接线（catalog/index.ts）`,
+    assert.equal(asset.bodyFrom, "preview-html", `${asset.id}: react 货应标 bodyFrom=preview-html`);
+    assert.equal(asset.previewHtml, "", `${asset.id}: previewHtml 应为空串（真身在惰性 map）`);
+    assert.ok(
+      (REACT_PREVIEW_HTML[asset.id] ?? "").startsWith("<!doctype html>"),
+      `${asset.id}: 惰性 map 里应有完整预览产物`,
     );
   }
 });
@@ -207,7 +208,7 @@ test("V3-3 许可红线：React Bits 不逐字收（MIT+Commons Clause 禁再分
     const blueprint = asset.files.map((file) => file.content).join("\n");
     assert.ok(!/DavidHDev|react-bits/.test(blueprint), `${asset.id}: 不许逐字收录 React Bits 源码`);
     assert.match(
-      asset.source.license,
+      asset.source!.license,
       /Commons Clause|自实现/,
       `${asset.id}: source.license 要写明 Commons Clause 与自实现口径`,
     );
@@ -239,10 +240,10 @@ test("拼装块序：motion 件的 react 块必须先于 motion 块注册（真�
     assert.equal(ordered[0], "react", `${id}: react 块必须排最前，实际 ${ordered.join("+")}`);
   }
   // 拼装产物本身同样按依赖序落 <script>
-  const sampleId = motionEntries[0][0];
+  const sampleId = motionEntries[0]![0];
   const html = assembleOpenSourcePreview(sampleId);
-  const reactPos = html.indexOf(PREVIEW_RUNTIME_CHUNKS.react.slice(0, 64));
-  const motionPos = html.indexOf(PREVIEW_RUNTIME_CHUNKS.motion.slice(0, 64));
+  const reactPos = html.indexOf(PREVIEW_RUNTIME_CHUNKS.react!.slice(0, 64));
+  const motionPos = html.indexOf(PREVIEW_RUNTIME_CHUNKS.motion!.slice(0, 64));
   assert.ok(reactPos >= 0 && motionPos >= 0, "react/motion 块都应内联进拼装产物");
   assert.ok(reactPos < motionPos, `${sampleId}: 产物里 react 块须在 motion 块之前`);
 });

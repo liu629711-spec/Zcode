@@ -142,5 +142,92 @@ for (const id of bulkIds) {
 }
 console.log(`COUNT bulk-static-id-collisions=${crossCollision}`);
 
+// ── 5. 瘦身拆分对账（2026-10-05）：galaxy meta/bodies 必须与原大袋逐件等值 ──
+// 拆分产物（galaxy-meta.ts + galaxy-bodies/*.ts）是 uiverse-*.ts 的派生物，
+// 重跑生成器后忘了重跑拆分，这里当场抓住。
+const { GALAXY_META } = await import(
+  "../packages/ui/src/asset-library/catalog/generated/galaxy-meta.js"
+);
+if (GALAXY_META.length !== BULK_AUTO_ASSETS.length) {
+  report("galaxy meta count", `meta=${GALAXY_META.length} bulk=${BULK_AUTO_ASSETS.length}`);
+}
+const CHUNKS = [
+  "buttons",
+  "cards",
+  "checkbox",
+  "forms",
+  "inputs",
+  "loaders",
+  "notifications",
+  "patterns",
+  "radio-button",
+  "toggle-switch",
+  "tooltips",
+] as const;
+const splitBodies = new Map<string, { previewHtml: string; files: unknown }>();
+for (const chunk of CHUNKS) {
+  const mod = await import(
+    `../packages/ui/src/asset-library/catalog/generated/galaxy-bodies/${chunk}.js`
+  );
+  for (const [id, body] of Object.entries(
+    mod.GALAXY_BODIES as Record<string, { previewHtml: string; files: unknown }>,
+  )) {
+    if (splitBodies.has(id)) report("galaxy body duplicate id", id);
+    splitBodies.set(id, body);
+  }
+}
+let metaMismatch = 0;
+for (const [index, original] of BULK_AUTO_ASSETS.entries()) {
+  const entry = GALAXY_META[index];
+  if (!entry || entry.id !== original.id) {
+    report("galaxy meta order/id", `#${index}: ${entry?.id} vs ${original.id}`);
+    metaMismatch += 1;
+    if (metaMismatch > 5) break;
+    continue;
+  }
+  const strip = (manifest: Record<string, unknown>) => {
+    const { previewHtml: _p, files: _f, filesCount: _c, bodyFrom: _b, ...rest } = manifest;
+    return rest;
+  };
+  if (
+    JSON.stringify(strip(entry as unknown as Record<string, unknown>)) !==
+    JSON.stringify(strip(original as unknown as Record<string, unknown>))
+  ) {
+    report("galaxy meta fields differ", original.id);
+    metaMismatch += 1;
+  }
+  const body = splitBodies.get(original.id);
+  if (!body) {
+    report("galaxy body missing", original.id);
+    metaMismatch += 1;
+  } else if (
+    body.previewHtml !== original.previewHtml ||
+    JSON.stringify(body.files) !== JSON.stringify(original.files)
+  ) {
+    report("galaxy body differs from source", original.id);
+    metaMismatch += 1;
+  }
+}
+console.log(`COUNT galaxy-meta=${GALAXY_META.length} bodies=${splitBodies.size}`);
+
+// 静态 react 货（bodyFrom="preview-html"）的预览 HTML 移出了 ASSET_CATALOG，
+// 沙箱扫描在这里补位——真身照样过全模式扫描。
+const { REACT_PREVIEW_HTML } = await import(
+  "../packages/ui/src/asset-library/catalog/preview-html.js"
+);
+let reactScan = 0;
+for (const [id, previewHtml] of Object.entries(REACT_PREVIEW_HTML)) {
+  for (const pattern of FRESH_PATTERNS) {
+    if (pattern.re.test(previewHtml)) {
+      report(
+        `react-preview[${id}] ${pattern.name}`,
+        previewHtml.match(pattern.re)?.[0]?.slice(0, 120) ?? "(match)",
+      );
+    }
+  }
+  reactScan += 1;
+}
+console.log(`COUNT react-preview-html-scanned=${reactScan}`);
+
 console.log(problems === 0 ? "VERDICT ALL-GREEN" : `VERDICT ${problems} PROBLEM(S)`);
 if (problems > 0) process.exitCode = 1;

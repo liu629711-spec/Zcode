@@ -16,5 +16,13 @@
       "@zcode/shared/*": ["../shared/dist/*.d.ts"]
     }
   },
-  "include": ["test/agentWorkOrderBatch.test.ts"]
+  "include": [
+    "test/agentWorkOrderBatch.test.ts",
+    "test/assetBodies.test.ts",
+    "test/assetCatalog.test.ts",
+    "test/assetLibraryFilter.test.ts",
+    "test/assetPreview.test.ts",
+    "test/assetTryPrompt.test.ts",
+    "test/assetReferenceMessage.test.ts"
+  ]
 }

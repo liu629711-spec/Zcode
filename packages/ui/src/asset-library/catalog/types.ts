@@ -44,10 +44,28 @@ export interface AssetManifest {
    * 禁一切外链（`src="http…"`）、禁 localStorage（沙箱无源环境会抛）。
    * V3-3 逐字收录的 React 货由 catalog/index.ts 用 previewAssemble 惰性接线
    * （首次读取时才把运行时块 + CSS + 组件体拼成 HTML，模块级缓存）。
+   *
+   * 瘦身拆分（2026-10-05）：bodyFrom 在场的货此字段是空串——真身按 bodyFrom
+   * 经 loadAssetBody（assetBodies.ts）按需解析，不再静态吸进行包/展厅 chunk。
    */
   previewHtml: string;
   /** 图纸；prompt 类货允许为空（口令本身即货） */
   files: AssetFile[];
+  /**
+   * 图纸真身条数（瘦身拆分 2026-10-05）：galaxy meta 货的 files 恒为空数组
+   * （真身按 bodyFrom 按需解析），此字段保留真计数供 isPromptAsset 判定。
+   * 正文就地的货缺席，调用方按 files.length 算。
+   */
+  filesCount?: number;
+  /**
+   * 正文下放标记（瘦身拆分 2026-10-05）：缺席 = previewHtml/files 就地是真身；
+   * "preview-html" = 仅预览 HTML 在 preview-html.ts 惰性 map（files 仍就地）；
+   * "galaxy:<源分类>" = 预览+图纸都在 generated/galaxy-bodies/<源分类>.ts
+   * （源分类 = UIverse 收录的 11 个文件名，与货架六分类不是一回事，一个货架
+   * 分类可能对应多个源分类 chunk）。统一经 loadAssetBody（assetBodies.ts）解析，
+   * resolve 后与 meta 合并成完整 AssetManifest 再进交互面（iframe/代码面板/递活）。
+   */
+  bodyFrom?: "preview-html" | `galaxy:${string}`;
   /** 点单口令：发到会话时组装进消息的"要求"段（中文） */
   prompt: string;
   /** 出处+许可；自制货可省 */

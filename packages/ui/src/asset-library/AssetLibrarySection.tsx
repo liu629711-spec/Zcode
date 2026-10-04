@@ -3,18 +3,20 @@
  * 搜索 + 分类 chips + 计数 + 2 列网格演示卡流（2xl 屏 3 列、max-w-7xl 居中），
  * 原「点卡开详情弹层」入口退役——演示区真 iframe 直接内嵌进卡片。
  *
- * V5 备货扩容：静态目录（ASSET_CATALOG，~400 件）先渲染立即可逛；UIverse 自动
- * 收录的 3,793 件（~12MB）走动态 import 按需拉取（chunk 独立，不进主包），
- * 拉取中显示加载态；网格只渲染前 renderLimit 张，其余由「加载更多」递增——
- * 4,000+ 件全量渲染 DOM 会把滚动拖死（每卡带视口监听）。
+ * V5 备货扩容：静态目录（ASSET_CATALOG，~283 件）先渲染立即可逛；UIverse 自动
+ * 收录的 3,793 件只拉**轻字段清单**（galaxy-meta.ts，~1.4MB 运行时字符串），
+ * 预览/图纸真身按 bodyFrom 由 assetBodies 按需拉（卡片进缓冲带/开代码面板/
+ * 递活才动，见 AssetDemoCard）——地基清理前是 27MB 整袋进门一次解析。
+ * 网格只渲染前 renderLimit 张：滚动逼近页尾由哨兵自动续页（加载更多按钮保留
+ * 作手动兜底）；卡片自身 content-visibility 窗化，视口外跳过布局绘制。
  *
  * 工具栏（标题+搜索+chips+计数）sticky 吸附滚动容器顶（毛玻璃底），下滑全程可达；
- * 滚动超过 ~600px 右下角出现「回到顶部」（sticky bottom 悬浮条，平滑滚回）。
+ * 滚动超过 ~600px 出现「回到顶部」（sticky 悬浮条，平滑滚回）。
  * 滚动容器是 shell 层的 overflow-y-auto 主面板（WorkspaceShellLayout），
  * 这里向上找最近滚动祖先拿引用（监听 + 回顶），不在 shell 上加钩子。
  *
  * 每张卡的载体见 AssetDemoCard.tsx（序号+悬浮操作+内联代码面板+递活）；
- * iframe 首次进视口挂载后永久保留（出视口 display:none），见 AssetDemoCard。
+ * iframe 视口 ±1200px 缓冲带内挂载、离远卸载（V4.3）。
  * 搜索无结果空态沿用；本组件不动 catalog 契约与 assetTryPrompt 语义。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -56,7 +58,8 @@ export function AssetLibrarySection({
   const { intl, locale } = useZCodeIntl();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<AssetFilterCategory>("all");
-  // UIverse 自动收录大袋：进入展厅才开始拉（chunk 独立）；null = 拉取中。
+  // UIverse 大袋的轻字段清单：进入展厅才开始拉（chunk 独立）；null = 拉取中。
+  // 正文真身（previewHtml/图纸）不在清单里，按需走 assetBodies（见 AssetDemoCard）。
   const [bulk, setBulk] = useState<AssetManifest[] | null>(null);
   const [renderLimit, setRenderLimit] = useState(PAGE_SIZE);
   const catalog = useMemo(() => (bulk ? [...ASSET_CATALOG, ...bulk] : ASSET_CATALOG), [bulk]);
@@ -67,12 +70,12 @@ export function AssetLibrarySection({
   useEffect(() => setRenderLimit(PAGE_SIZE), [query, category]);
   useEffect(() => {
     let alive = true;
-    void import("./catalog/generated/index.js").then(
+    void import("./catalog/generated/galaxy-meta.js").then(
       (module) => {
-        if (alive) setBulk(module.BULK_AUTO_ASSETS);
+        if (alive) setBulk(module.GALAXY_META);
       },
       () => {
-        // 拉取失败不拦静态货架：保留 400 件可逛，控制台留痕即可。
+        // 拉取失败不拦静态货架：保留 283 件可逛，控制台留痕即可。
         if (alive) setBulk([]);
       },
     );
@@ -106,6 +109,27 @@ export function AssetLibrarySection({
   const scrollToTop = () => {
     scrollerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // 哨兵自动续页（瘦身窗化 2026-10-05）：滚动逼近页尾自动渲染下一批，
+  // 免去手点「加载更多」；按钮保留作手动兜底（无 IO 环境/键盘用户）。
+  // 哨兵持续可见时靠 renderLimit 变化重跑本 effect 连续追加，直到推离页尾。
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const [sentinelVisible, setSentinelVisible] = useState(false);
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setSentinelVisible(entry?.isIntersecting ?? false),
+      { root: scrollerRef.current, rootMargin: "1200px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!sentinelVisible || renderLimit >= visibleAssets.length) return;
+    const timer = window.setTimeout(() => setRenderLimit((limit) => limit + PAGE_SIZE), 0);
+    return () => window.clearTimeout(timer);
+  }, [sentinelVisible, renderLimit, visibleAssets.length]);
 
   return (
     <div ref={rootRef} className="mx-auto flex w-full max-w-7xl flex-col gap-4">
@@ -230,6 +254,7 @@ export function AssetLibrarySection({
               />
             ))}
           </div>
+          <div ref={sentinelRef} aria-hidden="true" data-testid="asset-library-page-sentinel" />
           {renderLimit < visibleAssets.length ? (
             <div className="flex justify-center pb-2">
               <Button
