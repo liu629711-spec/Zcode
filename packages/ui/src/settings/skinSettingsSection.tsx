@@ -174,30 +174,27 @@ export function SkinSettingsSection() {
         intl.formatMessage({ id: "skin.defaultName" }, { count: skinLibrary.length + 1 }),
       ),
     );
-    if (result.ok) setActiveSkinId(id);
+    if (result.ok) {
+      setActiveSkinId(id);
+    } else {
+      // 现实失败原因基本是存储配额满——不能静默无反应
+      toast(result.errors.join("；"));
+    }
   };
 
   const installPack = async (pack: SkinPack) => {
     // 第三方作品（文件导入/分享链接）：先亮明内容再装（拍板③）
+    const overrides = Object.keys({ ...pack.light, ...pack.dark }).length;
+    const contentParts = [
+      pack.wallpaper && intl.formatMessage({ id: "skin.badge.wallpaper" }),
+      pack.glass?.enabled && intl.formatMessage({ id: "skin.badge.glass" }),
+      overrides > 0 && intl.formatMessage({ id: "skin.overrideCount" }, { count: overrides }),
+    ].filter(Boolean);
     const confirmed = await requestConfirmation({
       title: intl.formatMessage({ id: "skin.installConfirmTitle" }, { name: pack.name }),
       description: intl.formatMessage(
-        { id: "skin.installConfirmDescription" },
-        {
-          content: [
-            pack.wallpaper && intl.formatMessage({ id: "skin.badge.wallpaper" }),
-            pack.glass?.enabled && intl.formatMessage({ id: "skin.badge.glass" }),
-            intl.formatMessage(
-              { id: "skin.overrideCount" },
-              {
-                count:
-                  Object.keys({ ...pack.light, ...pack.dark }).length,
-              },
-            ),
-          ]
-            .filter(Boolean)
-            .join("、"),
-        },
+        { id: contentParts.length > 0 ? "skin.installConfirmDescription" : "skin.installConfirmEmpty" },
+        { content: contentParts.join("、") },
       ),
       confirmLabel: intl.formatMessage({ id: "skin.install" }),
     });

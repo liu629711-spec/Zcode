@@ -2242,6 +2242,9 @@ const enUS: Record<string, string> = {
   "skin.addWallpaperImage": "Add wallpaper image",
   "skin.wallpaper.preset.aurora": "Midnight Aurora",
   "skin.wallpaper.preset.sunset": "Warm Sunset",
+  "skin.wallpaperReadFailed": "Could not read the wallpaper image; try another one",
+  "skin.installConfirmEmpty":
+    "This skin only contains colors and layout parameters. Skins only change appearance, contain no executable code, and can be removed anytime.",
   "settings.designStyle": "Design style",
   "settings.designStyleDescription": "Pick the interface visual language; the skin studio customizes on top of it.",
   "settings.designStyle.claude": "Warm Salon",

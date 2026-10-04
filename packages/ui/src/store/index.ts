@@ -42,22 +42,11 @@ import {
   type DesignStyle,
 } from "../themeStyles.js";
 import {
-  validateSkin,
-  type SkinPack,
-  type SkinValidateResult,
-} from "../skin-engine/skinSchema.js";
-import { applySkinToDocument } from "../skin-engine/skinApply.js";
-import {
-  readActiveSkinId,
-  readSkinLibrary,
-  writeActiveSkinId,
-  writeSkinLibrary,
-} from "../skin-engine/skinLibrary.js";
-
-/** 皮肤导入结果：ok=入库成功；失败带逐条错误；quotaFull=校验过了但存不进 localStorage */
-export type SkinImportResult =
-  | { ok: true; skin: SkinPack }
-  | { ok: false; errors: string[]; quotaFull?: boolean };
+  createSkinStoreSlice,
+  initSkinPersistence,
+  type SkinImportResult,
+} from "../skin-engine/skinStoreSlice.js";
+import type { SkinPack } from "../skin-engine/skinSchema.js";
 import type { Theme } from "../useTheme.js";
 import { applyTheme, normalizeThemePreference, resolveTheme } from "../useTheme.js";
 
@@ -137,11 +126,15 @@ export interface ZCodeState {
   activeSkinId: string | null;
   /** 校验+入库+持久化；已存在同 id 皮肤会被覆盖 */
   importSkin: (raw: unknown) => SkinImportResult;
-  /** 调参保存：覆盖库中同 id 皮肤；激活中则即时重应用 */
-  upsertSkin: (skin: SkinPack) => { quotaFull: boolean };
+  /** 调参保存：过校验门后覆盖库中同 id 皮肤；激活中则即时重应用 */
+  upsertSkin: (
+    skin: SkinPack,
+  ) => { ok: true; skin: SkinPack } | { ok: false; errors: string[]; quotaFull?: boolean };
   removeSkin: (id: string) => void;
   /** 激活/停用皮肤；未知 id 视为停用 */
   setActiveSkinId: (id: string | null) => void;
+  /** 广播接收专用：从存储刷新库并应用对端激活的皮肤；未知 id 不回写不覆盖 */
+  syncActiveSkinFromBroadcast: (id: string | null) => void;
 
   /** 当前语言 */
   locale: string;
@@ -266,15 +259,6 @@ type BroadcastField =
 /** 广播频道名前缀 */
 const STATE_CHANNEL_PREFIX = "state:";
 
-/** 库内按 id 覆盖式插入（同 id 替换，其余不动）。 */
-function upsertSkinInLibrary(library: SkinPack[], pack: SkinPack): SkinPack[] {
-  const index = library.findIndex((entry) => entry.id === pack.id);
-  if (index === -1) return [...library, pack];
-  const next = [...library];
-  next[index] = pack;
-  return next;
-}
-
 // ============================================================================
 // Store 创建工厂
 // ============================================================================
@@ -318,49 +302,7 @@ export function createZCodeStore(
       applyTheme(get().theme, designStyle);
       set({ designStyle });
     },
-    skinLibrary: [],
-    activeSkinId: null,
-    importSkin: (raw: unknown) => {
-      const result = validateSkin(raw);
-      if (!result.ok) return result;
-      const library = upsertSkinInLibrary(get().skinLibrary, result.skin);
-      if (!writeSkinLibrary(library)) {
-        return {
-          ok: false as const,
-          errors: ["皮肤校验通过，但浏览器存储空间不足，保存失败"],
-          quotaFull: true,
-        };
-      }
-      set({ skinLibrary: library });
-      return result;
-    },
-    upsertSkin: (skin: SkinPack) => {
-      const library = upsertSkinInLibrary(get().skinLibrary, skin);
-      const quotaFull = !writeSkinLibrary(library);
-      if (!quotaFull) set({ skinLibrary: library });
-      const next = get();
-      if (next.activeSkinId === skin.id) {
-        applySkinToDocument(quotaFull ? next.skinLibrary.find((p) => p.id === skin.id) ?? skin : skin);
-      }
-      return { quotaFull };
-    },
-    removeSkin: (id: string) => {
-      const library = get().skinLibrary.filter((pack) => pack.id !== id);
-      writeSkinLibrary(library);
-      if (get().activeSkinId === id) {
-        writeActiveSkinId(null);
-        applySkinToDocument(null);
-        set({ skinLibrary: library, activeSkinId: null });
-        return;
-      }
-      set({ skinLibrary: library });
-    },
-    setActiveSkinId: (id: string | null) => {
-      const pack = id === null ? null : get().skinLibrary.find((entry) => entry.id === id) ?? null;
-      writeActiveSkinId(pack?.id ?? null);
-      applySkinToDocument(pack);
-      set({ activeSkinId: pack?.id ?? null });
-    },
+    ...createSkinStoreSlice(set, get),
     theme: normalizeThemePreference((readSafeLocalStorage("zcode-theme") as Theme) || "zai-dark"),
     setTheme: (theme: Theme) => {
       const normalizedTheme = normalizeThemePreference(theme);
@@ -595,8 +537,8 @@ export function createZCodeStore(
         field === "activeSkinId" &&
         (msg.payload === null || typeof msg.payload === "string")
       ) {
-        // 空串约定为"未激活"；皮肤库各窗口同源自读，广播只带 id
-        state.setActiveSkinId(
+        // 空串约定为"未激活"；接收端从存储刷新，未知 id 不回写（多窗口互不踩）
+        state.syncActiveSkinFromBroadcast(
           msg.payload === null || msg.payload === "" ? null : msg.payload,
         );
       }
@@ -608,15 +550,11 @@ export function createZCodeStore(
   syncSystemThemeListener(useStore.getState().theme);
   applyTheme(useStore.getState().theme);
   applyUiFontSizePx(useStore.getState().uiFontSizePx);
-  // 皮肤引擎启动恢复：库+激活 id 从 localStorage 回读（坏条目已在读取层跳过），
-  // 激活皮肤即刻应用——先于首帧渲染，避免闪预设底色。
-  {
-    const bootLibrary = readSkinLibrary();
-    const bootActiveId = readActiveSkinId();
-    const bootActive = bootActiveId === null ? null : bootLibrary.find((entry) => entry.id === bootActiveId) ?? null;
-    applySkinToDocument(bootActive);
-    useStore.setState({ skinLibrary: bootLibrary, activeSkinId: bootActive?.id ?? null });
-  }
+  // 皮肤引擎启动恢复 + 跨窗口 storage 监听（坏条目在读取层跳过；先于首帧应用避免闪底色）
+  const disposeSkinStorageListener = initSkinPersistence((partial) =>
+    useStore.setState(partial as Partial<ZCodeState>),
+  );
+  void disposeSkinStorageListener;
   document.documentElement.classList.toggle(
     "dark",
     resolveTheme(useStore.getState().theme) === "dark",

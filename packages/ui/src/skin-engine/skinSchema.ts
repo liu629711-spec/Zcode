@@ -80,6 +80,23 @@ const GRADIENT_FUNCTION_RE =
   /^(?:linear|radial|conic)-gradient\(/i;
 const IMAGE_SOURCE_RE = /^(?:data:image\/(?:png|jpeg|webp|gif|avif|svg\+xml);|https?:\/\/)/;
 
+/**
+ * 渐变串加固：只当"纯色渐变"用——括号配平、禁分号（防逃逸出声明块）、禁 url(
+ * （渐变不该引用外部资源，也顺手掐掉远程像素跟踪）。
+ */
+function isSafeGradient(value: string): boolean {
+  if (value.includes(";") || /url\(/i.test(value)) return false;
+  let depth = 0;
+  for (const char of value) {
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -172,7 +189,8 @@ function validateWallpaper(value: unknown, errors: string[]): SkinWallpaper | un
     if (
       typeof gradient !== "string" ||
       !GRADIENT_FUNCTION_RE.test(gradient.trim()) ||
-      gradient.length > 2000
+      gradient.length > 2000 ||
+      !isSafeGradient(gradient.trim())
     ) {
       errors.push("wallpaper.gradient 必须是 linear/radial/conic-gradient 渐变字符串");
       return undefined;

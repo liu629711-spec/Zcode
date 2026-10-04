@@ -83,6 +83,20 @@ test("校验：壁纸数值越界逐项报错（图源合法时，数值从左�
   assert.ok(!dimOnly.ok && dimOnly.errors.some((e) => e.includes("wallpaper.dim")));
 });
 
+test("校验：渐变串加固——分号/url(/括号失衡拒绝，嵌套函数合法放行", () => {
+  const attempt = (gradient: string) =>
+    validateSkin({
+      ...baseSkin,
+      wallpaper: { kind: "gradient", gradient, opacity: 1, blurPx: 0, dim: 0 },
+    });
+  assert.ok(!attempt("linear-gradient(red); } html { display:none }").ok);
+  assert.ok(!attempt("linear-gradient(url(https://evil/px.png), red)").ok);
+  assert.ok(!attempt("linear-gradient(red").ok);
+  assert.ok(!attempt("linear-gradient(rgb(0,0,0)").ok);
+  const nested = attempt("linear-gradient(160deg, rgb(15,32,39) 0%, rgba(44,83,100,0.9) 100%)");
+  assert.equal(nested.ok, true);
+});
+
 test("校验：data URL 协议白名单放行图片、拒绝其他 scheme", () => {
   const ok = validateSkin({
     ...baseSkin,

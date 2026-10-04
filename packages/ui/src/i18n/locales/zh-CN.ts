@@ -2111,6 +2111,8 @@ const zhCN: Record<string, string> = {
   "skin.addWallpaperImage": "添加壁纸图片",
   "skin.wallpaper.preset.aurora": "深夜极光",
   "skin.wallpaper.preset.sunset": "暖霞",
+  "skin.wallpaperReadFailed": "壁纸图片读取失败，换一张试试",
+  "skin.installConfirmEmpty": "该皮肤只含配色与布局参数。皮肤只改外观、不含可执行代码，安装后随时可以删除。",
   "settings.designStyle": "界面风格",
   "settings.designStyleDescription": "挑一套界面视觉语言，皮肤工坊可以在此之上继续定制。",
   "settings.designStyle.claude": "暖纸沙龙",
