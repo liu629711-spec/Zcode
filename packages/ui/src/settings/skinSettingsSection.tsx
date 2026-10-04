@@ -6,6 +6,7 @@ import { useZCodeIntl } from "@/i18n/index.js";
 import { useConfirmDialogStore } from "@/store/confirmDialogStore.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { DESIGN_STYLE_OPTIONS } from "@/settings/settingsPageConfig.js";
+import { DESIGN_STYLE_RAMP_PREVIEW } from "@/themeStyles.js";
 import { ActiveSkinTuning } from "@/settings/skinTuningPanel.js";
 import {
   createSkinFromStyle,
@@ -41,14 +42,16 @@ function downloadSkinFile(skin: SkinPack): void {
 }
 
 function SkinSwatches({ skin }: { skin: SkinPack }) {
-  const palette = skin.light ?? {};
-  const dark = skin.dark ?? {};
+  // 没写 override 的槽位回落到 baseStyle 的预设 ramp 色——卡片展示的是"这套皮肤实际长什么样"
+  const ramp = DESIGN_STYLE_RAMP_PREVIEW[skin.baseStyle];
+  const palette = { ...ramp.light, ...skin.light };
+  const dark = { ...ramp.dark, ...skin.dark };
   return (
     <div className="flex h-8 overflow-hidden rounded-lg border border-border">
       {SLOT_SWATCH_ORDER.map((slot) => (
         <div key={slot} className="flex flex-1 flex-col">
-          <span className="h-4" style={{ background: palette[slot] ?? "var(--style-light-background)" }} />
-          <span className="h-4" style={{ background: dark[slot] ?? "var(--style-dark-background)" }} />
+          <span className="h-4" style={{ background: palette[slot] }} />
+          <span className="h-4" style={{ background: dark[slot] }} />
         </div>
       ))}
     </div>

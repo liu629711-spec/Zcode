@@ -1,12 +1,20 @@
+import { useRef } from "react";
+import { ImagePlusIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.js";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
 import { toast } from "@/components/ui/toast.js";
 import { useZCodeIntl } from "@/i18n/index.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
+import { DEFAULT_WALLPAPER_GLASS } from "@/skin-engine/skinApply.js";
 import type { SkinPack } from "@/skin-engine/skinSchema.js";
 
 /** 激活皮肤的实时调参面板：玻璃材质（融入度+三区域倍率）与壁纸（不透明度/模糊/暗化）。 */
+
+const GRADIENT_PRESETS = [
+  { labelId: "skin.wallpaper.preset.aurora", value: "linear-gradient(160deg, #0f2027 0%, #203a43 50%, #2c5364 100%)" },
+  { labelId: "skin.wallpaper.preset.sunset", value: "linear-gradient(160deg, #3a2b26 0%, #7a4a32 55%, #c96442 100%)" },
+] as const;
 
 function TuningSlider({
   label,
@@ -47,6 +55,7 @@ function TuningSlider({
 export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
   const { intl } = useZCodeIntl();
   const upsertSkin = useZCodeStore((state) => state.upsertSkin);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const glass = skin.glass;
   const wallpaper = skin.wallpaper;
 
@@ -62,6 +71,28 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
     if (!wallpaper) return;
     patch({ wallpaper: { ...wallpaper, ...partial } });
   };
+  // 皮肤没写 glass 字段时开关也常驻：开启即落一份默认参数（融入度与三区域同起步）
+  const handleGlassToggle = (enabled: boolean) => {
+    if (glass) {
+      patchGlass({ enabled });
+      return;
+    }
+    if (enabled) {
+      patch({ glass: { ...DEFAULT_WALLPAPER_GLASS, enabled } });
+    }
+  };
+
+  const importWallpaperImage = async (file: File) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    patch({
+      wallpaper: { kind: "image", imageDataUrl: dataUrl, opacity: 1, blurPx: 0, dim: 0.25 },
+    });
+  };
 
   return (
     <Card className="border border-border bg-card py-0 shadow-none">
@@ -70,13 +101,11 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
           <span className="text-ui-sm font-medium text-foreground">
             {intl.formatMessage({ id: "skin.glassTitle" })}
           </span>
-          {glass ? (
-            <Switch
-              checked={glass.enabled}
-              onCheckedChange={(enabled) => patchGlass({ enabled })}
-              aria-label={intl.formatMessage({ id: "skin.glassTitle" })}
-            />
-          ) : null}
+          <Switch
+            checked={glass?.enabled ?? false}
+            onCheckedChange={handleGlassToggle}
+            aria-label={intl.formatMessage({ id: "skin.glassTitle" })}
+          />
         </div>
         {glass?.enabled ? (
           <div className="space-y-2 px-4 pb-3">
@@ -139,7 +168,49 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
               onChange={(dim) => patchWallpaper({ dim })}
             />
           </div>
-        ) : null}
+        ) : (
+          <div className="space-y-2 border-t border-border px-4 py-3">
+            <span className="text-ui-sm font-medium text-foreground">
+              {intl.formatMessage({ id: "skin.wallpaperTitle" })}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                <ImagePlusIcon className="size-3.5" aria-hidden />
+                {intl.formatMessage({ id: "skin.addWallpaperImage" })}
+              </Button>
+              {GRADIENT_PRESETS.map((preset) => (
+                <Button
+                  key={preset.value}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2"
+                  title={intl.formatMessage({ id: preset.labelId })}
+                  onClick={() =>
+                    patch({ wallpaper: { kind: "gradient", gradient: preset.value, opacity: 1, blurPx: 0, dim: 0.2 } })
+                  }
+                >
+                  <span
+                    aria-hidden
+                    className="size-4 rounded-full border border-border"
+                    style={{ background: preset.value }}
+                  />
+                </Button>
+              ))}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) void importWallpaperImage(file);
+                }}
+              />
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
