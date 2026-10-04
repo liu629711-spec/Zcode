@@ -43,6 +43,7 @@ import {
   migrateUserSubagentMarkdown,
   migrateSubagentStateFile,
   planAgentMemoryDirectoryRename,
+  resolveAgentMemoryRoot,
   scanOfficialPluginCacheRoots,
   type AgentMemoryDirectoryRenamePlan,
 } from "@zcode/shared/node";
@@ -753,6 +754,19 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
         withAgentIdIssuedIfMissing(normalizeConfig(params.config)),
       );
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
+      // 重建防静默接管（2026-10-04，hermes fail-close 同款）：调用方显式带工号新建
+      // 档案时，若该号已有非空记忆柜，新档案会静默接管旧记忆——换了个人生老板不知
+      // 情。拒绝并要求 confirmMemoryTakeover 显式确认；已知合法流程（收编=同一员工
+      // 升舱、班底装载=同一凭证）由调用方带确认。读路径不受影响：同一份档案文件放
+      // 回原位=重聘（cumora rehire 语义），记忆照常回来。自动发号的新建不可能撞柜
+      // （uuid），只有显式带号才需要查。
+      if (normalizeAgentId(params.config.agentId) !== undefined) {
+        await assertNoSilentMemoryTakeover({
+          agentId: agent.agentId!,
+          workspacePath: params.workspacePath,
+          confirmMemoryTakeover: params.confirmMemoryTakeover === true,
+        });
+      }
       // 先验证即将写入的 Markdown 可解析，避免 serializer 回归时把坏 profile 落盘。
       await writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
       return { agent };
@@ -916,6 +930,56 @@ function planAgentMemoryRenameFromPrevious(
 function withAgentIdIssuedIfMissing(config: SubAgentConfig): SubAgentConfig {
   const agentId = normalizeAgentId(config.agentId) ?? randomUUID();
   return { ...config, agentId };
+}
+
+/**
+ * 显式工号新建的静默接管检查（createAgent 专用）：三个记忆柜落位（user 随身柜 +
+ * workspace 项目柜/本机柜）任一非空即拒。readdir 只探存在性不读内容；user 根与
+ * 记忆面板同源（getZCodeDataRootDir），CLI 显式改过 storage.dir 时同既有漂移注记。
+ * 错误信息给出两条明路：放回原档=重聘；确认接管=带 confirmMemoryTakeover。
+ */
+async function assertNoSilentMemoryTakeover(input: {
+  agentId: string;
+  workspacePath?: string;
+  confirmMemoryTakeover: boolean;
+}): Promise<void> {
+  if (input.confirmMemoryTakeover) return;
+  const candidates = [
+    resolveAgentMemoryRoot({
+      agentName: "",
+      agentId: input.agentId,
+      scope: "user",
+      storageRoot: getZCodeDataRootDir(),
+      workspaceRoot: "",
+    }),
+    ...(input.workspacePath
+      ? [
+          resolveAgentMemoryRoot({
+            agentName: "",
+            agentId: input.agentId,
+            scope: "project",
+            storageRoot: "",
+            workspaceRoot: input.workspacePath,
+          }),
+          resolveAgentMemoryRoot({
+            agentName: "",
+            agentId: input.agentId,
+            scope: "local",
+            storageRoot: "",
+            workspaceRoot: input.workspacePath,
+          }),
+        ]
+      : []),
+  ];
+  for (const dir of candidates) {
+    const entries = await readdir(dir).catch(() => undefined);
+    if (entries && entries.length > 0) {
+      throw new Error(
+        `Agent id ${input.agentId} already has a memory notebook (${entries.length} file(s) under ${dir}). ` +
+          "Restore the original profile file to rehire the same agent, or pass confirmMemoryTakeover to adopt the notebook on purpose.",
+      );
+    }
+  }
 }
 
 /**

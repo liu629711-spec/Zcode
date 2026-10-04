@@ -266,6 +266,9 @@ export function useWorkspaceProjectAgents(params: {
           config,
           provider: ZCODE_AGENT_PROVIDER,
           scope: "user",
+          // 收编=同一员工升舱（工号随迁），接管自己的记忆柜是本意：显式带确认，
+          // 防静默接管的 createAgent 守卫不会拦自己人。
+          confirmMemoryTakeover: true,
         });
       } catch (error) {
         return { status: "failed", error: error instanceof Error ? error.message : String(error) };

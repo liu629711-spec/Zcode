@@ -130,6 +130,13 @@ export interface AgentCreateParams {
   scope?: "user" | "workspace";
   workspacePath?: string;
   workspaceIdentity?: string;
+  /**
+   * 显式带工号新建时的接管确认（2026-10-04 重建防静默接管，hermes fail-close 同款）：
+   * 该工号已有非空记忆柜时 createAgent 拒绝，除非调用方确认"这是同一员工的合法
+   * 重建/收编/班底装载"。缺席 = 不确认 = 拒绝。读路径不受影响：同一份档案文件
+   * 放回原位 = 重聘（cumora rehire 语义），记忆照常回来。
+   */
+  confirmMemoryTakeover?: boolean;
 }
 
 /** Agent 更新参数 */

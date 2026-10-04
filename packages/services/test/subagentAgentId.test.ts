@@ -140,6 +140,95 @@ test("createAgent 自带号就采信（内置班底包档案自带号，装上�
   }
 });
 
+test("重建防静默接管：显式带号且该号已有非空记忆柜 → 拒绝；带确认 → 放行", async () => {
+  const fixture = await makeFixture();
+  try {
+    // 预置旧柜：同一工号在项目柜里留过本子（辞退/被删后残存的记忆）。
+    const oldCabinet = join(fixture.workspacePath, ".zcode", "agent-memory", `a-${AGENT_ID_B}`);
+    await mkdir(oldCabinet, { recursive: true });
+    await writeFile(join(oldCabinet, "MEMORY.md"), "# 旧记忆\n", "utf-8");
+
+    const service = serviceOf(fixture);
+    await assert.rejects(
+      service.createAgent({
+        config: {
+          name: "recycled-agent",
+          description: "d",
+          systemPrompt: "p",
+          agentId: AGENT_ID_B,
+          memory: "project",
+        },
+        provider: ZCODE_AGENT_PROVIDER,
+        scope: "workspace",
+        workspacePath: fixture.workspacePath,
+      }),
+      /already has a memory notebook/,
+      "不确认就接管旧记忆 = 静默换了个人生，必须拒绝",
+    );
+    assert.equal(
+      await readFile(join(fixture.agentsRoot, "recycled-agent.md"), "utf-8").then(
+        () => true,
+        () => false,
+      ),
+      false,
+      "拒绝时档案不落盘",
+    );
+
+    // 带确认（同一员工的合法重建/收编/班底装载）→ 放行并采信旧号。
+    const adopted = await service.createAgent({
+      config: {
+        name: "recycled-agent",
+        description: "d",
+        systemPrompt: "p",
+        agentId: AGENT_ID_B,
+        memory: "project",
+      },
+      provider: ZCODE_AGENT_PROVIDER,
+      scope: "workspace",
+      workspacePath: fixture.workspacePath,
+      confirmMemoryTakeover: true,
+    });
+    assert.equal(adopted.agent.agentId, AGENT_ID_B);
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test("重建防静默接管：空柜不算接管，自动发号的新建永不触发检查", async () => {
+  const fixture = await makeFixture();
+  try {
+    // 柜目录存在但为空 = 没有记忆可接管，照常建档。
+    await mkdir(join(fixture.workspacePath, ".zcode", "agent-memory", `a-${AGENT_ID_B}`), {
+      recursive: true,
+    });
+    const service = serviceOf(fixture);
+    const created = await service.createAgent({
+      config: {
+        name: "empty-cabinet-agent",
+        description: "d",
+        systemPrompt: "p",
+        agentId: AGENT_ID_B,
+        memory: "project",
+      },
+      provider: ZCODE_AGENT_PROVIDER,
+      scope: "workspace",
+      workspacePath: fixture.workspacePath,
+    });
+    assert.equal(created.agent.agentId, AGENT_ID_B);
+
+    // 自动发号（不带号）的新建：uuid 不会撞柜，守卫根本不该被触发。
+    const minted = await service.createAgent({
+      config: { name: "minted-agent", description: "d", systemPrompt: "p", memory: "project" },
+      provider: ZCODE_AGENT_PROVIDER,
+      scope: "workspace",
+      workspacePath: fixture.workspacePath,
+    });
+    assert.ok(normalizeAgentId(minted.agent.agentId));
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
 test("改名保号：盘上的号是一等公民，调用方带什么都不作数", async () => {
   const fixture = await makeFixture();
   try {
