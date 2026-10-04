@@ -21,6 +21,7 @@ import { getCodePreviewTheme } from "@/lib/codePreviewPreferences.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { CodePreviewSettings } from "@/store/index.js";
 import { DESIGN_STYLE_OPTIONS, THEME_MODES } from "@/settings/settingsPageConfig.js";
+import { SkinSettingsSection } from "@/settings/skinSettingsSection.js";
 import type { DesignStyle } from "@/themeStyles.js";
 import { MAX_UI_FONT_SIZE_PX, MIN_UI_FONT_SIZE_PX } from "@/lib/uiFontSize.js";
 
@@ -181,6 +182,8 @@ export function AppearanceSectionContent({
           </CardContent>
         </Card>
       </div>
+
+      <SkinSettingsSection />
 
       <div className="space-y-6">
         <div className="min-w-0 space-y-3">
