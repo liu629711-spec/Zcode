@@ -144,7 +144,16 @@ export async function findLatestPersonaSessionId(
   workspacePath: string,
   profile: Pick<AgentProfile, "name" | "agentId">,
 ): Promise<string | undefined> {
-  const sessions = await store.listSessions();
+  // 提速（地基清理 2026-10-05，审计 C 资源 P1）：此前每次派单都 listSessions()
+  // 全表扫全部会话（5k 行 × JSON 解码，几十 ms × 并发派单连发）。工位判定只认
+  // interactive 会话且只要最新一间——taskTypes/limit 下推给 sqlite；task_type 过滤
+  // 与内存侧的 taskType 检查同语义，limit 1000 只影响"最新工位已经旧过 1000 间
+  // 更新会话"的极端边角（那时新建工位本就是更合理的选择）。已归档工位由
+  // time_archived 过滤直接挡掉（归档补时间戳落地后的免费收益）。
+  const sessions = await store.listSessions({
+    taskTypes: ["interactive"],
+    limit: 1000,
+  });
   const normalizedWorkspace = normalizeWorkspacePath(workspacePath);
   let latest: { sessionId: string; updatedAt: number } | undefined;
   for (const session of sessions) {
