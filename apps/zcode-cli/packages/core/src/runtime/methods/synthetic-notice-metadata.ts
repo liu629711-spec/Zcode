@@ -80,6 +80,8 @@ function syntheticUserNoticeKind(source: SyntheticUserMessageSource): MessageSem
     case "agent_work_order_receipt":
     // 批次质检轮（纪律协议批）：发起方会话里的验货 carrier，同一档。
     case "agent_work_order_batch_qc":
+    // 工单复盘轮（学习沉淀 v1）：员工会话里的经验沉淀 carrier，同一档。
+    case "agent_work_order_debrief":
       return "background_notification";
     case "rewind":
       return "rewind_notice";

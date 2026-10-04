@@ -18,6 +18,8 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import { ensureMemoryDirectoryExists } from "../../memory/directory.js";
 import { formatProjectMemoryIndexContent } from "../../memory/index-content.js";
 import { loadProjectAgentMemoryPrompt } from "../../subagent/persistent-memory.js";
+import { loadAgentSkillsIndexPrompt } from "../../subagent/agent-skills.js";
+import { resolveAgentMemoryRoot } from "@zcode/shared/node";
 import { joinPersonaSystemPrompt } from "../../subagent/persona-session.js";
 import {
   createReadFileStateKey,
@@ -85,6 +87,35 @@ export async function ensureContextInitialized(
           workspaceRoot: this.workspaceRoot,
         })
       : undefined;
+  // 技能册索引（学习沉淀 v1，Hermes 两段式渐进披露）：随身柜 skills/ 下的手艺卡
+  // 索引拼进同一段 persona system prompt——零下游改动（joinPersonaSystemPrompt
+  // 只吃这一份字符串）。索引开局冻结，复盘轮新写的卡下个会话生效（保 prefix
+  // cache，Hermes 同款取舍）。门控与记忆同一开关：没有随身柜就没有技能册。
+  {
+    const persona = this.config.projectAgentPersona;
+    const memory = this.config.memory;
+    const personalNotebookRoot =
+      persona && memory?.enabled === true && memory.use !== false && memory.storageRoot
+        ? resolveAgentMemoryRoot({
+            agentName: persona.name,
+            ...(persona.agentId ? { agentId: persona.agentId } : {}),
+            scope: "user",
+            storageRoot: memory.storageRoot,
+            workspaceRoot: this.workspaceRoot,
+          })
+        : undefined;
+    const skillsPrompt = personalNotebookRoot
+      ? await loadAgentSkillsIndexPrompt({
+          fileSystemPort: this.fileSystemPort,
+          personalNotebookRoot,
+        })
+      : undefined;
+    if (skillsPrompt) {
+      this.personaMemoryPrompt = [this.personaMemoryPrompt, skillsPrompt]
+        .filter((part) => typeof part === "string")
+        .join("\n\n");
+    }
+  }
   this.contextBuilder = this.createContextBuilderFromSnapshot(snapshot, this.memoryRoot, {
     memoryIndexContent: this.memoryIndexContent,
     model,

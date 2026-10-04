@@ -6,6 +6,7 @@
 
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { QueryId, TraceContext } from "../deps.js";
+import { uuidv7 } from "@zcode/shared";
 import type { AgentWorkOrderEnvelope } from "@zcode/contracts";
 import { WORK_ORDER_INPUT_ID_PREFIX, boundAgentWorkOrderMeta } from "@zcode/contracts";
 import type { ModelSelection } from "@zcode/shared";
@@ -15,6 +16,12 @@ import {
   buildWorkOrderEnvelopeText,
   WORK_ORDER_RESTRICTED_TOOL_NAMES,
 } from "../../subagent/work-order.js";
+import {
+  buildWorkOrderDebriefText,
+  resolveAgentSkillsRoot,
+} from "../../subagent/agent-skills.js";
+import { resolveAgentMemoryRoot } from "@zcode/shared/node";
+import type { MemoryRuntimeConfig } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { isStaleBranchRuntimeCommand } from "./runtime-command-generation.js";
 import { beginForegroundExecution, finishForegroundExecution } from "./runtime-command-queue.js";
@@ -215,6 +222,71 @@ export async function runWorkOrderCommand(
         : { executionModelSelection: command.modelSelection }),
       ...(displayTask ? { displayInput: displayTask } : {}),
     });
+    // 复盘轮（学习沉淀 v1，Hermes background_review 同款）：正常交活后，员工在自己
+    // 会话花一轮把"这类活怎么干"沉淀进随身技能册（同轮第二个 turn，回执已出站，
+    // 复盘成败绝不影响这单的结果）。评审单豁免（只评审不动手，没有过程可学）；
+    // 没有随身柜（记忆关闭/非驻场）就没有落笔的地方，同样跳过。
+    if (command.envelope.review !== true) {
+      const persona = this.config.projectAgentPersona;
+      const memory = this.config.memory as MemoryRuntimeConfig | undefined;
+      const skillsRoot =
+        persona && memory?.enabled === true && memory.use !== false && memory.storageRoot
+          ? resolveAgentSkillsRoot(
+              resolveAgentMemoryRoot({
+                agentName: persona.name,
+                ...(persona.agentId ? { agentId: persona.agentId } : {}),
+                scope: "user",
+                storageRoot: memory.storageRoot,
+                workspaceRoot: this.workspaceRoot,
+              }),
+            )
+          : undefined;
+      if (skillsRoot) {
+        try {
+          const debriefText = buildWorkOrderDebriefText({ skillsRoot });
+          const debriefMessageId = createMessageId();
+          this.messageHistory.addUser(
+            debriefText,
+            runtimeInputMetadata("agent_work_order_debrief"),
+          );
+          await this.persistSyntheticUserNoticeForSession({
+            messageID: debriefMessageId,
+            metadata: {
+              inputPresentation: "agent_work_order_debrief",
+              visibility: "model-only",
+            },
+            sessionId: this.sessionId,
+            source: "agent_work_order_debrief",
+            text: debriefText,
+            traceContext: command.traceContext,
+            visibility: "model-only",
+          });
+          await this.executeTurnCommand(debriefText, undefined, {
+            abortSignal: foregroundExecution.controller.signal,
+            inputId: uuidv7(),
+            inputPresentation: "agent_work_order_debrief",
+            inputSource: "agent_work_order_debrief",
+            inputVisibility: "model-only",
+            recordedInputMessageId: debriefMessageId,
+            skipInputRecord: true,
+            skipUserPromptSubmitHooks: true,
+            // 复盘是写技能册/记事本，不是继续派活：与质检诊断轮同一族禁派单。
+            toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES],
+            traceContext: command.traceContext,
+          });
+        } catch (debriefError) {
+          // 复盘失败只留痕：工单结果已定，学习机会丢了不追账（下单还有）。
+          this.logger?.warn("Agent work order debrief turn failed", {
+            ...traceContextToLogContext(command.traceContext),
+            commandId: command.id,
+            errorMessage: debriefError instanceof Error ? debriefError.message : String(debriefError),
+            event: "agent_work_order.debrief_failed",
+            module: "core.runtime",
+            workOrderId: command.workOrderId,
+          });
+        }
+      }
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     this.logger?.warn("Agent work order turn failed", {

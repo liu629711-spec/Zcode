@@ -15,6 +15,9 @@ export const RuntimeInputPresentationSchema = z.enum([
   "agent_work_order_receipt",
   // 批次质检轮（纪律协议批）：批次全部收口后在发起方会话自动开的验货轮。
   "agent_work_order_batch_qc",
+  // 工单复盘轮（学习沉淀 v1，Hermes background_review 同款）：员工交活后在自己
+  // 会话自动开的经验沉淀轮——产出写进技能册，不产生回执。
+  "agent_work_order_debrief",
 ]);
 export type RuntimeInputPresentation = z.infer<typeof RuntimeInputPresentationSchema>;
 

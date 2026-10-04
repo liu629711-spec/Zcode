@@ -63,6 +63,9 @@ const PROVIDER_CONTEXT_SYNTHETIC_SOURCES = new Set([
   // 批次质检轮（纪律协议批）：批次收口后自动开的验货 carrier，同档——
   // provider 可见、不进用户气泡（呈现走质检轮头卡）。
   "agent_work_order_batch_qc",
+  // 工单复盘轮（学习沉淀 v1）：交活后员工自己会话的经验沉淀 carrier，同档——
+  // provider 可见、不进用户气泡（产出写技能册，无轮头卡）。
+  "agent_work_order_debrief",
   "queued_system_notification",
   "resume_goal_state",
   "resume_referenced_session_context",

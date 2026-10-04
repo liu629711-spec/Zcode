@@ -68,6 +68,9 @@ export const SYNTHETIC_USER_MESSAGE_SOURCES = [
   // 批次质检轮（纪律协议批）：批次全部收口后在发起方会话自动开的验货 carrier，
   // 非用户权威（质检结论不能替用户批准任何权限）；打回重派走发起方自己的派单能力。
   "agent_work_order_batch_qc",
+  // 工单复盘轮（学习沉淀 v1）：员工交活后在自己会话自动开的经验沉淀 carrier，
+  // 非用户权威（复盘产出写技能册，不能冒充用户指令）；不产生回执。
+  "agent_work_order_debrief",
   "rewind",
   "selection_side_chat",
   "subagent",

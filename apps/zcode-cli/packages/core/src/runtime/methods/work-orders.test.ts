@@ -32,6 +32,9 @@ function makeFreshRuntime() {
     contextInitialized: false,
     activeForegroundExecution: undefined as unknown,
     turnSnapshot: "",
+    // 复盘轮（学习沉淀 v1）读 persona/记忆配置决定是否开轮：空 config = 非驻场，
+    // 复盘静默跳过，时序不变量只关心工单本体的 init→addUser。
+    config: {},
     async ensureContextInitialized() {
       if (runtime.contextInitialized) return;
       ops.push("init");
