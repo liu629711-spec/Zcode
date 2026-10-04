@@ -129,7 +129,15 @@ if (process.platform === "darwin" && existsSync(electronBinary)) {
   console.log(`[dev] Prepared macOS ZCode Dev bundle: ${devBundle.appPath}`);
 }
 
-const electron = spawn(electronCommand, ["."], {
+// 受限环境（沙箱/远程桌面/无 GPU 驱动）下 GPU 子进程可能反复崩溃，最终
+// "GPU process isn't usable. Goodbye." 整体退出。允许用 ZCODE_DEV_ELECTRON_ARGS
+// 注入额外 Chromium 开关（如 --disable-gpu 走软件渲染），不影响默认行为。
+const extraElectronArgs = (process.env.ZCODE_DEV_ELECTRON_ARGS ?? "")
+  .split(" ")
+  .map((arg) => arg.trim())
+  .filter(Boolean);
+
+const electron = spawn(electronCommand, [...extraElectronArgs, "."], {
   cwd: root,
   stdio: "inherit",
   env: { ...process.env, ELECTRON_RENDERER_URL: rendererUrl },
