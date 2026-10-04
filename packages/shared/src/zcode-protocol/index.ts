@@ -1916,6 +1916,23 @@ export const zcodeSessionGoalResultSchema = z
   .strict();
 export type ZCodeSessionGoalResult = z.infer<typeof zcodeSessionGoalResultSchema>;
 
+// archived=true 写 Date.now()，false 清除（unarchive 同通道）。会话行不存在时
+// 服务端返回 archived:false 而不是报错——task 索引里可能有没落过会话库的历史行。
+export const zcodeSessionArchiveParamsSchema = z
+  .object({
+    sessionId: nonEmptyString,
+    archived: z.boolean(),
+  })
+  .strict();
+export type ZCodeSessionArchiveParams = z.infer<typeof zcodeSessionArchiveParamsSchema>;
+
+export const zcodeSessionArchiveResultSchema = z
+  .object({
+    archived: z.boolean(),
+  })
+  .strict();
+export type ZCodeSessionArchiveResult = z.infer<typeof zcodeSessionArchiveResultSchema>;
+
 export const zcodeSessionStopParamsSchema = z
   .object({
     sessionId: nonEmptyString,
@@ -3637,6 +3654,10 @@ export const zcodeProtocolMethods = {
   sessionFork: "session/fork",
   sessionCompact: "session/compact",
   sessionGoal: "session/goal",
+  // 归档补时间戳（地基清理 2026-10-04）：tasks-index 只在自己库里记账 archived，
+  // 会话行 time_archived 此前无人写，session/list 归档过滤与派单工位扫描全空转。
+  // Host 归档/取消归档 task 后经此通道补写会话库。
+  sessionArchive: "session/archive",
   sessionClose: "session/close",
   // setModel 仍被 zcodeSessionService 的 desktop 旧链路消费；replayable
   // switchModelConfig 已直接由目标 Environment Registry 解析 Selection。

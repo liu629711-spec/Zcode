@@ -145,6 +145,11 @@ export interface ZCodeAgentSessionTarget extends ZCodeAgentWorkspaceTarget {
   sessionId: string;
 }
 
+/** 归档补时间戳（地基清理 2026-10-04）的入参：archived=false 即取消归档清除。 */
+export interface ZCodeAgentArchiveSessionParams extends ZCodeAgentSessionTarget {
+  archived: boolean;
+}
+
 export interface ZCodeAgentResumeSessionParams extends ZCodeAgentSessionTarget {
   model?: ModelSelection;
   thoughtLevel?: string;
@@ -586,6 +591,11 @@ export interface IZCodeAgentService {
   createSession(params: ZCodeAgentCreateSessionParams): Promise<ZCodeSessionStateSnapshot>;
   resumeSession(params: ZCodeAgentResumeSessionParams): Promise<ZCodeSessionStateSnapshot>;
   listSessions(params: ZCodeAgentListSessionsParams): Promise<ZCodeSessionInfo[]>;
+  /**
+   * 归档补时间戳：把 tasks-index 的归档记账同步进会话行 time_archived。
+   * best-effort——运行时没活就静默跳过（兜底是派单侧的工位退役反查）。
+   */
+  archiveSession(params: ZCodeAgentArchiveSessionParams): Promise<void>;
   listSessionSubagents(
     params: ZCodeAgentListSessionSubagentsParams,
   ): Promise<ZCodeSessionSubagentsResult>;

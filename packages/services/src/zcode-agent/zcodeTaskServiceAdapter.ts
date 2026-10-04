@@ -1075,6 +1075,24 @@ export function createZCodeTaskServiceAdapter(
     taskIndexSyncer.emitWorkspaceTaskListChanged(params, taskMeta, reason);
   }
 
+  // 归档补时间戳（地基清理 2026-10-04）：tasks-index 只在自己库里记账 archived，
+  // 会话行 time_archived 无人写 → session/list 归档过滤、sessions-index 冷种子、
+  // 派单工位扫描全在空转。经 session/archive 协议补写，best-effort：archiveSession
+  // 内部自吞错（运行时没活=info 跳过），兜底是派单侧的工位退役反查。
+  function syncSessionArchiveTimestamp(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+    archived: boolean;
+  }): void {
+    void options.zcodeAgentService.archiveSession({
+      workspacePath: params.workspacePath,
+      workspaceIdentity: params.workspaceIdentity,
+      sessionId: params.taskId,
+      archived: params.archived,
+    });
+  }
+
   function emitWorkspaceConfig(
     params: ZCodeAgentWorkspaceTarget,
     settings: ZCodeSessionSettingsState,
@@ -1135,6 +1153,12 @@ export function createZCodeTaskServiceAdapter(
       for (const task of archivedTasks) {
         setOverlay(task, { archived: true });
         rememberIndexedTaskMeta(task);
+        syncSessionArchiveTimestamp({
+          workspacePath: task.workspacePath,
+          workspaceIdentity: task.workspaceIdentity,
+          taskId: task.taskId,
+          archived: true,
+        });
         // 归属变更（自动归档）：沿用 task_meta_changed 走 membership 重拉收敛；
         // 先保持现状行为。
         emitWorkspaceTaskListChanged(task, task, "task_meta_changed");
@@ -1404,6 +1428,9 @@ export function createZCodeTaskServiceAdapter(
       unreadAt?: number;
     },
   ): Promise<ZCodeTaskMeta> {
+    if (patch.archived !== undefined) {
+      syncSessionArchiveTimestamp({ ...params, archived: patch.archived });
+    }
     try {
       return await taskIndexRepo.updateTaskState({
         workspacePath: params.workspacePath,
@@ -2472,6 +2499,12 @@ export function createZCodeTaskServiceAdapter(
       for (const task of archivedTasks) {
         setOverlay(task, { archived: true });
         rememberIndexedTaskMeta(task);
+        syncSessionArchiveTimestamp({
+          workspacePath: task.workspacePath,
+          workspaceIdentity: task.workspaceIdentity,
+          taskId: task.taskId,
+          archived: true,
+        });
         // 同 runWorkspaceTaskAutoArchive：沿用 task_meta_changed 走 membership 重拉收敛。
         emitWorkspaceTaskListChanged(task, task, "task_meta_changed");
       }
@@ -2487,6 +2520,12 @@ export function createZCodeTaskServiceAdapter(
       });
       for (const task of tasks) {
         setOverlay(task, { archived: true });
+        syncSessionArchiveTimestamp({
+          workspacePath: task.workspacePath,
+          workspaceIdentity: task.workspaceIdentity,
+          taskId: task.taskId,
+          archived: true,
+        });
         await taskIndexRepo.updateTaskState({
           workspacePath: task.workspacePath,
           workspaceIdentity: task.workspaceIdentity,

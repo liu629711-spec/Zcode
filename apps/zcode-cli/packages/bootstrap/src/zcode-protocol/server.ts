@@ -24,6 +24,7 @@ import type {
   ZCodeProtocolResponse,
 } from "@zcode/shared";
 import {
+  archiveSession,
   cancelBackgroundTask,
   closeSession,
   compactSession,
@@ -594,6 +595,8 @@ export class ZCodeProtocolAgentServer {
         return await compactSession(this.context, request.params);
       case zcodeProtocolMethods.sessionGoal:
         return await goalSession(this.context, request.params);
+      case zcodeProtocolMethods.sessionArchive:
+        return await archiveSession(this.context, request.params);
       case zcodeProtocolMethods.sessionSetModel:
         return await setModel(this.context, request.params);
       case zcodeProtocolMethods.sessionSetThoughtLevel:

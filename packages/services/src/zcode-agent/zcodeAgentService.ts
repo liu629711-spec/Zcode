@@ -79,6 +79,7 @@ import {
   zcodeToolExecResourceSchema,
   zcodeProcessResourceSampleSchema,
   zcodeSessionCloseResultSchema,
+  zcodeSessionArchiveResultSchema,
   zcodeSessionCompactResultSchema,
   zcodeSessionEventsResultSchema,
   zcodeSessionGoalResultSchema,
@@ -156,6 +157,7 @@ import type {
   ZCodeAgentGrantWorkspaceHookTrustParams,
   ZCodeAgentInitializeResult,
   ZCodeAgentListSessionsParams,
+  ZCodeAgentArchiveSessionParams,
   ZCodeAgentListSessionSubagentsParams,
   ZCodeAgentReadWorkspacePresentationParams,
   ZCodeAgentReadSessionEventsParams,
@@ -3661,6 +3663,26 @@ export function createZCodeAgentService(
         }
       }
       return result.sessions;
+    },
+
+    async archiveSession(params: ZCodeAgentArchiveSessionParams) {
+      // best-effort：existing-only 意味着运行时没活就抛错→静默跳过。归档时间戳
+      // 只影响活会话的工位扫描与冷种子过滤；死会话的兜底是派单侧退役反查。
+      try {
+        const client = await getReadOnlyClient(params, "existing-only");
+        await client.request(
+          zcodeProtocolMethods.sessionArchive,
+          { sessionId: params.sessionId, archived: params.archived },
+          zcodeSessionArchiveResultSchema,
+        );
+      } catch (error) {
+        logger.info(undefined, "ZCode session archive timestamp sync skipped", {
+          sessionId: params.sessionId,
+          archived: params.archived,
+          workspacePath: params.workspacePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     },
 
     async listSessionSubagents(params: ZCodeAgentListSessionSubagentsParams) {

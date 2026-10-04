@@ -49,6 +49,7 @@ import {
   ZCODE_SESSION_RUNTIME_PREFERENCES_REQUEST_TIMEOUT_MS,
   zcodeProtocolErrorCodes,
   zcodeProtocolMethods,
+  zcodeSessionArchiveParamsSchema,
   zcodeSessionCancelBackgroundTaskParamsSchema,
   zcodeSessionCompactParamsSchema,
   zcodeSessionCloseParamsSchema,
@@ -1693,6 +1694,33 @@ export async function listSessions(context: ZCodeProtocolAgentServerContext, raw
     );
   }
   return { sessions };
+}
+
+/**
+ * 归档补时间戳（地基清理 2026-10-04）：Host 归档/取消归档 task 后补写会话行的
+ * time_archived。直接写会话库而非要求活跃会话——归档常发生在会话没打开的时候。
+ * 会话行不存在（task 索引里的历史/外部行）不算错，返回 archived:false 即可。
+ */
+export async function archiveSession(context: ZCodeProtocolAgentServerContext, rawParams: unknown) {
+  const params = parseParams(zcodeSessionArchiveParamsSchema, rawParams ?? {});
+  const store = context.deps.sessionStore;
+  if (!store) return { archived: false };
+  try {
+    await store.updateSession({
+      id: params.sessionId as SessionId,
+      timeArchived: params.archived ? Date.now() : null,
+    });
+    return { archived: true };
+  } catch (error) {
+    context.logger?.warn("Failed to sync session archive timestamp", {
+      sessionId: params.sessionId,
+      archived: params.archived,
+      error: error instanceof Error ? error.message : String(error),
+      event: "zcode_protocol.session.archive_sync_failed",
+      module: "bootstrap.zcode_protocol",
+    });
+    return { archived: false };
+  }
 }
 
 export async function listSessionSubagents(

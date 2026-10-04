@@ -157,6 +157,9 @@ export async function findLatestPersonaSessionId(
     // 隐身工位——frontend-design 的席位发言交活都正常，卡片却永远找不到。
     // 只认 interactive；档案的最新交互会话不是正经工位时，落到新建分支开新的。
     if (session.taskType !== "interactive") continue;
+    // 已归档的工位不参与（归档补时间戳 2026-10-04 后本进程可见）。旧数据
+    // time_archived 可能仍为 NULL，兜底是复用前的 isReuseSessionRetired 反查。
+    if (session.time.archived !== undefined) continue;
     const updatedAt = session.time.updated;
     if (!latest || updatedAt > latest.updatedAt) {
       latest = { sessionId: session.id, updatedAt };
