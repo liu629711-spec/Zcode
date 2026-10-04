@@ -35,6 +35,21 @@ export function enqueueRuntimeCommand(this: AgentRuntimeInternal, command: Runti
       queueSize: this.runtimeCommandQueue.size(),
     });
   }
+  // 回执收集窗（回执洪泛合并 2026-10-05）：窗内的回执命令不出队，靠这条定时器
+  // 在窗到期时叫醒可能已空闲的 drain。若 drain 正忙，它的 while 循环会在回合
+  // 边界自然取件，定时器只是幂等的再Kick。多个回执各自带定时器，无害。
+  if (
+    command.mode === "work-order-receipt" &&
+    command.notRunnableBefore !== undefined
+  ) {
+    const delayMs = Math.max(0, command.notRunnableBefore.getTime() - Date.now()) + 5;
+    setTimeout(
+      () => {
+        void this.drainRuntimeCommandQueue();
+      },
+      delayMs,
+    ).unref?.();
+  }
   void this.drainRuntimeCommandQueue();
 }
 
@@ -42,10 +57,12 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
   if (this.runtimeCommandDrainActive) return;
 
   this.runtimeCommandDrainActive = true;
+  let consumedAny = false;
   try {
     let commands: readonly RuntimeCommand[];
     // 将同批后台通知合并到一个模型轮，避免每条通知都单独发起请求。
     while ((commands = dequeueNextRunnableBatch.call(this)).length > 0) {
+      consumedAny = true;
       const firstCommand = commands[0];
       if (!firstCommand) continue;
       if (firstCommand.mode === "task-notification") {
@@ -66,7 +83,8 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
         continue;
       }
       if (firstCommand.mode === "work-order-receipt") {
-        // 回执同样独占成轮：轮身份（workOrderId/originMeta）必须逐单携带。
+        // 回执独占成轮，但收集窗内同到的兄弟回执由 run 侧吸收进同一轮
+        // （回执洪泛合并）：逐张身份随轮头 originMeta.receipts 下发。
         await runWorkOrderReceiptCommand.call(this, firstCommand);
         continue;
       }
@@ -89,7 +107,13 @@ export async function drainRuntimeCommandQueue(this: AgentRuntimeInternal): Prom
     this.runtimeCommandDrainActive = false;
   }
 
-  if (this.runtimeCommandQueue.hasPending() && this.foregroundPromotionLease === undefined) {
+  if (
+    // 尾部再排只在本轮确实消费过命令时进行：队列里只剩收集窗内的回执时
+    // hasPending 恒真，不设闸会变成空转自旋；它们的到期叫醒由入队侧定时器负责。
+    consumedAny &&
+    this.runtimeCommandQueue.hasPending() &&
+    this.foregroundPromotionLease === undefined
+  ) {
     await this.drainRuntimeCommandQueue();
   }
 }
@@ -339,8 +363,7 @@ async function runRuntimeCommand(
   }
 }
 
-async function runTaskNotificationBatch(
-  this: AgentRuntimeInternal,
+async function runTaskNotificationBatch(  this: AgentRuntimeInternal,
   commands: readonly TaskNotificationRuntimeCommand[],
 ): Promise<void> {
   const eligibleCommands = commands.filter(

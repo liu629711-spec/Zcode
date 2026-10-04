@@ -2222,7 +2222,11 @@ export function SessionPane({
               ? intl.formatMessage({ id: "chat.mention.agents.dispatchSelfTarget" })
               : reasonCode === "guard.agentWorkOrderNested"
                 ? intl.formatMessage({ id: "chat.mention.agents.dispatchNested" })
-                : fallback,
+                : reasonCode === "guard.agentWorkOrderRate"
+                  ? intl.formatMessage({ id: "chat.mention.agents.dispatchRateLimited" })
+                  : reasonCode === "guard.agentWorkOrderCost"
+                    ? intl.formatMessage({ id: "chat.mention.agents.dispatchCostBreaker" })
+                    : fallback,
       );
     },
     [intl, sendCommand, sessionId],

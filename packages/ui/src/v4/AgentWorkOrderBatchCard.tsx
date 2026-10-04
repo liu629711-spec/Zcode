@@ -54,12 +54,13 @@ const collapsedBatches = new Map<string, boolean>();
 const QC_STATE_DOT: Record<
   NonNullable<WorkOrderBatchModel["qc"]>["state"],
   keyof typeof STATUS_DOT
-> = { running: "running", done: "done", failed: "failed" };
+> = { running: "running", done: "done", failed: "failed", skipped: "done" };
 
 const QC_STATE_MESSAGE: Record<NonNullable<WorkOrderBatchModel["qc"]>["state"], string> = {
   running: "chat.workOrderBatch.qc.running",
   done: "chat.workOrderBatch.qc.done",
   failed: "chat.workOrderBatch.qc.failed",
+  skipped: "chat.workOrderBatch.qc.skipped",
 };
 
 /** 合议（评审会批）的状态词：同一盏灯、同一套三态，词表换成合议口味。 */
@@ -67,6 +68,8 @@ const QC_REVIEW_STATE_MESSAGE: Record<NonNullable<WorkOrderBatchModel["qc"]>["st
   running: "chat.workOrderBatch.qcReview.running",
   done: "chat.workOrderBatch.qcReview.done",
   failed: "chat.workOrderBatch.qcReview.failed",
+  // 合议批永不免检（core 证据门禁只对普通质检批跳过），skipped 不可达；类型闭集兜底。
+  skipped: "chat.workOrderBatch.qc.skipped",
 };
 
 const VERDICT_MESSAGE: Record<ReviewVerdict, string> = {

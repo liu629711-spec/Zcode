@@ -5893,6 +5893,11 @@ const enUS: Record<string, string> = {
   "chat.mention.agents.dispatchTargetNotFound": "No agent named “{name}” — not in this project or the global roster",
   "chat.mention.agents.dispatchTargetAmbiguous": "Multiple agents are named “{name}” — pick a unique name and try again",
   "chat.mention.agents.dispatchNested": "That agent is already running a task — try again shortly",
+  // Dispatch rate limit / cost breaker (audit A blind spot, 2026-10-05).
+  "chat.mention.agents.dispatchRateLimited":
+    "Dispatching too fast: several work orders are still awaiting receipts — wait before dispatching more",
+  "chat.mention.agents.dispatchCostBreaker":
+    "Spending breaker tripped: the last hour's usage hit the safety line — review existing receipts first, then retry",
   "chat.mention.agents.dispatchSelfTarget":
     "You cannot assign a task to yourself — this conversation is you. Name another agent to hand it off.",
   "chat.agentWorkOrder.card.fromTitle": "Task from {name}",
@@ -7081,6 +7086,8 @@ const enUS: Record<string, string> = {
   "chat.workOrderBatch.qc.running": "Quality check running…",
   "chat.workOrderBatch.qc.done": "Quality check complete",
   "chat.workOrderBatch.qc.failed": "Quality check incomplete",
+  // Green-skip (2026-10-05): UI-derived state (all receipts completed + no QC turn header).
+  "chat.workOrderBatch.qc.skipped": "All receipts succeeded — verified and skipped QC",
   // Council (review-meeting batch): the settle turn is a council, same lamp, new words.
   "chat.workOrderBatch.qcReview.running": "Council running…",
   "chat.workOrderBatch.qcReview.done": "Council complete",

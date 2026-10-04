@@ -364,6 +364,28 @@ export interface BackgroundResultOriginMeta {
    * 按号优先；audit 2026-10-01）。completed 回执不带（转交按名册选人，语义不同）。
    */
   agentId?: string;
+  /**
+   * 合并回执轮（回执洪泛合并 2026-10-05）携带：同轮收拢的**逐张**回执对账元数据，
+   * 首张=轮头顶层字段本身。UI 工地卡按数组逐张记账；缺数组（旧轮头/单张轮）照旧
+   * 读顶层。与 shared 的 backgroundResultOriginMetaSchema.receipts 保持同步
+   * （zod 剥未知键，漏加即冷恢复后合并轮的回执证据全丢）。
+   */
+  receipts?: BackgroundReceiptOriginMeta[];
+}
+
+/** 合并回执轮里单张回执的轮头对账元数据（顶层字段的逐张镜像，receipts[] 成员）。 */
+export interface BackgroundReceiptOriginMeta {
+  workId: string;
+  title: string;
+  receiptStatus: "completed" | "failed" | "cancelled";
+  batchId?: string;
+  batchTitle?: string;
+  task?: string;
+  failureCode?: string;
+  failureModelId?: string;
+  failureReason?: string;
+  retried?: boolean;
+  agentId?: string;
 }
 
 /**

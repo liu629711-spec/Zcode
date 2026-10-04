@@ -71,7 +71,7 @@ import type { CouncilMeetingModel } from "@/v4/councilMeeting.js";
 import {
   AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE,
   resolveAgentWorkOrderMeta,
-  resolveAgentWorkOrderReceiptMeta,
+  resolveAgentWorkOrderReceiptMetaItems,
 } from "@/v4/agentWorkOrderTurn.js";
 import { ReceiptFailureNotice } from "@/v4/ReceiptFailureNotice.js";
 import { ConversationWorkflowDigests } from "@/v4/ConversationWorkflowDigests.js";
@@ -1042,9 +1042,10 @@ function ConversationBackgroundResultWork({
   // 载荷缺席（批量轮、旧 transcript、bash/subagent）→ 原样退回标题行。
   const workflowNotification = resolveWorkflowNotification(unit);
   // 失败回执的结构化线索（一键重派/大白话的数据源；completed/旧 CLI 为 undefined）。
-  const receiptMeta = isAgentWorkOrderReceiptResult(unit)
-    ? resolveAgentWorkOrderReceiptMeta(unit.header)
-    : undefined;
+  // 洪泛合并轮（2026-10-05）逐张解析——头部行与失败说明都按张数渲染。
+  const receiptItems = isAgentWorkOrderReceiptResult(unit)
+    ? resolveAgentWorkOrderReceiptMetaItems(unit.header)
+    : [];
   const workflowRunId = unit.header?.originMeta?.workId;
   // 打开 run 详情：宿主注入 onOpenWorkflowRun + 联查到 toolCallId 才可点；冷恢复查不到时
   // 展开体内不渲染链接。toolCallId 走投影/journal 联查表，与 CreateWorkflow 工具卡同一条打开路径。
@@ -1112,30 +1113,47 @@ function ConversationBackgroundResultWork({
         // 批次派单成员（工地卡在场时）：散的收据头整体压掉（含转交），由工地卡代言。
         suppressAgentWorkOrderReceiptCard ? null : (
           <div className="flex w-full flex-col gap-1 border-b border-[var(--color-border)]/50 pb-2">
-            <div className="flex w-full items-center gap-2">
-              <span
-                className="flex h-5 shrink-0 items-center rounded-[4px] bg-muted px-1.5 leading-none text-foreground-subtle"
-                aria-hidden="true"
-              >
-                <Bot className="size-3" />
-              </span>
+            {/* 标题行逐张渲染（回执洪泛合并）：单张/旧轮头只有一行，Bot 名牌挂首行。 */}
+            {(receiptItems.length > 0
+              ? receiptItems.map((item, index) => ({ item, index }))
+              : [{ item: undefined, index: 0 }]
+            ).map(({ item, index }) => (
               <div
-                data-testid={testId(TID_CHAT_BACKGROUND_RESULT_TITLE, unit.key)}
-                className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
+                className="flex w-full items-center gap-2"
+                key={item ? item.workOrderId : `${unit.key}:title`}
               >
-                {title}
+                {index === 0 ? (
+                  <span
+                    className="flex h-5 shrink-0 items-center rounded-[4px] bg-muted px-1.5 leading-none text-foreground-subtle"
+                    aria-hidden="true"
+                  >
+                    <Bot className="size-3" />
+                  </span>
+                ) : (
+                  <span className="h-5 w-4 shrink-0" aria-hidden="true" />
+                )}
+                <div
+                  data-testid={testId(
+                    TID_CHAT_BACKGROUND_RESULT_TITLE,
+                    index === 0 ? unit.key : `${unit.key}:${index}`,
+                  )}
+                  className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
+                >
+                  {item ? item.title : title}
+                </div>
               </div>
-            </div>
-            {receiptMeta ? (
+            ))}
+            {receiptItems.map((item) => (
               // 失败回执的大白话说明 + 一键重派（2026-10-01 员工可靠性批）：
               // 结构化线索缺席（completed/旧 CLI）时组件自己返回 null。
               <ReceiptFailureNotice
-                title={title}
-                meta={receiptMeta}
+                key={`${item.workOrderId}:notice`}
+                title={item.title}
+                meta={item}
                 context={context}
                 unitKey={unit.key}
               />
-            ) : null}
+            ))}
           </div>
         )
       ) : (

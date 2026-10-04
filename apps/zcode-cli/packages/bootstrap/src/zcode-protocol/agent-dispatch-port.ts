@@ -16,6 +16,8 @@ import {
   type AgentDispatchRequest,
   type AgentDispatchResult,
   type AgentWorkOrderEnvelope,
+  type SessionId,
+  type UsageStorePort,
 } from "@zcode/contracts";
 import type { ModelSelection, ZCodeSessionPersona, ZCodeWorkspaceRef } from "@zcode/shared";
 import {
@@ -66,7 +68,89 @@ export const AGENT_WORK_ORDER_GUARDS = {
   selfTarget: "guard.agentWorkOrderSelfTarget",
   /** 未点名派单缺 newSession=true（core 工具 schema refine 之外的第二道墙，端口级执法）。 */
   input: "guard.agentWorkOrderInput",
+  /** 频控（audit A 盲区 2026-10-05）：同会话在飞工单超上限 / 派得太勤。 */
+  rate: "guard.agentWorkOrderRate",
+  /** 成本熔断（audit A 盲区 2026-10-05）：全进程近窗 token 花费超安全线。 */
+  cost: "guard.agentWorkOrderCost",
 } as const;
+
+// ── 派单频控 / 成本熔断（audit A 盲区，2026-10-05 老板拍板）────────────
+// 三道闸全挂在既有台账上：在飞=派单台账行 admitted（回执销账即 discarded），
+// 频窗=台账行 time.created，花费=store.queryAppUsage 的近窗合计。阈值取
+// 「正常重活绝不触发、失控循环几分钟内必触发」的宽档；查询失败一律 fail-open
+// （守的是资源护栏不是授权边界，对照 isReuseSessionRetired 同判据）。
+// ponytail: 阈值硬编码，超重度的合法使用可能偏紧；升级路径=搬进会话配置。
+const DISPATCH_INFLIGHT_MAX = 16;
+const DISPATCH_RATE_WINDOW_MS = 10 * 60_000;
+const DISPATCH_RATE_MAX = 20;
+const DISPATCH_COST_WINDOW_MS = 60 * 60_000;
+const DISPATCH_COST_MAX_TOTAL_TOKENS = 100_000_000;
+
+/**
+ * 派单三道闸（频控/成本熔断）：在飞上限 → 频窗上限 → 全局近窗花费熔断。
+ * 自派重试（retryWorkOrderOnce）直走 runtime 不经本端口，天然不受闸；圆桌
+ * 席位单经端口但一次 2~3 张，宽档下永不误伤。
+ */
+export async function assertDispatchBudget(
+  context: Pick<ZCodeProtocolAgentServerContext, "logger">,
+  store: NonNullable<ZCodeProtocolAgentServerContext["deps"]["sessionStore"]>,
+  sourceSessionId: string,
+): Promise<void> {
+  // 用量方法按 getTaskTokenUsage/getAppUsage 同款窄视取（sqlite store 双端口同体）。
+  const usageStore = store as Partial<UsageStorePort> | undefined;
+  try {
+    const now = Date.now();
+    if (store.listSessionInputs) {
+      const rows = await store.listSessionInputs({
+        sessionID: sourceSessionId as SessionId,
+      });
+      const dispatchRows = rows.filter((row) => row.kind === "agentWorkOrderDispatch");
+      const inflight = dispatchRows.filter((row) => row.status === "admitted").length;
+      if (inflight >= DISPATCH_INFLIGHT_MAX) {
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.rate,
+          `Dispatch rate limit reached: ${inflight} work orders from this session are still awaiting receipts. Wait for receipts to come back before dispatching more, or report to the user that dispatching is temporarily paused.`,
+        );
+      }
+      const recent = dispatchRows.filter(
+        (row) => now - row.time.created < DISPATCH_RATE_WINDOW_MS,
+      ).length;
+      if (recent >= DISPATCH_RATE_MAX) {
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.rate,
+          `Dispatch rate limit reached: ${recent} work orders were dispatched from this session in the last 10 minutes. Wait for some receipts before dispatching more, or report to the user that dispatching is temporarily paused.`,
+        );
+      }
+    }
+    if (usageStore?.queryAppUsage) {
+      const usage = await usageStore.queryAppUsage({
+        since: now - DISPATCH_COST_WINDOW_MS,
+        until: now,
+        tzOffsetMs: 0,
+      });
+      if (usage.totals.totalTokens >= DISPATCH_COST_MAX_TOTAL_TOKENS) {
+        throw agentWorkOrderGuardError(
+          AGENT_WORK_ORDER_GUARDS.cost,
+          "Spending circuit breaker tripped: total token usage across all sessions in the last hour exceeded the safety line. Do not dispatch more work orders; report to the user and wait, or let them finish reviewing existing receipts first.",
+        );
+      }
+    }
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error as { name?: string }).name === "AgentWorkOrderGuardError"
+    ) {
+      throw error;
+    }
+    // 台账/用量查询失败 ≠ 派单该被拦：护栏 fail-open，留痕即可。
+    context.logger?.warn("Dispatch budget check failed; failing open", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "agent_dispatch.budget_check_failed",
+      module: "bootstrap.zcode_protocol",
+      sourceSessionId,
+    });
+  }
+}
 
 function agentWorkOrderGuardError(reasonCode: string, message: string): Error {
   return Object.assign(new Error(message), { name: "AgentWorkOrderGuardError", reasonCode });
@@ -237,6 +321,16 @@ export function createProtocolAgentDispatchPort(
         throw agentWorkOrderGuardError(
           AGENT_WORK_ORDER_GUARDS.nested,
           "Cannot dispatch a work order while running an agent work order turn.",
+        );
+      }
+
+      // 频控/成本熔断（audit A 盲区 2026-10-05）：在飞上限 + 频窗 + 全局近窗花费，
+      // 全挂在既有台账上（assertDispatchBudget 内 fail-open）。store 缺席的旧宿主跳过。
+      if (context.deps.sessionStore) {
+        await assertDispatchBudget(
+          context,
+          context.deps.sessionStore,
+          ownRecord.app.sessionId,
         );
       }
 

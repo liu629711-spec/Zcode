@@ -131,6 +131,12 @@ export interface WorkOrderRuntimeCommand extends RuntimeCommandBase {
  * 派单回执命令（D29/D3）：目标轮结束后投回发起方会话的完成通知。与 work-order
  * 同家族但独立成轮（不与 task-notification 合并批次——回执必须携带自己的身份
  * workOrderId/originMeta，混批会让回执轮头退化为无标题行）。
+ *
+ * 回执洪泛合并（audit C-P2，2026-10-05 老板拍板）：同批回执常在毫秒级先后到达，
+ * 逐条独立成轮=逐条烧一轮模型。命令带 `notRunnableBefore` 收集窗（默认 2s），
+ * 窗内的回执命令不被出队；run 时把窗内排队到位的兄弟回执**吸收**进同一轮
+ * （mergedReceipts），轮头 originMeta.receipts 逐张携带身份——身份不混批，
+ * 只是同轮多张。吸收只认非圆桌席位单（席位回执本就静默落账不开轮）。
  */
 export interface WorkOrderReceiptRuntimeCommand extends RuntimeCommandBase {
   readonly branchGeneration: number;
@@ -150,6 +156,13 @@ export interface WorkOrderReceiptRuntimeCommand extends RuntimeCommandBase {
   readonly originMeta: BackgroundResultOriginMeta;
   /** 信封拼装后的回执正文（<work-order-receipt> 包裹）。 */
   readonly text: string;
+  /** 收集窗（回执洪泛合并）：此前不出队；缺席=立即可跑（测试注入 0 用）。 */
+  readonly notRunnableBefore?: Date;
+  /**
+   * run 时吸收的同轮兄弟回执命令（各自带台账行 id，promote 时逐张对齐）。
+   * ponytail: 引用可变数组仅限 runtime 队列内部在出队前填充；吸收后不再改。
+   */
+  readonly mergedReceipts: WorkOrderReceiptRuntimeCommand[];
 }
 
 /**
@@ -273,8 +286,17 @@ export function createRuntimeCommandQueue(): RuntimeCommandQueue {
       maxPriority === undefined
         ? Number.POSITIVE_INFINITY
         : RUNTIME_COMMAND_PRIORITY_ORDER[maxPriority];
+    const now = Date.now();
 
     for (const [index, command] of commands.entries()) {
+      // 收集窗内的回执命令不出队（回执洪泛合并）：等窗收满同到的一拨。
+      if (
+        command.mode === "work-order-receipt" &&
+        command.notRunnableBefore !== undefined &&
+        command.notRunnableBefore.getTime() > now
+      ) {
+        continue;
+      }
       const priority = RUNTIME_COMMAND_PRIORITY_ORDER[command.priority];
       if (priority > maxPriorityRank) continue;
       if (priority < selectedPriority) {

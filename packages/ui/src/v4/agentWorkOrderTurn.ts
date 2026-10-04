@@ -105,6 +105,37 @@ export function resolveAgentWorkOrderReceiptMeta(
 }
 
 /**
+ * 回执轮的逐张对账元数据（回执洪泛合并 2026-10-05）：合并轮读轮头
+ * `originMeta.receipts`（CLI 逐张下发，receiptStatus 必带），缺数组的单张轮/
+ * 旧轮头回退单张解析。来源不符 = 空数组（调用方退回普通渲染，不从文本反推）。
+ */
+export function resolveAgentWorkOrderReceiptMetaItems(
+  header: TurnHeaderRow | undefined,
+): AgentWorkOrderReceiptMeta[] {
+  if (header?.origin !== "backgroundResult") return [];
+  const originMeta = header.originMeta;
+  if (originMeta?.backgroundSource !== AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE) return [];
+  const items = originMeta.receipts;
+  if (Array.isArray(items) && items.length > 0) {
+    return items.map((item) => ({
+      workOrderId: item.workId,
+      title: item.title,
+      receiptStatus: item.receiptStatus,
+      ...(item.batchId ? { batchId: item.batchId } : {}),
+      ...(item.batchTitle ? { batchTitle: item.batchTitle } : {}),
+      ...(item.task ? { task: item.task } : {}),
+      ...(item.failureCode ? { failureCode: item.failureCode } : {}),
+      ...(item.failureModelId ? { failureModelId: item.failureModelId } : {}),
+      ...(item.failureReason ? { failureReason: item.failureReason } : {}),
+      ...(item.retried ? { retried: true } : {}),
+      ...(item.agentId ? { agentId: item.agentId } : {}),
+    }));
+  }
+  const single = resolveAgentWorkOrderReceiptMeta(header);
+  return single ? [single] : [];
+}
+
+/**
  * 失败回执的大白话呈现（2026-10-01 员工可靠性批）。结构化线索全缺席（旧 CLI）一律
  * undefined——宁可不说，也不拿空话占位；已知分类码翻译成人话，其余给通用句式带原根因。
  */

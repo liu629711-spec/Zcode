@@ -4,7 +4,7 @@ import type {
 } from "@/v4/agentWorkOrderTurn.js";
 import {
   resolveAgentWorkOrderBatchQcMeta,
-  resolveAgentWorkOrderReceiptMeta,
+  resolveAgentWorkOrderReceiptMetaItems,
 } from "@/v4/agentWorkOrderTurn.js";
 import { parseFailedReceiptAgentName, parseReceiptDelivererName } from "@/v4/workOrderForward.js";
 
@@ -92,12 +92,19 @@ export interface WorkOrderBatchModel {
    * 批次质检（纪律协议批）：质检轮的证据在场才有。质检结论正文在质检轮自己的
    * 「质检 · 标题」卡里渲染，工地卡只画状态灯（进行中/已完成/未完成——轮失败或
    * 被中断时绝不假报「完成」，评审 C1），不重复贴结论。
+   *
+   * skipped（全绿免检，2026-10-05）是 UI 的**确定性推导态**，不是轮头下发：
+   * 免检批根本不开质检轮、没有任何轮头可读。推导判据=本批回执全部 completed
+   * （结构化 receiptStatus）+ 质检轮头缺席 + 非评审批——与 core 证据门禁的
+   * 跳过条件在稳态下一一对应（门禁只有零工具调用摸鱼/取消/失败才开轮，那些
+   * 批次要么有非 completed 回执、要么质检轮头会到场）。误报窗口只剩质检轮
+   * 头未及的亚秒瞬间与崩溃窗，与回执同为 best-effort 档。
    */
   qc?: {
-    /** 质检轮 unit（工地卡 host 跟着它走到质检卡旁边）。 */
+    /** 质检轮 unit（工地卡 host 跟着它走到质检卡旁边）；skipped 时 = 批次 host 轮。 */
     unitKey: string;
-    /** 质检轮头状态三态（轮头闭集坍缩：completedSuccess→done，running→running，其余→failed）。 */
-    state: "running" | "done" | "failed";
+    /** 质检轮头状态三态（轮头闭集坍缩：completedSuccess→done，running→running，其余→failed）；skipped=全绿免检推导态。 */
+    state: "running" | "done" | "failed" | "skipped";
     /** 合议口味（评审会批）：CLI 的 originMeta.qcKind="review"，UI 据此换合议词表。 */
     review?: boolean;
   };
@@ -192,7 +199,7 @@ interface BatchDraft {
   title?: string;
   orders: Map<string, WorkOrderBatchOrder>;
   review?: boolean;
-  qc?: { unitKey: string; state: "running" | "done" | "failed"; review?: boolean };
+  qc?: { unitKey: string; state: "running" | "done" | "failed" | "skipped"; review?: boolean };
   memberUnitKeys: Set<string>;
   hostUnitKey: string;
   /** 批次墙钟（AgentCore 状态条同款）：各站轮头 startedAt 的最小值 / endedAt 的最大值。 */
@@ -277,8 +284,13 @@ export function selectWorkOrderBatches(
     }
 
     // 证据一：回执轮头（发起方会话）。终态权威，先到先记账也行——合并规则让回执赢。
-    const receipt = resolveAgentWorkOrderReceiptMeta(unit.header);
-    if (receipt?.batchId) {
+    // 合并回执轮（洪泛合并 2026-10-05）逐张记账：轮头 originMeta.receipts 数组
+    // 每张是一条独立证据；缺数组（单张/旧轮头）回退单张解析。合并轮的正文是
+    // 一整段模型回复，逐张归属不可分——摘要与成果全文只挂单张轮，合并张不挂。
+    const receiptItems = resolveAgentWorkOrderReceiptMetaItems(unit.header);
+    const isMergedReceiptUnit = receiptItems.length > 1;
+    for (const receipt of receiptItems) {
+      if (!receipt.batchId) continue;
       const draft = ensureDraft(receipt.batchId, unit);
       draft.title ??= receipt.batchTitle;
       mergeOrder(
@@ -291,9 +303,11 @@ export function selectWorkOrderBatches(
           // 回退标题解析。cancelled 曾被画成红色"未完成"，误导老板（audit D P2-4）。
           status: resolveReceiptStatus(receipt),
           receiptTitle: receipt.title,
-          ...(receiptSnippet(unit) ? { receiptText: receiptSnippet(unit) } : {}),
+          ...(!isMergedReceiptUnit && receiptSnippet(unit)
+            ? { receiptText: receiptSnippet(unit) }
+            : {}),
           // 全文只在 completed（转交语义=成果已交付）时挂：失败/中断没有可转交的成果。
-          ...(isReceiptCompleted(receipt) && receiptFullText(unit)
+          ...(!isMergedReceiptUnit && isReceiptCompleted(receipt) && receiptFullText(unit)
             ? { receiptAnswer: receiptFullText(unit), receiptUnitKey: unit.key }
             : {}),
           // 失败线索与原任务（一键重派）只在 failed 回执上在场（CLI 权威下发）。
@@ -304,7 +318,7 @@ export function selectWorkOrderBatches(
           ...(receipt.retried ? { retried: true } : {}),
           ...(receipt.agentId ? { agentId: receipt.agentId } : {}),
           // 评审结论徽章（圆桌卡）：只认第一行格式行，提取不出不带。
-          ...(isReceiptCompleted(receipt)
+          ...(!isMergedReceiptUnit && isReceiptCompleted(receipt)
             ? (() => {
                 const verdict = extractReviewVerdict(receiptFullText(unit));
                 return verdict ? { verdict } : {};
@@ -313,6 +327,8 @@ export function selectWorkOrderBatches(
         },
         unit.key,
       );
+    }
+    if (receiptItems.length > 0) {
       continue;
     }
 
@@ -348,12 +364,22 @@ export function selectWorkOrderBatches(
   const models: WorkOrderBatchModel[] = [];
   for (const [batchId, draft] of drafts) {
     if (draft.orders.size < WORK_ORDER_BATCH_MIN_ORDERS) continue;
+    const orders = [...draft.orders.values()];
+    // 全绿免检推导（2026-10-05）：没有质检轮头、非评审批、回执全部 completed 时，
+    // 批次画「免检」态而不是没有质检灯（字段注释里有推导纪律与误报窗口的边界）。
+    const qc =
+      draft.qc ??
+      (!draft.review &&
+      orders.length > 0 &&
+      orders.every((order) => order.status === "completed")
+        ? { unitKey: draft.hostUnitKey, state: "skipped" as const }
+        : undefined);
     models.push({
       batchId,
       ...(draft.title ? { title: draft.title } : {}),
-      orders: [...draft.orders.values()],
+      orders,
       ...(draft.review ? { review: true } : {}),
-      ...(draft.qc ? { qc: draft.qc } : {}),
+      ...(qc ? { qc } : {}),
       ...(draft.startedAtMs !== undefined ? { startedAtMs: draft.startedAtMs } : {}),
       ...(draft.endedAtMs !== undefined ? { endedAtMs: draft.endedAtMs } : {}),
       hostUnitKey: draft.hostUnitKey,
@@ -414,8 +440,12 @@ function collectMemberUnitKeys(
       memberUnitKeys.add(unit.key);
       continue;
     }
-    const receipt = resolveAgentWorkOrderReceiptMeta(unit.header);
-    if (receipt?.batchId === batch.batchId && orderKeys.has(receipt.workOrderId)) {
+    const receiptItems = resolveAgentWorkOrderReceiptMetaItems(unit.header);
+    if (
+      receiptItems.some(
+        (receipt) => receipt.batchId === batch.batchId && orderKeys.has(receipt.workOrderId),
+      )
+    ) {
       memberUnitKeys.add(unit.key);
       continue;
     }

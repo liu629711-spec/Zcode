@@ -129,6 +129,28 @@ export const backgroundResultOriginMetaSchema = z.object({
   retried: z.boolean().optional(),
   // 交活方工号（一键重派按号找人，改名不误派）；UUID 形状，上界照 batchId 口径。
   agentId: z.string().min(1).max(128).optional(),
+  // 合并回执轮（回执洪泛合并 2026-10-05）携带：同轮收拢的逐张回执对账元数据，
+  // 首张=顶层字段本身；UI 工地卡按数组逐张记账，缺数组照旧读顶层。zod 剥离
+  // 未知键，不加即冷恢复后合并轮的回执证据全丢（工地卡永远停在"在跑"）。
+  // 成员上界与顶层同名字段对齐；receiptStatus 成员必带（合并轮逐张必有终态）。
+  receipts: z
+    .array(
+      z.object({
+        workId: z.string().min(1),
+        title: z.string().min(1),
+        receiptStatus: z.enum(["completed", "failed", "cancelled"]),
+        batchId: z.string().min(1).max(128).optional(),
+        batchTitle: z.string().max(200).optional(),
+        task: z.string().min(1).max(8192).optional(),
+        failureCode: z.string().min(1).max(128).optional(),
+        failureModelId: z.string().min(1).max(160).optional(),
+        failureReason: z.string().min(1).max(500).optional(),
+        retried: z.boolean().optional(),
+        agentId: z.string().min(1).max(128).optional(),
+      }),
+    )
+    .max(64)
+    .optional(),
   // 只在 backgroundSource === "workflow" 的单条通知轮上在场；zod 剥离未知键，
   // 这里不加即整条链路静默丢——本字段是 manifest 渲染的唯一数据源。
   workflowNotification: workflowNotificationMetaSchema.optional(),

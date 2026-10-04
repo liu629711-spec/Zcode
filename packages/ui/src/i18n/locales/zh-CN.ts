@@ -5640,6 +5640,11 @@ const zhCN: Record<string, string> = {
   "chat.mention.agents.dispatchTargetNotFound": "没有叫「{name}」的智能体（项目与全局名册里都没有）",
   "chat.mention.agents.dispatchTargetAmbiguous": "有多个叫「{name}」的智能体，换个唯一的名字再试",
   "chat.mention.agents.dispatchNested": "对方正在处理一个转交任务，稍后再试",
+  // 派单频控/成本熔断（audit A 盲区 2026-10-05）：端口三道闸的 UI 人话。
+  "chat.mention.agents.dispatchRateLimited":
+    "派得太勤了：还有不少工单没收工，先等等回执再派新活",
+  "chat.mention.agents.dispatchCostBreaker":
+    "花费熔断：最近一小时的用量已到安全线，先消化手头回执，稍后再派",
   "chat.mention.agents.dispatchSelfTarget": "不能给自己派活：你就是当前对话。要换人请直接点名。",
   "chat.agentWorkOrder.card.fromTitle": "来自 {name} 的任务",
   "chat.agentWorkOrder.card.fromUserName": "用户",
@@ -6748,6 +6753,8 @@ const zhCN: Record<string, string> = {
   "chat.workOrderBatch.qc.running": "正在质检…",
   "chat.workOrderBatch.qc.done": "质检完成",
   "chat.workOrderBatch.qc.failed": "质检未完成",
+  // 全绿免检（2026-10-05）：UI 推导态（回执全 completed + 质检轮头缺席），不是轮头下发。
+  "chat.workOrderBatch.qc.skipped": "全部回执成功，系统已验货免检",
   // 合议（评审会批）：评审会批的收口轮是合议而不是质检，同一盏灯换一套词。
   "chat.workOrderBatch.qcReview.running": "正在合议…",
   "chat.workOrderBatch.qcReview.done": "合议完成",

@@ -7,7 +7,11 @@
 
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { TraceContext } from "../deps.js";
-import type { AgentWorkOrderEnvelope, BackgroundResultOriginMeta } from "@zcode/contracts";
+import type {
+  AgentWorkOrderEnvelope,
+  BackgroundReceiptOriginMeta,
+  BackgroundResultOriginMeta,
+} from "@zcode/contracts";
 import { AGENT_WORK_ORDER_TASK_MAX_CHARS } from "@zcode/contracts";
 import { uuidv7 } from "@zcode/shared";
 import {
@@ -23,6 +27,14 @@ import {
 import type { AgentRuntimeInternal } from "../internal.js";
 import { isStaleBranchRuntimeCommand } from "./runtime-command-generation.js";
 import { beginForegroundExecution, finishForegroundExecution } from "./runtime-command-queue.js";
+
+/**
+ * 回执收集窗（回执洪泛合并，audit C-P2，2026-10-05 老板拍板）：同批回执常在
+ * 毫秒级先后到达，逐条独立成轮=逐条烧一轮模型。入队后先收窗 2 秒，窗内排队
+ * 到位的兄弟回执在 run 时吸收进同一轮（轮头 originMeta.receipts 逐张带身份）。
+ * 错峰到达的回执各自成轮——反馈实时性不为此让路。测试可改写本常量取 0。
+ */
+export const RECEIPT_COALESCE_MS = 2_000;
 
 export interface EnqueueAgentWorkOrderReceiptInput {
   /** 回执指回的工单身份（与工单信封的 workOrderId 一致，供 UI/日志对账）。 */
@@ -132,6 +144,9 @@ export async function enqueueAgentWorkOrderReceipt(
     text,
     traceContext,
     workOrderId: input.workOrderId,
+    // 收集窗（回执洪泛合并）：窗内不出队，兄弟回执由 run 侧吸收进同一轮。
+    notRunnableBefore: new Date(Date.now() + RECEIPT_COALESCE_MS),
+    mergedReceipts: [],
   };
   this.enqueueRuntimeCommand(command);
   // 账本 admission（durable 痕迹）：runtime 命令队列是纯内存的，崩溃后由 resume 统一收口。
@@ -192,9 +207,47 @@ export async function enqueueAgentWorkOrderReceipt(
 }
 
 /**
+ * 合并回执轮的轮头元数据（纯函数，测试可对账）：单张回执原样返回自己的
+ * originMeta（与既有单张轮逐字节同形）；多张时顶层沿用首张、`receipts` 逐张
+ * 带对账身份——身份不混批，只是同轮多张（回执洪泛合并 2026-10-05）。
+ */
+export function buildMergedReceiptOriginMeta(
+  commands: readonly {
+    originMeta: BackgroundResultOriginMeta;
+    outcome: { status: "completed" | "failed" | "cancelled" };
+  }[],
+): BackgroundResultOriginMeta {
+  const first = commands[0];
+  if (!first) throw new Error("cannot build receipt origin meta from an empty batch");
+  if (commands.length === 1) return first.originMeta;
+  return {
+    ...first.originMeta,
+    receipts: commands.map((command) => {
+      const meta = command.originMeta;
+      const item: BackgroundReceiptOriginMeta = {
+        workId: meta.workId,
+        title: meta.title,
+        receiptStatus: meta.receiptStatus ?? command.outcome.status,
+        ...(meta.batchId ? { batchId: meta.batchId } : {}),
+        ...(meta.batchTitle ? { batchTitle: meta.batchTitle } : {}),
+        ...(meta.task ? { task: meta.task } : {}),
+        ...(meta.failureCode ? { failureCode: meta.failureCode } : {}),
+        ...(meta.failureModelId ? { failureModelId: meta.failureModelId } : {}),
+        ...(meta.failureReason ? { failureReason: meta.failureReason } : {}),
+        ...(meta.retried ? { retried: true } : {}),
+        ...(meta.agentId ? { agentId: meta.agentId } : {}),
+      };
+      return item;
+    }),
+  };
+}
+
+/**
  * 回执轮：落库 synthetic notice（provider 可见、UI 不画气泡；轮头卡走
  * backgroundResult 链）→ 以回执身份独立成轮。回执轮是发起方自己的普通轮，
  * 不带 workorder- 前缀身份（发起方在回执轮里仍可派新单，嵌套上限只限工单轮）。
+ * 收集窗内同到的兄弟回执（非圆桌席位单）在此吸收进同一轮：一份 notice、一次
+ * 模型轮、逐张台账行 promote 对齐同一条消息——省轮次不丢身份。
  */
 export async function runWorkOrderReceiptCommand(
   this: AgentRuntimeInternal,
@@ -255,18 +308,34 @@ export async function runWorkOrderReceiptCommand(
     });
     return;
   }
+  // 吸收收集窗内排队到位的兄弟回执（回执洪泛合并）：只收非圆桌席位单（席位
+  // 回执走上面的静默路径）；陈旧分支件就地丢弃（台账由 resume 清扫收口）。
+  for (const sibling of this.runtimeCommandQueue.snapshot()) {
+    if (sibling.mode !== "work-order-receipt" || sibling === command) continue;
+    if (sibling.envelope.councilId) continue;
+    if (isStaleBranchRuntimeCommand(this, sibling)) {
+      this.runtimeCommandQueue.removeById(sibling.id);
+      continue;
+    }
+    if (this.runtimeCommandQueue.removeById(sibling.id)) {
+      command.mergedReceipts.push(sibling);
+    }
+  }
+  const receiptCommands = [command, ...command.mergedReceipts];
+  const mergedOriginMeta = buildMergedReceiptOriginMeta(receiptCommands);
+  const combinedText = receiptCommands.map((receipt) => receipt.text).join("\n\n");
   const foregroundExecution = beginForegroundExecution.call(this, command);
   try {
     const messageID = createMessageId();
-    // 内存历史与持久化同一份原文（<work-order-receipt> 信封）；执行期投影再补
-    // 「非用户权威」框架（provider-entry-origins 的 agent_work_order_receipt 分支）。
-    this.messageHistory.addUser(command.text, runtimeInputMetadata("agent_work_order_receipt"));
+    // 内存历史与持久化同一份原文（逐张 <work-order-receipt> 信封连排）；执行期
+    // 投影再补「非用户权威」框架（provider-entry-origins 的 receipt 分支）。
+    this.messageHistory.addUser(combinedText, runtimeInputMetadata("agent_work_order_receipt"));
     await this.persistSyntheticUserNoticeForSession({
       messageID,
       metadata: {
         envelope: command.envelope,
         inputPresentation: "agent_work_order_receipt",
-        originMeta: command.originMeta,
+        originMeta: mergedOriginMeta,
         outcome: {
           status: command.outcome.status,
           ...(command.outcome.reason ? { reason: command.outcome.reason } : {}),
@@ -278,43 +347,48 @@ export async function runWorkOrderReceiptCommand(
       },
       sessionId: this.sessionId,
       source: "agent_work_order_receipt",
-      text: command.text,
+      text: combinedText,
       traceContext: command.traceContext,
       visibility: "model-only",
     });
-    await this.sessionStore
-      ?.markSessionInputPromoted?.({
-        id: String(command.id),
-        sessionID: this.sessionId,
-        promotedMessageID: messageID,
-      })
-      .catch((error) => {
-        this.logger?.warn("Failed to mark agent work order receipt promoted", {
-          ...traceContextToLogContext(command.traceContext),
-          commandId: command.id,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          event: "session_input.promote_mark_failed",
-          module: "core.runtime",
-          status: "failed",
-          workOrderId: command.workOrderId,
+    // 逐张台账行 promote 对齐同一条消息：质检闸门/圆桌收票按台账行对账，
+    // 吸收进同一轮不改变行数——只是轮次少了（audit C-P2 的省法）。
+    for (const receipt of receiptCommands) {
+      await this.sessionStore
+        ?.markSessionInputPromoted?.({
+          id: String(receipt.id),
+          sessionID: this.sessionId,
+          promotedMessageID: messageID,
+        })
+        .catch((error) => {
+          this.logger?.warn("Failed to mark agent work order receipt promoted", {
+            ...traceContextToLogContext(command.traceContext),
+            commandId: String(receipt.id),
+            errorMessage: error instanceof Error ? error.message : String(error),
+            event: "session_input.promote_mark_failed",
+            module: "core.runtime",
+            status: "failed",
+            workOrderId: receipt.workOrderId,
+          });
         });
-      });
+    }
     this.logger?.info("Agent work order receipt turn started", {
       ...traceContextToLogContext(command.traceContext),
       commandId: command.id,
       event: "agent_work_order_receipt.turn_started",
+      mergedReceiptCount: command.mergedReceipts.length,
       messageId: messageID,
       module: "core.runtime",
       workOrderId: command.workOrderId,
     });
-    await this.executeTurnCommand(command.text, undefined, {
+    await this.executeTurnCommand(combinedText, undefined, {
       abortSignal: foregroundExecution.controller.signal,
       // 回执轮不使用 workorder- 前缀（那是工单轮 denylist 的身份信号）。
       inputId: uuidv7(),
       inputPresentation: "agent_work_order_receipt",
       inputSource: "agent_work_order_receipt",
       inputVisibility: "model-only",
-      originMeta: command.originMeta,
+      originMeta: mergedOriginMeta,
       backgroundSource: "agent_work_order_receipt",
       recordedInputMessageId: messageID,
       skipInputRecord: true,
@@ -327,6 +401,7 @@ export async function runWorkOrderReceiptCommand(
       commandId: command.id,
       errorMessage: error instanceof Error ? error.message : String(error),
       event: "agent_work_order_receipt.turn_failed",
+      mergedReceiptCount: command.mergedReceipts.length,
       module: "core.runtime",
       workOrderId: command.workOrderId,
     });

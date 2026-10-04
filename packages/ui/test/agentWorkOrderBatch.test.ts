@@ -430,6 +430,133 @@ test("selectWorkOrderBatches：质检轮失败/被中断 → qc.state failed，�
   }
 });
 
+test("selectWorkOrderBatches：全绿免检推导——回执全 completed 且无质检轮头 → qc.state skipped（2026-10-05）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+      dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+    ]),
+    receiptTurn("receipt-1", BATCH, "wo-1", "a 交活", "干完了", "completed"),
+    receiptTurn("receipt-2", BATCH, "wo-2", "b 交活", "也干完了", "completed"),
+  ];
+  const batch = selectWorkOrderBatches(units)[0]!;
+  assert.deepEqual(batch.qc, { unitKey: "receipt-2", state: "skipped" });
+  assert.equal(batch.hostUnitKey, "receipt-2", "免检批的工地卡贴在最新回执上");
+});
+
+test("selectWorkOrderBatches：有回执未 completed（在跑/失败/中断）不推免检", () => {
+  const base = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+      dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+    ]),
+    receiptTurn("receipt-1", BATCH, "wo-1", "a 交活", "干完了", "completed"),
+  ];
+  assert.equal(selectWorkOrderBatches(base)[0]?.qc, undefined, "缺回执（还在跑）不推");
+  assert.equal(selectWorkOrderBatches([...base, receiptTurn("receipt-2", BATCH, "wo-2", "b 的工单未完成", "", "failed")])[0]?.qc, undefined, "有失败不推");
+  assert.equal(selectWorkOrderBatches([...base, receiptTurn("receipt-2", BATCH, "wo-2", "b 的工单被中断", "", "cancelled")])[0]?.qc, undefined, "有中断不推");
+});
+
+test("selectWorkOrderBatches：评审批永不推免检（合议轮是裁决流程本身）", () => {
+  const units = [
+    unit("dispatch-turn", {
+      assistantWorkRows: [
+        dispatchRow("call-1", { agent: "a", task: "t", review: true, batch_title: BATCH.batchTitle }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started", review: true }),
+        dispatchRow("call-2", { agent: "b", task: "t", review: true, batch_title: BATCH.batchTitle }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started", review: true }),
+      ],
+    }),
+    receiptTurn("receipt-1", BATCH, "wo-1", "a 交活", "通过", "completed"),
+    receiptTurn("receipt-2", BATCH, "wo-2", "b 交活", "通过", "completed"),
+  ];
+  const batch = selectWorkOrderBatches(units)[0]!;
+  assert.equal(batch.review, true);
+  assert.equal(batch.qc, undefined, "评审批缺席合议轮头时也不画免检灯");
+});
+
+// ============================================================
+// 回执洪泛合并（2026-10-05）：合并轮头 originMeta.receipts 逐张记账。
+// ============================================================
+
+function mergedReceiptTurn(
+  key: string,
+  batch: { batchId: string; batchTitle?: string },
+  items: { workId: string; title: string; receiptStatus: "completed" | "failed" | "cancelled" }[],
+): ConversationTurnRenderUnit {
+  return unit(key, {
+    header: turnHeaderRow({
+      turnId: key,
+      origin: "backgroundResult",
+      state: "completedSuccess",
+      originMeta: {
+        backgroundSource: "agent_work_order_receipt",
+        workId: items[0]!.workId,
+        title: items[0]!.title,
+        receiptStatus: items[0]!.receiptStatus,
+        batchId: batch.batchId,
+        ...(batch.batchTitle ? { batchTitle: batch.batchTitle } : {}),
+        receipts: items.map((item) => ({
+          workId: item.workId,
+          title: item.title,
+          receiptStatus: item.receiptStatus,
+          batchId: batch.batchId,
+          ...(batch.batchTitle ? { batchTitle: batch.batchTitle } : {}),
+        })),
+      },
+    }),
+    assistantTextRows: [
+      { kind: "assistantText" as const, rowId: 2, turnId: key, createdAt: 0, createdAtSeq: 0, text: "两单合并答复", state: "complete" as const },
+    ],
+    latestAssistantTextRow: {
+      kind: "assistantText" as const,
+      rowId: 2,
+      turnId: key,
+      createdAt: 0,
+      createdAtSeq: 0,
+      text: "两单合并答复",
+      state: "complete" as const,
+    },
+  });
+}
+
+test("selectWorkOrderBatches：合并回执轮逐张进工地卡，合并张不挂摘要/成果全文（归属不可分）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+      dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+    ]),
+    mergedReceiptTurn("receipt-merged", BATCH, [
+      { workId: "wo-1", title: "a 交活", receiptStatus: "completed" },
+      { workId: "wo-2", title: "b 交活", receiptStatus: "completed" },
+    ]),
+  ];
+  const batch = selectWorkOrderBatches(units)[0]!;
+  assert.deepEqual(
+    batch.orders.map((order) => [order.key, order.status]),
+    [
+      ["wo-1", "completed"],
+      ["wo-2", "completed"],
+    ],
+  );
+  assert.equal(batch.hostUnitKey, "receipt-merged", "工地卡贴到合并轮");
+  assert.equal(batch.orders[0]?.receiptAnswer, undefined, "合并张不挂成果全文（逐张归属不可分）");
+  assert.equal(batch.orders[0]?.receiptText, undefined, "合并张不挂摘要");
+});
+
+test("selectWorkOrderBatches：合并轮全绿同样推免检（同批同时收口是最常见形态）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow("call-1", { agent: "a", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-1", batchId: BATCH.batchId, agentName: "a", delivery: "started" }),
+      dispatchRow("call-2", { agent: "b", task: "t", batch_id: BATCH.batchId }, { workOrderId: "wo-2", batchId: BATCH.batchId, agentName: "b", delivery: "started" }),
+    ]),
+    mergedReceiptTurn("receipt-merged", BATCH, [
+      { workId: "wo-1", title: "a 交活", receiptStatus: "completed" },
+      { workId: "wo-2", title: "b 交活", receiptStatus: "completed" },
+    ]),
+  ];
+  const batch = selectWorkOrderBatches(units)[0]!;
+  assert.deepEqual(batch.qc, { unitKey: "receipt-merged", state: "skipped" });
+});
+
 test("selectWorkOrderBatches：质检轮里的打回重派工单行照常聚进工地卡", () => {
   const rework = dispatchRow(
     "call-qc-1",
