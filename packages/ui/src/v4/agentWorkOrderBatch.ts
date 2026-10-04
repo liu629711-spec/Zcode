@@ -1,4 +1,7 @@
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
+import type {
+  AgentWorkOrderReceiptMeta,
+} from "@/v4/agentWorkOrderTurn.js";
 import {
   resolveAgentWorkOrderBatchQcMeta,
   resolveAgentWorkOrderReceiptMeta,
@@ -151,6 +154,27 @@ function receiptAgentNameFromTitle(title: string): string {
   return parseReceiptDelivererName(title) ?? parseFailedReceiptAgentName(title) ?? "";
 }
 
+/**
+ * 回执终态三分（地基清理 2026-10-04）：CLI 结构化的 receiptStatus 是权威；
+ * 旧轮头没有它才回退认中文标题（标题由 CLI 权威铸造，仍是可靠回退）。
+ * 交活=completed；被中断=cancelled（老板自己叫停的，不算干砸）；其余=failed。
+ */
+function resolveReceiptStatus(
+  receipt: Pick<AgentWorkOrderReceiptMeta, "receiptStatus" | "title">,
+): WorkOrderBatchOrderStatus {
+  if (receipt.receiptStatus) return receipt.receiptStatus;
+  return parseReceiptDelivererName(receipt.title)
+    ? "completed"
+    : receipt.title.includes("被中断")
+      ? "cancelled"
+      : "failed";
+}
+
+/** 是否交活终态（completed）：优先结构化字段，旧轮头回退标题解析。 */
+function isReceiptCompleted(receipt: Pick<AgentWorkOrderReceiptMeta, "receiptStatus" | "title">): boolean {
+  return resolveReceiptStatus(receipt) === "completed";
+}
+
 function receiptFullText(unit: ConversationTurnRenderUnit): string | undefined {
   const text = unit.latestAssistantTextRow?.text ?? unit.assistantTextRows.at(-1)?.text;
   return text?.trim() || undefined;
@@ -263,17 +287,13 @@ export function selectWorkOrderBatches(
           key: receipt.workOrderId,
           agentName: receiptAgentNameFromTitle(receipt.title),
           kind: "receipt",
-          // 终态三分：交活=completed；被中断=cancelled（老板自己叫停的，不算干砸）；
-          // 其余=failed。cancelled 曾被画成红色"未完成"，误导老板（audit D P2-4）。
-          status: parseReceiptDelivererName(receipt.title)
-            ? "completed"
-            : receipt.title.includes("被中断")
-              ? "cancelled"
-              : "failed",
+          // 终态三分（地基清理 2026-10-04）：结构化 receiptStatus 权威，旧轮头
+          // 回退标题解析。cancelled 曾被画成红色"未完成"，误导老板（audit D P2-4）。
+          status: resolveReceiptStatus(receipt),
           receiptTitle: receipt.title,
           ...(receiptSnippet(unit) ? { receiptText: receiptSnippet(unit) } : {}),
           // 全文只在 completed（转交语义=成果已交付）时挂：失败/中断没有可转交的成果。
-          ...(parseReceiptDelivererName(receipt.title) && receiptFullText(unit)
+          ...(isReceiptCompleted(receipt) && receiptFullText(unit)
             ? { receiptAnswer: receiptFullText(unit), receiptUnitKey: unit.key }
             : {}),
           // 失败线索与原任务（一键重派）只在 failed 回执上在场（CLI 权威下发）。
@@ -284,7 +304,7 @@ export function selectWorkOrderBatches(
           ...(receipt.retried ? { retried: true } : {}),
           ...(receipt.agentId ? { agentId: receipt.agentId } : {}),
           // 评审结论徽章（圆桌卡）：只认第一行格式行，提取不出不带。
-          ...(parseReceiptDelivererName(receipt.title)
+          ...(isReceiptCompleted(receipt)
             ? (() => {
                 const verdict = extractReviewVerdict(receiptFullText(unit));
                 return verdict ? { verdict } : {};

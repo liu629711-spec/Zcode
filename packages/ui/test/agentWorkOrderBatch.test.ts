@@ -75,6 +75,7 @@ function receiptTurn(
   workOrderId: string,
   title: string,
   answer = "",
+  receiptStatus?: "completed" | "failed" | "cancelled",
 ): ConversationTurnRenderUnit {
   return unit(key, {
     header: turnHeaderRow({
@@ -85,6 +86,7 @@ function receiptTurn(
         backgroundSource: "agent_work_order_receipt",
         workId: workOrderId,
         title,
+        ...(receiptStatus ? { receiptStatus } : {}),
         batchId: batch.batchId,
         ...(batch.batchTitle ? { batchTitle: batch.batchTitle } : {}),
       },
@@ -222,7 +224,7 @@ test("selectWorkOrderBatches：失败回执的任务原文与失败线索进单�
       header: turnHeaderRow({
         turnId: "receipt-fail",
         origin: "backgroundResult",
-        state: "completedError",
+        state: "failed",
         originMeta: {
           backgroundSource: "agent_work_order_receipt",
           workId: "wo-1",
@@ -242,7 +244,7 @@ test("selectWorkOrderBatches：失败回执的任务原文与失败线索进单�
 
   const batches = selectWorkOrderBatches(units);
   assert.equal(batches.length, 1);
-  const order = batches[0]!.orders.find((candidate) => candidate.key === "wo-1");
+  const order = batches[0]!.orders.find((candidate) => candidate.key === "wo-1")!;
   assert.ok(order);
   assert.equal(order.status, "failed");
   assert.equal(order.agentName, "code-builder");
@@ -287,6 +289,34 @@ test("selectWorkOrderBatches：被中断的回执是 cancelled，不再画成红
   assert.equal(byId("wo-3").status, "failed");
 });
 
+test("selectWorkOrderBatches：结构化 receiptStatus 是三态权威，标题解析只兜底（地基清理）", () => {
+  const units = [
+    dispatchTurn("dispatch-turn", [
+      dispatchRow(
+        "call-1",
+        { agent: "code-plus", task: "拆组件", batch_title: "登录页改造" },
+        { targetSessionId: "s1", agentName: "code-plus", delivery: "started", workOrderId: "wo-1", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+      dispatchRow(
+        "call-2",
+        { agent: "doc-writer", task: "写文档", batch_title: "登录页改造" },
+        { targetSessionId: "s2", agentName: "doc-writer", delivery: "started", workOrderId: "wo-2", batchId: "batch-1", batchTitle: "登录页改造" },
+      ),
+    ]),
+    // 字段说 failed、标题说「交活」：字段赢——UI 不再从中文标题反推终态。
+    receiptTurn("receipt-1", BATCH, "wo-1", "code-plus 交活", "结果不可信", "failed"),
+    // 旧轮头没有字段：回退标题解析，completed 照旧。
+    receiptTurn("receipt-2", BATCH, "wo-2", "doc-writer 交活", "旧数据"),
+  ];
+
+  const batch = selectWorkOrderBatches(units)[0]!;
+  const byId = (key: string) => batch.orders.find((order) => order.key === key)!;
+  assert.equal(byId("wo-1").status, "failed", "receiptStatus 权威于标题");
+  assert.equal(byId("wo-1").receiptAnswer, undefined, "failed 回执不挂成果全文");
+  assert.equal(byId("wo-2").status, "completed", "旧轮头回退标题解析");
+  assert.ok(byId("wo-2").receiptAnswer, "回退口径下 completed 照旧挂全文");
+});
+
 // ============================================================
 // 批次质检（纪律协议批）：质检轮证据进批次模型。
 // ============================================================
@@ -294,7 +324,7 @@ test("selectWorkOrderBatches：被中断的回执是 cancelled，不再画成红
 function qcTurn(
   key: string,
   batch: { batchId: string; batchTitle?: string },
-  state = "completedSuccess",
+  state: "failed" | "running" | "completedSuccess" | "completedInterrupted" = "completedSuccess",
   options?: { review?: boolean },
 ): ConversationTurnRenderUnit {
   return unit(key, {

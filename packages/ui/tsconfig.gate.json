@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../.zcode/workflow-drafts/gate-ui-out",
+    "rootDir": ".",
+    "noEmit": false,
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false,
+    "incremental": false,
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@zcode/shared": ["../shared/dist/index.d.ts"],
+      "@zcode/shared/zcode-protocol-v4": ["../shared/dist/zcode-protocol-v4/index.d.ts"],
+      "@zcode/shared/*": ["../shared/dist/*.d.ts"]
+    }
+  },
+  "include": ["test/agentWorkOrderBatch.test.ts"]
+}

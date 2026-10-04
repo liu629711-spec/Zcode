@@ -346,6 +346,11 @@ export interface BackgroundResultOriginMeta {
    * 同 agentWorkOrderMeta 的上限）——失败卡「一键重派」的权威数据源，UI 不从文本反推。
    */
   task?: string;
+  /**
+   * 派单回执终态（地基清理 2026-10-04）：completed/failed/cancelled 结构化随轮头
+   * 下发，UI 三态灯的权威来源——不再认中文标题（标题解析仅作旧轮头回退）。
+   */
+  receiptStatus?: "completed" | "failed" | "cancelled";
   /** 失败回执结构化线索：根因分类码（如 invalid_model_request），UI 据此讲大白话。 */
   failureCode?: string;
   /** 失败回执结构化线索：被拒的模型 id（模型被供应商拒收时讲人话用）。 */

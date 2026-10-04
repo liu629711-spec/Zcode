@@ -119,6 +119,10 @@ export const backgroundResultOriginMetaSchema = z.object({
   // 上界与发射侧对齐：task 同 contracts 的 AGENT_WORK_ORDER_TASK_MAX_CHARS（8192），
   // failureReason 同错误投影的 500 字符消毒，failureModelId 同 attribution 的 160。
   task: z.string().min(1).max(8192).optional(),
+  // 派单回执终态（地基清理 2026-10-04）：completed/failed/cancelled 结构化下发，
+  // UI 三态灯的权威来源（标题解析仅作旧轮头回退）。zod 剥离未知键，不加即
+  // 冷恢复后静默丢——UI 全体退回认中文标题的旧口径。
+  receiptStatus: z.enum(["completed", "failed", "cancelled"]).optional(),
   failureCode: z.string().min(1).max(128).optional(),
   failureModelId: z.string().min(1).max(160).optional(),
   failureReason: z.string().min(1).max(500).optional(),

@@ -56,6 +56,11 @@ export function resolveAgentWorkOrderBatchQcMeta(
 export interface AgentWorkOrderReceiptMeta {
   workOrderId: string;
   title: string;
+  /**
+   * 回执终态（地基清理 2026-10-04，CLI 结构化下发）：三态灯的权威来源。
+   * 缺席（旧 CLI / 旧轮头）= 调用方回退认中文标题。
+   */
+  receiptStatus?: "completed" | "failed" | "cancelled";
   /** 原工单批次（工地卡聚合键）；缺席 = 散单（旧 CLI / 单发）。 */
   batchId?: string;
   batchTitle?: string;
@@ -87,6 +92,7 @@ export function resolveAgentWorkOrderReceiptMeta(
   return {
     workOrderId: originMeta.workId,
     title: originMeta.title,
+    ...(originMeta.receiptStatus ? { receiptStatus: originMeta.receiptStatus } : {}),
     ...(originMeta.batchId ? { batchId: originMeta.batchId } : {}),
     ...(originMeta.batchTitle ? { batchTitle: originMeta.batchTitle } : {}),
     ...(originMeta.task ? { task: originMeta.task } : {}),
