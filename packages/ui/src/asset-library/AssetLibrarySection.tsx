@@ -18,8 +18,9 @@
  * 搜索无结果空态沿用；本组件不动 catalog 契约与 assetTryPrompt 语义。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpIcon, LoaderCircleIcon, SearchIcon, SearchXIcon } from "lucide-react";
+import { LoaderCircleIcon, SearchIcon, SearchXIcon } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
+import { ScrollJumpPillButton } from "@/components/ui/ScrollJumpPillButton.js";
 import { Input } from "@/components/ui/input.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { cn } from "@/components/lib/utils.js";
@@ -58,10 +59,7 @@ export function AssetLibrarySection({
   // UIverse 自动收录大袋：进入展厅才开始拉（chunk 独立）；null = 拉取中。
   const [bulk, setBulk] = useState<AssetManifest[] | null>(null);
   const [renderLimit, setRenderLimit] = useState(PAGE_SIZE);
-  const catalog = useMemo(
-    () => (bulk ? [...ASSET_CATALOG, ...bulk] : ASSET_CATALOG),
-    [bulk],
-  );
+  const catalog = useMemo(() => (bulk ? [...ASSET_CATALOG, ...bulk] : ASSET_CATALOG), [bulk]);
   const visibleAssets = useMemo(
     () => filterAssets(catalog, { query, category }),
     [catalog, query, category],
@@ -142,18 +140,13 @@ export function AssetLibrarySection({
             />
           </div>
           {showBackToTop ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
+            <ScrollJumpPillButton
+              direction="up"
+              label={intl.formatMessage({ id: "assetLibrary.backToTop" })}
               className="shrink-0"
-              data-testid="asset-library-back-to-top"
-              aria-label={intl.formatMessage({ id: "assetLibrary.backToTop" })}
-              title={intl.formatMessage({ id: "assetLibrary.backToTop" })}
+              testId="asset-library-back-to-top"
               onClick={scrollToTop}
-            >
-              <ArrowUpIcon className="size-3.5" aria-hidden="true" />
-            </Button>
+            />
           ) : null}
         </div>
         <div
