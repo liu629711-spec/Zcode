@@ -194,7 +194,29 @@ export async function runWorkOrderCommand(
     // 与标题——本轮 model-only + skipInputRecord，投影不会因此冒用户行，
     // plugin/点将的 mention 解析也被 turn.ts 的 model-only 门挡住。
     const displayTask = command.envelope.task.trim();
-    await this.executeTurnCommand(command.text, undefined, {
+    // 复盘技能册定位（成功/失败两路共用）：评审单豁免（只评审不动手，没有过程
+    // 可学）；没有随身柜（记忆关闭/非驻场）就没有落笔的地方，同样跳过。
+    const debriefSkillsRoot =
+      command.envelope.review !== true
+        ? (() => {
+            const persona = this.config.projectAgentPersona;
+            const memory = this.config.memory as MemoryRuntimeConfig | undefined;
+            return persona && memory?.enabled === true && memory.use !== false && memory.storageRoot
+              ? resolveAgentSkillsRoot(
+                  resolveAgentMemoryRoot({
+                    agentName: persona.name,
+                    ...(persona.agentId ? { agentId: persona.agentId } : {}),
+                    scope: "user",
+                    storageRoot: memory.storageRoot,
+                    workspaceRoot: this.workspaceRoot,
+                  }),
+                )
+              : undefined;
+          })()
+        : undefined;
+    let mainTurnError: unknown;
+    try {
+      await this.executeTurnCommand(command.text, undefined, {
       abortSignal: foregroundExecution.controller.signal,
       inputId: command.inputId,
       inputPresentation: "agent_work_order",
@@ -221,29 +243,27 @@ export async function runWorkOrderCommand(
         ? {}
         : { executionModelSelection: command.modelSelection }),
       ...(displayTask ? { displayInput: displayTask } : {}),
-    });
-    // 复盘轮（学习沉淀 v1，Hermes background_review 同款）：正常交活后，员工在自己
-    // 会话花一轮把"这类活怎么干"沉淀进随身技能册（同轮第二个 turn，回执已出站，
-    // 复盘成败绝不影响这单的结果）。评审单豁免（只评审不动手，没有过程可学）；
-    // 没有随身柜（记忆关闭/非驻场）就没有落笔的地方，同样跳过。
-    if (command.envelope.review !== true) {
-      const persona = this.config.projectAgentPersona;
-      const memory = this.config.memory as MemoryRuntimeConfig | undefined;
-      const skillsRoot =
-        persona && memory?.enabled === true && memory.use !== false && memory.storageRoot
-          ? resolveAgentSkillsRoot(
-              resolveAgentMemoryRoot({
-                agentName: persona.name,
-                ...(persona.agentId ? { agentId: persona.agentId } : {}),
-                scope: "user",
-                storageRoot: memory.storageRoot,
-                workspaceRoot: this.workspaceRoot,
-              }),
-            )
-          : undefined;
-      if (skillsRoot) {
+      });
+    } catch (error) {
+      mainTurnError = error;
+    }
+    // 复盘轮（学习沉淀 v1，Hermes background_review 同款）：交活（或没交成）后，
+    // 员工在自己会话花一轮把经验/教训沉淀进随身技能册（同轮第二个 turn，回执
+    // 已出站，复盘成败绝不影响这单的结果）。失败单复盘（2026-10-05）：沉淀的是
+    // 「下次怎么提前识别并避开」，同一坑不踩第二次。
+    if (debriefSkillsRoot) {
+      {
         try {
-          const debriefText = buildWorkOrderDebriefText({ skillsRoot });
+          const debriefText = buildWorkOrderDebriefText({
+            skillsRoot: debriefSkillsRoot,
+            ...(mainTurnError !== undefined
+              ? {
+                  failure: true,
+                  failureReason:
+                    mainTurnError instanceof Error ? mainTurnError.message : String(mainTurnError),
+                }
+              : {}),
+          });
           const debriefMessageId = createMessageId();
           this.messageHistory.addUser(
             debriefText,
@@ -286,6 +306,10 @@ export async function runWorkOrderCommand(
           });
         }
       }
+    }
+    if (mainTurnError !== undefined) {
+      // 复盘机会给过了，失败如实上抛（失败回执链、TurnError 语义原样）。
+      throw mainTurnError;
     }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);

@@ -90,3 +90,77 @@ test("工单首轮时序不变量：ensure（init）必须发生在 addUser 之�
   await runWorkOrderCommand.call(runtime as never, workOrderCommand("任务"));
   assert.deepEqual(ops, ["init", "addUser"]);
 });
+
+// ============================================================
+// 失败单复盘（学习沉淀跟进 2026-10-05）：主轮失败后，员工在自己的会话里
+// 花一轮复盘"下次怎么避开这个坑"，复盘机会给过之后失败如实上抛
+// （失败回执链、TurnError 语义原样）。
+// ============================================================
+test("工单失败：先走失败复盘轮（文本带失败原因），再把原错误上抛", async () => {
+  const turns: string[] = [];
+  const history: string[] = [];
+  const persisted: string[] = [];
+  const mainError = new Error("炸了：模型供应商拒绝请求");
+  const runtime = {
+    sessionId: "sess-worker-fail",
+    branchGeneration: 1,
+    contextInitialized: true,
+    activeForegroundExecution: undefined as unknown,
+    config: {
+      projectAgentPersona: { name: "员工甲", agentId: "agent-甲" },
+      memory: { enabled: true, use: true, storageRoot: "C:/tmp/storage" },
+    },
+    workspaceRoot: "C:/tmp/ws",
+    logger: undefined,
+    async ensureContextInitialized() {},
+    messageHistory: {
+      addUser(text: string) {
+        history.push(text);
+      },
+    },
+    async persistSyntheticUserNoticeForSession(input: { text: string }) {
+      persisted.push(input.text);
+    },
+    async executeTurnCommand(text: string) {
+      turns.push(text);
+      if (turns.length === 1) {
+        throw mainError;
+      }
+    },
+  };
+  // 契约：runWorkOrderCommand 不上抛失败（TurnError 事件链负责失败回执），
+  // 外层 catch 只在员工会话留终态通知——复盘轮发生在留痕之前。
+  await runWorkOrderCommand.call(runtime as never, workOrderCommand("修登录页") as never);
+  assert.equal(turns.length, 2, "主轮失败后应补一轮失败复盘");
+  assert.match(turns[1]!, /这一单你没有干成/);
+  assert.match(turns[1]!, /失败复盘的重点/);
+  assert.match(turns[1]!, /炸了：模型供应商拒绝请求/);
+  assert.ok(
+    history.some((entry) => entry.includes("这一单你没有干成")),
+    "复盘 carrier 应进模型历史（失败终态通知在其后）",
+  );
+  assert.equal(persisted.length, 3, "工单 carrier + 复盘 carrier + 失败终态通知");
+  assert.match(persisted[1]!, /复盘/, "复盘 carrier 在失败留痕之前");
+});
+
+test("工单失败且无随身柜（非驻场）：不补复盘轮，失败直接上抛", async () => {
+  const turns: string[] = [];
+  const runtime = {
+    sessionId: "sess-worker-nopersona",
+    branchGeneration: 1,
+    contextInitialized: true,
+    activeForegroundExecution: undefined as unknown,
+    config: {},
+    workspaceRoot: "C:/tmp/ws",
+    logger: undefined,
+    async ensureContextInitialized() {},
+    messageHistory: { addUser() {} },
+    async persistSyntheticUserNoticeForSession() {},
+    async executeTurnCommand(text: string) {
+      turns.push(text);
+      throw new Error("boom");
+    },
+  };
+  await runWorkOrderCommand.call(runtime as never, workOrderCommand("任务") as never);
+  assert.equal(turns.length, 1, "无技能册就没有复盘轮");
+});

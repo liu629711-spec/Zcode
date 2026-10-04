@@ -128,8 +128,35 @@ export async function loadAgentSkillsIndexPrompt(input: {
   return buildAgentSkillsIndexPrompt({ skillsRoot, cards });
 }
 
-/** 复盘轮提示词（Hermes _SKILL_REVIEW_PROMPT 的忠实中文浓缩 + 三库路由）。 */
-export function buildWorkOrderDebriefText(input: { skillsRoot: string }): string {
+/**
+ * 复盘轮提示词（Hermes _SKILL_REVIEW_PROMPT 的忠实中文浓缩 + 三库路由）。
+ * 失败口径（学习沉淀跟进 2026-10-05）：失败单也复盘——沉淀的是「下次怎么提前
+ * 识别并避开这个坑」，不是把失败原因抄一遍；其余纪律与成功复盘完全同款。
+ */
+export function buildWorkOrderDebriefText(input: {
+  skillsRoot: string;
+  failure?: boolean;
+  failureReason?: string;
+}): string {
+  const failureReason =
+    input.failureReason
+      ?.replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200) ?? "";
+  if (input.failure === true) {
+    return [
+      "复盘（自动收工学习，不是用户发言）：",
+      `这一单你没有干成${failureReason ? `（原因：${failureReason}）` : ""}。花一段回顾这次失败，把值得长期保留的教训写进你的技能册：${input.skillsRoot}`,
+      "一个技能一个 .md 文件；frontmatter 写两行 name 与 description（description 一句话、不超过 60 字，索引靠它可搜）；正文写：什么时候用 / 步骤 / 坑 / 老板对成品的偏好。",
+      "失败复盘的重点：下次怎么提前识别这个坑、接到这类活第一步先查什么、哪条路走不通该在哪一步换路——不是把失败原因抄一遍。",
+      "分流纪律（一件事只进一本账，绝不两头写）：",
+      "- 这类活怎么干、步骤、坑、老板对产出口味 → 技能册。已有一张对口的卡就先用 Read 打开它，在原卡上补或改，不建重复卡；",
+      "- 这个项目/环境的事实（路径、约定、坑）→ 写进工作区记事本（既有规矩）；",
+      "- 老板是谁、跨项目的偏好 → 写进随身记事本 MEMORY.md（既有规矩）。",
+      "禁止沉淀：环境性失败（没装的包、没配的凭据）、对工具的负面断言（「X 工具是坏的」）、一次性任务的过程流水账——这些不是本事。",
+      "实在没有值得沉淀的，就只回复「无事可记」四个字，不要硬凑。",
+    ].join("\n");
+  }
   return [
     "复盘（自动收工学习，不是用户发言）：",
     `这一单你刚交完活。花一段回顾这次干活的过程，把值得长期保留的经验写进你的技能册：${input.skillsRoot}`,
