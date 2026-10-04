@@ -26,13 +26,29 @@ import { isStaleBranchRuntimeCommand } from "./runtime-command-generation.js";
 import { beginForegroundExecution, finishForegroundExecution } from "./runtime-command-queue.js";
 
 /**
- * 闸门台账行的确定性 id（会话命名空间）：`agentWorkOrderBatchQc:<sessionId>:<batchId>`。
- * batchId 是模型回传的裸串（跨会话可能撞车，评审 A3），闸门行又是 session_input 的
- * 全局主键——不带会话命名空间，两个老板会话复用同一 batchId 时第二个永远查不到自己的
- * 闸门行，「每批只质检一次」被击穿。触发查询与落行两侧都用本函数，杜绝拼法漂移。
+ * 闸门台账行的确定性 id（会话命名空间）。两代键（2026-10-04 地基清理换内容锚定）：
+ * - 旧 `agentWorkOrderBatchQc:<sessionId>:<batchId>`：batchId 是模型回传的裸串，
+ *   同一会话内**换个 batchId 就是新闸门**——质检"每批一次"可被模型绕开（审计 P3）。
+ * - 新 `agentWorkOrderBatchQc:<sessionId>:c:<排序后的工单号集合>`：闸门锚定**批次
+ *   内容**（同一组工单无论模型报什么 batchId 都是同一批），换号无效；新一批
+ *   （不同工单集合）天然是新键，照常质检。
+ * 旧键仍被触发查询兜底检查：历史批次的闸门行在旧键下，换了键式不能让它们被
+ * 重新打开。写侧只写新键；读侧两键都查。
  */
 export function batchQcLedgerId(sessionId: string, batchId: string): string {
   return `agentWorkOrderBatchQc:${sessionId}:${batchId}`;
+}
+
+/** 批次内容键：排序后的工单号集合（同一组工单 = 同一批，与模型报的 batchId 无关）。 */
+export function batchQcContentKey(orders: readonly { workOrderId: string }[]): string {
+  return `c:${orders
+    .map((order) => order.workOrderId)
+    .sort()
+    .join(",")}`;
+}
+
+export function batchQcGateId(sessionId: string, contentKey: string): string {
+  return `agentWorkOrderBatchQc:${sessionId}:${contentKey}`;
 }
 
 export interface EnqueueAgentWorkOrderBatchQcInput {
@@ -108,7 +124,9 @@ export async function enqueueAgentWorkOrderBatchQc(
   // 不影响触发侧的「行存在即跳过」判定；run 阶段 promote 的就是这一行（id 对齐）。
   try {
     const admission = await this.sessionStore?.saveSessionInput?.({
-      id: batchQcLedgerId(this.sessionId, input.batchId),
+      // 内容锚定键（2026-10-04）：换 batchId 不再是新闸门；历史批次在旧键下的
+      // 闸门行由触发侧兜底检查，不会被重新打开。
+      id: batchQcGateId(this.sessionId, batchQcContentKey(input.orders)),
       sessionID: this.sessionId,
       kind: "agentWorkOrderBatchQc",
       delivery: "queue",
@@ -196,11 +214,8 @@ async function startBatchQcIfComplete(
   const sessionStore = this.sessionStore;
   if (!sessionStore?.listSessionInputs) return;
   const rows = await sessionStore.listSessionInputs({ sessionID: this.sessionId });
-  // 闸门：本批的质检台账行已在（任意状态）→ 这批已经质检过（或已排队），绝不二开。
-  if (rows.some((record) => record.id === batchQcLedgerId(this.sessionId, input.batchId))) {
-    return;
-  }
-  // 收口判定：同批派单行一张不缺、且全部不在 admitted（回执已销账或 resume 已收口）。
+  // 收口判定先算清单（内容锚定闸门需要工单集合）：同批派单行一张不缺、且全部
+  // 不在 admitted（回执已销账或 resume 已收口）。
   const batchRows = rows.filter(
     (record) =>
       record.kind === "agentWorkOrderDispatch" &&
@@ -213,6 +228,17 @@ async function startBatchQcIfComplete(
   if (batchRows.some((record) => record.status === "admitted")) return;
   const orders = batchQcOrdersFromDispatchRows(batchRows, input.batchId);
   if (orders.length === 0) return;
+  // 闸门（2026-10-04 换内容锚定）：同一组工单换什么 batchId 都是同一批——新键查
+  // 内容，旧键兜底（历史批次的闸门行在 batchId 键下，换了键式不能让它们被重开）。
+  if (
+    rows.some(
+      (record) =>
+        record.id === batchQcGateId(this.sessionId, batchQcContentKey(orders)) ||
+        record.id === batchQcLedgerId(this.sessionId, input.batchId),
+    )
+  ) {
+    return;
+  }
   const batchTitle = readBatchTitleFromDispatchRows(batchRows);
   // 口味判定（评审会批）：同批派单行的信封**全是** review=true → 合议轮；混批或
   // 普通批都走质检轮（旧批次无 review 字段 → false，口径不变）。混批在此收敛为
@@ -320,11 +346,11 @@ export async function runWorkOrderBatchQcCommand(
       traceContext: command.traceContext,
       visibility: "model-only",
     });
-    // 落库账本行就是闸门行（id 同 batchQcLedgerId）——promote 对准它，别用
+    // 落库账本行就是闸门行（id 同落闸侧的内容锚定键）——promote 对准它，别用
     // command.id（那行不存在，promote 会对着空气开枪，评审 A2/B3）。
     await this.sessionStore
       ?.markSessionInputPromoted?.({
-        id: batchQcLedgerId(this.sessionId, command.batchId),
+        id: batchQcGateId(this.sessionId, batchQcContentKey(command.orders)),
         sessionID: this.sessionId,
         promotedMessageID: messageID,
       })

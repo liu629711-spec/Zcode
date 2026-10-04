@@ -20,6 +20,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { WorkOrderBatchQcRuntimeCommand } from "../command-queue.js";
 import {
+  batchQcContentKey,
+  batchQcGateId,
   batchQcLedgerId,
   enqueueAgentWorkOrderBatchQc,
   maybeEnqueueAgentWorkOrderBatchQc,
@@ -44,7 +46,7 @@ interface LedgerRow {
 function dispatchRow(
   workOrderId: string,
   status: "admitted" | "discarded",
-  options?: { review?: boolean },
+  options?: { review?: boolean; batchId?: string },
 ): LedgerRow {
   return {
     id: `agentWorkOrderDispatch:${workOrderId}`,
@@ -62,7 +64,7 @@ function dispatchRow(
         fromAgentName: "老板",
         fromSessionId: SESSION,
         task: `任务${workOrderId}`,
-        batchId: BATCH_ID,
+        batchId: options?.batchId ?? BATCH_ID,
         batchTitle: "登录页整改",
         ...(options?.review ? { review: true } : {}),
       },
@@ -168,20 +170,71 @@ test("落闸先于开轮（A4 真不变量）：save 一定排在 enqueueRuntime
   await trigger(runtime);
   assert.equal(runtime.qcCommands.length, 1);
   const gateIndex = runtime.sequence.findIndex((entry) =>
-    entry.startsWith(`save:${batchQcLedgerId(SESSION, BATCH_ID)}`),
+    entry.startsWith(`save:${batchQcGateId(SESSION, batchQcContentKey([{ workOrderId: "wo-1" }]))}`),
   );
   const enqueueIndex = runtime.sequence.findIndex((entry) => entry.startsWith("enqueue:"));
-  assert.ok(gateIndex !== -1, "闸门行应已落库");
+  assert.ok(gateIndex !== -1, "闸门行应已落库（内容锚定键）");
   assert.ok(enqueueIndex !== -1);
   assert.ok(gateIndex < enqueueIndex, "落闸必须先于开轮");
 });
 
-test("闸门行 id 带会话命名空间（A3）：跨会话撞 batchId 不共享闸门", async () => {
+test("闸门行 id 带会话命名空间（A3）且锚定工单集合：跨会话/换 batchId 都不共享闸门", async () => {
   const runtime = makeRuntime([dispatchRow("wo-1", "discarded")]);
   await trigger(runtime);
   assert.ok(
-    runtime.sequence.some((entry) => entry.startsWith(`save:agentWorkOrderBatchQc:${SESSION}:${BATCH_ID}`)),
+    runtime.sequence.some(
+      (entry) =>
+        entry.startsWith(
+          `save:${batchQcGateId(SESSION, batchQcContentKey([{ workOrderId: "wo-1" }]))}`,
+        ),
+    ),
+    "落闸写内容锚定键",
   );
+});
+
+test("换 batchId 不重开质检（内容锚定，2026-10-04 地基清理）：同组工单换号=同一批", async () => {
+  // 模型把同一组工单（wo-1/wo-2）报成新 batchId "batch-1b"：内容键相同 → 闸门命中。
+  const sameOrdersNewId = makeRuntime([
+    dispatchRow("wo-1", "discarded", { batchId: "batch-1b" }),
+    dispatchRow("wo-2", "discarded", { batchId: "batch-1b" }),
+    {
+      id: batchQcGateId(SESSION, batchQcContentKey([{ workOrderId: "wo-1" }, { workOrderId: "wo-2" }])),
+      sessionID: SESSION,
+      kind: "agentWorkOrderBatchQc",
+      delivery: "queue",
+      payload: { text: "gate" },
+      admittedSequence: 9,
+      status: "discarded",
+      time: { created: 0, updated: 0 },
+    },
+  ]);
+  await trigger(sameOrdersNewId, "batch-1b");
+  assert.equal(sameOrdersNewId.qcCommands.length, 0, "换号绕闸被内容锚定拦下");
+
+  // 历史批次闸门行在旧 batchId 键下：兜底检查同样拦截，不因换键式而重开。
+  const legacyGate = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    {
+      id: batchQcLedgerId(SESSION, BATCH_ID),
+      sessionID: SESSION,
+      kind: "agentWorkOrderBatchQc",
+      delivery: "queue",
+      payload: { text: "legacy gate" },
+      admittedSequence: 9,
+      status: "discarded",
+      time: { created: 0, updated: 0 },
+    },
+  ]);
+  await trigger(legacyGate);
+  assert.equal(legacyGate.qcCommands.length, 0, "旧键闸门行兜底拦截");
+
+  // 真正的新一批（不同工单集合）：新键不命中 → 照常质检。
+  const freshBatch = makeRuntime([
+    dispatchRow("wo-9", "discarded", { batchId: "batch-2" }),
+    dispatchRow("wo-10", "discarded", { batchId: "batch-2" }),
+  ]);
+  await trigger(freshBatch, "batch-2");
+  assert.equal(freshBatch.qcCommands.length, 1, "新批次照常开质检");
 });
 
 test("落闸失败：放弃开轮（fail-closed，评审 R1）", async () => {

@@ -107,6 +107,8 @@ export function receiptOutcomeFromSessionEvent(
  */
 /** 回执看门狗默认时长：工单合法长跑可超 30 分钟，触发时会先查活跃轮再决定。 */
 const WATCHDOG_MS_DEFAULT = 30 * 60_000;
+/** 看门狗绝对截止：再武装最多撑 24 小时，到点强制合成超时失败（无总闸=永不超时）。 */
+const WATCHDOG_ABSOLUTE_DEADLOCK_MS = 24 * 60 * 60_000;
 
 export function scheduleWorkOrderReceiptRelay(
   context: ZCodeProtocolAgentServerContext,
@@ -176,17 +178,24 @@ export function scheduleWorkOrderReceiptRelay(
   // 消失，回执永不到达，老板的卡永远停在「已派单」。到点先看本单是否还在目标
   // 会话里活跃（长任务合法超过 30 分钟）：还在跑就重新武装；确认死单才合成
   // 超时失败回执，走与 TurnError 相同的终态处理。
+  // 绝对截止（2026-10-04 地基清理，参照审计判定"永续 re-arm 无总闸"是漏洞）：
+  // 重新武装最多持续 WATCHDOG_ABSOLUTE_DEADLOCK_MS（默认 24 小时）——到点无论
+  // 多活跃都强制合成超时失败。没有总闸的看门狗=单子理论上可以永远"在跑"。
+  const watchdogFirstArmedAt = Date.now();
   const armWatchdog = () => {
     watchdog = setTimeout(() => {
       const runtime = input.targetRecord.app.runtime;
       const stillRunning =
         runtime.getActiveTurnInfo()?.inputId === input.inputId || runtime.hasActiveOrQueuedTurnWork();
-      if (stillRunning) {
+      const absoluteDeadlineHit =
+        Date.now() - watchdogFirstArmedAt >= WATCHDOG_ABSOLUTE_DEADLOCK_MS;
+      if (stillRunning && !absoluteDeadlineHit) {
         armWatchdog();
         return;
       }
       context.logger?.warn("Agent work order receipt timed out; synthesizing failure", {
         event: "agent_work_order_receipt.watchdog_fired",
+        absoluteDeadline: absoluteDeadlineHit,
         fromSessionId: input.envelope.fromSessionId,
         module: "bootstrap.zcode_protocol",
         targetSessionId: input.targetRecord.app.sessionId,
@@ -198,7 +207,9 @@ export function scheduleWorkOrderReceiptRelay(
       handleTerminalOutcome({
         status: "failed",
         // 大白话直出（终审评委B）：这行会进老板的失败卡（generic 句式带原原因）。
-        reason: "工单等回执超时：目标会话可能已被关闭或中断，这单没有留下结果。",
+        reason: absoluteDeadlineHit
+          ? "工单超过 24 小时仍没有回执：系统强制判定超时。如果员工其实还在干，请用失败卡上的重派把活重新派一次。"
+          : "工单等回执超时：目标会话可能已被关闭或中断，这单没有留下结果。",
       });
     }, input.watchdogMs ?? WATCHDOG_MS_DEFAULT);
   };
