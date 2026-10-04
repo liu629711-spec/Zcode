@@ -73,7 +73,6 @@ import {
   resolveAgentWorkOrderMeta,
   resolveAgentWorkOrderReceiptMeta,
 } from "@/v4/agentWorkOrderTurn.js";
-import { ReceiptForwardControl } from "@/v4/ReceiptForwardControl.js";
 import { ReceiptFailureNotice } from "@/v4/ReceiptFailureNotice.js";
 import { ConversationWorkflowDigests } from "@/v4/ConversationWorkflowDigests.js";
 import { ConversationWorkflowCompletion } from "@/v4/ConversationWorkflowCompletion.js";
@@ -1127,12 +1126,6 @@ function ConversationBackgroundResultWork({
                 {title}
               </div>
             </div>
-            <ReceiptForwardControl
-              title={title}
-              answer={assistantCopyText ?? ""}
-              context={context}
-              unitKey={unit.key}
-            />
             {receiptMeta ? (
               // 失败回执的大白话说明 + 一键重派（2026-10-01 员工可靠性批）：
               // 结构化线索缺席（completed/旧 CLI）时组件自己返回 null。

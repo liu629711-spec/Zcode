@@ -1,13 +1,12 @@
 /* eslint-disable max-lines */
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ZCodeProvider } from "@zcode/shared";
+import { AGENT_WORK_ORDER_TASK_MAX_LENGTH } from "@zcode/shared/zcode-protocol-v4";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { createPortal } from "react-dom";
 import { PaletteIcon, WandSparkles } from "lucide-react";
 import {
   $createTextNode,
-  $getSelection,
-  $isRangeSelection,
   BLUR_COMMAND,
   COMMAND_PRIORITY_CRITICAL,
   COMMAND_PRIORITY_LOW,
@@ -288,6 +287,16 @@ export function MentionPlugin({
     if (!dispatchDraft || !onDispatchAgentWorkOrder) return;
     const task = dispatchTask.trim();
     if (!task || dispatchPending) return;
+    if (task.length > AGENT_WORK_ORDER_TASK_MAX_LENGTH) {
+      // 协议硬上限（zod max）会拒掉整单且报错难懂；提前用同一个人话口径拦下。
+      toast(
+        intl.formatMessage(
+          { id: "chat.mention.agents.dispatchTooLong" },
+          { max: AGENT_WORK_ORDER_TASK_MAX_LENGTH, count: task.length },
+        ),
+      );
+      return;
+    }
     setDispatchPending(true);
     try {
       const delivery = await onDispatchAgentWorkOrder(dispatchDraft.agentName, task);
@@ -312,7 +321,14 @@ export function MentionPlugin({
       );
       setDispatchPending(false);
     }
-  }, [closeDispatchDraft, dispatchDraft, dispatchPending, dispatchTask, intl, onDispatchAgentWorkOrder]);
+  }, [
+    closeDispatchDraft,
+    dispatchDraft,
+    dispatchPending,
+    dispatchTask,
+    intl,
+    onDispatchAgentWorkOrder,
+  ]);
 
   const panelGroups = useMemo<MentionResultGroup<MentionItem>[]>(() => {
     const groupsById = {
@@ -726,7 +742,9 @@ export function MentionPlugin({
         await writeAssetBlueprintFiles(platform, workspacePath, asset);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        toast(intl.formatMessage({ id: "assetLibrary.detail.writeFailedReason" }, { error: reason }));
+        toast(
+          intl.formatMessage({ id: "assetLibrary.detail.writeFailedReason" }, { error: reason }),
+        );
         return;
       }
       insertMentionItem(item, `\n\n${asset.prompt}`);

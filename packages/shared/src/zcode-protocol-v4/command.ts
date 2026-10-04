@@ -41,6 +41,13 @@ const createSessionRequestedConfigSchema = z.object({
   planEnabled: z.boolean().optional(),
 });
 
+/**
+ * 工单正文硬上限（字符数）。协议层强校验：任何派发路径（@ 直派 / 重派 / 主心骨的
+ * AgentDispatch 工具）超限一律拒绝——所以在哪条路上都别指望“全文搬运”超长成果，
+ * 客户端应提前用同一个人话预检拦下（词表 chat.mention.agents.dispatchTooLong）。
+ */
+export const AGENT_WORK_ORDER_TASK_MAX_LENGTH = 8192;
+
 // ── 命令 payload 全集 ──
 export const commandPayloadSchemas = {
   // firstInput 缺省 → phase=draft 空会话；携带 → 直接 turnHeader+userInput rows。
@@ -251,7 +258,7 @@ export const commandPayloadSchemas = {
   dispatchAgentWorkOrder: z.object({
     // 目标档案名（UI 从档案目录下发，本就是精确名）；服务端照旧 agentId 优先、歧义拒绝。
     agent: z.string().trim().min(1),
-    task: z.string().trim().min(1).max(8192),
+    task: z.string().trim().min(1).max(AGENT_WORK_ORDER_TASK_MAX_LENGTH),
     // true 强制开新 persona 会话；缺省投目标最新一段（无则自动开）。
     newSession: z.boolean().optional(),
     // 批次续批（audit 2026-10-01）：失败卡「重派这单」带上原批次，重派结果归回
