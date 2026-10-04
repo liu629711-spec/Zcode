@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "skipLibCheck": true,
+    "strict": true,
+    "types": ["node"],
+    "outDir": "./.zcode/workflow-drafts/gate-out",
+    "rootDir": "."
+  },
+  "include": [
+    "apps/zcode-cli/packages/core/src/runtime/methods/work-order-batch-qc.test.ts",
+    "apps/zcode-cli/packages/core/src/runtime/methods/work-orders.test.ts",
+    "packages/shared/src/**/*.ts"
+  ]
+}
