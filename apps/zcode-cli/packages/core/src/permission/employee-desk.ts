@@ -80,3 +80,235 @@ function isInside(resolved: string, root: string, path: EmployeeDeskPathModule):
     relativePath.length > 0 && !path.isAbsolute(relativePath) && !relativePath.startsWith("..")
   );
 }
+
+// ============================================================
+// Bash 重定向逃逸检测（2026-10-04 对照 Open-ClaudeCode validateOutputRedirections
+// 补齐，收掉员工桌子闸此前「只看 Write/Edit 的 file_path」的天花板）：
+// 重定向目标按"创建文件"走与 Write/Edit 完全相同的两桌校验；解析不了的一律转人工
+// （宁可多问）。全程不碰文件系统、不执行命令，纯字符串解析，逐例可测。
+// ============================================================
+
+/** 一条 Bash 命令里发现的「写不出桌/查不清」逃逸点。 */
+export interface EmployeeDeskBashEscape {
+  kind:
+    | "redirect-outside" // 重定向目标解析后落在两桌之外
+    | "redirect-opaque" // 目标带 $VAR/`cmd`/%VAR%/~，解析不了——宁可多问
+    | "redirect-missing" // 重定向运算符后面没有目标（残缺命令）
+    | "heredoc" // << / <<< 出现：正文可有任意字符，整条命令不可校验
+    | "subshell" // 顶层括号（子 shell/命令替换/进程替换），目标归属不可信
+    | "cd-with-redirect"; // cd 与重定向同条命令：相对目标归属随 cd 漂移
+  detail: string;
+}
+
+export interface EmployeeDeskBashInput {
+  command: string;
+  /** 工作区根（员工的正式桌子）；空串 = 算不出桌子，不拦。 */
+  workspaceRoot: string;
+  /** 随身记事本根；缺席 = 只有工作区一张桌子。 */
+  personalNotebookRoot?: string;
+  pathModule?: EmployeeDeskPathModule;
+}
+
+interface BashToken {
+  text: string;
+  /** 引号内来的整段（里面的 > 不算运算符）。 */
+  quoted: boolean;
+  /** 重定向运算符本身：> >> >& &>。 */
+  operator: boolean;
+}
+
+function isBashSpace(ch: string): boolean {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r";
+}
+
+/**
+ * 引号感知的 bash 分词：引号内一律是普通字符；顶层 > / >> / >& / &> 切成运算符
+ * token（附着形式 `>file`、`2>file` 天然成立）；顶层括号与 heredoc 只记旗标——
+ * 它们让整条命令的目标归属不可信，直接按"查不清"处理，不做半吊子解析。
+ */
+function tokenizeBashCommand(command: string): {
+  tokens: BashToken[];
+  sawTopLevelParen: boolean;
+  sawHeredoc: boolean;
+} {
+  const tokens: BashToken[] = [];
+  let current = "";
+  let currentQuoted = false;
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+  let sawTopLevelParen = false;
+  let sawHeredoc = false;
+
+  const flush = () => {
+    if (current.length > 0) {
+      tokens.push({ text: current, quoted: currentQuoted, operator: false });
+    }
+    current = "";
+    currentQuoted = false;
+  };
+
+  for (let i = 0; i < command.length; i += 1) {
+    const ch = command[i]!;
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\" && !inSingle && !inDouble) {
+      escaped = true;
+      continue;
+    }
+    if (inSingle) {
+      if (ch === "'") inSingle = false;
+      else current += ch;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '"') inDouble = false;
+      else current += ch;
+      continue;
+    }
+    if (ch === "'") {
+      flush();
+      inSingle = true;
+      currentQuoted = true;
+      continue;
+    }
+    if (ch === '"') {
+      flush();
+      inDouble = true;
+      currentQuoted = true;
+      continue;
+    }
+    if (ch === "(" || ch === ")") {
+      flush();
+      sawTopLevelParen = true;
+      continue;
+    }
+    if (ch === "<") {
+      flush();
+      if (command[i + 1] === "<") {
+        sawHeredoc = true;
+        i += 1;
+        continue;
+      }
+      continue; // 单个 < 是输入重定向（读），不属于写闸管辖
+    }
+    if (ch === ">") {
+      flush();
+      let op = ">";
+      while (command[i + 1] === ">") {
+        op += ">";
+        i += 1;
+      }
+      if (command[i + 1] === "&") {
+        op += "&";
+        i += 1;
+      }
+      tokens.push({ text: op, quoted: false, operator: true });
+      continue;
+    }
+    if (ch === "&") {
+      flush();
+      if (command[i + 1] === ">") {
+        tokens.push({ text: "&>", quoted: false, operator: true });
+        i += 1;
+        continue;
+      }
+      if (command[i + 1] === "&") i += 1; // && 命令分隔符
+      continue; // 裸 & 后台符
+    }
+    if (ch === ";" || ch === "|") {
+      flush();
+      continue;
+    }
+    if (isBashSpace(ch)) {
+      flush();
+      continue;
+    }
+    current += ch;
+  }
+  flush();
+  return { tokens, sawTopLevelParen, sawHeredoc };
+}
+
+/**
+ * 这条 Bash 命令里有没有"写不出员工两桌/查不清"的点。工作区缺席（算不出桌子）
+ * 一律返回空——宁缺毋滥，与 Write/Edit 判定同口径。
+ * 已知天花板（ponytail，升级路径=参数级命令分析）：tee/cp/mv/dd/sed -i 这类
+ * **参数即写目标**的命令仍不拦——本检测只管重定向与结构逃逸，与 Open-ClaudeCode
+ * validateOutputRedirections 同一射程。
+ */
+export function findEmployeeDeskBashEscapes(input: EmployeeDeskBashInput): EmployeeDeskBashEscape[] {
+  const escapes: EmployeeDeskBashEscape[] = [];
+  if (typeof input.workspaceRoot !== "string" || input.workspaceRoot.length === 0) return escapes;
+  const command = input.command;
+  if (typeof command !== "string" || command.length === 0) return escapes;
+  const path = input.pathModule ?? nodePath;
+  const { tokens, sawTopLevelParen, sawHeredoc } = tokenizeBashCommand(command);
+  if (sawHeredoc) {
+    escapes.push({ kind: "heredoc", detail: "heredoc 正文不可校验" });
+  }
+  if (sawTopLevelParen) {
+    escapes.push({ kind: "subshell", detail: "顶层括号（子 shell/命令替换/进程替换）" });
+  }
+
+  const hasCd = tokens.some((token) => !token.operator && !token.quoted && token.text === "cd");
+  let sawRedirect = false;
+  const pushedKinds = new Set<string>();
+  const pushOnce = (escape: EmployeeDeskBashEscape) => {
+    escapes.push(escape);
+    pushedKinds.add(escape.kind);
+  };
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]!;
+    if (!token.operator) continue;
+    sawRedirect = true;
+    const op = token.text;
+    const target = tokens[index + 1];
+    if (!target || target.operator) {
+      pushOnce({ kind: "redirect-missing", detail: `${op} 后没有目标` });
+      continue;
+    }
+    // fd 复制不是文件：>&2、>& 1、>&1（ attached 数字是描述符，非路径）。
+    if (op === ">&" && /^\d+$/.test(target.text)) continue;
+    if (target.text.startsWith("&") && /^\d+$/.test(target.text.slice(1))) continue;
+    if (target.text === "/dev/null") continue; // 丢弃槽，Open-ClaudeCode 同款豁免
+    if (/[$`%~]/.test(target.text)) {
+      pushOnce({
+        kind: "redirect-opaque",
+        detail: `${op} ${target.text}：目标带变量/展开，解析不了`,
+      });
+      continue;
+    }
+    if (/^[A-Za-z]:[^\\/]/.test(target.text)) {
+      // 盘符相对路径（bash 吃掉反斜杠后的 D:xxx）：归属取决于该盘的当前目录，解析不可信。
+      pushOnce({
+        kind: "redirect-opaque",
+        detail: `${op} ${target.text}：盘符相对路径，归属不可信`,
+      });
+      continue;
+    }
+    const resolved = path.resolve(input.workspaceRoot, target.text);
+    const insideWorkspace = isInside(resolved, input.workspaceRoot, path);
+    const insideNotebook =
+      input.personalNotebookRoot !== undefined &&
+      isInside(resolved, input.personalNotebookRoot, path);
+    if (!insideWorkspace && !insideNotebook) {
+      pushOnce({
+        kind: "redirect-outside",
+        detail: `${op} ${target.text}：落在两桌之外`,
+      });
+    }
+  }
+
+  if (hasCd && sawRedirect) {
+    pushOnce({
+      kind: "cd-with-redirect",
+      detail: "cd 与重定向同条命令，相对目标归属随 cd 漂移",
+    });
+  }
+  return escapes;
+}

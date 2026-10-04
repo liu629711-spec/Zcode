@@ -126,3 +126,121 @@ test("调整器：随身本子根缺席（非驻场员工/老板会话）闸整�
   assert.equal(result.decision, "allow");
   assert.equal(result.ruleId, "mode.yolo");
 });
+
+// ── Bash 重定向逃逸检测（2026-10-04 对照 Open-ClaudeCode validateOutputRedirections）──
+
+import {
+  findEmployeeDeskBashEscapes,
+} from "./employee-desk.js";
+
+function bashEscapes(command: string, personalNotebookRoot?: string) {
+  return findEmployeeDeskBashEscapes({
+    command,
+    workspaceRoot: WORKSPACE,
+    ...(personalNotebookRoot ? { personalNotebookRoot } : {}),
+    pathModule: WIN,
+  });
+}
+
+function kinds(command: string, personalNotebookRoot?: string): string[] {
+  return bashEscapes(command, personalNotebookRoot).map((escape) => escape.kind);
+}
+
+test("Bash 检测：桌内重定向放行，/dev/null 与 fd 复制豁免", () => {
+  assert.deepEqual(kinds("echo hi > src\\out.txt"), []);
+  assert.deepEqual(kinds("echo hi >> logs\\app.log"), []);
+  assert.deepEqual(kinds("build 2> err.log"), []);
+  assert.deepEqual(kinds("build > /dev/null 2>&1"), []);
+  // 随身本子内的写入不算桌外（路径用正斜杠——反斜杠会被 bash 吃掉变盘符相对路径）。
+  assert.deepEqual(kinds("echo hi > C:/Users/22830/.zcode/agent-memory/a-uuid-1/n.md", PERSONAL), []);
+  // 引号里的 > 不是运算符；目标带引号照常解析。
+  assert.deepEqual(kinds('echo "a > b" > src\\out.txt'), []);
+  assert.deepEqual(kinds('echo hi > "src\\my file.txt"'), []);
+  // 纯读、无重定向、cd 但无重定向：不归写闸管。
+  assert.deepEqual(kinds("cat notes.md"), []);
+  assert.deepEqual(kinds("cd src && ls"), []);
+});
+
+test("Bash 检测：桌外重定向（绝对/相对逃逸/追加/合并流）全部现形", () => {
+  // 桌外路径用正斜杠写（Git Bash 的真实写法；反斜杠会被 bash 当转义符吃掉）。
+  assert.deepEqual(kinds("echo x > C:/Users/22830/PRD/x.md"), ["redirect-outside"]);
+  assert.deepEqual(kinds("echo x >> ../../escape.md"), ["redirect-outside"]);
+  assert.deepEqual(kinds("build &> C:/Users/22830/all.log"), ["redirect-outside"]);
+  assert.deepEqual(kinds("echo x > D:/Zcodetest-other/x.md"), ["redirect-outside"]);
+  // 多条重定向命中一条即报；错误流单独落桌外也现形。
+  assert.deepEqual(kinds("build > out.log 2> C:/Users/22830/err.log"), ["redirect-outside"]);
+});
+
+test("Bash 检测：查不清的四类——变量目标/盘符相对/heredoc/顶层括号——一律转人工", () => {
+  assert.deepEqual(kinds("echo x > $HOME\\x.md"), ["redirect-opaque"]);
+  assert.deepEqual(kinds("echo x > ~\\x.md"), ["redirect-opaque"]);
+  // 反斜杠被 bash 吃掉后 D:\somewhere\x.md 变成盘符相对路径 D:somewherex.md——归属不可信。
+  assert.deepEqual(kinds("echo x > D:\\somewhere\\x.md"), ["redirect-opaque"]);
+  assert.equal(kinds("cat <<EOF\nhello > world\nEOF").includes("heredoc"), true);
+  // `> >(tee …)`：第一看重定向的"目标"是进程替换本身——查不清 + 结构逃逸双报。
+  assert.deepEqual(kinds("echo x > >(tee out.txt)"), ["subshell", "redirect-missing"]);
+  assert.deepEqual(kinds("grep pat $(find .) > out.txt"), ["subshell"]);
+});
+
+test("Bash 检测：cd 与重定向同条命令 → 相对目标归属不可信", () => {
+  assert.deepEqual(kinds("cd src && echo x > f.txt"), ["cd-with-redirect"]);
+  // cd 走了人、重定向又落在桌外：两类逃逸同时现形。
+  const both = kinds("cd src && echo x > C:/Users/22830/steal.md");
+  assert.equal(both.includes("cd-with-redirect"), true);
+  assert.equal(both.includes("redirect-outside"), true);
+});
+
+test("Bash 检测：运算符后缺目标按查不清处理；工作区缺席不拦", () => {
+  assert.deepEqual(kinds("echo x >"), ["redirect-missing"]);
+  assert.deepEqual(
+    findEmployeeDeskBashEscapes({
+      command: "echo x > C:\\Users\\22830\\PRD\\x.md",
+      workspaceRoot: "",
+      pathModule: WIN,
+    }),
+    [],
+  );
+});
+
+function adjustBash(command: string, decision: PermissionDecisionResult, personalNotebookRoot?: string) {
+  return applyEmployeeDeskPermission({
+    decision,
+    executionInput: { command },
+    toolName: "Bash",
+    workingDirectory: WORKSPACE,
+    workspaceRoot: WORKSPACE,
+    ...(personalNotebookRoot ? { desk: { personalNotebookRoot } } : {}),
+  });
+}
+
+test("调整器：Bash 桌外重定向把 yolo 放行改判 ask（与 Write/Edit 同款护栏）", () => {
+  const escaped = adjustBash("echo x > C:/Users/22830/PRD/x.md", allowDecision(), PERSONAL);
+  assert.equal(escaped.decision, "ask");
+  assert.equal(escaped.allowed, false);
+  assert.equal(escaped.ruleId, "guard.employeeDesk");
+  assert.equal(escaped.escalated, true);
+
+  const inside = adjustBash("echo x > src\\out.txt", allowDecision(), PERSONAL);
+  assert.equal(inside.decision, "allow");
+  assert.equal(inside.ruleId, "mode.yolo");
+
+  // 查不清（变量目标）同样转人工。
+  const opaque = adjustBash("echo x > $HOME\\x.md", allowDecision(), PERSONAL);
+  assert.equal(opaque.decision, "ask");
+
+  // 老板会话（无本子）不闸；既有 deny/ask 尊重。
+  assert.equal(
+    adjustBash("echo x > C:/Users/22830/PRD/x.md", allowDecision()).decision,
+    "allow",
+  );
+  const asked: PermissionDecisionResult = {
+    ...allowDecision(),
+    allowed: false,
+    decision: "ask",
+    ruleId: "rule.project.ask",
+  };
+  assert.equal(
+    adjustBash("echo x > C:/Users/22830/PRD/x.md", asked, PERSONAL).ruleId,
+    "rule.project.ask",
+  );
+});
