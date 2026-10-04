@@ -96,6 +96,7 @@ function makeRuntime(rows: LedgerRow[]) {
     rootTraceContext: { traceId: "trace" },
     logger: undefined,
     sessionStore: store,
+    store,
     trackResidencyBlockingWork: async () => ({}),
     enqueueRuntimeCommand(command: WorkOrderBatchQcRuntimeCommand) {
       sequence.push(`enqueue:${command.batchId}`);
@@ -105,16 +106,109 @@ function makeRuntime(rows: LedgerRow[]) {
     sequence,
   };
   (runtime as unknown as Record<string, unknown>).enqueueAgentWorkOrderBatchQc = (
-    input: Parameters<typeof enqueueAgentWorkOrderBatchQc>[1],
+    input: Parameters<typeof enqueueAgentWorkOrderBatchQc>[0],
   ) => enqueueAgentWorkOrderBatchQc.call(runtime as never, input);
-  return runtime as never as Record<string, unknown> & {
-    qcCommands: WorkOrderBatchQcRuntimeCommand[];
-    sequence: string[];
+  return runtime as unknown as TestRuntime;
+}
+
+type TestRuntime = Record<string, unknown> & {
+  qcCommands: WorkOrderBatchQcRuntimeCommand[];
+  sequence: string[];
+  store: { rows: LedgerRow[] };
+};
+
+const trigger = (runtime: TestRuntime, batchId = BATCH_ID) =>
+  maybeEnqueueAgentWorkOrderBatchQc.call(runtime as never, { batchId });
+
+/** 回执台账行（与 work-order-receipts.ts 落账的 payload 形状一致）。 */
+function receiptRow(
+  workOrderId: string,
+  outcome: { status: string; toolCallCount?: number },
+  sequence = 10,
+): LedgerRow {
+  return {
+    id: `receipt-${workOrderId}-${sequence}`,
+    sessionID: SESSION,
+    kind: "agentWorkOrderReceipt",
+    delivery: "queue",
+    payload: {
+      text: `回执${workOrderId}`,
+      workOrderId,
+      outcome,
+    },
+    admittedSequence: sequence,
+    status: "discarded",
+    time: { created: 0, updated: 0 },
   };
 }
 
-const trigger = (runtime: never, batchId = BATCH_ID) =>
-  maybeEnqueueAgentWorkOrderBatchQc.call(runtime, { batchId });
+test("证据门禁：全部回执 completed 且动过手 → 免检，不排队质检轮、落 skipped 闸门行", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    dispatchRow("wo-2", "discarded"),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 3 }, 11),
+    receiptRow("wo-2", { status: "completed", toolCallCount: 1 }, 12),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0, "全绿批次不该开质检轮");
+  const skipRow = runtime.store.rows.find(
+    (row: LedgerRow) => row.kind === "agentWorkOrderBatchQc",
+  ) as LedgerRow | undefined;
+  assert.ok(skipRow, "免检也要落内容锚定闸门行（这批永不重开）");
+  assert.equal((skipRow.payload as { skipped?: boolean }).skipped, true);
+});
+
+test("证据门禁：一张单零工具调用（可能摸鱼）→ 照旧开质检轮", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    dispatchRow("wo-2", "discarded"),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 5 }, 11),
+    receiptRow("wo-2", { status: "completed", toolCallCount: 0 }, 12),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 1);
+});
+
+test("证据门禁：取消/失败的回执不是绿 → 照旧开质检轮", async () => {
+  const cancelled = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    receiptRow("wo-1", { status: "cancelled", toolCallCount: 2 }, 11),
+  ]);
+  await trigger(cancelled);
+  assert.equal(cancelled.qcCommands.length, 1);
+
+  const failed = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    receiptRow("wo-1", { status: "failed", toolCallCount: 9 }, 11),
+  ]);
+  await trigger(failed);
+  assert.equal(failed.qcCommands.length, 1);
+});
+
+test("证据门禁：回执行缺席（旧批次）fail-open 照旧开轮；评审批全绿也不免检", async () => {
+  const legacy = makeRuntime([dispatchRow("wo-1", "discarded")]);
+  await trigger(legacy);
+  assert.equal(legacy.qcCommands.length, 1);
+
+  const review = makeRuntime([
+    dispatchRow("wo-1", "discarded", { review: true }),
+    dispatchRow("wo-2", "discarded", { review: true }),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 4 }, 11),
+    receiptRow("wo-2", { status: "completed", toolCallCount: 4 }, 12),
+  ]);
+  await trigger(review);
+  assert.equal(review.qcCommands.length, 1, "合议轮是裁决流程本身，永不免检");
+});
+
+test("latestReceiptOutcomeByWorkOrderId：同单多张回执取 admittedSequence 最新", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 0 }, 11),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 6 }, 12),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0, "最新回执是绿的就算绿");
+});
 
 test("同批全部收口：开一次，员工名取台账顶层字段、工号随行、按工单号定序", async () => {
   const runtime = makeRuntime([dispatchRow("wo-2", "discarded"), dispatchRow("wo-1", "discarded")]);

@@ -259,6 +259,13 @@ export interface WorkOrderReceiptOutcome {
   failureModelId?: string;
   /** 已自动重试过一次仍失败：信封与回执卡措辞据此升级，不谎报「重试后失败」。 */
   retried?: boolean;
+  /**
+   * 证据门禁（地基清理·质检免检 2026-10-05）：工单唤醒轮的工具调用数，来自
+   * TurnComplete 载荷（success 且 >0 = 员工真动过手）。批次质检闸门据此判绿：
+   * 全绿批次免开 advisory 质检轮；cancelled/failed/零工具调用（可能摸鱼）/
+   * 证据缺席一律照旧开轮。失败终态不带此项。
+   */
+  toolCallCount?: number;
 }
 
 export type WorkOrderReceiptStatus = WorkOrderReceiptOutcome["status"];

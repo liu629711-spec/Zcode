@@ -44,7 +44,15 @@ export function receiptOutcomeFromSessionEvent(
   if (record.inputId !== workOrderInputId) return undefined;
   if (event.type === SessionEventType.TurnComplete) {
     if (record.resultType === "success" && typeof record.response === "string") {
-      return { status: "completed", response: record.response };
+      return {
+        status: "completed",
+        response: record.response,
+        // 证据门禁（地基清理 2026-10-05）：唤醒轮工具调用数随终态回传，批次
+        // 质检闸门判绿用（success 且 >0 = 员工真动过手）。
+        ...(typeof record.toolCallCount === "number" && Number.isFinite(record.toolCallCount)
+          ? { toolCallCount: Math.max(0, Math.floor(record.toolCallCount)) }
+          : {}),
+      };
     }
     if (record.resultType === "cancelled") return { status: "cancelled" };
     return {

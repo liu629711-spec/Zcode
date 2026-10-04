@@ -51,6 +51,52 @@ export function batchQcGateId(sessionId: string, contentKey: string): string {
   return `agentWorkOrderBatchQc:${sessionId}:${contentKey}`;
 }
 
+/**
+ * 证据门禁（地基清理·质检免检 2026-10-05）：从台账行里取每张工单**最新**的
+ * 回执终态。回执行（kind=agentWorkOrderReceipt）的 payload 带 outcome——
+ * toolCallCount 由 bootstrap 从 TurnComplete 载荷随终态回传。
+ */
+export function latestReceiptOutcomeByWorkOrderId(
+  rows: readonly {
+    kind: string;
+    admittedSequence: number;
+    payload: { workOrderId?: unknown; outcome?: unknown; [key: string]: unknown };
+  }[],
+): Map<string, { status: unknown; toolCallCount?: number; admittedSequence: number }> {
+  const latest = new Map<
+    string,
+    { status: unknown; toolCallCount?: number; admittedSequence: number }
+  >();
+  for (const record of rows) {
+    if (record.kind !== "agentWorkOrderReceipt") continue;
+    const workOrderId =
+      typeof record.payload?.workOrderId === "string" ? record.payload.workOrderId : "";
+    const outcome = record.payload?.outcome;
+    if (!workOrderId || typeof outcome !== "object" || outcome === null) continue;
+    const outcomeRecord = outcome as { status?: unknown; toolCallCount?: unknown };
+    const previous = latest.get(workOrderId);
+    if (previous && previous.admittedSequence >= record.admittedSequence) continue;
+    latest.set(workOrderId, {
+      status: outcomeRecord.status,
+      admittedSequence: record.admittedSequence,
+      ...(typeof outcomeRecord.toolCallCount === "number" && Number.isFinite(outcomeRecord.toolCallCount)
+        ? { toolCallCount: outcomeRecord.toolCallCount }
+        : {}),
+    });
+  }
+  return latest;
+}
+
+/**
+ * 单张工单是否绿：终态 completed 且真动过手（工具调用 >0）。零工具调用成功
+ * 可能是摸鱼（寒暄交差），不算绿；证据缺席（旧回执/畸形行）一律不算绿。
+ */
+export function isGreenReceiptOutcome(
+  outcome: { status: unknown; toolCallCount?: number } | undefined,
+): boolean {
+  return outcome?.status === "completed" && (outcome.toolCallCount ?? 0) > 0;
+}
+
 export interface EnqueueAgentWorkOrderBatchQcInput {
   batchId: string;
   batchTitle?: string;
@@ -249,6 +295,48 @@ async function startBatchQcIfComplete(
       (record.payload as { envelope?: { review?: unknown } } | undefined)?.envelope !== undefined &&
       (record.payload as { envelope?: { review?: unknown } }).envelope?.review === true,
   );
+  // 证据门禁（地基清理·质检免检 2026-10-05）：普通质检批先过确定性证据闸——
+  // 每张单的回执终态 completed 且真动过手（工具调用 >0）= 绿，全绿批次免开
+  // advisory 质检轮（tianshu/AgentCore 口径：确定性门禁先行，模型轮只在报警后
+  // 做 advisory 诊断）。合议轮是评审会的裁决流程本身，永不免检；取消/失败/零
+  // 工具调用（可能摸鱼）/证据缺席（旧回执、畸形行）fail-open 照旧开轮。
+  if (!review) {
+    const receipts = latestReceiptOutcomeByWorkOrderId(rows);
+    if (orders.every((order) => isGreenReceiptOutcome(receipts.get(order.workOrderId)))) {
+      // 免检同样落内容锚定闸门行：这批永不重开质检，审计痕迹留档。
+      // 落闸失败不硬撑——掉回下方正常开轮路径（开轮自带 fail-closed 落闸）。
+      try {
+        await this.sessionStore?.saveSessionInput?.({
+          id: batchQcGateId(this.sessionId, batchQcContentKey(orders)),
+          sessionID: this.sessionId,
+          kind: "agentWorkOrderBatchQc",
+          delivery: "queue",
+          payload: {
+            text: `批次「${batchTitle ?? input.batchId}」全部工单回执成功且已有实际操作，按证据门禁免检。`,
+            batchId: input.batchId,
+            ...(batchTitle === undefined ? {} : { batchTitle }),
+            orders: [...orders],
+            skipped: true,
+          },
+        });
+        this.logger?.info("Batch QC skipped: all receipts green by evidence gate", {
+          batchId: input.batchId,
+          event: "agent_work_order_batch_qc.skipped_green",
+          module: "core.runtime",
+          orderCount: orders.length,
+          sessionId: this.sessionId,
+        });
+        return;
+      } catch (error) {
+        this.logger?.warn("Failed to save green-skip gate row; falling back to QC turn", {
+          batchId: input.batchId,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "agent_work_order_batch_qc.green_skip_gate_failed",
+          module: "core.runtime",
+        });
+      }
+    }
+  }
   await this.enqueueAgentWorkOrderBatchQc({
     batchId: input.batchId,
     ...(batchTitle === undefined ? {} : { batchTitle }),

@@ -16,7 +16,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SessionEventType } from "@zcode/contracts";
-import { scheduleWorkOrderReceiptRelay } from "../src/zcode-protocol/agent-dispatch-receipts.js";
+import {
+  receiptOutcomeFromSessionEvent,
+  scheduleWorkOrderReceiptRelay,
+} from "../src/zcode-protocol/agent-dispatch-receipts.js";
 
 const WORK_ORDER_INPUT_ID_PREFIX = "workorder-";
 const INPUT_ID = `${WORK_ORDER_INPUT_ID_PREFIX}wo-1`;
@@ -184,4 +187,39 @@ test("看门狗：本单还在跑就重新武装，不误杀长任务", async ()
   await new Promise((resolve) => setTimeout(resolve, 120));
   assert.equal(boss.receipts.length, 1, "确认死单后才合成");
   unsubscribe();
+});
+
+// ============================================================
+// 证据门禁（地基清理·质检免检 2026-10-05）：TurnComplete 载荷的 toolCallCount
+// 随 outcome 回传，批次质检闸门判绿用（completed 且 >0 = 真动过手）。
+// ============================================================
+test("receiptOutcomeFromSessionEvent：toolCallCount 随 success 终态回传，失败终态不带", () => {
+  const success = receiptOutcomeFromSessionEvent(
+    {
+      type: SessionEventType.TurnComplete,
+      payload: { inputId: INPUT_ID, resultType: "success", response: "干完了", toolCallCount: 4.7 },
+    } as never,
+    INPUT_ID,
+  );
+  assert.equal(success?.status, "completed");
+  assert.equal(success?.toolCallCount, 4, "应向下取整为非负整数");
+
+  const noCount = receiptOutcomeFromSessionEvent(
+    {
+      type: SessionEventType.TurnComplete,
+      payload: { inputId: INPUT_ID, resultType: "success", response: "干完了" },
+    } as never,
+    INPUT_ID,
+  );
+  assert.equal(noCount?.toolCallCount, undefined, "载荷缺席时不编造");
+
+  const failed = receiptOutcomeFromSessionEvent(
+    {
+      type: SessionEventType.TurnError,
+      payload: { inputId: INPUT_ID, error: { message: "炸了" } },
+    } as never,
+    INPUT_ID,
+  );
+  assert.equal(failed?.status, "failed");
+  assert.equal(failed?.toolCallCount, undefined, "失败终态不带证据项");
 });
