@@ -360,12 +360,11 @@ export async function runWorkOrderBatchQcCommand(
       skipInputRecord: true,
       skipUserPromptSubmitHooks: true,
       traceContext: command.traceContext,
-      // 合议轮禁派单（评审会批）：合议的产出是意见不是工单，机制层掐死
-      // 「评审→重派→再评审」的循环，决定权留在用户手里。质检轮仍不带 denylist
-      // ——打回重派靠发起方自己的 AgentDispatch。
-      ...(command.review === true
-        ? { toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES] }
-        : {}),
+      // 诊断轮一律禁派单（2026-10-04 advisory 改造）：质检与合议的产出是建议不是
+      // 工单，机制层掐死「质检→自动打回→再质检」循环，打回决定权交还老板（失败卡
+      // 一键重派）。此前仅合议轮（review）带 denylist，质检轮靠提示词自觉——参照
+      // 审计判定纯提示词纪律是裸奔，与合议同款收口。
+      toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES],
     });
   } catch (error) {
     this.logger?.warn("Agent work order batch QC turn failed", {

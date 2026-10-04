@@ -220,9 +220,9 @@ test("混批（评审单 + 施工单）收敛为质检口味：旧批次与畸�
   assert.equal(mixed.qcCommands[0]!.review, undefined);
   assert.equal(mixed.qcCommands[0]!.originMeta.qcKind, undefined);
   assert.match(mixed.qcCommands[0]!.text, /质检要求/);
-  // 混批兜底成质检时，评审单在清单里带 review="true" 属性，质检要求豁免其不打回。
+  // 混批兜底成质检时，评审单在清单里带 review="true" 属性，质检诊断只核对不计数。
   assert.match(mixed.qcCommands[0]!.text, /<order id="wo-1" agent="员工-wo-1" agent-id="agent-wo-1" review="true">/);
-  assert.match(mixed.qcCommands[0]!.text, /同样不参与打回/);
+  assert.match(mixed.qcCommands[0]!.text, /同样只核对意见是否与任务对应/);
 
   const legacy = makeRuntime([dispatchRow("wo-1", "discarded")]);
   await trigger(legacy);
@@ -230,7 +230,7 @@ test("混批（评审单 + 施工单）收敛为质检口味：旧批次与畸�
   assert.match(legacy.qcCommands[0]!.text, /质检要求/);
 });
 
-test("合议轮禁派单是机制不是空话：review 命令的轮选项带 toolDisallowlist，质检轮不带", async () => {
+test("诊断轮禁派单是机制不是空话：质检与合议轮的轮选项都带 toolDisallowlist", async () => {
   // 复用 startBatchQcIfComplete（活回执投递与 resume 清扫共用同一入口）的产出，
   // 直接驱动真实 runWorkOrderBatchQcCommand，捕获 executeTurnCommand 收到的选项。
   const captured: Record<string, unknown>[] = [];
@@ -271,6 +271,7 @@ test("合议轮禁派单是机制不是空话：review 命令的轮选项带 too
   await runWorkOrderBatchQcCommand.call(makeRunRuntime(buildCommand(true)), buildCommand(true));
   await runWorkOrderBatchQcCommand.call(makeRunRuntime(buildCommand(false)), buildCommand(false));
   assert.equal(captured.length, 2);
+  // advisory 改造（2026-10-04）：质检与合议一律禁派单——诊断建议的采纳权在老板。
   assert.deepEqual(captured[0]!.toolDisallowlist, ["AgentDispatch"]);
-  assert.equal(captured[1]!.toolDisallowlist, undefined);
+  assert.deepEqual(captured[1]!.toolDisallowlist, ["AgentDispatch"]);
 });
