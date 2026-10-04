@@ -484,6 +484,12 @@ export interface ExecuteTurnOptionsBase {
   /** 显式传入的本轮工单身份（D29）；工单唤醒轮据此在执行边界禁 AgentDispatch（嵌套上限=1）。 */
   workOrderId?: string;
   /**
+   * 工单停机守卫（2026-10-04，Hermes kanban_stop 同款）：工单轮收尾若只是确认/
+   * 寒暄（零工具调用），补射一次「收到即干」提醒后同轮续跑；再犯判轮失败走
+   * 既有失败链。review=true 豁免（评审单只评审不动手）。缺席 = 非工单轮，守卫不生效。
+   */
+  workOrderStopGuard?: { review: boolean };
+  /**
    * 工单轮的卡片元数据（D29/D5，`workOrderId` 在场时随 TurnStarted 下发）；
    * 活投影与冷恢复据此在目标会话画「来自 X 的工单」卡（与消息 metadata.envelope 同一份，冷热同形）。
    */

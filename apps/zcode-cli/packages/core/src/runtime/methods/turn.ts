@@ -602,6 +602,8 @@ export async function executeTurnCommand(
           repeatedToolCallSignature: undefined,
           repeatedToolCallStreakCount: 0,
           stopHookContinuationCount: 0,
+          workOrderStopGuard: options?.workOrderStopGuard,
+          workOrderNudgeCount: 0,
           streamRecoveryRetryCount: 0,
           tokenCount: 0,
           toolCallCount: 0,

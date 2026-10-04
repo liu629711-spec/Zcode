@@ -11,6 +11,11 @@ import {
   commitTurnRequestEntries,
 } from "./turn-output-token-continuation.js";
 import { createRuntimeAssistantEntry } from "../../agent/message-history.js";
+import {
+  assessWorkOrderStop,
+  WORK_ORDER_NO_ACTION_ERROR,
+  WORK_ORDER_NUDGE_TEXT,
+} from "../../subagent/work-order-stop.js";
 
 interface AssistantPersistenceAnchor {
   latestAssistantMessageId: AgentRuntimeInternal["latestAssistantMessageId"];
@@ -173,6 +178,34 @@ export async function finishModelStepWithoutToolCalls(
     includeEmptyAssistant: true,
   });
   if (assistantCommitted) recordModelHistoryRound(state);
+  // 工单停机守卫（2026-10-04，Hermes kanban_stop 同款）：工单轮收尾只是确认/
+  // 寒暄（零工具调用）→ 补射一次「收到即干」提醒后同轮续跑；再犯判轮失败走
+  // 既有失败链（TurnError → 回执失败卡 + 发起方自动重试一棒，重试再犯同样在
+  // 此收口，有界）。评审单豁免；非工单轮（guard 缺席）不生效。守卫在 assistant
+  // 持久化之后：寒暄原文先进历史，补射才有上下文。
+  if (state.workOrderStopGuard) {
+    const verdict = assessWorkOrderStop({
+      modelResponse: state.modelResponse,
+      toolCallCount: state.toolCallCount,
+      review: state.workOrderStopGuard.review,
+      alreadyNudged: state.workOrderNudgeCount > 0,
+    });
+    if (verdict === "fail") {
+      // 错误信息原样进发起方的回执失败卡，说人话；hermes 的 protocol_violation 同位。
+      throw new Error(WORK_ORDER_NO_ACTION_ERROR);
+    }
+    if (verdict === "nudge") {
+      state.workOrderNudgeCount += 1;
+      state.stopHookContinuationCount += 1;
+      const nudgeEntry = this.injectHookAdditionalContextIntoMessageHistory(
+        HookEventName.Stop,
+        [WORK_ORDER_NUDGE_TEXT],
+      );
+      appendTurnRequestEntries(state.turnRequestState, nudgeEntry ? [nudgeEntry] : []);
+      state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
+      return "continue";
+    }
+  }
   if (state.automationCreateLimitReached) {
     // 上限命中后只允许这一轮纯文本说明。跳过 guide 和 Stop hook，避免它们再次
     // 触发模型请求，把已经关闭工具的 turn 延长成新的恢复循环。

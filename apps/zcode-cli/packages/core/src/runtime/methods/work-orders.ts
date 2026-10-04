@@ -201,6 +201,9 @@ export async function runWorkOrderCommand(
       toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES],
       traceContext: command.traceContext,
       workOrderId: command.workOrderId,
+      // 工单停机守卫（2026-10-04，Hermes kanban_stop 同款）：光说不练补一脚再判。
+      // 评审单豁免（只评审不动手是纪律不是病）。
+      workOrderStopGuard: { review: command.envelope.review === true },
       // 工单卡元数据（D29/D5）：随 TurnStarted 下发，目标会话画「来自 X 的任务」卡。
       agentWorkOrder: agentWorkOrderMeta,
       // 本单一次性指定模型（D32）：命令带着但执行轮此前没接——工单实际仍跑会话

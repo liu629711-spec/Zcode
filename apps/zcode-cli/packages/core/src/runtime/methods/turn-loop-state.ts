@@ -85,6 +85,10 @@ export interface RegularTurnLoopState {
   automationId?: string;
   /** 显式传入的本轮工单身份（D29）；工单唤醒轮据此禁 AgentDispatch（嵌套上限=1）。 */
   workOrderId?: string;
+  /** 工单停机守卫（types.ts workOrderStopGuard 透传）：缺席 = 非工单轮，守卫不生效。 */
+  workOrderStopGuard?: { review: boolean };
+  /** 本轮已补射的停机提醒次数；>0 后再犯直接判失败（hermes 两次机会口径）。 */
+  workOrderNudgeCount: number;
   /** Host admission 显式传入的本轮闲时任务身份；与 automationId 互斥，不从持久 meta 推断。 */
   offPeakTaskId?: string;
   /** CronCreate 命中全局上限后，本用户 turn 永久切为纯文本回复，禁止模型自行恢复。 */
