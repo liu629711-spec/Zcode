@@ -66,9 +66,10 @@ export function ThemePreviewCard({
   const { intl } = useZCodeIntl();
   const previewSurfaceClassName = mode === "light" ? "ring-1 ring-black/5" : "ring-1 ring-white/8";
   const previewThemeStyle = {
-    "--color-background": mode === "light" ? "#f8f8f8" : "#161616",
-    "--color-card": mode === "light" ? "#f8f8f8" : "#161616",
-    "--color-foreground": mode === "light" ? "#0d0d0d" : "#ffffff",
+    "--color-background":
+      mode === "light" ? "var(--style-light-background)" : "var(--style-dark-background)",
+    "--color-card": mode === "light" ? "var(--style-light-surface)" : "var(--style-dark-surface)",
+    "--color-foreground": mode === "light" ? "var(--style-light-ink)" : "var(--style-dark-ink)",
   } as CSSProperties;
 
   return (

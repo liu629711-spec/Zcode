@@ -52,6 +52,7 @@ export function WorkspaceFileTreeList({
   showInitialLoading,
   rows,
   virtualItems,
+  reveal,
   listRef,
   stickyFolderCount,
   totalSize,
@@ -75,6 +76,7 @@ export function WorkspaceFileTreeList({
   showInitialLoading: boolean;
   rows: WorkspaceFileTreeRow[];
   virtualItems: VirtualItem[];
+  reveal?: { path: string; index: number; seq: number } | null;
   listRef: RefCallback<HTMLDivElement>;
   stickyFolderCount: number;
   totalSize: number;
@@ -115,10 +117,15 @@ export function WorkspaceFileTreeList({
   if (rows.length === 0) {
     return <WorkspaceFileTreeNotice icon={<Files className="size-4" />} title={emptyTitle} />;
   }
-  const renderRow = (row: WorkspaceFileTreeRow, style: CSSProperties) => (
+  const renderRow = (
+    row: WorkspaceFileTreeRow,
+    style: CSSProperties,
+    revealDelayMs: number | null = null,
+  ) => (
     <WorkspaceFileTreeRowView
       key={row.path}
       row={row}
+      revealDelayMs={revealDelayMs}
       selected={selectedPath !== null && areWorkspaceFilePathsEqual(selectedPath, row.path)}
       gitStatus={
         getWorkspaceFileGitStatus(gitStatusByPath, row.path) ??
@@ -162,10 +169,22 @@ export function WorkspaceFileTreeList({
         if (!row) {
           return null;
         }
-        return renderRow(row, {
-          height: `${virtualItem.size}px`,
-          transform: `translateY(${virtualItem.start}px)`,
-        });
+        // 展开动画：刚展开目录的后代行按平铺顺序依次滑入，步进 24ms、封顶 240ms。
+        let revealDelayMs: number | null = null;
+        if (reveal && virtualItem.index > reveal.index) {
+          const revealRow = rows[reveal.index];
+          if (revealRow && row.path.startsWith(`${reveal.path}/`)) {
+            revealDelayMs = Math.min((virtualItem.index - reveal.index) * 24, 240);
+          }
+        }
+        return renderRow(
+          row,
+          {
+            height: `${virtualItem.size}px`,
+            transform: `translateY(${virtualItem.start}px)`,
+          },
+          revealDelayMs,
+        );
       })}
     </div>
   );

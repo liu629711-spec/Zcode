@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { DESIGN_STYLE_STORAGE_KEY, normalizeDesignStyle, type DesignStyle } from "./themeStyles.js";
 
 export type Theme = "light" | "dark" | "zai-light" | "zai-dark" | "system";
 export type ResolvedTheme = "light" | "dark";
@@ -55,7 +56,11 @@ function syncBrowserThemeSurface(resolved: ResolvedTheme) {
   }
 }
 
-export function applyTheme(theme: Theme) {
+export function applyDesignStyle(style: DesignStyle) {
+  document.documentElement.dataset.designStyle = style;
+}
+
+export function applyTheme(theme: Theme, style = currentDesignStyle()) {
   const resolved = resolveTheme(theme);
   const appliedTheme =
     theme === "system"
@@ -66,7 +71,12 @@ export function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", resolved === "dark");
   document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
   document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
+  applyDesignStyle(style);
   syncBrowserThemeSurface(resolved);
+}
+
+function currentDesignStyle(): DesignStyle {
+  return normalizeDesignStyle(localStorage.getItem(DESIGN_STYLE_STORAGE_KEY));
 }
 
 function isTheme(value: string | null): value is Theme {
@@ -77,6 +87,23 @@ function isTheme(value: string | null): value is Theme {
     value === "zai-dark" ||
     value === "system"
   );
+}
+
+export function useDesignStyle() {
+  const [designStyle, setDesignStyleState] = useState<DesignStyle>(currentDesignStyle);
+
+  const setDesignStyle = useCallback((style: DesignStyle) => {
+    const normalizedStyle = normalizeDesignStyle(style);
+    localStorage.setItem(DESIGN_STYLE_STORAGE_KEY, normalizedStyle);
+    setDesignStyleState(normalizedStyle);
+    applyDesignStyle(normalizedStyle);
+  }, []);
+
+  useEffect(() => {
+    applyDesignStyle(designStyle);
+  }, [designStyle]);
+
+  return { designStyle, setDesignStyle } as const;
 }
 
 export function useTheme() {

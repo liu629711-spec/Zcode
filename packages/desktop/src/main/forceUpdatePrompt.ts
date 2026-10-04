@@ -123,15 +123,15 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #f8f8f8;
-      color: #0d0d0d;
+      background: #f5f4ed;
+      color: #141413;
       user-select: none;
     }
     .window {
       width: 100vw;
       height: 100vh;
       padding: 0;
-      background: #f8f8f8;
+      background: #f5f4ed;
       display: flex;
     }
     /* 强更截图范围就是完整 BrowserWindow；外层留白加内层圆角会把宿主底色显示成黑框。*/
@@ -139,7 +139,7 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
       width: 100%;
       height: 100%;
       min-height: 0;
-      background: #ffffff;
+      background: #faf9f5;
       border: 0;
       border-radius: 0;
       box-shadow: none;
@@ -155,26 +155,26 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
       justify-content: flex-start;
       position: relative;
       -webkit-app-region: drag;
-      border-bottom: 1px solid rgba(13, 13, 13, 0.1);
-      background: #f0f0f0;
+      border-bottom: 1px solid rgba(38, 35, 31, 0.1);
+      background: #ebe9e0;
     }
     .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .brand-icon {
       width: 22px;
       height: 22px;
       border-radius: 6px;
-      background: #ebf4ff;
-      border: 1px solid rgba(13, 13, 13, 0.1);
+      background: #f3e6df;
+      border: 1px solid rgba(38, 35, 31, 0.1);
       display: flex;
       align-items: center;
       justify-content: center;
       flex: 0 0 auto;
-      color: #0b7fff;
+      color: #c96442;
       font-size: 12px;
       font-weight: 600;
     }
     .brand-icon img { width: 100%; height: 100%; border-radius: 6px; }
-    .brand-title { font-size: 13px; font-weight: 500; color: #0d0d0d; }
+    .brand-title { font-size: 13px; font-weight: 500; color: #141413; }
     .close {
       position: absolute;
       right: 0;
@@ -185,7 +185,7 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
       border: 0;
       border-radius: 0;
       background: transparent;
-      color: rgba(13, 13, 13, 0.62);
+      color: rgba(38, 35, 31, 0.62);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -206,7 +206,7 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
     }
     .close::before { transform: rotate(45deg); }
     .close::after { transform: rotate(-45deg); }
-    .close:hover { background: #f8f8f8; color: #0d0d0d; }
+    .close:hover { background: #e8e6dc; color: #141413; }
     .content {
       padding: 18px 20px 20px;
       display: flex;
@@ -219,23 +219,23 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
       width: 36px;
       height: 36px;
       border-radius: 10px;
-      background: color-mix(in oklab, #0b7fff 12%, transparent);
-      border: 1px solid rgba(13, 13, 13, 0.1);
-      color: #0b7fff;
+      background: color-mix(in oklab, #c96442 12%, transparent);
+      border: 1px solid rgba(38, 35, 31, 0.1);
+      color: #c96442;
       display: flex;
       align-items: center;
       justify-content: center;
       flex: 0 0 auto;
     }
     .status-icon svg { width: 20px; height: 20px; }
-    h1 { margin: 0; font-size: 15px; line-height: 1.45; font-weight: 600; color: #0d0d0d; }
-    .message { margin: 6px 0 0; color: rgba(13, 13, 13, 0.62); font-size: 13px; line-height: 1.6; }
+    h1 { margin: 0; font-size: 15px; line-height: 1.45; font-weight: 600; color: #141413; }
+    .message { margin: 6px 0 0; color: rgba(38, 35, 31, 0.62); font-size: 13px; line-height: 1.6; }
     .version-card {
-      border: 1px solid rgba(13, 13, 13, 0.1);
-      background: #f0f0f0;
+      border: 1px solid rgba(38, 35, 31, 0.1);
+      background: #f0eee6;
       border-radius: 12px;
       padding: 12px 14px;
-      color: #0d0d0d;
+      color: #141413;
       font-size: 13px;
       line-height: 1.7;
     }
@@ -243,9 +243,9 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
     .version-row { white-space: pre-wrap; }
     .progress { display: none; gap: 8px; flex-direction: column; }
     .progress.visible { display: flex; }
-    .progress-track { height: 6px; border-radius: 999px; background: rgba(13, 13, 13, 0.08); overflow: hidden; }
-    .progress-bar { width: 0%; height: 100%; border-radius: inherit; background: #0b7fff; transition: width 160ms ease; }
-    .progress-text { color: rgba(13, 13, 13, 0.62); font-size: 12px; }
+    .progress-track { height: 6px; border-radius: 999px; background: rgba(38, 35, 31, 0.08); overflow: hidden; }
+    .progress-bar { width: 0%; height: 100%; border-radius: inherit; background: #c96442; transition: width 160ms ease; }
+    .progress-text { color: rgba(38, 35, 31, 0.62); font-size: 12px; }
     .actions {
       margin-top: auto;
       display: flex;
@@ -256,42 +256,42 @@ function renderForceUpdatePromptHtml(text: ForceUpdateDialogText, locale: Locale
     button {
       min-width: 88px;
       height: 28px;
-      border: 1px solid rgba(13, 13, 13, 0.1);
-      background: #ffffff;
-      color: #0d0d0d;
+      border: 1px solid rgba(38, 35, 31, 0.1);
+      background: #faf9f5;
+      color: #141413;
       border-radius: 6px;
       padding: 0 12px;
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
     }
-    button:hover { background: #f8f8f8; border-color: rgba(13, 13, 13, 0.15); }
+    button:hover { background: #e8e6dc; border-color: rgba(38, 35, 31, 0.18); }
     button:disabled { cursor: default; opacity: 0.58; }
-    button.primary { border-color: transparent; background: #000000; color: #ffffff; }
-    button.primary:hover { background: rgba(0, 0, 0, 0.82); }
-    button.secondary { background: #e6e6e6; }
-    button.secondary:hover { background: #f0f0f0; }
+    button.primary { border-color: transparent; background: #c96442; color: #faf9f5; }
+    button.primary:hover { background: #a85034; }
+    button.secondary { background: #e8e6dc; }
+    button.secondary:hover { background: #f0eee6; }
     @media (prefers-color-scheme: dark) {
-      body { background: #2b2b2b; color: #f8f8f8; }
-      .window { background: #2b2b2b; }
-      .panel { background: #2b2b2b; border-color: transparent; }
-      .titlebar { background: #202020; border-bottom-color: rgba(255, 255, 255, 0.1); }
-      .brand-title, h1 { color: #f8f8f8; }
-      .brand-icon { background: #001d3d; border-color: rgba(255, 255, 255, 0.1); color: #80beff; }
-      .close { color: rgba(248, 248, 248, 0.64); }
-      .close:hover { background: #363636; border-color: rgba(255, 255, 255, 0.15); color: #f8f8f8; }
-      .message { color: rgba(248, 248, 248, 0.64); }
-      .status-icon { background: color-mix(in oklab, #4099ff 14%, transparent); border-color: rgba(255, 255, 255, 0.1); color: #80beff; }
-      .version-card { border-color: rgba(255, 255, 255, 0.1); background: #202020; color: #f8f8f8; }
-      .progress-track { background: rgba(255, 255, 255, 0.1); }
-      .progress-bar { background: #80beff; }
-      .progress-text { color: rgba(248, 248, 248, 0.64); }
-      button { border-color: rgba(255, 255, 255, 0.1); background: #2b2b2b; color: #f8f8f8; }
-      button:hover { background: #363636; border-color: rgba(255, 255, 255, 0.15); }
-      button.primary { border-color: transparent; background: #ffffff; color: #161616; }
-      button.primary:hover { background: rgba(255, 255, 255, 0.82); }
-      button.secondary { background: #363636; }
-      button.secondary:hover { background: #2b2b2b; }
+      body { background: #1f1e1c; color: #faf9f5; }
+      .window { background: #1f1e1c; }
+      .panel { background: #171716; border-color: transparent; }
+      .titlebar { background: #141413; border-bottom-color: rgba(250, 249, 245, 0.09); }
+      .brand-title, h1 { color: #faf9f5; }
+      .brand-icon { background: color-mix(in oklab, #d97757 18%, transparent); border-color: rgba(250, 249, 245, 0.09); color: #e7b2a1; }
+      .close { color: rgba(250, 249, 245, 0.64); }
+      .close:hover { background: #2a2a28; border-color: rgba(250, 249, 245, 0.16); color: #faf9f5; }
+      .message { color: rgba(250, 249, 245, 0.64); }
+      .status-icon { background: color-mix(in oklab, #d97757 16%, transparent); border-color: rgba(250, 249, 245, 0.09); color: #e7b2a1; }
+      .version-card { border-color: rgba(250, 249, 245, 0.09); background: #232322; color: #faf9f5; }
+      .progress-track { background: rgba(250, 249, 245, 0.1); }
+      .progress-bar { background: #d97757; }
+      .progress-text { color: rgba(250, 249, 245, 0.64); }
+      button { border-color: rgba(250, 249, 245, 0.09); background: #232322; color: #faf9f5; }
+      button:hover { background: #2c2c2a; border-color: rgba(250, 249, 245, 0.16); }
+      button.primary { border-color: transparent; background: #d97757; color: #141413; }
+      button.primary:hover { background: #e7b2a1; }
+      button.secondary { background: #2c2c2a; }
+      button.secondary:hover { background: #353533; }
     }
     @media (max-width: 560px) {
       .window { padding: 0; }
@@ -521,7 +521,7 @@ export async function showForceUpdatePrompt(
       skipTaskbar: false,
       paintWhenInitiallyHidden: true,
       title: text.title,
-      backgroundColor: nativeTheme.shouldUseDarkColors ? "#2b2b2b" : "#f8f8f8",
+      backgroundColor: nativeTheme.shouldUseDarkColors ? "#1f1e1c" : "#f5f4ed",
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

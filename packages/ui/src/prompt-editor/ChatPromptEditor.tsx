@@ -13,6 +13,7 @@ import { ArrowUpIcon, Hand, XIcon } from "lucide-react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { Button } from "@/components/ui/button.js";
 import { Spinner } from "@/components/ui/spinner.js";
+import { ThoughtSparksOverlay } from "@/prompt-editor/ThoughtSparksOverlay.js";
 import { cn } from "@/components/lib/utils.js";
 import {
   LexicalChatInput,
@@ -89,6 +90,7 @@ export function ChatPromptEditor({
   excludedSlashCommandNames,
   appSlashCommands,
   enableMentionPanel,
+  thoughtSparks,
 }: {
   workspacePath: string;
   workspaceIdentity?: string;
@@ -151,6 +153,8 @@ export function ChatPromptEditor({
   appSlashCommands?: readonly AppSlashCommand[];
   /** mention 面板开关（透传 LexicalChatInput）。 */
   enableMentionPanel?: boolean;
+  /** 思考深度最高档特效开关；未传时不渲染特效层（其他调用方零开销）。 */
+  thoughtSparks?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   const toolbarRef = useComposerToolbarFit();
@@ -347,12 +351,17 @@ export function ChatPromptEditor({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          "relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-input-border bg-input p-3 transition-colors hover:border-input-border-hover focus-within:!border-input-border-focused focus-within:bg-input-focused",
+          /*
+           * 聚焦反馈只走背景与阴影：边框保持 input-border 不切换，品牌色/高亮
+           * 聚焦描边用户明确否决（设置页各输入框同规则）。
+           */
+          "relative isolate flex flex-col gap-3 overflow-hidden rounded-2xl border border-input-border bg-input p-3 shadow-xs transition-[border-color,box-shadow,background-color] hover:border-input-border-hover hover:shadow-sm focus-within:bg-input-focused focus-within:shadow-sm",
           (isWorkspaceFileDropActive || isExternalFileDropActive) &&
             "border-brand bg-input-focused ring-1 ring-brand/30",
           shellClassName,
         )}
       >
+        {thoughtSparks !== undefined ? <ThoughtSparksOverlay active={thoughtSparks} /> : null}
         {draggingOverlayHint ? (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-accent/55 backdrop-blur-sm">
             <div className="flex items-center gap-2 rounded-full border border-border bg-accent px-4 py-2 text-ui-base text-foreground shadow-sm">

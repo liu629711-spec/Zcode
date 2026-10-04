@@ -64,6 +64,8 @@ function resolveWebThemePreference(defaultTheme: Theme = WEB_DEFAULT_THEME): The
   document.documentElement.classList.toggle("dark", resolved === "dark");
   document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
   document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
+  document.documentElement.dataset.designStyle =
+    localStorage.getItem("zcode-design-style") || "claude";
 }
 
 async function resolveFeedbackUrl(): Promise<string | undefined> {

@@ -19,7 +19,7 @@ Treat violations of this section as design-system defects, not stylistic prefere
 
 ## Product Character
 
-ZCode is a desktop-first and web-compatible AI workspace. The interface should feel calm, dense, and operational rather than decorative.
+ZCode is a desktop-first and web-compatible AI workspace. Its visual language is a precision workbench: warm, paper-like light surfaces for long reading, layered near-black dark surfaces for dense work, and one restrained indigo accent. Status colors stay reserved for real operational states.
 
 Design for:
 
@@ -38,8 +38,9 @@ Avoid:
 - playful gradients as the default UI language
 - bright full-surface brand fills
 - ambiguous hierarchy between background, card, and popover surfaces
+- copying another product's brand palette or decorative visual identity
 
-## Theme Modes
+## Theme Modes & Design Styles
 
 User-facing theme choices are:
 
@@ -47,14 +48,16 @@ User-facing theme choices are:
 - Light Theme, backed by Zai Light
 - Dark Theme, backed by Zai Dark
 
-Default light and dark CSS variables still exist as fallback foundations, but new UI should be validated against Zai Light and Zai Dark as the active light/dark experiences.
+On top of light/dark, an interface design style is selected in Settings and written to `data-design-style` on the root element: `claude` (default, warm paper), `openai`, `notion`, `linear`. Each style supplies its background, surface, sidebar, ink, brand, accent, and focus-border ramps through `--style-light-*` / `--style-dark-*` variables for both modes; the light/dark theme blocks consume them. The base `:root` values are the Claude defaults, keeping surfaces correct wherever the attribute is not yet set (embedded webviews, first paint).
+
+Derivation rule: borders, hovers, selections, tooltips, tabs, chart ramps, and similar derived tints are computed with `color-mix` from `--color-foreground` and `--color-brand`, so they follow the active style automatically. Do not hardcode per-style hex values in component CSS or Tailwind classes; add or adjust a `--style-*` variable instead. Input focus borders use `--style-*-focus-border`: a quiet neutral ink tint for Claude, the style brand for the others.
 
 ## Color Palette
 
 ### Core semantic colors
 
 - **Brand**: `--color-brand`
-  Use for key emphasis, important links, active indicators, and brand-accented actions. Never use as a full-page background.
+  Use for key emphasis, important links, active indicators, and brand-accented actions. The active theme accent is a muted indigo, distinct from status blue, success, warning, and destructive colors. Never use it as a full-page background.
 - **Icon Blue**: `--color-icon-blue`
   Use for browser-style links and blue icon emphasis that follows the Figma `icon/blue` role. Keep file-type icons on their own descriptor colors.
 - **Accent Surface**: `--color-accent`
@@ -357,18 +360,31 @@ Control size and primary/secondary action emphasis do not independently change r
 - Fixed widths are acceptable for menus, popovers, dialogs, and stable side panels.
 - Avoid arbitrary `w-[...]` and `h-[...]` for ordinary business UI.
 
+## Elevation & Depth
+
+Surfaces separate through background tone first, soft layered shadows second, and hairline borders last.
+
+- Elevated containers (cards, dialogs, popovers, menus, the composer shell) use the soft `shadow-xs`–`shadow-lg` scale. Avoid heavy single-layer shadows such as `shadow-2xl`.
+- Hairline borders stay for row separators and list dividers; container borders render at reduced strength (for example `border-card-border/70`).
+- Focus indication relies on border/background shifts or parent `focus-within` treatments: the global focus reset clears `box-shadow` on the focused element itself, so self `ring-*` focus styles are not visible.
+- Text selection uses a brand-tinted `::selection`, and display-size headings (`text-ui-xl`/`text-ui-lg`) tighten tracking automatically through the `--text-ui-*--letter-spacing` tokens.
+
 ## Components
 
 ### Buttons
 
 Preferred button system matches `packages/ui/src/components/ui/button.tsx`.
 
-- **Primary**: `bg-primary text-primary-foreground`
-- **Outline**: border-based, neutral surface, subtle hover
+- **Primary**: `bg-primary text-primary-foreground` with a soft `shadow-xs`
+- **Outline**: tonal fill (`bg-secondary/60`, borderless) — the quiet secondary action
 - **Secondary**: `bg-secondary text-foreground`
 - **Ghost**: transparent until hover
 - **Destructive**: semantic destructive fill
 - **Link**: text-only with underline on hover
+
+Button labels render `font-medium`; the default radius is `rounded-lg`, and small sizes step down per the Radius rules.
+
+Scroll jump pills (back to top / back to bottom) use `ScrollJumpPillButton`: an ink circle with a brand-tinted halo at rest; on hover it expands into a pill, the arrow exits along the scroll direction, and the label fades in. The expanded fill is the active style's brand color — never a fixed purple-and-white combination.
 
 Preferred sizes:
 
@@ -395,9 +411,18 @@ Button rules:
 
 Input rules:
 
+- Inputs are fill-first: a faint border plus tonal background; focus shifts border and background color, never a glow.
 - Inputs should feel calm and integrated, not glowing by default.
 - Use semantic error state styling only for real validation problems.
 - Do not style ordinary inputs like cards.
+
+### Composer max-thought sparks
+
+When the composer thought level reaches the model's highest gradated option (three or more levels; on/off toggles never trigger it), the input shell shows a brand-colored wash rising from the bottom-left plus drifting spark particles.
+
+- Spark color reads `--color-composer-spark` and falls back to `--color-brand`, so each design style (Claude, OpenAI, Notion, Linear) gets its own hue automatically.
+- Typing temporarily energizes the particles; the effect calms down when typing stops.
+- Under `prefers-reduced-motion`, only the static wash is shown and the particle canvas is skipped.
 
 ### Cards and Panels
 

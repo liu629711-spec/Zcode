@@ -2,13 +2,22 @@
 
 import type { HTMLAttributes, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  ListTreeIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import "react-pdf/dist/Page/TextLayer.css";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { cn } from "@/components/lib/utils.js";
+import { logger } from "@/logger.js";
 import { Button } from "@/components/ui/button.js";
+import { PreviewOutlineCapsule, type PreviewOutlineNode } from "@/PreviewOutlineCapsule.js";
 import * as pdfZoom from "@/components/ui/usePdfZoomOverlay.js";
 import { isAppleKeyboardPlatform } from "@/lib/keyboardShortcuts.js";
 import { createPdfJsDocumentOptions } from "@/lib/pdfJsAssets.js";
@@ -83,6 +92,7 @@ export interface PdfViewerLabels {
   pageInput: string;
   zoomIn: string;
   zoomOut: string;
+  outline: string;
 }
 
 const DEFAULT_LABELS: PdfViewerLabels = {
@@ -94,7 +104,21 @@ const DEFAULT_LABELS: PdfViewerLabels = {
   pageInput: "Page number",
   zoomIn: "Zoom in",
   zoomOut: "Zoom out",
+  outline: "Outline",
 };
+
+/** pdf.js getOutline 的结构化子集；显式结构化类型避免依赖 pdfjs 内部导出形状。 */
+interface PdfOutlineNode {
+  dest?: unknown;
+  items?: PdfOutlineNode[];
+  title?: unknown;
+}
+
+interface PdfOutlineEntry {
+  depth: number;
+  title: string;
+  dest: unknown;
+}
 
 export interface PdfViewerProps extends HTMLAttributes<HTMLDivElement> {
   source: PdfViewerSource;
@@ -130,7 +154,10 @@ export function PdfViewer({ source, labels, onLoadError, className, ...props }: 
   const [displayScale, setDisplayScale] = useState(pdfZoom.DEFAULT_SCALE);
   const [pageIntrinsicSize, setPageIntrinsicSize] = useState<pdfZoom.PdfPageSize | null>(null);
   const [rangeError, setRangeError] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [outlineEntries, setOutlineEntries] = useState<PdfOutlineEntry[] | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const documentProxyRef = useRef<PDFDocumentProxy | null>(null);
   const pendingScrollToTopRef = useRef(false);
   const displayScaleRef = useRef(pdfZoom.DEFAULT_SCALE);
   const renderScaleRef = useRef(pdfZoom.DEFAULT_SCALE);
@@ -171,12 +198,46 @@ export function PdfViewer({ source, labels, onLoadError, className, ...props }: 
     setDisplayScale(pdfZoom.DEFAULT_SCALE);
     setPageIntrinsicSize(null);
     setRangeError(false);
+    setOutlineOpen(false);
+    setOutlineEntries(null);
+    documentProxyRef.current = null;
     displayScaleRef.current = pdfZoom.DEFAULT_SCALE;
     renderScaleRef.current = pdfZoom.DEFAULT_SCALE;
     pendingScrollToTopRef.current = false;
     pendingZoomAnchorRef.current = null;
     clearZoomOverlay();
   }, [clearZoomOverlay, file]);
+
+  // 大纲加载（Cherry Studio 方式）：读 PDF 内嵌书签树并拍平成缩进条目；
+  // 无书签时置空数组，工具条上的大纲开关保持禁用。
+  const loadPdfOutline = useCallback(async (documentProxy: PDFDocumentProxy) => {
+    try {
+      const raw = (await documentProxy.getOutline()) as PdfOutlineNode[] | null;
+      if (!raw || raw.length === 0) {
+        setOutlineEntries([]);
+        return;
+      }
+      const entries: PdfOutlineEntry[] = [];
+      const walk = (nodes: PdfOutlineNode[], depth: number) => {
+        for (const node of nodes) {
+          const title = typeof node.title === "string" ? node.title.trim() : "";
+          if (title && node.dest != null) {
+            entries.push({ depth, title, dest: node.dest });
+          }
+          if (Array.isArray(node.items) && node.items.length > 0 && depth < 6) {
+            walk(node.items, depth + 1);
+          }
+        }
+      };
+      walk(raw, 0);
+      setOutlineEntries(entries);
+    } catch (error) {
+      logger.warn("[PdfViewer] 读取 PDF 大纲失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setOutlineEntries([]);
+    }
+  }, []);
 
   const goToPage = useCallback(
     (target: number) => {
@@ -195,6 +256,66 @@ export function PdfViewer({ source, labels, onLoadError, className, ...props }: 
     },
     [clearZoomOverlay, numPages, pageNumber],
   );
+
+  // 书签目标解析（Cherry Studio 方式）：命名 dest 先经 getDestination 展开，
+  // 再取目标引用换算页码；单页预览直接复用 goToPage 的滚动与状态重置。
+  const goToOutlineDest = useCallback(
+    async (dest: unknown) => {
+      const documentProxy = documentProxyRef.current;
+      if (!documentProxy) {
+        return;
+      }
+      try {
+        const destArray =
+          typeof dest === "string" ? await documentProxy.getDestination(dest) : dest;
+        if (!Array.isArray(destArray) || destArray.length === 0) {
+          return;
+        }
+        const reference: unknown = destArray[0];
+        if (reference === null || typeof reference !== "object") {
+          return;
+        }
+        const pageIndex = await documentProxy.getPageIndex(
+          reference as { num: number; gen: number },
+        );
+        goToPage(pageIndex + 1);
+      } catch (error) {
+        logger.warn("[PdfViewer] 跳转 PDF 大纲目标失败", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [goToPage],
+  );
+
+  // 拍平的书签条目 → 层级树（depth 已在加载时按书签层级写入）。
+  const outlineTree = useMemo<PreviewOutlineNode[]>(() => {
+    const roots: PreviewOutlineNode[] = [];
+    const stack: { node: PreviewOutlineNode; depth: number }[] = [];
+    (outlineEntries ?? []).forEach((entry, index) => {
+      const node: PreviewOutlineNode = {
+        key: `pdf-${index}`,
+        text: entry.title,
+        children: [],
+        data: entry.dest,
+      };
+      while (stack.length > 0) {
+        const top = stack[stack.length - 1];
+        if (!top || top.depth < entry.depth) {
+          break;
+        }
+        stack.pop();
+      }
+      const parent = stack[stack.length - 1];
+      if (!parent) {
+        roots.push(node);
+      } else {
+        parent.node.children.push(node);
+      }
+      stack.push({ node, depth: entry.depth });
+    });
+    return roots;
+  }, [outlineEntries]);
 
   const handlePageRenderSuccess = useCallback(
     (completedScale: number, originalWidth: number, originalHeight: number) => {
@@ -346,60 +467,89 @@ export function PdfViewer({ source, labels, onLoadError, className, ...props }: 
       className={cn("flex h-full min-h-0 flex-col outline-none", className)}
       {...props}
     >
-      <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
-        <div className="mx-auto w-max p-4">
-          {rangeError ? (
-            <div className="p-3 text-ui-base text-destructive">{mergedLabels.loadError}</div>
-          ) : (
-            <div ref={pageViewportRef} className="relative" style={pageDisplaySize}>
-              <div style={pagePreviewStyle}>
-                <Document
-                  file={file}
-                  options={rangeTransport ? RANGE_DOCUMENT_OPTIONS : DOCUMENT_OPTIONS}
-                  onLoadSuccess={(document) => {
-                    setNumPages(document.numPages);
-                    const clamped = Math.min(pageNumber, document.numPages);
-                    setPageNumber(clamped);
-                    setPageInput(String(clamped));
-                  }}
-                  onLoadError={onLoadError}
-                  loading={
-                    <div className="p-3 text-ui-base text-foreground-subtle">
-                      {mergedLabels.loading}
-                    </div>
-                  }
-                  error={
-                    <div className="p-3 text-ui-base text-destructive">
-                      {mergedLabels.loadError}
-                    </div>
-                  }
-                  noData={
-                    <div className="p-3 text-ui-base text-foreground-subtle">
-                      {mergedLabels.noData}
-                    </div>
-                  }
-                >
-                  <Page
-                    pageNumber={pageNumber}
-                    scale={renderScale}
-                    renderAnnotationLayer={false}
-                    onRenderSuccess={(page) =>
-                      handlePageRenderSuccess(
-                        page.width / page.originalWidth,
-                        page.originalWidth,
-                        page.originalHeight,
-                      )
+      <div className="relative flex min-h-0 flex-1">
+        {outlineOpen && outlineTree.length > 0 ? (
+          <PreviewOutlineCapsule
+            label={mergedLabels.outline}
+            nodes={outlineTree}
+            side="left"
+            onJump={(node: PreviewOutlineNode) => {
+              if (node.data != null) {
+                void goToOutlineDest(node.data);
+              }
+            }}
+            onClose={() => setOutlineOpen(false)}
+          />
+        ) : null}
+        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+          <div className="mx-auto w-max p-4">
+            {rangeError ? (
+              <div className="p-3 text-ui-base text-destructive">{mergedLabels.loadError}</div>
+            ) : (
+              <div ref={pageViewportRef} className="relative" style={pageDisplaySize}>
+                <div style={pagePreviewStyle}>
+                  <Document
+                    file={file}
+                    options={rangeTransport ? RANGE_DOCUMENT_OPTIONS : DOCUMENT_OPTIONS}
+                    onLoadSuccess={(document) => {
+                      documentProxyRef.current = document;
+                      setNumPages(document.numPages);
+                      const clamped = Math.min(pageNumber, document.numPages);
+                      setPageNumber(clamped);
+                      setPageInput(String(clamped));
+                      void loadPdfOutline(document);
+                    }}
+                    onLoadError={onLoadError}
+                    loading={
+                      <div className="p-3 text-ui-base text-foreground-subtle">
+                        {mergedLabels.loading}
+                      </div>
                     }
-                    className="shadow-md"
-                  />
-                </Document>
+                    error={
+                      <div className="p-3 text-ui-base text-destructive">
+                        {mergedLabels.loadError}
+                      </div>
+                    }
+                    noData={
+                      <div className="p-3 text-ui-base text-foreground-subtle">
+                        {mergedLabels.noData}
+                      </div>
+                    }
+                  >
+                    <Page
+                      pageNumber={pageNumber}
+                      scale={renderScale}
+                      renderAnnotationLayer={false}
+                      onRenderSuccess={(page) =>
+                        handlePageRenderSuccess(
+                          page.width / page.originalWidth,
+                          page.originalWidth,
+                          page.originalHeight,
+                        )
+                      }
+                      className="shadow-md"
+                    />
+                  </Document>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex shrink-0 items-center justify-center gap-1 border-t border-border px-2 py-1.5">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={mergedLabels.outline}
+          title={mergedLabels.outline}
+          aria-pressed={outlineOpen}
+          disabled={controlsDisabled || !outlineEntries?.length}
+          onClick={() => setOutlineOpen((open) => !open)}
+        >
+          <ListTreeIcon />
+        </Button>
+        <div className="mx-1 h-4 w-px bg-border" />
         <Button
           variant="ghost"
           size="icon-sm"

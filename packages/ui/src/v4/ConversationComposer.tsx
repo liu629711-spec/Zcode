@@ -165,6 +165,11 @@ import {
   resolveV4ComposerConfigPickerState,
   type V4ComposerConfigPicker,
 } from "@/v4/composer/configPickerState.js";
+import {
+  resolveDraftDisplayedConfig,
+  resolveDraftModelThoughtOption,
+  resolveDraftThoughtCurrentValue,
+} from "@/v4/composer/draftWorkspaceDefaults.js";
 import { WebElementContextAttachmentChip } from "@/v4/composer/WebElementContextAttachmentChip.js";
 import { ConversationSelectionReferenceChip } from "@/v4/composer/ConversationSelectionReferenceChip.js";
 import type { AttachmentPutFn } from "@/v4/composer/attachmentUpload.js";
@@ -2199,6 +2204,27 @@ function ConversationComposerImpl({
   );
   const isBlockedByInteraction = blockingRequestId !== null;
 
+  // 思考深度最高档特效：与工具条共用同一配置推导（resolveDraftDisplayedConfig），
+  // 不在此补默认值；档位少于 3 的模型（仅开/关）没有"深度"概念，不触发特效。
+  const maxThoughtSparks = useMemo(() => {
+    const config = resolveDraftDisplayedConfig(draftConfig ?? {});
+    if (!config) return false;
+    const thoughtOption = resolveDraftModelThoughtOption(
+      config.provider,
+      config.model,
+      modelSelectionView,
+    );
+    if (!thoughtOption || thoughtOption.type !== "select" || !thoughtOption.options) return false;
+    const levels = thoughtOption.options;
+    if (levels.length < 3) return false;
+    const currentThoughtValue = resolveDraftThoughtCurrentValue({
+      thought: config.thought,
+      thoughtLevels: levels.map((entry) => entry.value),
+    });
+    if (!currentThoughtValue) return false;
+    return levels[levels.length - 1]?.value === currentThoughtValue;
+  }, [draftConfig, modelSelectionView]);
+
   // v4 pendingInteractions 是 bottom dock 阻塞态；composer 必须保留挂载，
   // 只在视觉和可访问树中隐藏，避免权限/问答卡片出现时丢失草稿和编辑器内部状态。
   return (
@@ -2302,6 +2328,7 @@ function ConversationComposerImpl({
           // secondary pane 按产品能力隐藏 goal，不再追加任何内建命令或别名。
           excludedSlashCommandNames={suppressGoalCommands ? ["goal"] : undefined}
           appSlashCommands={appSlashCommands}
+          thoughtSparks={maxThoughtSparks}
           enableMentionPanel
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}

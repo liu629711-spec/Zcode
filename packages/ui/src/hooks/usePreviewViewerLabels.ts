@@ -22,6 +22,7 @@ export function usePdfViewerLabels(): PdfViewerLabels {
       pageInput: intl.formatMessage({ id: "codeViewer.pdf.pageInput" }),
       zoomIn: intl.formatMessage({ id: "codeViewer.pdf.zoomIn" }),
       zoomOut: intl.formatMessage({ id: "codeViewer.pdf.zoomOut" }),
+      outline: intl.formatMessage({ id: "codeViewer.pdf.outline" }),
     }),
     [intl],
   );

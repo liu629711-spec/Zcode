@@ -20,7 +20,10 @@ import {
   FileSearch,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
+import { DESIGN_STYLES, type DesignStyle } from "@/themeStyles.js";
 import type { Theme } from "@/useTheme.js";
+
+export const DESIGN_STYLE_OPTIONS: DesignStyle[] = [...DESIGN_STYLES];
 
 export const THEME_MODES: Array<{
   mode: Theme;

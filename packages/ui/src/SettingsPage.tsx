@@ -84,6 +84,7 @@ import {
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceTab } from "@/store/tabStore.js";
+import type { DesignStyle } from "@/themeStyles.js";
 import type { Theme } from "@/useTheme.js";
 import { WindowsTopLeftLogo } from "@/WindowsTopLeftLogo.js";
 
@@ -232,6 +233,7 @@ function SettingsSidebarButton({
   icon: Icon,
   label,
   active,
+  tree = false,
   children,
   className,
   ...buttonProps
@@ -239,6 +241,8 @@ function SettingsSidebarButton({
   icon: LucideIcon;
   label: string;
   active?: boolean;
+  /** 分支树模式：行首渲染竖轨分段与到图标的横枝线（分组侧栏专用）。 */
+  tree?: boolean;
   children?: ReactNode;
   className?: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -249,19 +253,40 @@ function SettingsSidebarButton({
         type={buttonProps.type ?? "button"}
         aria-label={label}
         className={cn(
-          "flex h-8 w-full items-center gap-2 rounded-xl px-2.5 text-left transition-colors",
-          "max-lg:mx-auto max-lg:size-10 max-lg:justify-center max-lg:px-0",
+          "relative flex h-8 w-full items-center gap-2 rounded-xl text-left transition-colors",
+          "max-lg:mx-auto max-lg:size-10 max-lg:justify-center",
+          tree ? "pl-7 pr-2.5 max-lg:px-0" : "px-2.5",
           active
-            ? "bg-surface-hover text-foreground"
+            ? "text-brand hover:bg-surface-hover"
             : "text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
           className,
         )}
       >
+        {tree ? (
+          <>
+            <span
+              aria-hidden="true"
+              className="settings-tree-seg pointer-events-none absolute left-[11px] top-0 h-1/2 w-[1.5px] rounded-full bg-border max-lg:hidden"
+            />
+            <span
+              aria-hidden="true"
+              className="settings-tree-seg settings-tree-seg-lower pointer-events-none absolute bottom-0 left-[11px] top-1/2 w-[1.5px] rounded-full bg-border max-lg:hidden"
+            />
+            <span
+              aria-hidden="true"
+              data-active={active ? "true" : "false"}
+              className={cn(
+                "settings-tree-branch pointer-events-none absolute bottom-1/2 left-[11px] h-2.5 w-[15px] rounded-bl-lg border-b-[1.5px] border-l-[1.5px] max-lg:hidden",
+                active ? "border-brand" : "border-border",
+              )}
+            />
+          </>
+        ) : null}
         <span className="flex size-4 shrink-0 items-center justify-center text-current">
-          <Icon className="size-4 text-foreground" />
+          <Icon className="size-4 text-current" />
         </span>
         <span className="min-w-0 flex-1 max-lg:sr-only">
-          {children ?? <span className="truncate text-ui-base text-foreground">{label}</span>}
+          {children ?? <span className="truncate text-ui-base text-current">{label}</span>}
         </span>
       </button>
     </ControlHintTooltip>
@@ -339,6 +364,8 @@ export function SettingsPage({
   const interfaceMode = useZCodeStore((state) => state.interfaceMode);
   const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
   const theme = useZCodeStore((state) => state.theme);
+  const designStyle = useZCodeStore((state) => state.designStyle);
+  const setDesignStyle = useZCodeStore((state) => state.setDesignStyle);
   const setTheme = useZCodeStore((state) => state.setTheme);
   const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
   const setCodePreviewSettings = useZCodeStore((state) => state.setCodePreviewSettings);
@@ -1469,7 +1496,7 @@ export function SettingsPage({
 
               <nav
                 aria-label={intl.formatMessage({ id: "settings.navLabel" })}
-                className="flex-1 overflow-y-auto px-2 pb-3"
+                className="relative flex-1 overflow-y-auto px-2 pb-3 before:absolute before:inset-y-1 before:left-0 before:w-[3px] before:rounded-full before:bg-[linear-gradient(to_bottom,transparent_0%,var(--color-border)_10%,var(--color-border)_55%,transparent_100%)] before:content-['']"
               >
                 <div className="space-y-4">
                   {settingsSectionGroups.map((group, groupIndex) => {
@@ -1477,6 +1504,7 @@ export function SettingsPage({
                       id: group.titleId,
                     });
                     const groupLabelId = `settings-sidebar-group-${group.id}`;
+                    const groupHasActive = group.sections.some(({ id }) => id === activeSection);
 
                     return (
                       <div
@@ -1484,49 +1512,61 @@ export function SettingsPage({
                         role="group"
                         aria-labelledby={groupLabelId}
                         className={cn(
-                          "space-y-1",
+                          "settings-tree-group relative space-y-1",
                           groupIndex > 0 && "max-lg:border-t max-lg:border-border max-lg:pt-3",
                         )}
                       >
+                        {groupHasActive ? (
+                          <span
+                            aria-hidden="true"
+                            className="absolute -left-2 top-1.5 h-4 w-[3px] rounded-full bg-brand max-lg:hidden"
+                          />
+                        ) : null}
                         <div
                           id={groupLabelId}
                           className="px-2.5 pb-1 text-ui-sm font-medium text-foreground-subtlest max-lg:sr-only"
                         >
                           {groupLabel}
                         </div>
-                        {group.sections.map(({ id, icon: Icon, titleId }) => {
-                          const isActive = activeSection === id;
-                          const label = intl.formatMessage({ id: titleId });
+                        <div className="settings-tree-items relative">
+                          {group.sections.map(({ id, icon: Icon, titleId }) => {
+                            const isActive = activeSection === id;
+                            const label = intl.formatMessage({ id: titleId });
 
-                          return (
-                            <SettingsSidebarButton
-                              key={id}
-                              icon={Icon}
-                              label={label}
-                              active={isActive}
-                              aria-current={isActive ? "page" : undefined}
-                              data-testid={testId(TID_SETTINGS_SECTION_NAV, id)}
-                              onClick={() => {
-                                runUserAction({
-                                  input: {
-                                    featureId: "settings.navigation",
-                                    action: "open_section",
-                                    trigger: "button",
-                                  },
-                                  operation: () => {
-                                    setPluginNavigationOrigin(undefined);
-                                    setSettingsSectionNavigationVersion((version) => version + 1);
-                                    setActiveSettingsSection(id);
-                                  },
-                                  completed: { resultSource: "local_commit", sectionId: id },
-                                  failureStage: "navigation_commit",
-                                });
-                              }}
-                            >
-                              <span className="truncate text-ui-base text-foreground">{label}</span>
-                            </SettingsSidebarButton>
-                          );
-                        })}
+                            return (
+                              <SettingsSidebarButton
+                                key={id}
+                                tree
+                                icon={Icon}
+                                label={label}
+                                active={isActive}
+                                aria-current={isActive ? "page" : undefined}
+                                data-testid={testId(TID_SETTINGS_SECTION_NAV, id)}
+                                onClick={() => {
+                                  runUserAction({
+                                    input: {
+                                      featureId: "settings.navigation",
+                                      action: "open_section",
+                                      trigger: "button",
+                                    },
+                                    operation: () => {
+                                      setPluginNavigationOrigin(undefined);
+                                      setSettingsSectionNavigationVersion((version) => version + 1);
+                                      setActiveSettingsSection(id);
+                                    },
+                                    completed: {
+                                      resultSource: "local_commit",
+                                      sectionId: id,
+                                    },
+                                    failureStage: "navigation_commit",
+                                  });
+                                }}
+                              >
+                                <span className="truncate text-ui-base text-current">{label}</span>
+                              </SettingsSidebarButton>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
@@ -1817,6 +1857,8 @@ export function SettingsPage({
                             setCodePreviewSettings={handleCodePreviewSettingsChange}
                             theme={theme}
                             setTheme={(nextTheme) => handleFooterThemeChange(nextTheme)}
+                            designStyle={designStyle}
+                            setDesignStyle={(style: DesignStyle) => setDesignStyle(style)}
                             uiFontSizePx={uiFontSizePx}
                             setUiFontSizePx={(fontSizePx) =>
                               runUserAction({

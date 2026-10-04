@@ -20,7 +20,8 @@ import {
 import { getCodePreviewTheme } from "@/lib/codePreviewPreferences.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { CodePreviewSettings } from "@/store/index.js";
-import { THEME_MODES } from "@/settings/settingsPageConfig.js";
+import { DESIGN_STYLE_OPTIONS, THEME_MODES } from "@/settings/settingsPageConfig.js";
+import type { DesignStyle } from "@/themeStyles.js";
 import { MAX_UI_FONT_SIZE_PX, MIN_UI_FONT_SIZE_PX } from "@/lib/uiFontSize.js";
 
 function FontSizeInput({
@@ -83,6 +84,8 @@ export function AppearanceSectionContent({
   setCodePreviewSettings,
   theme,
   setTheme,
+  designStyle,
+  setDesignStyle,
   uiFontSizePx,
   setUiFontSizePx,
 }: {
@@ -90,6 +93,8 @@ export function AppearanceSectionContent({
   setCodePreviewSettings: (settings: Partial<CodePreviewSettings>) => void;
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  designStyle: DesignStyle;
+  setDesignStyle: (style: DesignStyle) => void;
   uiFontSizePx: number;
   setUiFontSizePx: (fontSizePx: number) => void;
 }) {
@@ -111,6 +116,27 @@ export function AppearanceSectionContent({
         </div>
         <Card className="border border-border bg-card py-0 shadow-none">
           <CardContent className="space-y-0 px-0">
+            <SettingsRow
+              label={intl.formatMessage({ id: "settings.designStyle" })}
+              description={intl.formatMessage({ id: "settings.designStyleDescription" })}
+              control={
+                <Select
+                  value={designStyle}
+                  onValueChange={(value) => setDesignStyle(value as DesignStyle)}
+                >
+                  <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DESIGN_STYLE_OPTIONS.map((style) => (
+                      <SelectItem key={style} value={style}>
+                        {intl.formatMessage({ id: `settings.designStyle.${style}` })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+            />
             <SettingsRow
               label={intl.formatMessage({ id: "settings.themeMode" })}
               description={intl.formatMessage({

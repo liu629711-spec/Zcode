@@ -44,6 +44,8 @@ function applyResourceManagerTheme(): void {
   document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
   document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
   document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
+  document.documentElement.dataset.designStyle =
+    localStorage.getItem("zcode-design-style") || "claude";
 }
 
 applyResourceManagerTheme();

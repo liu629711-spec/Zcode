@@ -207,6 +207,7 @@ export function createCodingPlanAuthInjectionScript({
   document.documentElement.classList.toggle("dark", zcodeTheme === "zai-dark");
   document.documentElement.classList.toggle("theme-zai-light", zcodeTheme === "zai-light");
   document.documentElement.classList.toggle("theme-zai-dark", zcodeTheme === "zai-dark");
+  document.documentElement.dataset.designStyle = localStorage.getItem("zcode-design-style") || "claude";
   localStorage.setItem("zcode-theme", zcodeTheme);
   localStorage.setItem("zcode:coding-plan:embedded", "app");
   // 写入当前 App locale，供官网 zcodeBridge.getLang() 读取。

@@ -36,6 +36,11 @@ import {
   persistTaskNotificationEnabled,
   persistTaskNotificationSoundEnabled,
 } from "@/lib/taskNotificationPreferences.js";
+import {
+  DESIGN_STYLE_STORAGE_KEY,
+  normalizeDesignStyle,
+  type DesignStyle,
+} from "../themeStyles.js";
 import type { Theme } from "../useTheme.js";
 import { applyTheme, normalizeThemePreference, resolveTheme } from "../useTheme.js";
 
@@ -106,6 +111,8 @@ export interface ZCodeState {
 
   /** 当前主题 */
   theme: Theme;
+  designStyle: DesignStyle;
+  setDesignStyle: (style: DesignStyle) => void;
   setTheme: (theme: Theme) => void;
 
   /** 当前语言 */
@@ -211,9 +218,15 @@ export interface ZCodeState {
 // 需要广播的字段 —— 只有这些字段的变更会发送给其他窗口
 // ============================================================================
 
-const BROADCAST_FIELDS = new Set(["theme", "locale", "uiFontSizePx", "interfaceMode"]);
+const BROADCAST_FIELDS = new Set([
+  "theme",
+  "designStyle",
+  "locale",
+  "uiFontSizePx",
+  "interfaceMode",
+]);
 
-type BroadcastField = "theme" | "locale" | "uiFontSizePx" | "interfaceMode";
+type BroadcastField = "theme" | "designStyle" | "locale" | "uiFontSizePx" | "interfaceMode";
 
 /** 广播频道名前缀 */
 const STATE_CHANNEL_PREFIX = "state:";
@@ -254,6 +267,13 @@ export function createZCodeStore(
     },
     // 默认主题统一收敛到 Zai dark，避免首次启动时 store 与其他主题入口表现不一致。
     // 仍然优先尊重 localStorage 中已保存的用户选择，不覆盖已有偏好。
+    designStyle: normalizeDesignStyle(readSafeLocalStorage(DESIGN_STYLE_STORAGE_KEY)),
+    setDesignStyle: (style: DesignStyle) => {
+      const designStyle = normalizeDesignStyle(style);
+      writeSafeLocalStorage(DESIGN_STYLE_STORAGE_KEY, designStyle);
+      applyTheme(get().theme, designStyle);
+      set({ designStyle });
+    },
     theme: normalizeThemePreference((readSafeLocalStorage("zcode-theme") as Theme) || "zai-dark"),
     setTheme: (theme: Theme) => {
       const normalizedTheme = normalizeThemePreference(theme);
@@ -473,6 +493,8 @@ export function createZCodeStore(
       const state = useStore.getState();
       if (field === "theme" && typeof msg.payload === "string") {
         state.setTheme(msg.payload as Theme);
+      } else if (field === "designStyle" && typeof msg.payload === "string") {
+        state.setDesignStyle(normalizeDesignStyle(msg.payload as DesignStyle));
       } else if (field === "locale" && typeof msg.payload === "string") {
         state.setLocale(msg.payload);
       } else if (

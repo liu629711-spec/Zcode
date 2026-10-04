@@ -1,13 +1,29 @@
 import type { MarkdownSelectionTarget } from "@/lib/conversationSelectionReference.js";
 /* eslint-disable max-lines -- PreviewPane 内容路由同时承载文本、图片、媒体、Office、PDF 和 PPTX 渲染。 */
 import type { BundledTheme } from "shiki";
-import { useMemo, type Ref, type SyntheticEvent, type UIEventHandler } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Ref,
+  type SyntheticEvent,
+  type UIEventHandler,
+} from "react";
 import type { FileBinaryPreview, FileMediaPreview, FileTextSlice } from "@zcode/shared";
 import { inferCodeLanguage } from "@/lib/codeViewer.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { CodePreviewSettings } from "@/store/index.js";
 import type { CodeCommentLabels } from "@/components/ui/code-viewer.js";
+import { findCodeViewerLineElement } from "@/components/ui/code-viewer.js";
+import {
+  PreviewOutlineCapsule,
+  PreviewOutlineFloatingButton,
+  buildPreviewOutlineTree,
+  findActiveOutlineNodeKey,
+  type PreviewOutlineNode,
+} from "@/PreviewOutlineCapsule.js";
 import { MarkdownPreviewContent } from "@/previewPaneMarkdownContent.js";
 import { CodeContent } from "@/previewPaneCodeContent.js";
 import { ImagePreviewContent, SvgPreviewContent } from "@/previewPaneImageContent.js";
@@ -25,6 +41,136 @@ import { PreviewPaneOfficeContent } from "@/previewPaneOfficeContent.js";
 import type { PptxElementReferenceSource } from "@/lib/pptxElementReference.js";
 import type { MediaCodeViewerSource, PptxReferencePreviewNavigation } from "@/lib/codeViewer.js";
 import { resolveCodeReviewContentProjection } from "@/previewPaneCodeReview.js";
+
+/*
+ * 源码视图的 MD 大纲胶囊：标题从源码文本解析（跳过围栏代码块），
+ * data 记录 1-based 行号；跳转复用代码查看器的 data-line 定位（可穿透 Shadow DOM）。
+ * 滚动同步与渲染态同规则：视口上部 40% 以内最近的标题行是当前章节。
+ */
+function MarkdownCodeOutlineOverlay({
+  content,
+  scrollContainerRef,
+}: {
+  content: string;
+  scrollContainerRef?: Ref<HTMLDivElement>;
+}) {
+  const { intl } = useZCodeIntl();
+  const [open, setOpen] = useState(true);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const outlineLabel = intl.formatMessage({ id: "preview.outline" });
+  const expandAllLabel = intl.formatMessage({ id: "preview.outline.expandAll" });
+  const collapseAllLabel = intl.formatMessage({ id: "preview.outline.collapseAll" });
+
+  const { outlineTree, headingLines } = useMemo(() => {
+    const headings: { level: number; text: string }[] = [];
+    const headingLines: number[] = [];
+    let inFence = false;
+    content.split(/\r?\n/).forEach((line, index) => {
+      if (/^\s*(```|~~~)/.test(line)) {
+        inFence = !inFence;
+        return;
+      }
+      if (inFence) {
+        return;
+      }
+      const heading = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+      if (heading) {
+        headings.push({ level: (heading[1] ?? "").length, text: (heading[2] ?? "").trim() });
+        headingLines.push(index + 1);
+      }
+    });
+    return {
+      outlineTree: buildPreviewOutlineTree(
+        headings,
+        (headingIndex) => headingLines[headingIndex] ?? 1,
+      ),
+      headingLines,
+    };
+  }, [content]);
+
+  // 滚动同步：标题行元素与平铺标题同序，套用与 MD 预览一致的 40% 阈值规则。
+  useEffect(() => {
+    const root =
+      scrollContainerRef && "current" in scrollContainerRef ? scrollContainerRef.current : null;
+    if (!root) {
+      return;
+    }
+    let frame = 0;
+    const sync = () => {
+      frame = 0;
+      if (!root.isConnected || root.getClientRects().length === 0) {
+        return;
+      }
+      const containerTop = root.getBoundingClientRect().top;
+      const threshold = root.clientHeight * 0.4;
+      let current: number | null = null;
+      for (let index = 0; index < headingLines.length; index += 1) {
+        const line = headingLines[index];
+        const element = line === undefined ? null : findCodeViewerLineElement(root, line);
+        if (!element) {
+          continue;
+        }
+        if (element.getBoundingClientRect().top - containerTop <= threshold) {
+          current = index;
+        } else {
+          break;
+        }
+      }
+      setActiveKey(current === null ? null : findActiveOutlineNodeKey(outlineTree, current));
+    };
+    const onScroll = () => {
+      if (frame) {
+        return;
+      }
+      frame = window.requestAnimationFrame(sync);
+    };
+    root.addEventListener("scroll", onScroll, { passive: true });
+    sync();
+    return () => {
+      root.removeEventListener("scroll", onScroll);
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, [outlineTree, headingLines, scrollContainerRef]);
+
+  const jumpToLine = useCallback(
+    (node: PreviewOutlineNode) => {
+      const lineNumber = Number(node.data);
+      const root =
+        scrollContainerRef && "current" in scrollContainerRef ? scrollContainerRef.current : null;
+      if (!root || !Number.isFinite(lineNumber)) {
+        return;
+      }
+      findCodeViewerLineElement(root, lineNumber)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    },
+    [scrollContainerRef],
+  );
+
+  if (outlineTree.length === 0) {
+    return null;
+  }
+  return (
+    <>
+      {open ? (
+        <PreviewOutlineCapsule
+          label={outlineLabel}
+          nodes={outlineTree}
+          activeKey={activeKey}
+          expandAllLabel={expandAllLabel}
+          collapseAllLabel={collapseAllLabel}
+          onJump={jumpToLine}
+          onClose={() => setOpen(false)}
+        />
+      ) : (
+        <PreviewOutlineFloatingButton label={outlineLabel} onClick={() => setOpen(true)} />
+      )}
+    </>
+  );
+}
 
 interface PreviewPaneContentProps {
   source: CodeViewerSource;
@@ -218,7 +364,7 @@ export function PreviewPaneContent({
       return <SvgPreviewContent title={source.title} svgContent={source.content} />;
     }
 
-    return (
+    const codeContent = (
       <CodeContent
         code={source.content}
         language={source.language}
@@ -235,6 +381,18 @@ export function PreviewPaneContent({
         onScroll={onScroll}
         scrollContainerRef={scrollContainerRef}
       />
+    );
+    if (!isMarkdownSource) {
+      return codeContent;
+    }
+    return (
+      <div className="relative h-full w-full">
+        {codeContent}
+        <MarkdownCodeOutlineOverlay
+          content={source.content}
+          scrollContainerRef={scrollContainerRef}
+        />
+      </div>
     );
   }
 
@@ -428,7 +586,7 @@ export function PreviewPaneContent({
     return <SvgPreviewContent title={source.title} svgContent={filePreview.content} />;
   }
 
-  return (
+  const codeContentNode = (
     <CodeContent
       code={filePreview.content}
       language={fileLanguage}
@@ -455,4 +613,17 @@ export function PreviewPaneContent({
       scrollContainerRef={scrollContainerRef}
     />
   );
+  // 文件型 MD 的源码视图：非评审场景挂大纲胶囊（评审投影保持原布局）。
+  if (source.type !== "code-review" && isMarkdownFile) {
+    return (
+      <div className="relative h-full w-full">
+        {codeContentNode}
+        <MarkdownCodeOutlineOverlay
+          content={filePreview.content}
+          scrollContainerRef={scrollContainerRef}
+        />
+      </div>
+    );
+  }
+  return codeContentNode;
 }

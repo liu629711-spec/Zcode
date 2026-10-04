@@ -1,7 +1,9 @@
 import type { CSSProperties } from "react";
 
+/* 层级引导线：每个缩进层级一条 1px 实线（对齐参考树形样式的向导线），
+ * 配合行内的横向连接线组成"竖线 + 横枝"的目录树骨架。 */
 const WORKSPACE_FILE_TREE_HIERARCHY_GUIDE_BACKGROUND =
-  "repeating-linear-gradient(to right, transparent 0 calc(0.375rem - 1px), var(--color-border) calc(0.375rem - 1px) 0.375rem, transparent 0.375rem 0.75rem)";
+  "repeating-linear-gradient(to right, var(--color-border) 0 1px, transparent 1px 0.75rem)";
 
 export function getWorkspaceFileTreeHierarchyGuideStyle(depth: number): CSSProperties | null {
   if (depth <= 0) {

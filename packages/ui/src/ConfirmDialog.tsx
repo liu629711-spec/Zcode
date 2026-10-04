@@ -100,7 +100,7 @@ export function ConfirmDialogHost() {
           compact ? "bg-black/20 supports-backdrop-filter:backdrop-blur-[2px]" : undefined
         }
         className={cn(
-          "gap-5 rounded-2xl border-none bg-popover/98 p-5 ring-border shadow-2xl",
+          "gap-5 rounded-2xl border-none bg-popover/98 p-5 ring-border shadow-lg",
           // 仅依赖共享弹框的响应式 max-width 时，不同入口所在 viewport 会让
           // 同一删除确认框看起来尺寸不一致。定时任务删除按设计固定同一 presentation。
           isAutomationConfirmation ? AUTOMATION_CONFIRM_DIALOG_CONTENT_CLASS : "sm:max-w-md",

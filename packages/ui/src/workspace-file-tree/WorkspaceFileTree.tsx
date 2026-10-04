@@ -109,6 +109,14 @@ export function WorkspaceFileTree({
   const [showChangedOnly, setShowChangedOnly] = useState(false);
   const [showScrollBottomMask, setShowScrollBottomMask] = useState(false);
   const [hasScrollableFileTree, setHasScrollableFileTree] = useState(false);
+  // 刚展开目录的平铺位置快照：驱动子行依次滑入的展开动画，超时后自动清除。
+  const [treeReveal, setTreeReveal] = useState<{
+    path: string;
+    index: number;
+    seq: number;
+  } | null>(null);
+  const treeRevealSeqRef = useRef(0);
+  const treeRevealTimerRef = useRef<number | null>(null);
   const handleListRef = useCallback((node: HTMLDivElement | null) => {
     listRef.current = node;
     if (node) {
@@ -468,6 +476,22 @@ export function WorkspaceFileTree({
       if (row.type !== "directory") {
         return;
       }
+      if (!row.expanded) {
+        // 平滑展开：记录刚展开的目录与它在当前平铺行中的位置，
+        // 新出现的子行按平铺顺序依次滑入（见 WorkspaceFileTreeList 的 reveal 传参）。
+        const revealIndex = visibleRows.findIndex((candidate) => candidate.path === row.path);
+        if (revealIndex >= 0) {
+          const seq = (treeRevealSeqRef.current += 1);
+          setTreeReveal({ path: row.path, index: revealIndex, seq });
+          if (treeRevealTimerRef.current !== null) {
+            window.clearTimeout(treeRevealTimerRef.current);
+          }
+          treeRevealTimerRef.current = window.setTimeout(() => {
+            setTreeReveal((current) => (current?.seq === seq ? null : current));
+            treeRevealTimerRef.current = null;
+          }, 700);
+        }
+      }
       treeData.setExpandedPaths((current) => {
         const next = new Set(current);
         if (next.has(row.path)) {
@@ -488,7 +512,7 @@ export function WorkspaceFileTree({
         );
       }
     },
-    [treeData, workspacePath],
+    [treeData, visibleRows, workspacePath],
   );
   const handleRevealSearchDirectory = useCallback(
     (row: WorkspaceFileTreeRow) => {
@@ -763,6 +787,7 @@ export function WorkspaceFileTree({
             }
             rows={visibleRows}
             virtualItems={virtualItems}
+            reveal={treeReveal}
             listRef={handleListRef}
             stickyFolderCount={stickyFolderItems.length}
             totalSize={rowVirtualizer.getTotalSize()}

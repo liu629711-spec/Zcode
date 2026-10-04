@@ -57,6 +57,7 @@ export function WorkspaceFileTreeRowView({
   layout = "absolute",
   row,
   selected,
+  revealDelayMs = null,
   gitStatus,
   directoryGitStatuses,
   gitStatusLabelByStatus,
@@ -77,6 +78,8 @@ export function WorkspaceFileTreeRowView({
   layout?: "absolute" | "static";
   row: WorkspaceFileTreeRow;
   selected: boolean;
+  /** 展开动画延迟（毫秒）；null 表示该行不参与本次展开动画。 */
+  revealDelayMs?: number | null;
   gitStatus: WorkspaceFileGitStatus | null;
   directoryGitStatuses: WorkspaceFileGitStatus[];
   gitStatusLabelByStatus: WorkspaceFileGitStatusLabels;
@@ -222,7 +225,9 @@ export function WorkspaceFileTreeRowView({
           ? "border-input-border-focused bg-transparent hover:bg-surface-hover"
           : "border-transparent hover:bg-surface-hover",
         "focus-visible:border-border-hover",
+        revealDelayMs !== null && "workspace-file-tree-row-reveal",
       )}
+      style={revealDelayMs !== null ? { animationDelay: `${revealDelayMs}ms` } : undefined}
       title={relativePath}
       onClick={handleRowClick}
       onContextMenu={() => onSelect(row.path)}
@@ -264,6 +269,18 @@ export function WorkspaceFileTreeRowView({
           className="pointer-events-none absolute -inset-y-px left-2.5"
           data-workspace-file-tree-hierarchy-guides={row.depth}
           style={hierarchyGuideStyle}
+        />
+      ) : null}
+      {/* 横向连接线：从父级竖线延伸到本行图标，与竖线组成参考树形的"竖线+横枝"骨架。 */}
+      {row.depth > 0 && !isDragging ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 h-px"
+          style={{
+            left: `calc(0.625rem + ${(row.depth - 1) * 0.75}rem)`,
+            width: "calc(0.75rem - 1px)",
+            backgroundColor: "var(--color-border)",
+          }}
         />
       ) : null}
       {isDirectory ? (
