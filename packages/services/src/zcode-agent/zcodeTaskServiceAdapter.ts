@@ -1093,6 +1093,21 @@ export function createZCodeTaskServiceAdapter(
     });
   }
 
+  // 删任务清聊天内容（地基清理 2026-10-04）：tombstone 只在 tasks-index 记账，
+  // 会话行和全部内容行原样留在会话库里（boss 机器 part 表 376MB 的主因）。删除
+  // 链路收口后把会话库也清掉，best-effort：运行时没活就跳过，purgeSession 内部自吞错。
+  function purgeSessionContentOnTaskDelete(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): void {
+    void options.zcodeAgentService.purgeSession({
+      workspacePath: params.workspacePath,
+      workspaceIdentity: params.workspaceIdentity,
+      sessionId: params.taskId,
+    });
+  }
+
   function emitWorkspaceConfig(
     params: ZCodeAgentWorkspaceTarget,
     settings: ZCodeSessionSettingsState,
@@ -2322,6 +2337,7 @@ export function createZCodeTaskServiceAdapter(
       });
       setOverlay(target, { deleted: true });
       await updateIndexedTaskState(target, { deleted: true });
+      purgeSessionContentOnTaskDelete(target);
       clearLiveToolProjection(target);
       clearStreamingToolInputCache(target);
       // 删除的列表内容收敛由 sessions-index session.removed 驱动；此处广播沿用旧语义兜底。
@@ -2904,6 +2920,7 @@ export function createZCodeTaskServiceAdapter(
     async deleteTask(params): Promise<void> {
       setOverlay(params, { deleted: true });
       const meta = await updateIndexedTaskState(params, { deleted: true });
+      purgeSessionContentOnTaskDelete(params);
       // task_meta_changed 只会重拉普通 membership，不能表达持久删除语义；
       // sessions-index 后续仍会返回 CLI 中保留的 session，必须用 task_deleted 让 UI
       // 立即移除缓存并换代 deleted tombstone join，避免重启或 live upsert 后复活。
@@ -2916,6 +2933,7 @@ export function createZCodeTaskServiceAdapter(
       if (!meta) return false;
       // 先持久化成功再写 overlay；否则失败项会被内存 deleted 标记提前隐藏。
       setOverlay(params, { deleted: true });
+      purgeSessionContentOnTaskDelete(params);
       emitWorkspaceTaskListChanged(params, meta, "task_deleted");
       return true;
     },
@@ -2943,6 +2961,7 @@ export function createZCodeTaskServiceAdapter(
             continue;
           }
           setOverlay(target, { deleted: true });
+          purgeSessionContentOnTaskDelete(target);
           result.deletedTaskIds.push(taskId);
         } catch (error) {
           result.failedTaskIds.push(taskId);

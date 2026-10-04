@@ -59,6 +59,7 @@ import {
   zcodeSessionGoalParamsSchema,
   zcodeSessionListParamsSchema,
   zcodeSessionMessagesParamsSchema,
+  zcodeSessionPurgeContentParamsSchema,
   zcodeSessionReadParamsSchema,
   zcodeSessionRuntimePreferencesResultSchema,
   zcodeSessionResumeParamsSchema,
@@ -1720,6 +1721,41 @@ export async function archiveSession(context: ZCodeProtocolAgentServerContext, r
       module: "bootstrap.zcode_protocol",
     });
     return { archived: false };
+  }
+}
+
+/**
+ * 删任务清聊天内容（地基清理 2026-10-04）：用户显式删除 task 后，把会话库里的
+ * 会话行和全部内容行一并清掉（单事务，见 adapters purgeSession）。空 purged =
+ * 会话行不存在（task 索引里有行、会话库没有，照旧算清干净）。
+ */
+export async function purgeSessionContent(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+) {
+  const params = parseParams(zcodeSessionPurgeContentParamsSchema, rawParams ?? {});
+  const store = context.deps.sessionStore;
+  if (!store?.purgeSession) return { purged: false };
+  try {
+    const purged = await store.purgeSession({ id: params.sessionId as SessionId });
+    if (purged) {
+      context.logger?.info("Session content purged after task deletion", {
+        sessionId: params.sessionId,
+        event: "zcode_protocol.session.content_purged",
+        module: "bootstrap.zcode_protocol",
+      });
+    }
+    return { purged };
+  } catch (error) {
+    // 清理失败不上抛：task 索引的 tombstone 已落地，UI 不会再显示；
+    // 残余内容行等下次重派/重建同 id 会话时不会有新问题，只是占空间。
+    context.logger?.warn("Failed to purge session content after task deletion", {
+      sessionId: params.sessionId,
+      error: error instanceof Error ? error.message : String(error),
+      event: "zcode_protocol.session.purge_failed",
+      module: "bootstrap.zcode_protocol",
+    });
+    return { purged: false };
   }
 }
 

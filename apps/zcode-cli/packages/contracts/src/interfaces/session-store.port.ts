@@ -1132,6 +1132,14 @@ export interface SessionStorePort {
   commitSharedContextImportBundle?(bundle: SharedContextImportCommitBundle): Promise<SessionInfo>;
   transitionSharedContextImport?(input: SharedContextImportTransition): Promise<boolean>;
   updateSession(input: UpdateSessionInput): Promise<SessionInfo>;
+  /**
+   * 彻底删除一个会话及其全部内容行（message/part/session_entry/todo/台账/用量，
+   * 单事务，显式对齐 schema 的 cascade/set-null 语义——连接未开 foreign_keys，
+   * 级联从不会自动生效）。地基清理 2026-10-04：删任务同步清聊天内容——只在用户
+   * 显式删除任务的链路上调用，绝不定时/自动清理。
+   * 返回是否确实删除了会话行（会话不存在 = false）。
+   */
+  purgeSession?(input: { id: SessionId }): Promise<boolean>;
   getSession(sessionID: SessionId): Promise<SessionInfo | null>;
   listSessions(input?: ListSessionsInput): Promise<SessionInfo[]>;
   /**

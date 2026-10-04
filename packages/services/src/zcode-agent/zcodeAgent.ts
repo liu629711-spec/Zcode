@@ -596,6 +596,12 @@ export interface IZCodeAgentService {
    * best-effort——运行时没活就静默跳过（兜底是派单侧的工位退役反查）。
    */
   archiveSession(params: ZCodeAgentArchiveSessionParams): Promise<void>;
+  /**
+   * 删任务清聊天内容（地基清理 2026-10-04）：把会话库里该会话的全部内容行
+   * 彻底清掉。best-effort——运行时没活就静默跳过（tombstone 已在 task 索引，
+   * UI 不会再显示；残余内容只是占空间）。
+   */
+  purgeSession(params: ZCodeAgentSessionTarget): Promise<void>;
   listSessionSubagents(
     params: ZCodeAgentListSessionSubagentsParams,
   ): Promise<ZCodeSessionSubagentsResult>;

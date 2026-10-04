@@ -86,6 +86,7 @@ import {
   zcodeSessionListResultSchema,
   zcodeSessionSubagentsResultSchema,
   zcodeSessionMessagesResultSchema,
+  zcodeSessionPurgeContentResultSchema,
   zcodeSessionEventSchema,
   zcodeSessionSendResultSchema,
   zcodeSessionRequestRuntimePreferencesParamsSchema,
@@ -3679,6 +3680,25 @@ export function createZCodeAgentService(
         logger.info(undefined, "ZCode session archive timestamp sync skipped", {
           sessionId: params.sessionId,
           archived: params.archived,
+          workspacePath: params.workspacePath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+
+    async purgeSession(params: ZCodeAgentSessionTarget) {
+      // best-effort 同 archiveSession：existing-only，运行时没活就跳过。
+      // 清理失败不上抛——tombstone 已在 task 索引，UI 不会再显示该任务。
+      try {
+        const client = await getReadOnlyClient(params, "existing-only");
+        await client.request(
+          zcodeProtocolMethods.sessionPurgeContent,
+          { sessionId: params.sessionId },
+          zcodeSessionPurgeContentResultSchema,
+        );
+      } catch (error) {
+        logger.info(undefined, "ZCode session content purge skipped", {
+          sessionId: params.sessionId,
           workspacePath: params.workspacePath,
           error: error instanceof Error ? error.message : String(error),
         });

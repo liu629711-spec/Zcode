@@ -101,6 +101,7 @@ import * as sessionInputRepository from "./repositories/session-inputs.js";
 import * as sessionRepository from "./repositories/sessions.js";
 import * as todoRepository from "./repositories/todos.js";
 import * as usageRepository from "./repositories/usage.js";
+import { scheduleWeeklyVacuum } from "./vacuum.js";
 
 function forkChildSessionId(entry: SessionEntryInfo): SessionId | null {
   if (!entry.data || typeof entry.data !== "object" || Array.isArray(entry.data)) return null;
@@ -267,6 +268,14 @@ export class SqliteSessionStore
       }
       throw error;
     }
+    // 地基清理（2026-10-04）：每周一次后台压缩（哨兵+freelist 双闸门，unref 不阻塞退出）。
+    scheduleWeeklyVacuum(this.db, (error) => {
+      console.warn(
+        `[session-store] weekly vacuum failed (will retry next week): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
   }
 
   static async openStartup(
@@ -277,6 +286,13 @@ export class SqliteSessionStore
     const store = new SqliteSessionStore(options, deferredStartup);
     try {
       await runSqliteSessionMigrationsAsync(store.db, store.dbPath, migrationOptions);
+      scheduleWeeklyVacuum(store.db, (error) => {
+        console.warn(
+          `[session-store] weekly vacuum failed (will retry next week): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
       return store;
     } catch (error) {
       // close 也可能因 IO 失败；迁移的原始 cause 才是用户应处理的原因。
@@ -579,6 +595,11 @@ export class SqliteSessionStore
   async updateSession(input: UpdateSessionInput): Promise<SessionInfo> {
     this.throwBeforeWrite();
     return sessionRepository.updateSession(this.db, input);
+  }
+
+  async purgeSession(input: { id: SessionId }): Promise<boolean> {
+    this.throwBeforeWrite();
+    return sessionRepository.purgeSession(this.db, input.id);
   }
 
   async getSession(sessionID: SessionId): Promise<SessionInfo | null> {

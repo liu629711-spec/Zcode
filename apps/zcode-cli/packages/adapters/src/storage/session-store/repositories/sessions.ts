@@ -364,3 +364,47 @@ function mustGetSession(db: DatabaseSync, sessionID: SessionId): SessionInfo {
   }
   return session;
 }
+
+/**
+ * 彻底删除一个会话及其全部内容行（地基清理 2026-10-04）。
+ *
+ * 连接未开 `PRAGMA foreign_keys`，schema 里的 on delete cascade/set-null 从未
+ * 生效——这里单事务显式逐表清，动作与 schema 声明的级联语义一一对应：
+ *  - set-null：workflow_run.parent / workflow_activity.child /
+ *    session_task_link.parent（run/activity 台账留着，指针放开）；
+ *  - cascade：session_task_link.child、part（session_id 冗余列直删）、message、
+ *    session_entry、todo、session_target、model/turn/tool_usage、
+ *    session_input（工单台账），最后删 session 行本身。
+ * 注意没有 session_target_next：迁移 0005 已把它改名回 session_target。
+ *
+ * 只在用户显式删除任务的链路上调用（UI 删除/清空归档），绝不定时清理。
+ * 返回是否确实删除了会话行（不存在 = false）。
+ */
+export function purgeSession(db: DatabaseSync, sessionID: SessionId): boolean {
+  db.exec("begin immediate");
+  try {
+    for (const statement of [
+      "update workflow_run set parent_session_id = null where parent_session_id = ?",
+      "update workflow_activity set child_session_id = null where child_session_id = ?",
+      "update session_task_link set parent_session_id = null where parent_session_id = ?",
+      "delete from session_task_link where child_session_id = ?",
+      "delete from part where session_id = ?",
+      "delete from message where session_id = ?",
+      "delete from session_entry where session_id = ?",
+      "delete from todo where session_id = ?",
+      "delete from session_target where session_id = ?",
+      "delete from model_usage where session_id = ?",
+      "delete from turn_usage where session_id = ?",
+      "delete from tool_usage where session_id = ?",
+      "delete from session_input where session_id = ?",
+    ]) {
+      db.prepare(statement).run(sessionID);
+    }
+    const result = db.prepare("delete from session where id = ?").run(sessionID);
+    db.exec("commit");
+    return result.changes > 0;
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
+  }
+}

@@ -1933,6 +1933,22 @@ export const zcodeSessionArchiveResultSchema = z
   .strict();
 export type ZCodeSessionArchiveResult = z.infer<typeof zcodeSessionArchiveResultSchema>;
 
+// purged=false = 会话行不存在（可能从未落库）。单事务清全部内容行，详见
+// adapters purgeSession——只在用户显式删除任务的链路上调用。
+export const zcodeSessionPurgeContentParamsSchema = z
+  .object({
+    sessionId: nonEmptyString,
+  })
+  .strict();
+export type ZCodeSessionPurgeContentParams = z.infer<typeof zcodeSessionPurgeContentParamsSchema>;
+
+export const zcodeSessionPurgeContentResultSchema = z
+  .object({
+    purged: z.boolean(),
+  })
+  .strict();
+export type ZCodeSessionPurgeContentResult = z.infer<typeof zcodeSessionPurgeContentResultSchema>;
+
 export const zcodeSessionStopParamsSchema = z
   .object({
     sessionId: nonEmptyString,
@@ -3658,6 +3674,9 @@ export const zcodeProtocolMethods = {
   // 会话行 time_archived 此前无人写，session/list 归档过滤与派单工位扫描全空转。
   // Host 归档/取消归档 task 后经此通道补写会话库。
   sessionArchive: "session/archive",
+  // 删任务清聊天内容（地基清理 2026-10-04）：task 删除在会话库侧的落地口——
+  // 彻底清掉该会话的全部内容行，只在用户显式删除任务的链路上调用。
+  sessionPurgeContent: "session/purgeContent",
   sessionClose: "session/close",
   // setModel 仍被 zcodeSessionService 的 desktop 旧链路消费；replayable
   // switchModelConfig 已直接由目标 Environment Registry 解析 Selection。

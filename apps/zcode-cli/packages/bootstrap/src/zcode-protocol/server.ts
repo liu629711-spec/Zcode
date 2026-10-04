@@ -36,6 +36,7 @@ import {
   getUsageStats,
   listSessions,
   listSessionSubagents,
+  purgeSessionContent,
   readEvents,
   readMessages,
   readSession,
@@ -597,6 +598,8 @@ export class ZCodeProtocolAgentServer {
         return await goalSession(this.context, request.params);
       case zcodeProtocolMethods.sessionArchive:
         return await archiveSession(this.context, request.params);
+      case zcodeProtocolMethods.sessionPurgeContent:
+        return await purgeSessionContent(this.context, request.params);
       case zcodeProtocolMethods.sessionSetModel:
         return await setModel(this.context, request.params);
       case zcodeProtocolMethods.sessionSetThoughtLevel:
