@@ -1658,6 +1658,11 @@ const enUS: Record<string, string> = {
   // personal notebook follows the person.
   "workspaceSidebar.agentMemory.notebook.workspace": "Workspace notebook",
   "workspaceSidebar.agentMemory.notebook.personal": "Personal notebook",
+  "workspaceSidebar.agentMemory.notebook.skills": "Skills",
+  "workspaceSidebar.agentMemory.skillsEmpty": "No skill cards yet: they are distilled when employees debrief after delivered work",
+  "workspaceSidebar.agentMemory.skill.view": "View",
+  "workspaceSidebar.agentMemory.skill.readOnlyHint":
+    "Skill cards are distilled by employees; read-only here — changes go through the employee's desk.",
   "workspaceSidebar.agentMemory.hint":
     "Changes (including ones the agent writes itself) take effect from the next conversation: memory is read once at the start of each conversation.",
   "workspaceSidebar.agentMemory.loading": "Loading memory…",

@@ -25,8 +25,11 @@ type MemorySectionState = "loading" | "ready" | "error";
 
 interface MemoryFileRow {
   name: string;
-  kind: "index" | "item";
+  kind: "index" | "item" | "skill";
   updatedAt: number;
+  /** 技能卡 frontmatter 的标题/一句话简介（服务端解析；缺席回退文件名）。 */
+  title?: string;
+  description?: string;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -65,6 +68,7 @@ export function AgentMemorySection({
   const [error, setError] = useState<string | null>(null);
   const [rootDir, setRootDir] = useState<string | null>(null);
   const [files, setFiles] = useState<MemoryFileRow[]>([]);
+  const [skills, setSkills] = useState<MemoryFileRow[]>([]);
   // 编辑器一次只开一条：内容按 fileName 惰性读取，写回即落盘（磁盘是唯一事实）。
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
@@ -80,17 +84,28 @@ export function AgentMemorySection({
     return () => window.clearInterval(interval);
   }, []);
 
-  // 双层记忆（2026-10-02 拍板）：面板两个页签——工作区本子（跟项目走的活）与
-  // 随身本子（跟人走的习惯）。默认看工作区本子；换本子即换目录，编辑器跟着收起。
-  const [notebook, setNotebook] = useState<"workspace" | "personal">("workspace");
-  const switchNotebook = useCallback((next: "workspace" | "personal") => {
+  // 双层记忆（2026-10-02 拍板）+ 技能页签（学习沉淀 2026-10-05）：工作区本子
+  // （跟项目走的活）/ 随身本子（跟人走的习惯）/ 技能（员工交活复盘沉淀的卡，
+  // 随身柜 skills/ 子目录，只读）。默认看工作区本子；换页签即换目录，编辑器收起。
+  const [notebook, setNotebook] = useState<"workspace" | "personal" | "skills">("workspace");
+  const switchNotebook = useCallback((next: "workspace" | "personal" | "skills") => {
     setNotebook(next);
     setEditingFile(null);
     setEditingContent("");
     setEditingLoading(false);
+    setSkillFile(null);
+    setSkillContent("");
   }, []);
+  // 技能卡只读视图（学习沉淀 2026-10-05）：展开一次读一条，无编辑/删除——
+  // 技能卡的写回是员工工位（桌面闸）的职责，面板只看不改。
+  const [skillFile, setSkillFile] = useState<string | null>(null);
+  const [skillContent, setSkillContent] = useState("");
+  const [skillLoading, setSkillLoading] = useState(false);
 
-  const scope = resolveAgentMemoryPanelScope(agent.memory, notebook);
+  const scope =
+    notebook === "skills"
+      ? "user"
+      : resolveAgentMemoryPanelScope(agent.memory, notebook === "personal" ? "personal" : "workspace");
 
   // 记事本定位（D26）：有号就按号，与 core 的记忆注入共用同一判据
   // （shared/node resolveAgentMemoryKey）。两边必须落在同一个目录，否则就是
@@ -116,6 +131,15 @@ export function AgentMemorySection({
       }
       setRootDir(catalog.rootDir);
       setFiles(catalog.files.map((file) => ({ name: file.name, kind: file.kind, updatedAt: file.updatedAt })));
+      setSkills(
+        (catalog.skills ?? []).map((file) => ({
+          name: file.name,
+          kind: file.kind,
+          updatedAt: file.updatedAt,
+          title: file.title,
+          description: file.description,
+        })),
+      );
       setError(null);
       setState("ready");
     } catch (caught) {
@@ -126,6 +150,28 @@ export function AgentMemorySection({
       setState("error");
     }
   }, [memoryTarget, memoryService]);
+
+  const openSkill = useCallback(
+    async (fileName: string) => {
+      if (skillLoading) return;
+      setSkillFile(fileName);
+      setSkillContent("");
+      setSkillLoading(true);
+      try {
+        const content = await memoryService.readAgentMemorySkill({
+          ...memoryTarget,
+          fileName,
+        });
+        setSkillContent(content.content);
+      } catch (caught) {
+        setSkillFile(null);
+        toast(getErrorMessage(caught));
+      } finally {
+        setSkillLoading(false);
+      }
+    },
+    [memoryService, memoryTarget, skillLoading],
+  );
 
   useEffect(() => {
     if (!resolution.rpcReady) {
@@ -289,15 +335,15 @@ export function AgentMemorySection({
           <span className="text-ui-sm text-foreground-subtle">
             {intl.formatMessage(
               {
-                id: `workspaceSidebar.agentMemory.fileCount.${memoryCount === 1 ? "one" : "other"}`,
+                id: `workspaceSidebar.agentMemory.fileCount.${(notebook === "skills" ? skills.length : memoryCount) === 1 ? "one" : "other"}`,
               },
-              { count: memoryCount },
+              { count: notebook === "skills" ? skills.length : memoryCount },
             )}
           </span>
         ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-1" data-testid="agent-memory-notebook-switch">
-        {(["workspace", "personal"] as const).map((key) => (
+        {(["workspace", "personal", "skills"] as const).map((key) => (
           <button
             key={key}
             type="button"
@@ -313,16 +359,18 @@ export function AgentMemorySection({
             {intl.formatMessage({ id: `workspaceSidebar.agentMemory.notebook.${key}` })}
           </button>
         ))}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto text-destructive hover:text-destructive"
-          disabled={state !== "ready" || editingBusy || deletingFile !== null || clearingNotebook}
-          onClick={() => void clearNotebook()}
-        >
-          {intl.formatMessage({ id: "workspaceSidebar.agentMemory.clearAction" })}
-        </Button>
+        {notebook === "skills" ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-destructive hover:text-destructive"
+            disabled={state !== "ready" || editingBusy || deletingFile !== null || clearingNotebook}
+            onClick={() => void clearNotebook()}
+          >
+            {intl.formatMessage({ id: "workspaceSidebar.agentMemory.clearAction" })}
+          </Button>
+        )}
       </div>
       <p className="text-ui-sm text-foreground-subtle">
         {intl.formatMessage({ id: "workspaceSidebar.agentMemory.hint" })}
@@ -335,6 +383,83 @@ export function AgentMemorySection({
         <p className="px-0.5 py-1 text-ui-sm text-foreground-subtle">
           {intl.formatMessage({ id: "workspaceSidebar.agentMemory.loading" })}
         </p>
+      ) : notebook === "skills" ? (
+        skills.length === 0 ? (
+          <div
+            data-testid="agent-memory-skills-empty"
+            className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-ui-base text-foreground-subtle"
+          >
+            {intl.formatMessage({ id: "workspaceSidebar.agentMemory.skillsEmpty" })}
+          </div>
+        ) : (
+          <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+            {skills.map((skill) => (
+              <li key={skill.name}>
+                {skillFile === skill.name ? (
+                  <div className="space-y-2 rounded-md border border-border px-2.5 py-2">
+                    <Textarea
+                      rows={8}
+                      className="max-h-60 [field-sizing:fixed] overflow-y-auto"
+                      value={skillLoading ? "" : skillContent}
+                      readOnly
+                      aria-label={skill.name}
+                      placeholder={
+                        skillLoading
+                          ? intl.formatMessage({ id: "workspaceSidebar.agentMemory.loading" })
+                          : undefined
+                      }
+                    />
+                    <p className="text-ui-sm text-foreground-subtlest">
+                      {intl.formatMessage({ id: "workspaceSidebar.agentMemory.skill.readOnlyHint" })}
+                    </p>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSkillFile(null);
+                          setSkillContent("");
+                        }}
+                      >
+                        {intl.formatMessage({ id: "common.cancel" })}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    data-testid={testId(TID_PROJECT_AGENT_MEMORY_FILE, skill.name)}
+                    className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 hover:bg-hover"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-ui-base text-foreground">
+                        {skill.title ?? skill.name}
+                      </p>
+                      <p className="truncate text-ui-sm text-foreground-subtle">
+                        {skill.description ??
+                          formatMemoryUpdatedAt({
+                            formatMessage: intl.formatMessage,
+                            locale,
+                            now,
+                            updatedAt: skill.updatedAt,
+                          })}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={skillLoading}
+                      onClick={() => void openSkill(skill.name)}
+                    >
+                      {intl.formatMessage({ id: "workspaceSidebar.agentMemory.skill.view" })}
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )
       ) : files.length === 0 ? (
         <div
           data-testid={TID_PROJECT_AGENT_MEMORY_EMPTY}

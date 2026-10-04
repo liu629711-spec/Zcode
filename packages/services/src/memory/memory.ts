@@ -59,6 +59,14 @@ export interface IMemoryService {
    * 智能体下次会话按空索引注入、首次写入自动重建（读路径不现造目录，D25）。
    */
   clearAgentMemoryFiles(params: AgentMemoryTargetParams): Promise<void>;
+
+  /**
+   * 原样读取一张技能卡（学习沉淀 2026-10-05）：记事本根目录 skills/<卡>.md。
+   * 面板只读展示——技能卡是员工复盘沉淀的产物，写回是员工工位（桌面闸）的职责。
+   */
+  readAgentMemorySkill(
+    params: AgentMemoryTargetParams & { fileName: string },
+  ): Promise<{ content: string; updatedAt: number }>;
 }
 
 /** 记忆面板的目标定位：档案名 + 记忆范围 + 工作区（user 档案不需要工作区）。 */
@@ -79,9 +87,13 @@ export interface AgentMemoryFileSummary {
   name: string;
   /** 已由 MemoryService 校验并限制在记事本根目录内的实际路径。 */
   path: string;
-  kind: "index" | "item";
+  kind: "index" | "item" | "skill";
   size: number;
   updatedAt: number;
+  /** 技能卡 frontmatter 的 name（瘦身拆分同源契约，core agent-skills.ts）；缺席 = 回退文件名。 */
+  title?: string;
+  /** 技能卡 frontmatter 的一句话简介（≤60 字符，core 解析同款截断）。 */
+  description?: string;
 }
 
 export interface AgentMemoryCatalog {
@@ -89,6 +101,8 @@ export interface AgentMemoryCatalog {
   rootDir: string;
   scope: AgentMemoryScope;
   files: AgentMemoryFileSummary[];
+  /** 技能卡清单（学习沉淀 2026-10-05）：根目录 skills/*.md 单层快照；目录不存在 = 空集。 */
+  skills: AgentMemoryFileSummary[];
 }
 
 export const IMemoryService = createServiceDescriptor<IMemoryService>(ServiceChannels.Memory);

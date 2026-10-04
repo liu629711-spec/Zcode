@@ -1542,6 +1542,11 @@ const zhCN: Record<string, string> = {
   // 双层记忆（2026-10-02）：面板页签——工作区本子跟项目，随身本子跟人。
   "workspaceSidebar.agentMemory.notebook.workspace": "工作区本子",
   "workspaceSidebar.agentMemory.notebook.personal": "随身本子",
+  "workspaceSidebar.agentMemory.notebook.skills": "技能",
+  "workspaceSidebar.agentMemory.skillsEmpty": "还没有技能卡：员工交活复盘时会自动沉淀到这里",
+  "workspaceSidebar.agentMemory.skill.view": "查看",
+  "workspaceSidebar.agentMemory.skill.readOnlyHint":
+    "技能卡由员工复盘沉淀，面板只读；改动走员工的工位。",
   "workspaceSidebar.agentMemory.hint":
     "改动（包括智能体自己写的）从下个会话开始生效：每次会话开场只读一次记忆。",
   "workspaceSidebar.agentMemory.loading": "正在加载记忆…",

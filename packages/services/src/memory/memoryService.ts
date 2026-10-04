@@ -7,7 +7,7 @@ import {
   type ProjectMemoryFileSummary,
   type ProjectMemoryWorkspaceSummary,
 } from "./memory.js";
-import { lstat, readdir, realpath, rm, unlink } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath, rm, unlink } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { resolveAgentMemoryRoot, atomicWritePrivateTextFile } from "@zcode/shared/node";
 import { readProjectMemoryFileFromStableHandle } from "#src/memory/projectMemoryStableRead.js";
@@ -107,8 +107,8 @@ async function assertContainedProjectMemoryPath(
 }
 
 function compareProjectMemoryFiles(
-  left: ProjectMemoryFileSummary,
-  right: ProjectMemoryFileSummary,
+  left: { kind: "index" | "item" | "skill"; name: string },
+  right: { kind: "index" | "item" | "skill"; name: string },
 ): number {
   if (left.kind !== right.kind) {
     return left.kind === "index" ? -1 : 1;
@@ -195,7 +195,7 @@ async function listAgentMemoryCatalog(
   } catch (error) {
     if (isNotFoundError(error)) {
       // 记事本还没建（智能体还没记过任何东西）= 空集，不是错误。
-      return { rootDir, scope: params.scope, files: [] };
+      return { rootDir, scope: params.scope, files: [], skills: [] };
     }
     throw error;
   }
@@ -233,7 +233,8 @@ async function listAgentMemoryCatalog(
   }
 
   files.sort(compareProjectMemoryFiles);
-  return { rootDir, scope: params.scope, files };
+  const skills = await listAgentSkills(rootDir);
+  return { rootDir, scope: params.scope, files, skills };
 }
 
 async function readAgentMemoryFileEntry(
@@ -250,6 +251,90 @@ async function readAgentMemoryFileEntry(
       await requirePlainDirectory(rootDir);
       await requireExactAgentMemoryFile(rootDir, fileName);
       await assertContainedProjectMemoryPath(rootDir, filePath);
+    },
+  });
+}
+
+/**
+ * 技能卡清单（学习沉淀 2026-10-05）：记事本根目录 skills/*.md 单层快照。
+ * frontmatter 的 name/description 内联解析——与 core agent-skills.ts 的
+ * SKILL.md 契约同形（services 不依赖 core，两处需同源演进），description
+ * 沿用同款 60 字符截断。目录不存在 = 员工还没沉淀过技能，空集不是错误。
+ */
+async function listAgentSkills(memoryRoot: string): Promise<AgentMemoryFileSummary[]> {
+  const skillsDir = join(memoryRoot, "skills");
+  let skillEntries;
+  try {
+    await requirePlainDirectory(skillsDir);
+    skillEntries = await readdir(skillsDir, { withFileTypes: true });
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return [];
+    }
+    throw error;
+  }
+  const summaries: AgentMemoryFileSummary[] = [];
+  for (const entry of skillEntries) {
+    if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".md")) {
+      continue;
+    }
+    const filePath = join(skillsDir, entry.name);
+    let fileMetadata;
+    try {
+      fileMetadata = await lstat(filePath);
+    } catch (error) {
+      if (isNotFoundError(error)) continue;
+      throw error;
+    }
+    let title: string | undefined;
+    let description: string | undefined;
+    try {
+      const content = await readFile(filePath, "utf8");
+      const frontmatter = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+      if (frontmatter) {
+        for (const line of frontmatter[1]!.split(/\r?\n/)) {
+          const nameMatch = line.match(/^name:\s*(.+)$/);
+          if (nameMatch) title = nameMatch[1]!.trim().replace(/^["']|["']$/g, "") || undefined;
+          const descriptionMatch = line.match(/^description:\s*(.+)$/);
+          if (descriptionMatch) {
+            description = descriptionMatch[1]!.trim().replace(/^["']|["']$/g, "");
+            if (description.length > 60) description = `${description.slice(0, 59)}…`;
+          }
+        }
+      }
+    } catch {
+      // 读不动的卡不挡清单：行还列得出，标题回退文件名。
+    }
+    summaries.push({
+      name: entry.name,
+      path: filePath,
+      kind: "skill",
+      size: fileMetadata.size,
+      updatedAt: fileMetadata.mtimeMs,
+      ...(title ? { title } : {}),
+      ...(description ? { description } : {}),
+    });
+  }
+  summaries.sort((a, b) => a.name.localeCompare(b.name));
+  return summaries;
+}
+
+/** 面板读一张技能卡（只读）：skills/<卡>.md，单段文件名 + 精确匹配，安全防护同记事本。 */
+async function readAgentMemorySkillEntry(
+  params: AgentMemoryTargetParams & { fileName: string },
+): Promise<{ content: string; updatedAt: number }> {
+  const fileName = requireAgentMemoryFileName(params.fileName);
+  const rootDir = resolveAgentMemoryDirectory(params);
+  const skillsDir = join(rootDir, "skills");
+  await requirePlainDirectory(skillsDir);
+  const filePath = await requireExactAgentMemoryFile(skillsDir, fileName);
+  return readProjectMemoryFileFromStableHandle({
+    fileName,
+    filePath,
+    validatePath: async () => {
+      await requirePlainDirectory(skillsDir);
+      await requireExactAgentMemoryFile(skillsDir, fileName);
+      await assertContainedProjectMemoryPath(skillsDir, filePath);
     },
   });
 }
@@ -430,5 +515,6 @@ export function createMemoryService(): IMemoryService {
     writeAgentMemoryFile: writeAgentMemoryFileEntry,
     deleteAgentMemoryFile: deleteAgentMemoryFileEntry,
     clearAgentMemoryFiles: clearAgentMemoryFilesEntry,
+    readAgentMemorySkill: readAgentMemorySkillEntry,
   };
 }
