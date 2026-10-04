@@ -69,8 +69,12 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
       else toast(result.errors.join("；"));
     }
   };
-  // glass 字段缺席时先落一份默认参数再改（默认生效态的显式化）
-  const glassBase = glass ?? { ...DEFAULT_WALLPAPER_GLASS, enabled: false };
+  // glass 字段缺席时先落一份参数再改：enabled 跟随当前生效态（有壁纸=默认生效），
+  // 否则拖滑杆会落 enabled:false 被引擎忽略，看起来像"拖了没反应"
+  const glassBase = glass ?? {
+    ...DEFAULT_WALLPAPER_GLASS,
+    enabled: effectiveGlass?.enabled ?? false,
+  };
   const patchGlass = (partial: Partial<NonNullable<SkinPack["glass"]>>) => {
     patch({ glass: { ...glassBase, ...partial } });
   };
