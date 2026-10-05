@@ -324,6 +324,14 @@ declare global {
       getSystemLocale?(): Promise<Locale>;
       /** 同步标题栏亮暗色 */
       setTitleBarTheme(theme: DesktopTitleBarTheme): Promise<void>;
+      /** 语音转写：录音 WAV 交主进程（本地引擎/云 API）换文本 */
+      voiceTranscribe(
+        request: import("@zcode/shared").VoiceTranscribeRequest,
+      ): Promise<import("@zcode/shared").VoiceTranscribeResult>;
+      /** 查询本地语音引擎安装状态 */
+      voiceGetEngineStatus(): Promise<import("@zcode/shared").VoiceEngineStatus>;
+      /** macOS 申请麦克风权限；Windows 恒 true */
+      voiceRequestMicrophoneAccess(): Promise<boolean>;
     };
   }
 }

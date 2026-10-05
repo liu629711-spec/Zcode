@@ -46,6 +46,9 @@ import type {
   CreateTempTextAttachmentResult,
   SaveFileRequest,
   SaveFileResult,
+  VoiceTranscribeRequest,
+  VoiceTranscribeResult,
+  VoiceEngineStatus,
   AssetLibraryWriteFilesRequest,
   AssetLibraryWriteFilesResult,
   PrintPageToPdfResult,
@@ -430,6 +433,12 @@ export const PlatformChannels = {
   MigrateLegacyCommonMcp: "zcode:migrate-legacy-common-mcp",
   /** Renderer → Main：获取当前设备的稳定标识符（deviceMid） */
   GetDeviceId: "zcode:get-device-id",
+  /** Renderer → Main：语音转写——录音 WAV 交本地引擎子进程或云 API，返回文本 */
+  VoiceTranscribe: "zcode:voice-transcribe",
+  /** Renderer → Main：查询本地语音引擎安装状态（~/.zcode/voice-engines/） */
+  VoiceGetEngineStatus: "zcode:voice-get-engine-status",
+  /** Renderer → Main：macOS 显式申请麦克风权限（TCC）；Windows 恒 true */
+  VoiceRequestMicrophoneAccess: "zcode:voice-request-microphone-access",
 } as const;
 
 export type PlatformChannelName = (typeof PlatformChannels)[keyof typeof PlatformChannels];
@@ -1174,5 +1183,17 @@ export interface PlatformChannelMap {
   [PlatformChannels.SetTitleBarTheme]: {
     request: DesktopTitleBarTheme;
     response: void;
+  };
+  [PlatformChannels.VoiceTranscribe]: {
+    request: VoiceTranscribeRequest;
+    response: VoiceTranscribeResult;
+  };
+  [PlatformChannels.VoiceGetEngineStatus]: {
+    request: void;
+    response: VoiceEngineStatus;
+  };
+  [PlatformChannels.VoiceRequestMicrophoneAccess]: {
+    request: void;
+    response: boolean;
   };
 }

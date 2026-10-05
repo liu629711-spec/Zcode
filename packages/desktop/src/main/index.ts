@@ -199,6 +199,7 @@ import {
 } from "./resourceManagerWindow.js";
 import { createDesktopHelpConfigReader } from "./desktopHelpConfig.js";
 import { registerPlatformIpcHandlers } from "./desktopMainIpcPlatform.js";
+import { installVoiceMediaPermissions, registerVoiceIpcHandlers } from "./voiceEngineManager.js";
 import {
   loadCliMcpFromUserDirectory,
   migrateLegacyCommonMcp,
@@ -1925,6 +1926,8 @@ app.on("second-instance", (_event, argv, _workingDirectory, additionalData) => {
 
 app.whenReady().then(async () => {
   markMainLaunchAppReady();
+  // 语音输入：getUserMedia 的同步 check 缺省 false 会直接拒采集，必须先于任何窗口装载
+  installVoiceMediaPermissions();
   installLocalMediaPreviewProtocol(session.defaultSession.protocol, {
     isPathAuthorized: localMediaPreviewPathRegistry.isAuthorized,
   });
@@ -2055,6 +2058,8 @@ app.whenReady().then(async () => {
     },
     logger,
   });
+
+  registerVoiceIpcHandlers({ logger });
 
   registerPlatformIpcHandlers({
     fetchHelpConfig: readHelpConfig,

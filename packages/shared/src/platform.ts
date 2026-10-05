@@ -267,6 +267,39 @@ export interface SaveFileResult {
   success: boolean;
 }
 
+// ============================================================================
+// 语音输入（Speech-to-Text）：渲染进程录音，主进程转写（本地引擎 / 云 API）
+// ============================================================================
+
+export type VoiceTranscribeProvider = "sensevoice" | "whisper" | "cloud";
+
+export interface VoiceTranscribeRequest {
+  provider: VoiceTranscribeProvider;
+  /** 16kHz 单声道 16-bit PCM WAV 的原始字节（structured clone 直传，不走 base64） */
+  audio: ArrayBuffer;
+  /** 识别语言：BCP-47 主子标签（如 "zh"、"en"）；缺省由引擎自动判断 */
+  language?: string;
+  /** provider === "cloud" 时必填：OpenAI 兼容 /v1/audio/transcriptions 端点配置 */
+  cloud?: {
+    baseUrl: string;
+    apiKey: string;
+    model: string;
+  };
+}
+
+export interface VoiceTranscribeResult {
+  text: string;
+  provider: VoiceTranscribeProvider;
+  /** 主进程侧转写耗时（不含录音） */
+  durationMs: number;
+}
+
+export interface VoiceEngineStatus {
+  whisper: { installed: boolean; modelPath?: string };
+  sensevoice: { installed: boolean; modelPath?: string };
+}
+
+
 /** 素材库 V2-2：把素材图纸静默写入 workspace 的 `.zcode/asset-library/<id>/`。 */
 export interface AssetLibraryWriteFilesRequest {
   /** 目标 workspace 绝对路径；不存在时 main 侧拒绝。 */
@@ -999,4 +1032,15 @@ export interface IPlatformService {
    *   抗浏览器/网络/语言/时区变化，换手机才会变
    */
   getDeviceId(): string;
+
+  // ---- 语音输入（仅桌面端实现；普通 Web 端缺省，UI 侧按缺省禁用麦克风按钮）----
+
+  /** 把一段 16k WAV 交给主进程转写成文本（本地引擎子进程或云 API） */
+  voiceTranscribe?(request: VoiceTranscribeRequest): Promise<VoiceTranscribeResult>;
+
+  /** 查询本地语音引擎安装状态（~/.zcode/voice-engines/） */
+  voiceGetEngineStatus?(): Promise<VoiceEngineStatus>;
+
+  /** macOS 显式申请麦克风权限（TCC 弹窗）；Windows/其他平台恒返回 true */
+  voiceRequestMicrophoneAccess?(): Promise<boolean>;
 }

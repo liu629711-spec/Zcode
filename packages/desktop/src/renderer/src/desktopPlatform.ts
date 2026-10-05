@@ -162,5 +162,8 @@ export function createDesktopPlatform(options: {
     setTitleBarTheme: (theme) => window.zcode.setTitleBarTheme(theme),
     getDeviceId: () =>
       (window as Window & { __ZCODE_DEVICE_ID__?: string }).__ZCODE_DEVICE_ID__ ?? "",
+    voiceTranscribe: (request) => window.zcode.voiceTranscribe(request),
+    voiceGetEngineStatus: () => window.zcode.voiceGetEngineStatus(),
+    voiceRequestMicrophoneAccess: () => window.zcode.voiceRequestMicrophoneAccess(),
   };
 }

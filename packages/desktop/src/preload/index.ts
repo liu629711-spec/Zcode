@@ -826,6 +826,14 @@ contextBridge.exposeInMainWorld("zcode", {
     ipcRenderer.invoke(PlatformChannels.SetTitleBarTheme, theme),
   /** 获取桌面端设备标识符（deviceMid） */
   getDeviceId: () => ipcRenderer.invoke(PlatformChannels.GetDeviceId),
+  /** 语音转写：录音 WAV 交主进程（本地引擎/云 API）换文本 */
+  voiceTranscribe: (request: import("@zcode/shared").VoiceTranscribeRequest) =>
+    ipcRenderer.invoke(PlatformChannels.VoiceTranscribe, request),
+  /** 查询本地语音引擎安装状态 */
+  voiceGetEngineStatus: () => ipcRenderer.invoke(PlatformChannels.VoiceGetEngineStatus),
+  /** macOS 申请麦克风权限；Windows 恒 true */
+  voiceRequestMicrophoneAccess: () =>
+    ipcRenderer.invoke(PlatformChannels.VoiceRequestMicrophoneAccess),
 });
 
 /**
