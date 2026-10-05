@@ -74,6 +74,7 @@ import type {
   AutomationPort,
   AgentDispatchPort,
   TeamMessagePort,
+  TeamPlanPort,
   OffPeakPort,
   FileSystemPort,
   HttpClientPort,
@@ -397,6 +398,8 @@ export interface AgentRuntimeDeps {
   agentDispatchPort?: AgentDispatchPort;
   /** 队内直达消息端口（团队看板批3）；存在即注册 TeamMessage。 */
   teamMessagePort?: TeamMessagePort;
+  /** 排班草案端口（团队看板批3b）；存在即注册 TeamPlan。 */
+  teamPlanPort?: TeamPlanPort;
   offPeakPort?: OffPeakPort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;

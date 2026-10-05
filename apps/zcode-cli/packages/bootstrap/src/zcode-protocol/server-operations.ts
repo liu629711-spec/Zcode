@@ -115,6 +115,7 @@ import { createProtocolInteractionBroker } from "./interaction-broker.js";
 import { createProtocolAutomationPort } from "./automation-port.js";
 import { createProtocolAgentDispatchPort } from "./agent-dispatch-port.js";
 import { createProtocolTeamMessagePort } from "./team-message.js";
+import { createProtocolTeamPlanPort } from "./team-plan.js";
 import { createProtocolOffPeakPort } from "./offpeak-port.js";
 import { createProtocolBrowserControlBroker } from "./browser-control-broker.js";
 import { mapComputerUseOperationEvent } from "./computer-use-operation-event.js";
@@ -3530,6 +3531,19 @@ async function createRecord(
     }),
     // 队内直达消息（团队看板批3）：同一套会话能力注入，纪律执法在端口里。
     teamMessagePort: createProtocolTeamMessagePort(context, {
+      createPersonaSessionRecord: async ({ workspace, persona, model, memoryEnabled }) =>
+        await createSessionRecordForV4(context, {
+          workspace,
+          persistence: "immediate",
+          ...(persona ? { persona } : {}),
+          ...(model ? { model } : {}),
+          ...(memoryEnabled === undefined ? {} : { memoryEnabled }),
+        }),
+      activateSessionRecord: async (sessionId) =>
+        (await activateSessionForResume(context, { sessionId })).record,
+    }),
+    // 排班草案（团队看板批3b）：同一套会话能力注入，校验/执行在端口里。
+    teamPlanPort: createProtocolTeamPlanPort(context, {
       createPersonaSessionRecord: async ({ workspace, persona, model, memoryEnabled }) =>
         await createSessionRecordForV4(context, {
           workspace,

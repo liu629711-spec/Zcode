@@ -104,6 +104,10 @@ import {
   type TeamBoardInputRow,
 } from "./team-board.js";
 import { teamFlowRowId } from "./team-scheduler.js";
+import {
+  createProtocolTeamPlanPort,
+  extractStagedPlanDrafts,
+} from "./team-plan.js";
 import type {
   ZCodeProtocolAgentServerContext,
   ZCodeProtocolSessionRecord,
@@ -1408,17 +1412,38 @@ export function createConversationV4Gateway(
       });
       return { batchId: input.batchId, enabled: input.enabled };
     },
+    // 排班草案端口（批3b）：看板三命令（更新/开工/放弃）与 TeamPlan 工具共用。
+    teamPlanPort: createProtocolTeamPlanPort(context, {
+      createPersonaSessionRecord: async ({ workspace, persona, model, memoryEnabled }) =>
+        await createSessionRecordForV4(context, {
+          workspace,
+          persistence: "immediate",
+          ...(persona ? { persona } : {}),
+          ...(model ? { model } : {}),
+          ...(memoryEnabled === undefined ? {} : { memoryEnabled }),
+        }),
+      activateSessionRecord: async (targetSessionId) =>
+        (await activateSessionForResume(context, { sessionId: targetSessionId })).record,
+    }),
     getTeamBoardState: async (sessionId) => {
       const store = context.deps.sessionStore;
       if (!store?.listSessionInputs) {
         return { sessionId, generatedAt: Date.now(), teams: [] };
       }
-      const rows = await store.listSessionInputs({ sessionID: sessionId as SessionId });
+      const rows = (await store.listSessionInputs({
+        sessionID: sessionId as SessionId,
+      })) as unknown as TeamBoardInputRow[];
+      const ownRecord = context.sessions.get(sessionId);
       return buildTeamBoardSnapshotFromRows({
         sessionId,
-        rows: rows as readonly TeamBoardInputRow[],
+        rows,
         liveStatusOf: (deskSessionId) =>
           liveStatusFromSessions(context.sessions.get(deskSessionId)?.app.runtime),
+        plans: extractStagedPlanDrafts(rows as never),
+        roster: ownRecord?.app.runtime.getAgentProfiles().map((profile) => ({
+          name: profile.name,
+          ...(profile.agentId ? { agentId: profile.agentId } : {}),
+        })),
       });
     },
   };

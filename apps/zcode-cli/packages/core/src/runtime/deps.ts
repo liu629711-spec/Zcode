@@ -117,6 +117,7 @@ export type {
   AutomationPort,
   AgentDispatchPort,
   TeamMessagePort,
+  TeamPlanPort,
   AgentWorkOrderEnvelope,
   OffPeakPort,
   BackgroundExecutionSnapshot,

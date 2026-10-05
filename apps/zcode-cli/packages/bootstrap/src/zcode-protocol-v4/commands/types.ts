@@ -10,6 +10,7 @@
 import type {
   SessionTaskType,
   StableForkGoalBoundaryMetadata,
+  TeamPlanPort,
   TraceContext,
 } from "@zcode/contracts";
 import type { ZCodeAutomationBotDeliveryTarget } from "@zcode/shared";
@@ -308,4 +309,26 @@ export interface V4CommandCoreHost {
     sessionId: string,
     input: CommandPayloadMap["teamAutoFlow"],
   ): Promise<{ batchId: string; enabled: boolean }>;
+  /** 排班草案端口（批3b）：草案四动作（TeamPlan 工具与看板命令共用）。 */
+  teamPlanPort?: TeamPlanPort;
+  /** 排班草案（批3b）：看板编辑器保存草案（仅 staged 可改，校验在端口）。 */
+  teamPlanUpdate?(
+    sessionId: string,
+    input: CommandPayloadMap["teamPlanUpdate"],
+  ): Promise<{ planId: string }>;
+  /** 确认开工：逐单走既有派单端口（P2 已派照跑，失败单重试）。 */
+  teamPlanApprove?(
+    sessionId: string,
+    input: CommandPayloadMap["teamPlanApprove"],
+  ): Promise<{
+    planId: string;
+    batchId?: string;
+    dispatched: number;
+    failed: { taskKey: string; error: string }[];
+  }>;
+  /** 放弃草案（面板二次确认后）。 */
+  teamPlanDiscard?(
+    sessionId: string,
+    input: CommandPayloadMap["teamPlanDiscard"],
+  ): Promise<{ planId: string }>;
 }

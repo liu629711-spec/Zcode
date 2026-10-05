@@ -9,7 +9,14 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SquareKanbanIcon } from "lucide-react";
-import type { TeamBoardOrder, TeamBoardSnapshot, TeamBoardTeam } from "@zcode/shared/zcode-protocol-v4";
+import { TeamBoardPlanCard } from "@/app-shell/TeamBoardPlanCard.js";
+import type {
+  TeamBoardOrder,
+  TeamBoardSnapshot,
+  TeamBoardTeam,
+  TeamPlan,
+  TeamPlanTask,
+} from "@zcode/shared/zcode-protocol-v4";
 import { createCommandEnvelope } from "@/v4/commandFactory.js";
 import { useV4Conversation } from "@/v4/V4ConversationContext.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
@@ -404,14 +411,32 @@ export function TeamBoardSidePane({
         <p className="text-ui-xs text-foreground-subtlest">
           {intl.formatMessage({ id: "sidePane.teamBoard.loading" })}
         </p>
-      ) : snapshot.teams.length === 0 ? (
-        <p className="text-ui-xs text-foreground-subtlest">
-          {intl.formatMessage({ id: "sidePane.teamBoard.empty" })}
-        </p>
       ) : (
-        snapshot.teams.map((team) => (
-          <TeamCard key={team.batchId} team={team} onToggleAutoFlow={toggleAutoFlow} />
-        ))
+        <>
+          {(snapshot.plans?.length ?? 0) > 0 ? (
+            <p className="text-ui-2xs font-medium uppercase tracking-wide text-foreground-subtlest">
+              {intl.formatMessage({ id: "chat.teamBoard.plans" })}
+            </p>
+          ) : null}
+          {snapshot.plans?.map((plan) => (
+            <TeamBoardPlanCard
+              key={plan.planId}
+              plan={plan}
+              roster={snapshot.roster ?? []}
+              sessionId={tab.sessionId}
+              sendCommand={sendCommand}
+              onSettled={fetchSnapshot}
+            />
+          ))}
+          {snapshot.teams.length === 0 && (snapshot.plans?.length ?? 0) === 0 ? (
+            <p className="text-ui-xs text-foreground-subtlest">
+              {intl.formatMessage({ id: "sidePane.teamBoard.empty" })}
+            </p>
+          ) : null}
+          {snapshot.teams.map((team) => (
+            <TeamCard key={team.batchId} team={team} onToggleAutoFlow={toggleAutoFlow} />
+          ))}
+        </>
       )}
     </div>
   );

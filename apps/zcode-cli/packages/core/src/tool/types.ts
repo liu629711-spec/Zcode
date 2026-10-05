@@ -7,6 +7,7 @@ import type {
   AutomationPort,
   AgentDispatchPort,
   TeamMessagePort,
+  TeamPlanPort,
   OffPeakPort,
   EmbeddedSearchBackend,
   ExecutionPort,
@@ -179,6 +180,8 @@ export interface ToolExecutionContext {
   agentDispatchPort?: AgentDispatchPort;
   /** 队内直达消息端口（团队看板批3）；缺席则 TeamMessage 不可用（未注册）。 */
   teamMessagePort?: TeamMessagePort;
+  /** 排班草案端口（团队看板批3b）；缺席则 TeamPlan 不可用（未注册）。 */
+  teamPlanPort?: TeamPlanPort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;

@@ -13,6 +13,7 @@ import {
   TeamBoardOrderStatus,
   type TeamBoardQcState,
   type TeamBoardSnapshot,
+  type TeamPlan,
 } from "@zcode/shared/zcode-protocol-v4";
 
 /** 台账行的窄视图（SessionInputRecord 的子集，测试夹具照此造）。 */
@@ -42,6 +43,10 @@ export interface TeamBoardDeps {
   rows: readonly TeamBoardInputRow[];
   /** 工位实时状态查询：本进程在场 record 查真实在跑，其余 unknown。 */
   liveStatusOf: (deskSessionId: string) => TeamBoardMemberLive;
+  /** 排班草案（批3b）：bridge 用 extractStagedPlanDrafts(rows) 预计算后传入。 */
+  plans?: TeamPlan[];
+  /** 名册（批3b 草案编辑器负责人下拉）：bridge 从 runtime.getAgentProfiles() 预取。 */
+  roster?: { name: string; agentId?: string }[];
   now?: number;
 }
 
@@ -306,6 +311,8 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
     sessionId: deps.sessionId,
     generatedAt: deps.now ?? Date.now(),
     teams: teamList,
+    ...(deps.plans?.length ? { plans: deps.plans } : {}),
+    ...(deps.roster?.length ? { roster: deps.roster } : {}),
   };
 }
 

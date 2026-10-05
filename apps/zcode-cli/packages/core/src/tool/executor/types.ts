@@ -14,6 +14,7 @@ import type {
   AutomationPort,
   AgentDispatchPort,
   TeamMessagePort,
+  TeamPlanPort,
   OffPeakPort,
   FileSystemPort,
   HttpClientPort,
@@ -109,6 +110,7 @@ export interface ToolExecutorOptions {
   automationPort?: AutomationPort;
   agentDispatchPort?: AgentDispatchPort;
   teamMessagePort?: TeamMessagePort;
+  teamPlanPort?: TeamPlanPort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
@@ -223,6 +225,7 @@ export interface ToolExecutorDeps {
   automationPort?: AutomationPort;
   agentDispatchPort?: AgentDispatchPort;
   teamMessagePort?: TeamMessagePort;
+  teamPlanPort?: TeamPlanPort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;

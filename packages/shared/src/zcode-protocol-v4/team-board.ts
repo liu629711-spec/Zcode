@@ -98,9 +98,64 @@ export const teamBoardTeamSchema = z.object({
 });
 export type TeamBoardTeam = z.infer<typeof teamBoardTeamSchema>;
 
+// ── 排班草案（批3b）：staged → 面板编辑 → 确认开工 ─────────────────────
+// 草案是队长会话台账的一行（agentWorkOrderTeamPlan，upsert 幂等）；成员名单
+// 不单列——就是 tasks 的 assignee 集合（成员=名册档案，改人=改 assignee）。
+
+export const teamPlanTaskSchema = z.object({
+  taskKey: z.string().min(1).max(128),
+  task: z.string().min(1).max(8192),
+  /** 名册点名（工号优先，其次精确名）；P3 拍板：草案必须点名，无名新桌走散单。 */
+  assignee: z.string().min(1).max(160),
+  dependsOn: z.array(z.string().min(1).max(128)).max(16).optional(),
+});
+export type TeamPlanTask = z.infer<typeof teamPlanTaskSchema>;
+
+export const teamPlanStatusSchema = z.enum(["staged", "approved", "discarded"]);
+export type TeamPlanStatus = z.infer<typeof teamPlanStatusSchema>;
+
+export const teamPlanSchema = z.object({
+  planId: z.string().min(1).max(64),
+  title: z.string().min(1).max(80),
+  status: teamPlanStatusSchema,
+  tasks: z.array(
+    teamPlanTaskSchema.extend({
+      /** approve 后回填：每张任务对应的真工单 id。 */
+      workOrderId: z.string().optional(),
+      /** P2 拍板：开工后单张失败照跑其余，失败红字挂卡可点重试。 */
+      error: z.string().max(300).optional(),
+    }),
+  ).max(16),
+  batchId: z.string().optional(),
+  createdAt: z.number(),
+  approvedAt: z.number().optional(),
+});
+export type TeamPlan = z.infer<typeof teamPlanSchema>;
+
+export const teamPlanErrorSchema = z.object({
+  taskKey: z.string().min(1).max(128),
+  error: z.string().min(1).max(300),
+});
+export type TeamPlanError = z.infer<typeof teamPlanErrorSchema>;
+
 export const teamBoardSnapshotSchema = z.object({
   sessionId: z.string().min(1),
   generatedAt: z.number(),
   teams: z.array(teamBoardTeamSchema).max(32),
+  /** 排班草案（批3b）：只列 staged 的（approved 的已变真批次进 teams）。 */
+  plans: z
+    .array(teamPlanSchema.extend({ errors: z.array(teamPlanErrorSchema).max(16).optional() }))
+    .max(8)
+    .optional(),
+  /** 名册（批3b 草案编辑器的负责人下拉数据源）：本 workspace 可派员工。 */
+  roster: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        agentId: z.string().optional(),
+      }),
+    )
+    .max(32)
+    .optional(),
 });
 export type TeamBoardSnapshot = z.infer<typeof teamBoardSnapshotSchema>;

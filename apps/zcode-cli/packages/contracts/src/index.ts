@@ -28,6 +28,7 @@ export * from "./interfaces/model-catalog.port.js";
 export * from "./interfaces/automation.port.js";
 export * from "./interfaces/agent-dispatch.port.js";
 export * from "./interfaces/team-message.port.js";
+export * from "./interfaces/team-plan.port.js";
 export * from "./interfaces/council.js";
 export * from "./interfaces/off-peak.port.js";
 export * from "./interfaces/mcp.port.js";

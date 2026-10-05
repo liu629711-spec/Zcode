@@ -9,7 +9,10 @@ import { v4ConversationFileRewindPreviewResultSchema } from "./transport.js";
 import { modelSelectionSchema } from "../model-selection.js";
 import { modelExecutionSchema } from "../model-execution.js";
 import { submissionModeSchema } from "./submission.js";
-import { teamBoardSnapshotSchema } from "./team-board.js";
+import {
+  teamBoardSnapshotSchema,
+  teamPlanTaskSchema,
+} from "./team-board.js";
 import { zcodeAutomationBotDeliveryTargetSchema } from "../bots.js";
 import {
   amendWorkflowRunSettingsPayloadSchema,
@@ -279,6 +282,19 @@ export const commandPayloadSchemas = {
     batchId: z.string().trim().min(1).max(128),
     enabled: z.boolean(),
   }),
+  // 排班草案（批3b）：看板编辑器保存草案；P1 拍板=可增删改任务。
+  teamPlanUpdate: z.object({
+    planId: z.string().trim().min(1).max(64),
+    tasks: z.array(teamPlanTaskSchema).min(1).max(16),
+  }),
+  // 确认开工：逐单走既有派单端口（P2：已派照跑，失败单可重试）。
+  teamPlanApprove: z.object({
+    planId: z.string().trim().min(1).max(64),
+  }),
+  // 放弃草案（P4：面板二次确认后才发）。
+  teamPlanDiscard: z.object({
+    planId: z.string().trim().min(1).max(64),
+  }),
 } as const;
 
 export type CommandType = keyof typeof commandPayloadSchemas;
@@ -471,6 +487,26 @@ export const commandResultSchema = z.discriminatedUnion("type", [
     type: z.literal("teamAutoFlow"),
     batchId: z.string().min(1),
     enabled: z.boolean(),
+  }),
+  z.object({
+    // teamPlanUpdate ACK（批3b）：草案已按面板编辑保存。
+    type: z.literal("teamPlanUpdate"),
+    planId: z.string().min(1),
+  }),
+  z.object({
+    // teamPlanApprove ACK（批3b）：开工结果——已派数 + 失败清单（P2 照跑重试）。
+    type: z.literal("teamPlanApprove"),
+    planId: z.string().min(1),
+    batchId: z.string().optional(),
+    dispatched: z.number().int().nonnegative(),
+    failed: z
+      .array(z.object({ taskKey: z.string().min(1), error: z.string().min(1) }))
+      .max(16),
+  }),
+  z.object({
+    // teamPlanDiscard ACK（批3b）：草案已作废。
+    type: z.literal("teamPlanDiscard"),
+    planId: z.string().min(1),
   }),
   z.object({
     // restart discarded 过去只返回一个无差别 fault，renderer 无法区分
