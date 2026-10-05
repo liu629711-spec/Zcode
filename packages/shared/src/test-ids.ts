@@ -573,6 +573,8 @@ export const TID_V4_COMPOSER_KEEP_QUEUE_SEND = "v4-composer-keep-queue-send";
 export const TID_V4_PAUSED_QUEUE_SEND_DIALOG = "v4-paused-queue-send-dialog";
 /** V4 composer 附件 chip（动态后缀为附件 id） */
 export const TID_V4_ATTACHMENT = "v4-attachment";
+/** V4 composer 语音输入按钮 */
+export const TID_V4_VOICE = "v4-voice";
 /** V4 composer 附件上传进度（动态后缀为附件 id） */
 export const TID_V4_ATTACHMENT_UPLOAD_PROGRESS = "v4-attachment-upload-progress";
 /** V4 composer 附件上传重试（动态后缀为附件 id） */

@@ -295,6 +295,8 @@ export interface VoiceTranscribeResult {
 }
 
 export interface VoiceEngineStatus {
+  /** 引擎根目录（~/.zcode/voice-engines），供"打开引擎文件夹"入口 */
+  root: string;
   whisper: { installed: boolean; modelPath?: string };
   sensevoice: { installed: boolean; modelPath?: string };
 }

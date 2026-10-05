@@ -18,6 +18,7 @@ import {
   WandSparkles,
   Keyboard,
   FileSearch,
+  Mic,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import { DESIGN_STYLES, type DesignStyle } from "@/themeStyles.js";
@@ -144,6 +145,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "shortcuts",
     icon: Keyboard,
     titleId: "settings.shortcuts.title",
+    groupId: "basics",
+  },
+  // 语音输入：本机效率配置，紧跟快捷键；引擎装在哪、怎么切供应商都在这一区。
+  {
+    id: "voice",
+    icon: Mic,
+    titleId: "settings.voice.title",
     groupId: "basics",
   },
   // 工作区搜索范围（.zcodeignore）：面向所有用户的基础工作区行为配置，收在基础设置末尾。

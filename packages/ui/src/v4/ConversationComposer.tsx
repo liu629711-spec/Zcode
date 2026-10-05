@@ -74,6 +74,7 @@ import {
   AttachmentPreview,
 } from "@/components/ai-elements/attachments.js";
 import { Button } from "@/components/ui/button.js";
+import { VoiceInputButton } from "@/v4/composer/VoiceInputButton.js";
 import {
   Dialog,
   DialogClose,
@@ -2081,6 +2082,7 @@ function ConversationComposerImpl({
             onSendCompressionCommand={onSendCompressionCommand}
           />
         </span>
+        <VoiceInputButton disabled={disabled} inputApiRef={inputApiRef} />
         {showStopControl ? (
           <ControlHintTooltip title={stopTooltipTitle} shortcut="Esc">
             <Button

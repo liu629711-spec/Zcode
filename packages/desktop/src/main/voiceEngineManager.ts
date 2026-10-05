@@ -49,6 +49,7 @@ export function getVoiceEngineStatus(): VoiceEngineStatus {
   const whisperModel = resolveWhisperModel();
   const senseVoiceModel = firstFile(SENSEVOICE_MODELS, (name) => name === "model.int8.onnx");
   return {
+    root: ENGINE_ROOT,
     whisper: {
       installed: existsSync(join(WHISPER_BIN, "whisper-cli.exe")) && Boolean(whisperModel),
       modelPath: whisperModel,
