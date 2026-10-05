@@ -182,6 +182,7 @@ export async function executeToolCallsForModelStep(
       automationTurn: isAutomationMutationRestrictedTurn(state),
       offPeakTurn: isOffPeakCreateRestrictedTurn(state),
       workOrderTurn: isWorkOrderRestrictedTurn(state),
+      ...(state.workOrderId ? { workOrderId: state.workOrderId } : {}),
       signal: state.turnAbortSignal,
       traceContext: options.modelTraceContext,
       subagentModelOverride: state.subagentModelOverride,

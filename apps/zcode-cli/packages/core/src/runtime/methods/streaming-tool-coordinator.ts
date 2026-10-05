@@ -291,6 +291,7 @@ async function executeDuringStream(
     automationTurn: isAutomationMutationRestrictedTurn(state),
     offPeakTurn: isOffPeakCreateRestrictedTurn(state),
     workOrderTurn: isWorkOrderRestrictedTurn(state),
+    ...(state.workOrderId ? { workOrderId: state.workOrderId } : {}),
     signal: options.abortSignal,
     traceContext: options.traceContext,
     onBatchStart: async () => {

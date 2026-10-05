@@ -910,6 +910,7 @@ const zhCN: Record<string, string> = {
   "chat.teamBoard.escalated": "返修到上限",
   "chat.teamBoard.escalatedHint": "自动返修已达 2 轮上限仍未通过，请人工处理（可一键重派或换人）",
   "chat.teamBoard.repairChip": "返修 {round}",
+  "chat.teamBoard.comms": "队内通讯（老板可见）",
   "sidePane.subagentDirectory": "子智能体目录",
   "sidePane.selectionChat": "辅助对话",
   "sidePane.workflowRun": "工作流实例",

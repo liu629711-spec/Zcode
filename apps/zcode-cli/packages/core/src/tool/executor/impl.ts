@@ -51,6 +51,7 @@ export class ToolExecutorImpl implements ToolExecutor {
       artifactStore: options.artifactStore,
       automationPort: options.automationPort,
       agentDispatchPort: options.agentDispatchPort,
+      teamMessagePort: options.teamMessagePort,
       offPeakPort: options.offPeakPort,
       sessionStore: options.sessionStore,
       sessionModePort: options.sessionModePort,

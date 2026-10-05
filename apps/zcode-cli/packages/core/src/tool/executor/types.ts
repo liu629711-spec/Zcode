@@ -13,6 +13,7 @@ import type {
   ExecutionShellSelection,
   AutomationPort,
   AgentDispatchPort,
+  TeamMessagePort,
   OffPeakPort,
   FileSystemPort,
   HttpClientPort,
@@ -107,6 +108,7 @@ export interface ToolExecutorOptions {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   agentDispatchPort?: AgentDispatchPort;
+  teamMessagePort?: TeamMessagePort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;
@@ -174,6 +176,8 @@ export interface ToolExecuteOptions {
   offPeakTurn?: boolean;
   /** 当前执行处于工单唤醒轮；AgentDispatch 的 context 标志（嵌套上限终审）来源。 */
   workOrderTurn?: boolean;
+  /** 本轮工单身份（工单轮/消息轮）；TeamMessage 找队用。 */
+  workOrderId?: string;
   signal?: AbortSignal;
   traceContext?: TraceContext;
   subagentModelOverride?: SubagentRunOptions["modelOverride"];
@@ -218,6 +222,7 @@ export interface ToolExecutorDeps {
   artifactStore?: ToolArtifactStorePort;
   automationPort?: AutomationPort;
   agentDispatchPort?: AgentDispatchPort;
+  teamMessagePort?: TeamMessagePort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;

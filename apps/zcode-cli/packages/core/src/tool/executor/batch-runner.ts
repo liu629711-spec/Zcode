@@ -42,6 +42,7 @@ export async function executeToolBatch(
           automationTurn: options?.automationTurn,
           offPeakTurn: options?.offPeakTurn,
           workOrderTurn: options?.workOrderTurn,
+          ...(options?.workOrderId ? { workOrderId: options.workOrderId } : {}),
           signal: options?.signal,
           traceContext: options?.traceContext,
           subagentModelOverride: options?.subagentModelOverride,

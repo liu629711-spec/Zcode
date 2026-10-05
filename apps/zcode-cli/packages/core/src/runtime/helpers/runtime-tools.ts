@@ -224,6 +224,7 @@ function createRuntimeToolExecutor(
     artifactStore: deps.artifactStore,
     automationPort: deps.automationPort,
     agentDispatchPort: deps.agentDispatchPort,
+    teamMessagePort: deps.teamMessagePort,
     offPeakPort: deps.offPeakPort,
     sessionStore: deps.sessionStore,
     sessionModePort: createRuntimeSessionModePort(runtime),

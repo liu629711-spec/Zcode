@@ -116,6 +116,7 @@ export type {
   AttachmentStorageMetadata,
   AutomationPort,
   AgentDispatchPort,
+  TeamMessagePort,
   AgentWorkOrderEnvelope,
   OffPeakPort,
   BackgroundExecutionSnapshot,

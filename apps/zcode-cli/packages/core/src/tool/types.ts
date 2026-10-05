@@ -6,6 +6,7 @@ import type {
   ExecutionShellSelection,
   AutomationPort,
   AgentDispatchPort,
+  TeamMessagePort,
   OffPeakPort,
   EmbeddedSearchBackend,
   ExecutionPort,
@@ -139,6 +140,11 @@ export interface ToolExecutionContext {
   automationTurn?: boolean;
   /** 当前工具调用是否属于工单唤醒轮；AgentDispatch handler 用它做最终拒绝（嵌套上限=1）。 */
   workOrderTurn?: boolean;
+  /**
+   * 本轮的工单身份（工单唤醒轮/消息轮才有）：TeamMessage 据它经全局台账找回
+   * 队（批次）与队长会话——队内校验与通讯留痕的钥匙。
+   */
+  workOrderId?: string;
   /** 当前工具调用是否属于闲时任务派发轮；OffPeakCreate handler 用它做最终拒绝。 */
   offPeakTurn?: boolean;
   traceContext?: TraceContext;
@@ -171,6 +177,8 @@ export interface ToolExecutionContext {
   automationPort?: AutomationPort;
   /** 跨会话派单端口；缺席则 AgentDispatch 不可用（未注册）。 */
   agentDispatchPort?: AgentDispatchPort;
+  /** 队内直达消息端口（团队看板批3）；缺席则 TeamMessage 不可用（未注册）。 */
+  teamMessagePort?: TeamMessagePort;
   offPeakPort?: OffPeakPort;
   sessionStore?: SessionStorePort;
   sessionModePort?: SessionModePort;

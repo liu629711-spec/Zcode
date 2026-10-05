@@ -44,6 +44,7 @@ import {
   cronUpdateToolEntry,
 } from "./cron.js";
 import { agentDispatchToolEntry } from "./agent-dispatch.js";
+import { teamMessageToolEntry } from "./team-message.js";
 import { councilConveneToolEntry } from "./council-convene.js";
 import { offPeakCreateToolEntry, offPeakListToolEntry } from "./off-peak.js";
 import {
@@ -93,6 +94,7 @@ export const builtInTools: ToolEntry[] = [
   cronDeleteToolEntry,
   // 派单（D29/D1）：跨会话工单投递；端口在场才注册（includeAgentDispatch）。
   agentDispatchToolEntry,
+  teamMessageToolEntry,
   // 圆桌会（真会议）召集工具：与 AgentDispatch 同门（同一派单端口驱动；工单轮/
   // 子代理不注册）。会议的席位单走的也是派单端口，嵌套纪律同门执法。
   councilConveneToolEntry,

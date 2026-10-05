@@ -73,6 +73,7 @@ import type {
   ExecutionShellSelection,
   AutomationPort,
   AgentDispatchPort,
+  TeamMessagePort,
   OffPeakPort,
   FileSystemPort,
   HttpClientPort,
@@ -394,6 +395,8 @@ export interface AgentRuntimeDeps {
   automationPort?: AutomationPort;
   /** 跨会话派单端口（D29）；存在即注册 AgentDispatch，缺席则工具不可见。 */
   agentDispatchPort?: AgentDispatchPort;
+  /** 队内直达消息端口（团队看板批3）；存在即注册 TeamMessage。 */
+  teamMessagePort?: TeamMessagePort;
   offPeakPort?: OffPeakPort;
   contextSourcePort?: ContextSourcePort;
   eventSink?: SessionEventSink;

@@ -210,6 +210,20 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
     }
   }
 
+  // 队内消息（批3）：通讯区按批次归拢，时间正序，最新 32 条。
+  const messagesByBatch = new Map<string, { from: string; to: string; text: string; createdAt: number }[]>();
+  for (const row of deps.rows) {
+    if (row.kind !== "agentWorkOrderTeamMessage") continue;
+    const rowBatchId = readString(row.payload.batchId);
+    const from = readString(row.payload.from);
+    const to = readString(row.payload.to);
+    const text = readString(row.payload.text);
+    if (!rowBatchId || !from || !to || !text) continue;
+    const list = messagesByBatch.get(rowBatchId) ?? [];
+    list.push({ from, to, text: text.slice(0, 200), createdAt: row.time.created });
+    messagesByBatch.set(rowBatchId, list);
+  }
+
   // 质检灯（台账口径）：skipped > promoted(ran) > admitted(pending)。
   const qcByBatch = new Map<string, TeamBoardQcState>();
   for (const row of deps.rows) {
@@ -255,6 +269,14 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
           (order) => (order.repairRound ?? 0) >= TEAM_BOARD_MAX_REPAIR_ROUNDS,
         )
           ? { escalated: true }
+          : {}),
+        ...(messagesByBatch.get(team.batchId)
+          ? {
+              messages: messagesByBatch
+                .get(team.batchId)!
+                .sort((a, b) => a.createdAt - b.createdAt)
+                .slice(-32),
+            }
           : {}),
         orders: [...team.orders.values()]
           .sort((a, b) => a.createdAt - b.createdAt || a.workOrderId.localeCompare(b.workOrderId))

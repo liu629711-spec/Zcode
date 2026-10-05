@@ -992,6 +992,7 @@ const enUS: Record<string, string> = {
   "chat.teamBoard.escalated": "Repair cap reached",
   "chat.teamBoard.escalatedHint": "Auto repair hit the 2-round cap without a pass — handle manually (re-dispatch or swap the agent)",
   "chat.teamBoard.repairChip": "Repair {round}",
+  "chat.teamBoard.comms": "Team comms (visible to you)",
   "sidePane.subagentDirectory": "Subagents",
   "sidePane.selectionChat": "Side conversation",
   "sidePane.workflowRun": "Workflow run",

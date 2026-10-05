@@ -83,6 +83,18 @@ export const teamBoardTeamSchema = z.object({
   autoFlow: z.boolean().optional(),
   /** 自动返修到上限停手（repairRound ≥ TEAM_BOARD_MAX_REPAIR_ROUNDS）：等人拍板。 */
   escalated: z.boolean().optional(),
+  /** 队内直达消息（批3）：通讯区按时间正序，最新 32 条（发射侧截断）。 */
+  messages: z
+    .array(
+      z.object({
+        from: z.string().min(1),
+        to: z.string().min(1),
+        text: z.string().min(1).max(200),
+        createdAt: z.number(),
+      }),
+    )
+    .max(32)
+    .optional(),
 });
 export type TeamBoardTeam = z.infer<typeof teamBoardTeamSchema>;
 

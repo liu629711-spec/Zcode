@@ -33,6 +33,7 @@ import type { ZCodeInstalledPluginData } from "../plugins.js";
 import type {
   AutomationPort,
   AgentDispatchPort,
+  TeamMessagePort,
   OffPeakPort,
   BackgroundTaskCancelResult,
   CollaborationMode,
@@ -183,6 +184,8 @@ export interface ZCodeAppOptions {
   automationPort?: AutomationPort;
   /** 跨会话派单端口（D29）；存在即注册 AgentDispatch 工具。 */
   agentDispatchPort?: AgentDispatchPort;
+  /** 队内直达消息端口（团队看板批3）；存在即注册 TeamMessage。 */
+  teamMessagePort?: TeamMessagePort;
   offPeakPort?: OffPeakPort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;

@@ -307,6 +307,22 @@ function TeamCard({
           <OrderRow key={order.workOrderId} order={order} />
         ))}
       </ul>
+      {team.messages?.length ? (
+        <div className="flex flex-col gap-1 rounded-lg bg-muted/40 p-2" data-testid="team-board-comms">
+          <span className="text-ui-2xs font-medium text-foreground-subtle">
+            {intl.formatMessage({ id: "chat.teamBoard.comms" })}
+          </span>
+          {team.messages.slice(-6).map((entry, index) => (
+            <p key={`${entry.createdAt}:${index}`} className="min-w-0 break-words text-ui-2xs leading-4 text-foreground-subtlest">
+              <span className="font-medium text-foreground-subtle">{entry.from}</span>
+              {" → "}
+              <span className="font-medium text-foreground-subtle">{entry.to}</span>
+              {": "}
+              {entry.text}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
