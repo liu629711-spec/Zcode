@@ -133,6 +133,13 @@ const CODE_VIEWER_UNSAFE_CSS = [
   "[data-utility-button]::after{content:var(--code-comment-add-tooltip);position:absolute;left:calc(100% + 6px);top:50%;transform:translateY(-50%);max-width:16rem;white-space:nowrap;pointer-events:none;opacity:0;z-index:5;border:1px solid var(--color-border);border-radius:8px;background:var(--color-tooltip);color:var(--color-tooltip-foreground);padding:4px 8px;font-family:var(--diffs-header-font-family,var(--diffs-header-font-fallback));font-size:12px;line-height:16px;box-shadow:0 4px 12px rgb(0 0 0 / 0.14);}",
   "[data-utility-button]:hover::after,[data-utility-button]:focus-visible::after{opacity:1;}",
   "}",
+  // Shadow DOM 吃不到全局滚动条样式，长行横向滚动时冒出 Chromium 默认箭头按钮
+  //（暗色下是一对浅灰 ‹ ›，看起来像卡片坏了）。与全局 styles.css 同款收口。
+  "::-webkit-scrollbar{width:14px;height:14px;}",
+  "::-webkit-scrollbar-track{background:transparent;}",
+  "::-webkit-scrollbar-thumb{min-height:32px;min-width:32px;border:3px solid transparent;border-radius:9999px;background:var(--color-border);background-clip:padding-box;}",
+  "::-webkit-scrollbar-corner{background:transparent;}",
+  "::-webkit-scrollbar-button{display:none;width:0;height:0;}",
 ].join("");
 
 /**
@@ -677,6 +684,10 @@ export function CodeViewer({
   }, [file.cacheKey, firstLineNumber, focusedEndLine, focusedStartLine, focusRequestId]);
   // 依赖是 CSS 字符串（内容）而不是数组引用：调用方每次渲染给一个新数组时，options 不该跟着换（File 会重排）。
   const markedLinesCss = codeViewerMarkedLinesCss(markedLines);
+  // 组件库的 :host{color-scheme:light dark} 跟操作系统走，且会压过宿主元素的 inline
+  // color-scheme——OS 浅色 + 应用深色时，text 代码块在深色卡上渲染成深色文字（看起来
+  // 像正文丢失）。这里经 unsafe 层（声明顺序最后）把 :host 钉到代码主题的明暗。
+  const colorSchemeCss = `:host{color-scheme:${resolveCodeViewerColorScheme(theme)};}`;
   const options = useMemo<FileOptions<CodeViewerAnnotationMetadata>>(
     () => ({
       disableFileHeader: true,
@@ -694,7 +705,7 @@ export function CodeViewer({
       onGutterUtilityClick: canUseCommentGutterUtility ? handleGutterUtilitySelection : undefined,
       // 内建 comment + 默认贴在行号右侧，用户拖拽时容易和代码起点混在一起。
       // 这里只调整 Shadow DOM 内 gutter utility 的位置，不接管 pointer 事件，避免破坏多行拖拽 range。
-      unsafeCSS: CODE_VIEWER_UNSAFE_CSS + markedLinesCss,
+      unsafeCSS: CODE_VIEWER_UNSAFE_CSS + colorSchemeCss + markedLinesCss,
     }),
     [
       canUseCommentGutterUtility,
