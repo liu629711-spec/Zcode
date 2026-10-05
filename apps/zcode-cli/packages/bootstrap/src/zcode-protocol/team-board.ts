@@ -216,7 +216,10 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
   }
 
   // 队内消息（批3）：通讯区按批次归拢，时间正序，最新 32 条。
-  const messagesByBatch = new Map<string, { from: string; to: string; text: string; createdAt: number }[]>();
+  const messagesByBatch = new Map<
+    string,
+    { from: string; to: string; text: string; createdAt: number; toSessionId?: string }[]
+  >();
   for (const row of deps.rows) {
     if (row.kind !== "agentWorkOrderTeamMessage") continue;
     const rowBatchId = readString(row.payload.batchId);
@@ -225,7 +228,14 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
     const text = readString(row.payload.text);
     if (!rowBatchId || !from || !to || !text) continue;
     const list = messagesByBatch.get(rowBatchId) ?? [];
-    list.push({ from, to, text: text.slice(0, 200), createdAt: row.time.created });
+    const toSessionId = readString(row.payload.toSessionId);
+    list.push({
+      from,
+      to,
+      text: text.slice(0, 200),
+      createdAt: row.time.created,
+      ...(toSessionId ? { toSessionId } : {}),
+    });
     messagesByBatch.set(rowBatchId, list);
   }
 

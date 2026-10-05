@@ -58,6 +58,7 @@ export function WorkspaceHeader({
   onRefreshGit,
   onToggleTerminal,
   onToggleSidePane,
+  onOpenTeamBoard,
   toggleSidePaneShortcutLabel,
   onReloadSession,
   reloadSessionDisabled,
@@ -103,6 +104,8 @@ export function WorkspaceHeader({
   onToggleTerminal: () => void;
   onToggleBrowser: () => void;
   onToggleSidePane: () => void;
+  /** 团队看板（挂账②）：聊天头部入口，直达当前会话的看板页签。 */
+  onOpenTeamBoard?: (request: { sessionId: string }) => void;
   toggleSidePaneShortcutLabel?: string;
   onReloadSession: (options?: {
     resumeTaskId?: string | null;
@@ -211,6 +214,8 @@ export function WorkspaceHeader({
           isSidePaneOpen={isSidePaneOpen}
           onToggleTerminal={onToggleTerminal}
           onToggleSidePane={onToggleSidePane}
+          onOpenTeamBoard={onOpenTeamBoard}
+          activeSessionId={activeSessionId}
           toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
           simplifyForNarrowRemote={simplifyForNarrowRemote}
           hideHelpMenu={false}

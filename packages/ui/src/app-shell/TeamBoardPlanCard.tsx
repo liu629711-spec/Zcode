@@ -156,12 +156,17 @@ export function TeamBoardPlanCard({
                 <Trash2Icon className="size-3" aria-hidden="true" />
               </button>
             </div>
-            <p
-              className="line-clamp-2 text-ui-2xs leading-4 text-foreground-subtlest"
-              title={task.task}
-            >
-              {task.task}
-            </p>
+            <textarea
+              value={task.task}
+              onChange={(event) => {
+                const next = [...draft];
+                next[index] = { ...task, task: event.target.value };
+                mutate(next);
+              }}
+              rows={2}
+              aria-label={intl.formatMessage({ id: "chat.teamBoard.planTaskBody" })}
+              className={cn("w-full", INPUT_CLASS)}
+            />
             {draft.length > 1 ? (
               <div className="flex min-w-0 flex-wrap items-center gap-1">
                 <span className="shrink-0 text-ui-2xs text-foreground-subtlest">

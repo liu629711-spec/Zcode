@@ -258,6 +258,7 @@ function SidePaneTabItemContent({
 }
 
 function isDiffPreviewTab(tab: WorkspaceSidePaneTab): boolean {
+  if (tab.type === "team-board" || tab.type === "team-desk") return false;
   return (
     tab.type === "code-viewer" &&
     (tab.source.type === "patch" || tab.source.type === "multi-file-diff")
@@ -343,6 +344,11 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
   // 缺省（about:blank/未取到）回退地球图标。
   if (tab.type === "browser-use") {
     return <BrowserUseTabIcon tab={tab} />;
+  }
+
+  // team-desk 无 source（同 browser-use 拦截理由）；team-board 已在上方拦截。
+  if (tab.type === "team-desk") {
+    return <BotIcon className="size-3.5" />;
   }
 
   if (tab.source.type === "patch") {
@@ -554,6 +560,10 @@ export function getSidePaneTabTitle(
   // 用页面标题（agent 导航后由 getState 回填），缺省复用 browser.title 文案。
   if (tab.type === "browser-use") {
     return tab.title?.trim() || formatMessage({ id: "browser.title" });
+  }
+
+  if (tab.type === "team-desk") {
+    return tab.deskName;
   }
 
   return tab.source.title || formatMessage({ id: "codeViewer.title" });

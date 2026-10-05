@@ -91,6 +91,8 @@ export const teamBoardTeamSchema = z.object({
         to: z.string().min(1),
         text: z.string().min(1).max(200),
         createdAt: z.number(),
+        /** 收件人工位（跳转会话用）；缺席 = 投递时未落工位（旧数据）。 */
+        toSessionId: z.string().optional(),
       }),
     )
     .max(32)

@@ -21,6 +21,7 @@ import type {
   OpenScopedSubagentSideTabRequest,
   OpenBackgroundBashSideTabRequest,
   OpenTeamBoardSideTabRequest,
+  OpenTeamDeskSideTabRequest,
   OpenSelectionSideChatRequest,
   OpenScopedPlanDetailSideTabRequest,
   OpenScopedWorkflowRunSideTabRequest,
@@ -253,6 +254,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleAutoOpenAssistantPptx: (request: AssistantPreviewCardsAutoOpenRequest) => void;
   handleOpenBackgroundBash: (request: OpenBackgroundBashSideTabRequest) => void;
   handleOpenTeamBoard: (request: OpenTeamBoardSideTabRequest) => void;
+  handleOpenTeamDesk: (request: OpenTeamDeskSideTabRequest) => void;
   handleOpenSubagentSession: (request: OpenScopedSubagentSideTabRequest) => void;
   handleOpenSubagentDirectory: (
     request: import("@/lib/workspaceSidePane.js").OpenScopedSubagentDirectorySideTabRequest,

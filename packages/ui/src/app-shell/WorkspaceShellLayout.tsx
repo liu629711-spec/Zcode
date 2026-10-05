@@ -321,6 +321,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   handleOpenSubagentSession,
   handleOpenBackgroundBash,
   handleOpenTeamBoard,
+  handleOpenTeamDesk,
   handleOpenSubagentDirectory,
   handleSyncSubagentSessionTabs,
   handleOpenSelectionSideChat,
@@ -1447,6 +1448,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       services={services}
       isDesktop={isDesktop}
       isWindowsDesktop={isWindowsDesktop}
+      onOpenTeamDesk={handleOpenTeamDesk}
       frameClassName={resolveWorkspaceShellWindowChromeClass({
         isMacDesktop,
         isWindowsDesktop,
@@ -1751,6 +1753,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                           sessionLogPath={taskSessionFile.path}
                           nativeSessionLogProvider={taskNativeSessionLogFile.provider}
                           nativeSessionLogPath={taskNativeSessionLogFile.path}
+                          onOpenTeamBoard={handleOpenTeamBoard}
                           nativeSessionLogExists={taskNativeSessionLogFile.exists}
                           nativeSessionLogLoading={taskNativeSessionLogFile.loading}
                           workspaceHeaderState={workspaceShellZCodeState}

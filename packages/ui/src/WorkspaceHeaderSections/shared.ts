@@ -69,6 +69,11 @@ export interface WorkspaceHeaderActionSectionProps {
   isSidePaneOpen: boolean;
   onToggleTerminal: () => void;
   onToggleSidePane: () => void;
+
+  /** 打开团队看板侧板页签（团队看板批3b/挂账②）：聊天头部入口。 */
+  onOpenTeamBoard?: (request: { sessionId: string }) => void;
+  /** 当前激活会话；缺席（草稿）不显看板入口。 */
+  activeSessionId?: string | null;
   toggleSidePaneShortcutLabel?: string;
   onSelectedEditorChange?: (editor: EditorInfo | null) => void;
   simplifyForNarrowRemote?: boolean;

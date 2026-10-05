@@ -1,7 +1,10 @@
+import { SquareKanbanIcon } from "lucide-react";
 import { WorkspaceEditorButtonGroup } from "@/WorkspaceEditorButtonGroup.js";
 import { WorkspaceSidePaneToggleButton } from "@/WorkspaceSidePaneToggleButton.js";
 import { WorkspaceTerminalToggleButton } from "@/WorkspaceTerminalToggleButton.js";
 import { cn } from "@/components/lib/utils.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { WINDOWS_CAPTION_CONTROL_CLASS } from "@/windowCaptionControls.js";
 import type { WorkspaceHeaderActionSectionProps } from "@/WorkspaceHeaderSections/shared.js";
 import { WorkspaceHelpMenuButton } from "@/WorkspaceHelpMenuButton.js";
 import { ConversationShareMenu } from "@/ConversationShareMenu.js";
@@ -22,6 +25,8 @@ export function WorkspaceHeaderActionSection({
   isSidePaneOpen,
   onToggleTerminal,
   onToggleSidePane,
+  onOpenTeamBoard,
+  activeSessionId,
   toggleSidePaneShortcutLabel,
   onSelectedEditorChange,
   simplifyForNarrowRemote = false,
@@ -29,6 +34,7 @@ export function WorkspaceHeaderActionSection({
   showWindowControls = false,
   useWindowsCaptionSpacing = false,
 }: WorkspaceHeaderActionSectionProps) {
+  const { intl } = useZCodeIntl();
   return (
     <div
       className={cn(
@@ -67,6 +73,21 @@ export function WorkspaceHeaderActionSection({
         </>
       ) : null}
       {/* 远程控制移动端只保留图标，避免 diff 数字把按钮撑宽导致标题拥挤。 */}
+      {!isSidePaneOpen && onOpenTeamBoard && activeSessionId ? (
+        <button
+          type="button"
+          onClick={() => onOpenTeamBoard({ sessionId: activeSessionId })}
+          data-testid="workspace-header-team-board"
+          aria-label={intl.formatMessage({ id: "sidePane.teamBoard" })}
+          title={intl.formatMessage({ id: "sidePane.teamBoard" })}
+          className={cn(
+            "flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground [app-region:no-drag] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30",
+            useWindowsCaptionSpacing && WINDOWS_CAPTION_CONTROL_CLASS,
+          )}
+        >
+          <SquareKanbanIcon className="size-4" aria-hidden="true" />
+        </button>
+      ) : null}
       {!isSidePaneOpen ? (
         <WorkspaceSidePaneToggleButton
           isSidePaneOpen={isSidePaneOpen}

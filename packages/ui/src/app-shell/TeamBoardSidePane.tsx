@@ -240,10 +240,14 @@ function TeamDag({ team }: { team: TeamBoardTeam }) {
 
 function TeamCard({
   team,
+  sessionId,
   onToggleAutoFlow,
+  onOpenTeamDesk,
 }: {
   team: TeamBoardTeam;
+  sessionId: string;
   onToggleAutoFlow?: (batchId: string, enabled: boolean) => void;
+  onOpenTeamDesk?: (request: { sessionId: string; deskSessionId: string; deskName: string }) => void;
 }) {
   const { intl } = useZCodeIntl();
   const progress = teamProgress(team);
@@ -320,13 +324,31 @@ function TeamCard({
             {intl.formatMessage({ id: "chat.teamBoard.comms" })}
           </span>
           {team.messages.slice(-6).map((entry, index) => (
-            <p key={`${entry.createdAt}:${index}`} className="min-w-0 break-words text-ui-2xs leading-4 text-foreground-subtlest">
+            <button
+              key={`${entry.createdAt}:${index}`}
+              type="button"
+              disabled={!entry.toSessionId || !onOpenTeamDesk}
+              onClick={() =>
+                entry.toSessionId &&
+                onOpenTeamDesk?.({
+                  sessionId,
+                  deskSessionId: entry.toSessionId,
+                  deskName: entry.to,
+                })
+              }
+              className={cn(
+                "min-w-0 break-words text-left text-ui-2xs leading-4 text-foreground-subtlest transition-colors",
+                entry.toSessionId && onOpenTeamDesk
+                  ? "cursor-pointer hover:text-foreground"
+                  : "cursor-default",
+              )}
+            >
               <span className="font-medium text-foreground-subtle">{entry.from}</span>
               {" → "}
               <span className="font-medium text-foreground-subtle">{entry.to}</span>
               {": "}
               {entry.text}
-            </p>
+            </button>
           ))}
         </div>
       ) : null}
@@ -337,9 +359,15 @@ function TeamCard({
 export function TeamBoardSidePane({
   tab,
   focused,
+  onOpenTeamDesk,
 }: {
   tab: TeamBoardSidePaneTab;
   focused: boolean;
+  onOpenTeamDesk?: (request: {
+    sessionId: string;
+    deskSessionId: string;
+    deskName: string;
+  }) => void;
 }) {
   const { intl } = useZCodeIntl();
   const { sendCommand } = useV4Conversation();
@@ -434,7 +462,13 @@ export function TeamBoardSidePane({
             </p>
           ) : null}
           {snapshot.teams.map((team) => (
-            <TeamCard key={team.batchId} team={team} onToggleAutoFlow={toggleAutoFlow} />
+            <TeamCard
+              key={team.batchId}
+              team={team}
+              sessionId={tab.sessionId}
+              onToggleAutoFlow={toggleAutoFlow}
+              onOpenTeamDesk={onOpenTeamDesk}
+            />
           ))}
         </>
       )}

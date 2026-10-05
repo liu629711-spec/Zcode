@@ -215,6 +215,7 @@ export function createProtocolTeamMessagePort(
           batchId,
           from: fromName,
           to: target.name,
+          toSessionId: targetSessionId,
         },
       });
       context.logger?.info("Team message delivered", {

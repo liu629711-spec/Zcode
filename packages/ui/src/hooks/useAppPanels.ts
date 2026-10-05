@@ -62,7 +62,9 @@ import {
   type OpenScopedSubagentSideTabRequest,
   type OpenBackgroundBashSideTabRequest,
   type OpenTeamBoardSideTabRequest,
+  type OpenTeamDeskSideTabRequest,
   openTeamBoardSidePane,
+  openTeamDeskSessionSidePane,
   openBackgroundBashSidePane,
   type OpenScopedSubagentDirectorySideTabRequest,
   type OpenSelectionSideChatRequest,
@@ -838,6 +840,20 @@ export function useAppPanels(options: {
     [commitOpenedSidePaneState, revealSidePaneForCurrentOwner],
   );
 
+  const handleOpenTeamDesk = useCallback(
+    (request: OpenTeamDeskSideTabRequest) => {
+      revealSidePaneForCurrentOwner();
+      commitOpenedSidePaneState((current) =>
+        openTeamDeskSessionSidePane(current, {
+          ...request,
+          workspacePath: request.workspacePath ?? workspaceAbsPath,
+          ...(workspaceIdentity ? { workspaceIdentity: request.workspaceIdentity ?? workspaceIdentity } : {}),
+        }),
+      );
+    },
+    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath, workspaceIdentity],
+  );
+
   const handleOpenBackgroundBash = useCallback(
     (request: OpenBackgroundBashSideTabRequest) => {
       revealSidePaneForCurrentOwner();
@@ -1604,6 +1620,7 @@ export function useAppPanels(options: {
     handleOpenSubagentSession,
     handleOpenBackgroundBash,
     handleOpenTeamBoard,
+    handleOpenTeamDesk,
     handleOpenSubagentDirectory,
     handleSyncSubagentSessionTabs,
     handleOpenSelectionSideChat,

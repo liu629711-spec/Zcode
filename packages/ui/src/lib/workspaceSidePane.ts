@@ -278,6 +278,40 @@ export interface OpenTeamBoardSideTabRequest {
  * tab 不冻任何团队数据：面板每次挂载/轮询用 sessionId 拉快照（台账即真相源），
  * 恢复出来的旧 tab 不会显示过期名单——与 workflow-directory 同一条理由链，无 GC。
  */
+export interface OpenTeamDeskSideTabRequest {
+  /** 团队所属发起会话（tab 归属对话）。 */
+  sessionId: string;
+  /** 员工工位会话 id（跳转目标）。 */
+  deskSessionId: string;
+  deskName: string;
+  /** 工作区作用域（useAppPanels 兜底回填；投影激活按它找对工作区）。 */
+  workspacePath?: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+}
+
+/**
+ * 员工工位会话 tab（团队看板批3b 挂账③）：点看板成员/通讯跳到员工的工位
+ * transcript。身份 = 工位会话，一条会话一份 tab。**刻意不复用** subagent-session
+ * 类型：syncSubagentSessionSidePaneTabs 会清算 childSessionId 不在子智能体集合
+ * 里的 tab，而工位是顶层会话——复用等于把不变式藏进回收逻辑（actor 会话同款
+ * 理由链，见 WorkflowActorSessionSidePaneTab 注释）。
+ */
+export interface TeamDeskSessionSidePaneTab {
+  id: string;
+  type: "team-desk";
+  ownerTaskId?: string | null;
+  openedAt?: number;
+  workspaceKey?: string | null;
+  sessionId: string;
+  deskSessionId: string;
+  deskName: string;
+  /** SessionPane 必填（投影激活按它找对工作区）；handleOpenTeamDesk 用当前工作区兜底回填。 */
+  workspacePath: string;
+  workspaceIdentity?: string;
+  remoteSessionId?: string;
+}
+
 export interface TeamBoardSidePaneTab {
   id: string;
   type: "team-board";
@@ -551,6 +585,7 @@ export type WorkspaceSidePaneTab =
   | WorkflowRunSidePaneTab
   | WorkflowRunDirectorySidePaneTab
   | TeamBoardSidePaneTab
+  | TeamDeskSessionSidePaneTab
   | WorkflowActorSessionSidePaneTab
   | WorkflowWorkspaceSidePaneTab
   | WorkflowArtifactSidePaneTab;
@@ -846,6 +881,28 @@ function createWorkflowRunSidePaneTab(
 }
 
 /** 打开或复用一条对话的团队看板 tab；结构化 id 幂等，重复点击只聚焦。 */
+/** 打开或复用员工工位的 transcript tab；结构化 id 幂等，重复点击只聚焦。 */
+export function openTeamDeskSessionSidePane(
+  current: WorkspaceSidePaneState | null,
+  options: OpenTeamDeskSideTabRequest & { workspacePath: string },
+): WorkspaceSidePaneState {
+  const nextTab: TeamDeskSessionSidePaneTab = {
+    id: ["team-desk", encodeSidePaneTabIdPart(options.sessionId), encodeSidePaneTabIdPart(options.deskSessionId)].join(":"),
+    type: "team-desk",
+    openedAt: Date.now(),
+    sessionId: options.sessionId,
+    deskSessionId: options.deskSessionId,
+    deskName: options.deskName,
+    workspacePath: options.workspacePath,
+    ...(options.workspaceIdentity ? { workspaceIdentity: options.workspaceIdentity } : {}),
+    ...(options.remoteSessionId ? { remoteSessionId: options.remoteSessionId } : {}),
+  };
+  const existing = current?.tabs.find(
+    (tab): tab is TeamDeskSessionSidePaneTab => tab.type === "team-desk" && tab.id === nextTab.id,
+  );
+  return activateSidePaneTab(current, existing ? { ...existing, ...nextTab } : nextTab);
+}
+
 export function openTeamBoardSidePane(
   current: WorkspaceSidePaneState | null,
   options: OpenTeamBoardSideTabRequest,

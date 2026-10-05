@@ -46,6 +46,44 @@ export const desktopRendererDependencyAliases = {
   "lucide-react": resolveInstalledPackageRoot("lucide-react"),
 } as const;
 
+/** 渲染层 CSP（团队看板批3b 挂账①，审计 A 加固）：transformIndexHtml 注入 meta，
+ * dev/build 一套机制两种强度——dev 需要 unsafe-eval（react-refresh/HMR）与 ws:
+ * （vite 心跳）；build 收紧到 'self'。style/img 的 unsafe-inline/data: 是 React
+ * 内联样式与主题/截图数据的既有依赖；script-src 不含 https:——外部脚本一律拒载。
+ * connect-src 刻意从宽（http: https: ws: wss:）：远程工作区/附件桥/端点探测都从
+ * 渲染层发起，收紧前要逐条盘点（ponytail：v1 只断外部脚本注入这条主注入线）。 */
+function cspMetaPlugin(): Plugin {
+  return {
+    name: "zcode-csp-meta",
+    transformIndexHtml: {
+      order: "pre",
+      handler(html, ctx) {
+        const dev = ctx.server !== undefined;
+        const csp = [
+          "default-src 'self'",
+          `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob: https: zcode-media:",
+          "media-src 'self' data: blob: https: zcode-media:",
+          "font-src 'self' data: https:",
+          dev
+            ? "connect-src 'self' ws: wss: http: https:"
+            : "connect-src 'self' ws: wss: http: https: zcode-media:",
+          "worker-src 'self' blob:",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join("; ");
+        return html.replace(
+          /<head(\s[^>]*)?>/i,
+          (match) => `${match}
+    <meta http-equiv="Content-Security-Policy" content="${csp}" />`,
+        );
+      },
+    },
+  };
+}
+
 function resolveZCodeEnv(value: string | undefined): "test" | "production" {
   return value?.trim().toLowerCase() === "production" ? "production" : "test";
 }
@@ -163,6 +201,7 @@ export default defineConfig(({ mode }) => {
     env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? process.env.VITE_CODING_PLAN_WEBVIEW_ORIGIN ?? "";
   const plugins = [
     ...(e2eCoverageEnabled ? [createE2EUIRendererCoveragePlugin(repoRoot)] : []),
+    cspMetaPlugin(),
     pdfJsCMapsPlugin(),
     react(),
     tailwindcss(),

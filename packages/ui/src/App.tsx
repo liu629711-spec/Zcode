@@ -235,6 +235,7 @@ export function App({
     handleOpenSubagentSession,
     handleOpenBackgroundBash,
     handleOpenTeamBoard,
+    handleOpenTeamDesk,
     handleOpenSubagentDirectory,
     handleSyncSubagentSessionTabs,
     handleOpenSelectionSideChat,
@@ -1260,6 +1261,7 @@ export function App({
         handleOpenSubagentSession={handleOpenSubagentSession}
         handleOpenBackgroundBash={handleOpenBackgroundBash}
         handleOpenTeamBoard={handleOpenTeamBoard}
+        handleOpenTeamDesk={handleOpenTeamDesk}
         handleOpenSubagentDirectory={handleOpenSubagentDirectory}
         handleSyncSubagentSessionTabs={handleSyncSubagentSessionTabs}
         handleOpenSelectionSideChat={handleOpenSelectionSideChat}
