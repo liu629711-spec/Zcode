@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Clock,
   Gavel,
+  SquareKanbanIcon,
   UsersRound,
   Workflow as WorkflowIcon,
 } from "lucide-react";
@@ -113,6 +114,7 @@ function CardShell({
   collapsed,
   onToggleCollapsed,
   children,
+  footer,
 }: {
   icon: ReactNode;
   kindId: string;
@@ -125,6 +127,8 @@ function CardShell({
   collapsed: boolean;
   onToggleCollapsed: () => void;
   children: ReactNode;
+  /** 卡底独立行（团队看板入口）：整条头栏是收纳开关，按钮不能嵌进去。 */
+  footer?: ReactNode;
 }) {
   const { intl } = useZCodeIntl();
   return (
@@ -184,6 +188,9 @@ function CardShell({
         </span>
       </button>
       {collapsed ? null : children}
+      {!collapsed && footer ? (
+        <div className="border-t border-card-border/60 px-3.5 py-1.5">{footer}</div>
+      ) : null}
     </div>
   );
 }
@@ -447,6 +454,7 @@ export function AgentWorkOrderBatchCard({
   /** 行内重派能力与名册都从这里来；缺席=动作位不渲染。 */
   context?: ConversationRowRenderContext;
 }) {
+  const { intl } = useZCodeIntl();
   const [collapsed, setCollapsed] = useState(() => collapsedBatches.get(batch.batchId) ?? false);
   const toggleCollapsed = () => {
     setCollapsed((current) => {
@@ -484,6 +492,20 @@ export function AgentWorkOrderBatchCard({
       overallDot={overallDot}
       collapsed={collapsed}
       onToggleCollapsed={toggleCollapsed}
+      footer={
+        // 团队看板入口（团队看板批 2026-10-05）：整条头栏是收纳开关，按钮落卡底独立行。
+        context?.onOpenTeamBoard && context.sessionId ? (
+          <button
+            type="button"
+            onClick={() => context.onOpenTeamBoard?.({ sessionId: context.sessionId! })}
+            data-testid="agent-work-order-batch-board"
+            className="inline-flex cursor-pointer items-center gap-1 rounded-[4px] px-1 py-0.5 text-ui-xs text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30"
+          >
+            <SquareKanbanIcon className="size-3" aria-hidden="true" />
+            {intl.formatMessage({ id: "chat.workOrderBatch.board.open" })}
+          </button>
+        ) : undefined
+      }
     >
       {batch.review ? (
         <ReviewCouncilBody batch={batch} context={context} />

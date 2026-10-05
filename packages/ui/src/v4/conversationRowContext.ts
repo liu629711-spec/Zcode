@@ -88,9 +88,10 @@ export interface ConversationRowRenderContext {
   onOpenSubagentSession?: (request: OpenSubagentSideTabRequest) => void;
   onOpenPlanDetail?: (request: OpenPlanDetailSideTabRequest) => void;
   onOpenWorkflowRun?: (request: OpenWorkflowRunSideTabRequest) => void;
+  /** 打开团队看板侧板页签（团队看板批 2026-10-05）：request.sessionId = 团队所属发起会话。 */
+  onOpenTeamBoard?: (request: { sessionId: string }) => void;
   /**
    * 派单回执卡的「转交」（2026-09-30 接力协作第一刀）：行只发意图（目标智能体 + 任务），
-   * 宿主绑定 dispatchAgentWorkOrder 命令（与 @ 面板快捷派单同一能力）；缺席（只读会话）
    * 时转交入口整体不渲染。
    */
   onDispatchAgentWorkOrder?: (

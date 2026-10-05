@@ -9,6 +9,7 @@ import { v4ConversationFileRewindPreviewResultSchema } from "./transport.js";
 import { modelSelectionSchema } from "../model-selection.js";
 import { modelExecutionSchema } from "../model-execution.js";
 import { submissionModeSchema } from "./submission.js";
+import { teamBoardSnapshotSchema } from "./team-board.js";
 import { zcodeAutomationBotDeliveryTargetSchema } from "../bots.js";
 import {
   amendWorkflowRunSettingsPayloadSchema,
@@ -269,6 +270,9 @@ export const commandPayloadSchemas = {
   renameSession: z.object({ title: z.string() }),
   deleteSession: z.object({}),
   discardSharedContext: z.object({ contextId: z.string().trim().min(1) }).strict(),
+  // teamBoardState：团队看板页签拉快照（团队看板批 2026-10-05）。非输入类只读命令，
+  // 与 dispatchAgentWorkOrder 同族（不经模型轮）；快照 schema 在 ./team-board.js。
+  teamBoardState: z.object({}),
 } as const;
 
 export type CommandType = keyof typeof commandPayloadSchemas;
@@ -450,6 +454,11 @@ export const commandResultSchema = z.discriminatedUnion("type", [
     agentName: z.string(),
     delivery: z.enum(["started", "queued"]),
     createdSession: z.boolean(),
+  }),
+  z.object({
+    // teamBoardState ACK（团队看板批 2026-10-05）：当前会话的团队快照。
+    type: z.literal("teamBoardState"),
+    snapshot: teamBoardSnapshotSchema,
   }),
   z.object({
     // restart discarded 过去只返回一个无差别 fault，renderer 无法区分

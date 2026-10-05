@@ -41,6 +41,14 @@ export interface AgentWorkOrderEnvelope {
    */
   review?: boolean;
   /**
+   * 批内符号名（团队看板 2026-10-05）：工具输入 task_key 逐字透传。下游工单的
+   * dependsOn 引用它，看板 DAG 据它连线；批1 只记录+展示，解锁调度随批2。
+   * 与 batchId 同域（散单缺席）。
+   */
+  taskKey?: string;
+  /** 前置工单的批内符号名（工具输入 depends_on 逐字透传）；全部交活后本单才就绪。 */
+  dependsOn?: string[];
+  /**
    * 圆桌会席位单（真会议，2026-10-03）：本单是某场圆桌会某轮的一个席位。与
    * batchId 互斥使用（席位单按 councilId 聚合，不进工地卡）；缺席 = 普通工单。
    * councilId 是全场分组键，回执轮头 originMeta.council* 与它对号。
@@ -84,6 +92,10 @@ export interface AgentDispatchRequest {
   batchTitle?: string;
   /** 批次身份（工具输入 batch_id 回传）；有 batchTitle 缺它时端口新铸。 */
   batchId?: string;
+  /** 批内符号名（工具输入 task_key 逐字透传）；缺席 = 无符号名。 */
+  taskKey?: string;
+  /** 前置工单符号名数组（工具输入 depends_on 逐字透传）。 */
+  dependsOn?: string[];
   /** 评审单标记（工具输入 review 逐字透传）；缺席 = 普通施工单。 */
   review?: boolean;
   /**

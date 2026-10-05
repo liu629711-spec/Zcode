@@ -28,6 +28,8 @@ export * from "./workflow-artifact.js";
 export * from "./workflow-artifacts.js";
 // 工作区 transcript（files.* / git.* / world.run 的回放）。
 export * from "./workflow-workspace.js";
+// 团队看板快照（团队看板批 2026-10-05）。
+export * from "./team-board.js";
 export * from "./attachment-ref.js";
 export * from "./attachment-faults.js";
 export * from "./delta.js";

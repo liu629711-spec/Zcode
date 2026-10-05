@@ -13,6 +13,7 @@ import type {
   TraceContext,
 } from "@zcode/contracts";
 import type { ZCodeAutomationBotDeliveryTarget } from "@zcode/shared";
+import type { TeamBoardSnapshot } from "@zcode/shared/zcode-protocol-v4";
 import type {
   CommandAck,
   CommandEnvelope,
@@ -293,4 +294,10 @@ export interface V4CommandCoreHost {
     delivery: "started" | "queued";
     createdSession: boolean;
   }>;
+  /**
+   * 团队看板（团队看板批 2026-10-05）执行面：只读快照，聚合发起会话台账
+   * （派单/回执/质检闸门行）+ 会话注册表的工位在跑状态（team-board.ts 纯函数）。
+   * 不经模型轮、不排队；冷会话不激活（工位状态 unknown）。
+   */
+  getTeamBoardState?(sessionId: string): Promise<TeamBoardSnapshot>;
 }

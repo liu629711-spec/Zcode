@@ -13,6 +13,7 @@ import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js"
 import type {
   OpenScopedSubagentSideTabRequest,
   OpenBackgroundBashSideTabRequest,
+  OpenTeamBoardSideTabRequest,
   OpenScopedSubagentDirectorySideTabRequest,
   OpenSelectionSideChatRequest,
   OpenScopedPlanDetailSideTabRequest,
@@ -108,6 +109,7 @@ interface V4WorkspaceChatAreaProps {
   onAutoOpenAssistantPptx?: (request: AssistantPreviewCardsAutoOpenRequest) => void;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenBackgroundBash?: (request: OpenBackgroundBashSideTabRequest) => void;
+  onOpenTeamBoard?: (request: OpenTeamBoardSideTabRequest) => void;
   onOpenSubagentSession?: (request: OpenScopedSubagentSideTabRequest) => void;
   onOpenSubagentDirectory?: (request: OpenScopedSubagentDirectorySideTabRequest) => void;
   onSyncSubagentSessionTabs?: (request: SyncSubagentSessionTabsRequest) => void;
@@ -170,6 +172,7 @@ export function V4WorkspaceChatArea({
   onOpenFileLink,
   onOpenSubagentSession,
   onOpenBackgroundBash,
+  onOpenTeamBoard,
   onOpenSubagentDirectory,
   onSyncSubagentSessionTabs,
   onOpenSelectionSideChat,
@@ -295,6 +298,7 @@ export function V4WorkspaceChatArea({
       onOpenFileLink,
       onOpenSubagentSession,
       onOpenBackgroundBash,
+      onOpenTeamBoard,
       onOpenSubagentDirectory,
       onSyncSubagentSessionTabs,
       onOpenSelectionSideChat,

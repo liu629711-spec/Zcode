@@ -320,6 +320,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   handleAutoOpenAssistantPptx,
   handleOpenSubagentSession,
   handleOpenBackgroundBash,
+  handleOpenTeamBoard,
   handleOpenSubagentDirectory,
   handleSyncSubagentSessionTabs,
   handleOpenSelectionSideChat,
@@ -1971,6 +1972,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                                 isDesktop ? handleAutoOpenAssistantPptx : undefined
                               }
                               onOpenBackgroundBash={handleOpenBackgroundBash}
+                              onOpenTeamBoard={handleOpenTeamBoard}
                               onOpenSubagentSession={handleOpenSubagentSession}
                               onOpenSubagentDirectory={handleOpenSubagentDirectory}
                               onSyncSubagentSessionTabs={handleSyncSubagentSessionTabs}

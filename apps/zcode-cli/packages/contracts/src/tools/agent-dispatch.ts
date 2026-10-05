@@ -63,6 +63,25 @@ export const AgentDispatchInputSchema = z
       .describe(
         "true marks this order as a REVIEW order: the target agent reviews the work and reports findings (verdict, reasons, top concern) instead of building or fixing anything. Review orders must form their OWN batch (never mixed with build orders) - when every review receipt is in, the system automatically opens a council-synthesis turn for the batch instead of a quality-check pass.",
       ),
+    // 团队看板（2026-10-05）：task_key 是本单在批内的符号名（下游 depends_on 引用它，
+    // 看板 DAG 据它连线）；depends_on 声明前置工单——它们全部交活后本单才算就绪。
+    // 批1 只记录+展示（看板画依赖图），调度解锁随批2 上线；都与 batch_title 同用。
+    task_key: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .optional()
+      .describe(
+        "Symbolic key of this order within its batch (e.g. 'implementation'). Downstream orders reference it in depends_on and the team board draws the dependency DAG from it. Only meaningful together with batch_title; omit for standalone orders.",
+      ),
+    depends_on: z
+      .array(z.string().trim().min(1).max(128))
+      .max(16)
+      .optional()
+      .describe(
+        "task_key values of OTHER orders in the same batch that this order waits on: it should only start once all of them complete. Omit when there are no prerequisites.",
+      ),
   })
   .strict()
   // 未点名（对齐稿 §三 #2/#5）：不点名员工只允许派生新普通会话；否则无落点。

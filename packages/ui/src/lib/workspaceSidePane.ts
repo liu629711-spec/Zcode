@@ -268,6 +268,26 @@ export interface OpenWorkflowRunSideTabRequest {
  * 单一信源）。把摘要冻进 tab 会让「重启后打开一个恢复出来的 tab」显示
  * 一份过期名单，而它恰恰就是为重启后那一刻存在的。
  */
+export interface OpenTeamBoardSideTabRequest {
+  /** 团队所属的发起会话（看板快照按它拉取）。 */
+  sessionId: string;
+}
+
+/**
+ * 团队看板 tab（团队看板批 2026-10-05）：身份 = 发起会话，一条对话一份看板。
+ * tab 不冻任何团队数据：面板每次挂载/轮询用 sessionId 拉快照（台账即真相源），
+ * 恢复出来的旧 tab 不会显示过期名单——与 workflow-directory 同一条理由链，无 GC。
+ */
+export interface TeamBoardSidePaneTab {
+  id: string;
+  type: "team-board";
+  ownerTaskId?: string | null;
+  openedAt?: number;
+  /** 提交进共享侧栏状态时统一冻结（stampSidePaneTabsOwnership 同款）。 */
+  workspaceKey?: string | null;
+  sessionId: string;
+}
+
 export interface WorkflowRunDirectorySidePaneTab {
   id: string;
   type: "workflow-directory";
@@ -530,6 +550,7 @@ export type WorkspaceSidePaneTab =
   | PlanDetailSidePaneTab
   | WorkflowRunSidePaneTab
   | WorkflowRunDirectorySidePaneTab
+  | TeamBoardSidePaneTab
   | WorkflowActorSessionSidePaneTab
   | WorkflowWorkspaceSidePaneTab
   | WorkflowArtifactSidePaneTab;
@@ -822,6 +843,24 @@ function createWorkflowRunSidePaneTab(
     ...(options.workflowName ? { workflowName: options.workflowName } : {}),
     ...(options.phaseId ? { focusPhaseId: options.phaseId } : {}),
   };
+}
+
+/** 打开或复用一条对话的团队看板 tab；结构化 id 幂等，重复点击只聚焦。 */
+export function openTeamBoardSidePane(
+  current: WorkspaceSidePaneState | null,
+  options: OpenTeamBoardSideTabRequest,
+): WorkspaceSidePaneState {
+  const nextTab: TeamBoardSidePaneTab = {
+    // 结构化 id：一条对话一份看板，重复点击幂等聚焦。
+    id: ["team-board", encodeSidePaneTabIdPart(options.sessionId)].join(":"),
+    type: "team-board",
+    openedAt: Date.now(),
+    sessionId: options.sessionId,
+  };
+  const existing = current?.tabs.find(
+    (tab): tab is TeamBoardSidePaneTab => tab.type === "team-board" && tab.id === nextTab.id,
+  );
+  return activateSidePaneTab(current, existing ? { ...existing, ...nextTab } : nextTab);
 }
 
 function createWorkflowRunDirectorySidePaneTab(

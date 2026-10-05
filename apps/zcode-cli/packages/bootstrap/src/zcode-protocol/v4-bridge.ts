@@ -98,6 +98,11 @@ import {
   readSessionContextUsage,
 } from "./server-operations.js";
 import { createProtocolAgentDispatchPort } from "./agent-dispatch-port.js";
+import {
+  buildTeamBoardSnapshotFromRows,
+  liveStatusFromSessions,
+  type TeamBoardInputRow,
+} from "./team-board.js";
 import type {
   ZCodeProtocolAgentServerContext,
   ZCodeProtocolSessionRecord,
@@ -1377,6 +1382,21 @@ export function createConversationV4Gateway(
         ...(input.batchId ? { batchId: input.batchId } : {}),
         ...(input.batchTitle ? { batchTitle: input.batchTitle } : {}),
         sourceSessionId: sessionId,
+      });
+    },
+    // 团队看板（团队看板批 2026-10-05）：只读快照——台账聚合（team-board.ts 纯函数）
+    // + 会话注册表的工位在跑状态。store 缺席 = 空 teams（面板画空态），不炸。
+    getTeamBoardState: async (sessionId) => {
+      const store = context.deps.sessionStore;
+      if (!store?.listSessionInputs) {
+        return { sessionId, generatedAt: Date.now(), teams: [] };
+      }
+      const rows = await store.listSessionInputs({ sessionID: sessionId as SessionId });
+      return buildTeamBoardSnapshotFromRows({
+        sessionId,
+        rows: rows as readonly TeamBoardInputRow[],
+        liveStatusOf: (deskSessionId) =>
+          liveStatusFromSessions(context.sessions.get(deskSessionId)?.app.runtime),
       });
     },
   };

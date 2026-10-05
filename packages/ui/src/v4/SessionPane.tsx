@@ -268,6 +268,7 @@ import type {
   OpenWorkflowWorkspaceSideTabRequest,
   OpenScopedSubagentSideTabRequest,
   OpenBackgroundBashSideTabRequest,
+  OpenTeamBoardSideTabRequest,
   OpenScopedSubagentDirectorySideTabRequest,
   OpenSelectionSideChatRequest,
   SyncSubagentSessionTabsRequest,
@@ -359,6 +360,8 @@ export interface SessionPaneProps {
   onAutoOpenAssistantPptx?: (request: AssistantPreviewCardsAutoOpenRequest) => void;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenBackgroundBash?: (request: OpenBackgroundBashSideTabRequest) => void;
+  /** 打开团队看板侧板页签（团队看板批 2026-10-05）：工地卡标题行按钮直达。 */
+  onOpenTeamBoard?: (request: OpenTeamBoardSideTabRequest) => void;
   onOpenSubagentSession?: (request: OpenScopedSubagentSideTabRequest) => void;
   onOpenSubagentDirectory?: (request: OpenScopedSubagentDirectorySideTabRequest) => void;
   onSyncSubagentSessionTabs?: (request: SyncSubagentSessionTabsRequest) => void;
@@ -545,6 +548,7 @@ export function SessionPane({
   onOpenWorkflowRunDirectory,
   onOpenWorkflowActorSession,
   onOpenWorkflowWorkspace,
+  onOpenTeamBoard,
   conversationFindQuery = "",
   conversationFindActiveIndex = -1,
   conversationFindNavigationRequestId = 0,
@@ -2259,6 +2263,10 @@ export function SessionPane({
       assistantPreviewPptxAutoOpenTarget,
       onOpenFileLink,
       onOpenSubagentSession: onOpenSubagentSession ? handleOpenSubagentSession : undefined,
+      // 团队看板（团队看板批 2026-10-05）：工地卡标题行「看板」按钮直达；只读会话照常可看。
+      onOpenTeamBoard: onOpenTeamBoard
+        ? (request) => onOpenTeamBoard({ sessionId: request.sessionId })
+        : undefined,
       onOpenPlanDetail: onOpenPlanDetail ? handleOpenPlanDetail : undefined,
       onOpenWorkflowRun: onOpenWorkflowRun ? handleOpenWorkflowRun : undefined,
       onOpenWorkflowActor: onOpenWorkflowActorSession ? handleOpenWorkflowActorSession : undefined,

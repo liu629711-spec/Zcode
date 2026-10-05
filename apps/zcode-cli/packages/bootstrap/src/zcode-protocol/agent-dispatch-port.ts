@@ -388,6 +388,10 @@ export function createProtocolAgentDispatchPort(
         task: input.task,
         ...(batchId ? { batchId } : {}),
         ...(batchTitle ? { batchTitle } : {}),
+        // 批内符号名与依赖（团队看板 2026-10-05）：逐字随信封落台账，看板快照
+        // 与批2 解锁调度据它对号。
+        ...(input.taskKey ? { taskKey: input.taskKey } : {}),
+        ...(input.dependsOn?.length ? { dependsOn: [...input.dependsOn] } : {}),
         // 评审单标记（评审会批）：随信封落台账——批次收口时触发侧据它判合议口味。
         ...(input.review === true ? { review: true } : {}),
         // 圆桌会席位单（真会议，2026-10-03）：council* 五参逐字随信封落台账——
@@ -596,6 +600,8 @@ export function createProtocolAgentDispatchPort(
             // 员工工号（批次质检打回重派按号点名，改名不误派）；无名工位没有工号。
             ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
             targetSessionId,
+            // 本单生效模型（团队看板 2026-10-05）：看板每张任务卡标注用哪个模型。
+            ...(enqueueModelSelection ? { model: enqueueModelSelection.modelId } : {}),
             envelope,
           },
         });

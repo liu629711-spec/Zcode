@@ -61,6 +61,8 @@ import {
   type TreemappingSidePaneTab,
   type OpenScopedSubagentSideTabRequest,
   type OpenBackgroundBashSideTabRequest,
+  type OpenTeamBoardSideTabRequest,
+  openTeamBoardSidePane,
   openBackgroundBashSidePane,
   type OpenScopedSubagentDirectorySideTabRequest,
   type OpenSelectionSideChatRequest,
@@ -824,6 +826,16 @@ export function useAppPanels(options: {
       });
     },
     [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath],
+  );
+
+  const handleOpenTeamBoard = useCallback(
+    (request: OpenTeamBoardSideTabRequest) => {
+      revealSidePaneForCurrentOwner();
+      commitOpenedSidePaneState((current) =>
+        openTeamBoardSidePane(current, request),
+      );
+    },
+    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner],
   );
 
   const handleOpenBackgroundBash = useCallback(
@@ -1591,6 +1603,7 @@ export function useAppPanels(options: {
     handleOpenModelTrajectory,
     handleOpenSubagentSession,
     handleOpenBackgroundBash,
+    handleOpenTeamBoard,
     handleOpenSubagentDirectory,
     handleSyncSubagentSessionTabs,
     handleOpenSelectionSideChat,

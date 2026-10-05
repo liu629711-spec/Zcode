@@ -14,6 +14,7 @@ import {
   NotepadTextIcon,
   PackageIcon,
   PaletteIcon,
+  SquareKanbanIcon,
   SquareTerminalIcon,
   TerminalIcon,
   WaypointsIcon,
@@ -300,6 +301,10 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
     return <BotIcon className="size-3.5" />;
   }
 
+  if (tab.type === "team-board") {
+    return <SquareKanbanIcon className="size-3.5" />;
+  }
+
   if (tab.type === "subagent-directory") {
     return <ListTreeIcon className="size-3.5" />;
   }
@@ -505,6 +510,10 @@ export function getSidePaneTabTitle(
   }
   if (tab.type === "subagent-session") {
     return tab.title?.trim() || formatMessage({ id: "sidePane.subagent" });
+  }
+
+  if (tab.type === "team-board") {
+    return formatMessage({ id: "sidePane.teamBoard" });
   }
 
   if (tab.type === "subagent-directory") {

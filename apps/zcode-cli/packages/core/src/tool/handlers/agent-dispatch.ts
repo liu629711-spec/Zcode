@@ -111,6 +111,10 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     ...(batchTitle === undefined
       ? {}
       : { batchTitle, ...(parsed.batch_id === undefined ? {} : { batchId: parsed.batch_id }) }),
+    // 批内符号名与依赖（团队看板 2026-10-05）：逐字透传进信封/台账，看板 DAG
+    // 与批2 的解锁调度据它对号；散单缺席。
+    ...(parsed.task_key === undefined ? {} : { taskKey: parsed.task_key }),
+    ...(parsed.depends_on === undefined ? {} : { dependsOn: [...parsed.depends_on] }),
     ...(parsed.review === true ? { review: true } : {}),
     sourceSessionId: context.sessionId,
   });

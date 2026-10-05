@@ -40,6 +40,7 @@ import {
 import { ResizableHandle, ResizablePanel } from "@/components/ui/resizable.js";
 import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs.js";
 import { SidePaneTabOverview } from "@/app-shell/SidePaneTabOverview.js";
+import { TeamBoardSidePane } from "@/app-shell/TeamBoardSidePane.js";
 import { SubagentSessionSidePane } from "@/app-shell/SubagentSessionSidePane.js";
 import { SubagentDirectorySidePane } from "@/app-shell/SubagentDirectorySidePane.js";
 import { SelectionSideChatPane } from "@/app-shell/SelectionSideChatPane.js";
@@ -1113,6 +1114,11 @@ export function AnimatedSidePanePanel({
                             onOpenFileLink={onOpenFileLink}
                             onOpenSubagentSession={onOpenSubagentSession}
                             onOpenBackgroundBash={onOpenBackgroundBash}
+                          />
+                        ) : tab.type === "team-board" ? (
+                          <TeamBoardSidePane
+                            tab={tab}
+                            focused={isVisible && tab.id === visibleActiveTabId}
                           />
                         ) : tab.type === "subagent-directory" ? (
                           <SubagentDirectorySidePane
