@@ -1431,6 +1431,14 @@ export async function discardPersistedPendingSteerInputs(
     const qcBatchIds = new Set<string>();
     for (const record of admitted) {
       if (record.status !== "admitted") continue;
+      // 团队看板批2：held 派单行是有意挂起的承诺（等前置依赖交活）——不清算、
+      // 不合成假失败；释放由回执销账钩子（bootstrap team-scheduler）驱动。
+      if (
+        record.kind === "agentWorkOrderDispatch" &&
+        (record.payload as { held?: unknown } | undefined)?.held !== undefined
+      ) {
+        continue;
+      }
       if (record.kind === "agentWorkOrderReceipt" || record.kind === "agentWorkOrderDispatch") {
         await this.sessionStore?.settleSessionInput?.({
           id: record.id,

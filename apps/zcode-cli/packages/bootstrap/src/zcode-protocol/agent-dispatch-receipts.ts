@@ -22,10 +22,17 @@ import type {
   ZCodeProtocolAgentServerContext,
   ZCodeProtocolSessionRecord,
 } from "./server-types.js";
+import type { ProtocolAgentDispatchPortDeps } from "./agent-dispatch-port.js";
+import { runTeamSchedulerAfterReceipt } from "./team-scheduler.js";
 
-/** 回执链对端口依赖的窄视图：只需要「发起方不在场时冷恢复」这一件事。 */
-interface ReceiptRelayDeps {
+/**
+ * 回执链对端口依赖的窄视图：只需要「发起方不在场时冷恢复」这一件事；
+ * 团队调度器（批2）的返修/复审派单还需要开新工位的能力（缺席 = 调度器
+ * 对需要新建工位的动作如实失败留痕，不影响回执本身）。
+ */
+export interface ReceiptRelayDeps {
   activateSessionRecord: (sessionId: string) => Promise<ZCodeProtocolSessionRecord>;
+  createPersonaSessionRecord?: ProtocolAgentDispatchPortDeps["createPersonaSessionRecord"];
 }
 
 /**
@@ -344,6 +351,25 @@ async function deliverWorkOrderReceipt(
         workOrderId: input.envelope.workOrderId,
       });
     }
+  }
+  // 团队调度器（团队看板批2）：回执落定后跑一遍调度窗——释放就绪的持派工单
+  // （依赖 honored）+ 自动返修/复审判定（开关开才有）。串行链防并发回执的轮次
+  // 计数竞态；调度失败只留痕，不影响回执本身（回执已安全落地）。
+  try {
+    await runTeamSchedulerAfterReceipt(context, deps, initiatorRecord, {
+      envelope: input.envelope,
+      outcome: {
+        status: input.outcome.status,
+        ...(input.outcome.status === "completed" ? { response: input.outcome.response } : {}),
+      },
+    });
+  } catch (error) {
+    context.logger?.warn("Team scheduler window failed after receipt delivery", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "team_scheduler.window_failed",
+      module: "bootstrap.zcode_protocol",
+      workOrderId: input.envelope.workOrderId,
+    });
   }
   // 圆桌会（真会议）：席位单销账后按 councilId:round 触发收票推进——本轮全部
   // 席位回执到齐才真的推进（判定/重询/算票/主席轮都在 core runtime 上，闸门行

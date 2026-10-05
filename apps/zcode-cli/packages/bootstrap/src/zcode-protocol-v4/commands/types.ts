@@ -300,4 +300,12 @@ export interface V4CommandCoreHost {
    * 不经模型轮、不排队；冷会话不激活（工位状态 unknown）。
    */
   getTeamBoardState?(sessionId: string): Promise<TeamBoardSnapshot>;
+  /**
+   * 团队「自动流转」开关执行面（批2）：台账开关行 upsert（teamFlowRowId 幂等）。
+   * 开关只管自动返修链——依赖持派释放与开关无关（模型声明的依赖系统照办）。
+   */
+  teamAutoFlow?(
+    sessionId: string,
+    input: CommandPayloadMap["teamAutoFlow"],
+  ): Promise<{ batchId: string; enabled: boolean }>;
 }

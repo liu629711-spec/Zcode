@@ -31,6 +31,10 @@ import {
   type AgentProfile,
 } from "@zcode/core";
 import { scheduleWorkOrderReceiptRelay } from "./agent-dispatch-receipts.js";
+import {
+  computeCompletedTaskKeys,
+  type TeamBoardInputRow,
+} from "./team-board.js";
 
 import {
   ProtocolRequestError,
@@ -105,7 +109,12 @@ export async function assertDispatchBudget(
         sessionID: sourceSessionId as SessionId,
       });
       const dispatchRows = rows.filter((row) => row.kind === "agentWorkOrderDispatch");
-      const inflight = dispatchRows.filter((row) => row.status === "admitted").length;
+      // 持派行（团队看板批2 payload.held）是有意挂起的承诺，没在烧钱——不计在飞。
+      const inflight = dispatchRows.filter(
+        (row) =>
+          row.status === "admitted" &&
+          (row.payload as { held?: unknown } | undefined)?.held === undefined,
+      ).length;
       if (inflight >= DISPATCH_INFLIGHT_MAX) {
         throw agentWorkOrderGuardError(
           AGENT_WORK_ORDER_GUARDS.rate,
@@ -394,6 +403,11 @@ export function createProtocolAgentDispatchPort(
         ...(input.dependsOn?.length ? { dependsOn: [...input.dependsOn] } : {}),
         // 评审单标记（评审会批）：随信封落台账——批次收口时触发侧据它判合议口味。
         ...(input.review === true ? { review: true } : {}),
+        // 返修链（团队看板批2）：reviews=被审工单 id（模型透传）；repairOf/repairRound
+        // 由调度器直派铸造——三者随信封落台账，看板与调度器据它们对账。
+        ...(input.reviews ? { reviews: input.reviews } : {}),
+        ...(input.repairOf ? { repairOf: input.repairOf } : {}),
+        ...(input.repairRound !== undefined ? { repairRound: input.repairRound } : {}),
         // 圆桌会席位单（真会议，2026-10-03）：council* 五参逐字随信封落台账——
         // 发起方的收票推进（maybeAdvanceCouncilRound）按 councilId:round 聚拢席位单、
         // 回执轮头 originMeta.council* 据它对号。与 batchId 互斥（召集方代码保证）。
@@ -563,6 +577,79 @@ export function createProtocolAgentDispatchPort(
             });
           });
       }
+      // 依赖持派（团队看板批2）：信封带 dependsOn 且有前置未 completed → 有意挂起。
+      // 落台账行（payload.held 记未满足的批内符号名）但**不投目标、不接回执线**——
+      // 前置全部 completed 后由回执销账钩子（team-scheduler）以同一 workOrderId 释放
+      // 投递。依赖 honored 与「自动流转」开关无关；台账查询失败 fail-open 照常直派。
+      let heldPendingKeys: string[] | undefined;
+      if (input.dependsOn?.length && context.deps.sessionStore?.listSessionInputs) {
+        try {
+          const dispatchRows = (await context.deps.sessionStore.listSessionInputs({
+            sessionID: ownRecord.app.sessionId as SessionId,
+          })) as unknown as TeamBoardInputRow[];
+          const completed = computeCompletedTaskKeys(dispatchRows);
+          const pending = input.dependsOn.filter((key) => !completed.has(key));
+          if (pending.length > 0) heldPendingKeys = pending;
+        } catch (error) {
+          context.logger?.warn("Dependency hold check failed; dispatching without hold", {
+            errorMessage: error instanceof Error ? error.message : String(error),
+            event: "agent_dispatch.hold_check_failed",
+            module: "bootstrap.zcode_protocol",
+            workOrderId: envelope.workOrderId,
+          });
+        }
+      }
+      if (heldPendingKeys) {
+        try {
+          context.deps.sessionStore?.saveSessionInput?.({
+            id: `agentWorkOrderDispatch:${envelope.workOrderId}`,
+            sessionID: ownRecord.app.sessionId,
+            kind: "agentWorkOrderDispatch",
+            delivery: "queue",
+            payload: {
+              text: envelope.task,
+              workOrderId: envelope.workOrderId,
+              agentName: namedProfile?.name ?? workerTitleSeed,
+              ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
+              targetSessionId,
+              ...(enqueueModelSelection
+                ? {
+                    model: enqueueModelSelection.modelId,
+                    modelSelection: enqueueModelSelection,
+                  }
+                : {}),
+              held: { pendingKeys: heldPendingKeys },
+              envelope,
+            },
+          });
+        } catch (ledgerError) {
+          context.logger?.warn("Failed to admit held work order to ledger", {
+            errorMessage: ledgerError instanceof Error ? ledgerError.message : String(ledgerError),
+            event: "agent_dispatch.held_ledger_admit_failed",
+            module: "bootstrap.zcode_protocol",
+            workOrderId: envelope.workOrderId,
+          });
+        }
+        context.logger?.info("Agent work order held pending dependencies", {
+          event: "agent_dispatch.held",
+          module: "bootstrap.zcode_protocol",
+          pendingKeys: heldPendingKeys,
+          targetSessionId,
+          workOrderId: envelope.workOrderId,
+        });
+        return {
+          targetSessionId,
+          agentName: namedProfile?.name ?? "",
+          ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
+          delivery: "queued",
+          createdSession,
+          ...(input.modelSelection ? { model: input.modelSelection.modelId } : {}),
+          workOrderId: envelope.workOrderId,
+          ...(batchId ? { batchId } : {}),
+          ...(batchTitle ? { batchTitle } : {}),
+          held: heldPendingKeys,
+        };
+      }
       const admission = await targetRecord.app.runtime.enqueueAgentWorkOrder({
         envelope,
         traceContext: targetRecord.traceContext,
@@ -600,8 +687,14 @@ export function createProtocolAgentDispatchPort(
             // 员工工号（批次质检打回重派按号点名，改名不误派）；无名工位没有工号。
             ...(namedProfile?.agentId ? { agentId: namedProfile.agentId } : {}),
             targetSessionId,
-            // 本单生效模型（团队看板 2026-10-05）：看板每张任务卡标注用哪个模型。
-            ...(enqueueModelSelection ? { model: enqueueModelSelection.modelId } : {}),
+            // 本单生效模型（团队看板 2026-10-05）：看板每张任务卡标注用哪个模型；
+            // modelSelection 完整结构留给重派/持派释放（批2）按原模型投递。
+            ...(enqueueModelSelection
+              ? {
+                  model: enqueueModelSelection.modelId,
+                  modelSelection: enqueueModelSelection,
+                }
+              : {}),
             envelope,
           },
         });

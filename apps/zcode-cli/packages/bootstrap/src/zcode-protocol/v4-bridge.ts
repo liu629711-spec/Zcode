@@ -103,6 +103,7 @@ import {
   liveStatusFromSessions,
   type TeamBoardInputRow,
 } from "./team-board.js";
+import { teamFlowRowId } from "./team-scheduler.js";
 import type {
   ZCodeProtocolAgentServerContext,
   ZCodeProtocolSessionRecord,
@@ -1386,6 +1387,27 @@ export function createConversationV4Gateway(
     },
     // 团队看板（团队看板批 2026-10-05）：只读快照——台账聚合（team-board.ts 纯函数）
     // + 会话注册表的工位在跑状态。store 缺席 = 空 teams（面板画空态），不炸。
+    teamAutoFlow: async (sessionId, input) => {
+      const store = context.deps.sessionStore;
+      if (!store?.saveSessionInput) {
+        throw new Error("teamAutoFlow requires a session store with ledger support");
+      }
+      await store.saveSessionInput({
+        id: teamFlowRowId(sessionId, input.batchId),
+        sessionID: sessionId as SessionId,
+        kind: "agentWorkOrderTeamFlow",
+        delivery: "queue",
+        payload: { text: `自动流转 ${input.enabled ? "开" : "关"}`, batchId: input.batchId, enabled: input.enabled },
+      });
+      context.logger?.info("Team auto-flow switch toggled", {
+        enabled: input.enabled,
+        batchId: input.batchId,
+        event: "team_scheduler.autoflow_toggled",
+        module: "bootstrap.zcode_protocol",
+        sessionId,
+      });
+      return { batchId: input.batchId, enabled: input.enabled };
+    },
     getTeamBoardState: async (sessionId) => {
       const store = context.deps.sessionStore;
       if (!store?.listSessionInputs) {

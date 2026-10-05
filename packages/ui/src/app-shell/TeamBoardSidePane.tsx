@@ -95,6 +95,11 @@ function OrderRow({ order }: { order: TeamBoardOrder }) {
         <span className="min-w-0 flex-1 truncate text-ui-xs text-foreground" title={order.taskPreview}>
           {order.taskPreview ?? order.workOrderId}
         </span>
+        {order.repairRound !== undefined ? (
+          <span className="shrink-0 rounded-[4px] bg-warning/10 px-1.5 text-ui-2xs font-medium leading-4 text-warning">
+            {intl.formatMessage({ id: "chat.teamBoard.repairChip" }, { round: String(order.repairRound) })}
+          </span>
+        ) : null}
         <span className="shrink-0 text-ui-2xs text-foreground-subtlest">
           {intl.formatMessage({ id: ORDER_STATUS_MESSAGE[order.status] })}
         </span>
@@ -226,7 +231,13 @@ function TeamDag({ team }: { team: TeamBoardTeam }) {
   );
 }
 
-function TeamCard({ team }: { team: TeamBoardTeam }) {
+function TeamCard({
+  team,
+  onToggleAutoFlow,
+}: {
+  team: TeamBoardTeam;
+  onToggleAutoFlow?: (batchId: string, enabled: boolean) => void;
+}) {
   const { intl } = useZCodeIntl();
   const progress = teamProgress(team);
   return (
@@ -241,6 +252,32 @@ function TeamCard({ team }: { team: TeamBoardTeam }) {
         {team.review ? (
           <span className="shrink-0 rounded-[4px] bg-muted px-1.5 text-ui-2xs leading-4 text-foreground-subtle">
             {intl.formatMessage({ id: "chat.teamBoard.reviewChip" })}
+          </span>
+        ) : null}
+        {onToggleAutoFlow ? (
+          <button
+            type="button"
+            onClick={() => onToggleAutoFlow(team.batchId, team.autoFlow !== true)}
+            data-testid="team-board-autoflow"
+            className={cn(
+              "shrink-0 cursor-pointer rounded-[4px] px-1.5 text-ui-2xs font-medium leading-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30",
+              team.autoFlow === true
+                ? "bg-brand/10 text-brand"
+                : "bg-muted text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
+            )}
+            title={intl.formatMessage({ id: "chat.teamBoard.autoFlowHint" })}
+          >
+            {intl.formatMessage({
+              id: team.autoFlow === true ? "chat.teamBoard.autoFlowOn" : "chat.teamBoard.autoFlowOff",
+            })}
+          </button>
+        ) : null}
+        {team.escalated ? (
+          <span
+            className="shrink-0 rounded-[4px] bg-warning/10 px-1.5 text-ui-2xs font-medium leading-4 text-warning"
+            title={intl.formatMessage({ id: "chat.teamBoard.escalatedHint" })}
+          >
+            {intl.formatMessage({ id: "chat.teamBoard.escalated" })}
           </span>
         ) : null}
         {team.qc ? (
@@ -310,6 +347,36 @@ export function TeamBoardSidePane({
     }, POLL_MS);
     return () => clearInterval(timer);
   }, [focused, fetchSnapshot]);
+  const toggleAutoFlow = useCallback(
+    (batchId: string, enabled: boolean) => {
+      void sendCommand(
+        createCommandEnvelope({
+          type: "teamAutoFlow",
+          payload: { batchId, enabled },
+          sessionId: tab.sessionId,
+        }),
+      )
+        .then((ack) => {
+          if (ack.status === "accepted" && ack.result?.type === "teamAutoFlow") {
+            const enabled = ack.result.enabled;
+            setSnapshot((previous) =>
+              previous === undefined
+                ? previous
+                : {
+                    ...previous,
+                    teams: previous.teams.map((team) =>
+                      team.batchId === batchId ? { ...team, autoFlow: enabled } : team,
+                    ),
+                  },
+            );
+          }
+        })
+        .catch(() => {
+          // 下个轮询窗口以台账权威状态刷新，本地不猜。
+        });
+    },
+    [sendCommand, tab.sessionId],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto px-4 py-3" data-testid="team-board-side-pane">
@@ -326,7 +393,9 @@ export function TeamBoardSidePane({
           {intl.formatMessage({ id: "sidePane.teamBoard.empty" })}
         </p>
       ) : (
-        snapshot.teams.map((team) => <TeamCard key={team.batchId} team={team} />)
+        snapshot.teams.map((team) => (
+          <TeamCard key={team.batchId} team={team} onToggleAutoFlow={toggleAutoFlow} />
+        ))
       )}
     </div>
   );

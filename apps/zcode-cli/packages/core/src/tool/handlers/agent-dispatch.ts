@@ -115,11 +115,14 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     // 与批2 的解锁调度据它对号；散单缺席。
     ...(parsed.task_key === undefined ? {} : { taskKey: parsed.task_key }),
     ...(parsed.depends_on === undefined ? {} : { dependsOn: [...parsed.depends_on] }),
+    // 返修链挂点（团队看板批2）：评审单点名它审的工单 id。
+    ...(parsed.reviews === undefined ? {} : { reviews: parsed.reviews }),
     ...(parsed.review === true ? { review: true } : {}),
     sourceSessionId: context.sessionId,
   });
-  const deliveryNote =
-    result.delivery === "queued"
+  const deliveryNote = result.held
+    ? `The work order is HELD until its dependency task keys (${result.held.join(", ")}) complete; the system dispatches it automatically at that point.`
+    : result.delivery === "queued"
       ? "The target session is busy; the work order is queued and will run at the next turn boundary."
       : "The work order has been delivered into the target session.";
   const acceptance = unbadged
@@ -138,6 +141,7 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     ...(result.workOrderId ? { workOrderId: result.workOrderId } : {}),
     ...(result.batchId ? { batchId: result.batchId } : {}),
     ...(result.batchTitle ? { batchTitle: result.batchTitle } : {}),
+    ...(result.held ? { held: result.held } : {}),
     message: result.model ? `${acceptance} Running on model ${result.model}.` : acceptance,
   } satisfies AgentDispatchOutput;
 };
@@ -210,6 +214,8 @@ export const agentDispatchToolEntry: ToolEntry = {
       // task 也用用户语言写——回执语言跟 task 走）；评审单失败重派必须原样保留
       // review=true 与原批次，否则整批降级成普通批。
       `When the user asks for a review meeting or a cross-check by several agents (评审会 / 几个人评一下 / 让大家把把关 / "have a few agents review this"), dispatch 2-3 REVIEW orders in ONE batch: set review=true, batch_title is a short topic in the user's language, and each task tells ONE reviewer exactly what to review and where the deliverable lives (also written in the user's language). Pick reviewers that fit the work (e.g. code-reviewer for code, frontend-design for UI) and NEVER the agent who did the work being reviewed; name the reviewers as agents whenever possible - an anonymous newSession review is a fallback and must carry a short title. When the review receipts arrive, reply to each with at most a one-line acknowledgment - the structured council synthesis is produced automatically by the system's council turn; do not write the full synthesis yourself. If a REVIEW order fails and must be re-dispatched, keep review=true and the original batch_id/batch_title unchanged, or the whole batch degrades into an ordinary one.`,
+      // 团队看板批2（2026-10-05）：评审单挂 reviews=被审工单 id，自动返修链才有对账键。
+      `When a REVIEW order judges a previous order's deliverable, pass reviews with that order's workOrderId (from the original dispatch result): with the team board's auto-flow switch on, a 不通过 verdict then triggers a bounded automatic repair loop (repair back to the original worker, then re-review; max 2 rounds) instead of leaving the failure entirely to the user.`,
     ],
     readOnly: false,
     destructive: false,

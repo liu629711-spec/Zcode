@@ -319,6 +319,31 @@ export function buildWorkOrderReceiptEnvelopeText(input: {
 
 // ── 批次质检（纪律协议批）纯规则 ────────────────────────────────────
 
+/**
+ * 评审结论解析（团队看板批2 2026-10-05）：从评审回执正文前几行提取结构化
+ * verdict——自动返修链的触发器。与 UI extractReviewVerdict（agentWorkOrderBatch.ts）
+ * 同形需同源演进：正则与行窗口（前 3 个非空行）改一处必须改另一处。
+ */
+export type ReviewVerdict = "pass" | "fail" | "conditional";
+
+export function parseReviewVerdict(text: string | undefined): ReviewVerdict | undefined {
+  if (!text) return undefined;
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  for (const line of lines) {
+    const match = /^评审结论\s*[：:]\s*(有条件通过|不通过|通过)\s*$/u.exec(line);
+    if (!match) continue;
+    const verdict = match[1];
+    if (verdict === "通过") return "pass";
+    if (verdict === "不通过") return "fail";
+    return "conditional";
+  }
+  return undefined;
+}
+
 /** 质检清单里的一张工单：来自发起方派单台账的同批行（触发侧已过滤）。 */
 export interface BatchQcOrder {
   workOrderId: string;

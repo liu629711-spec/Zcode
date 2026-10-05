@@ -273,6 +273,12 @@ export const commandPayloadSchemas = {
   // teamBoardState：团队看板页签拉快照（团队看板批 2026-10-05）。非输入类只读命令，
   // 与 dispatchAgentWorkOrder 同族（不经模型轮）；快照 schema 在 ./team-board.js。
   teamBoardState: z.object({}),
+  // teamAutoFlow：团队「自动流转」开关（批2，T3 拍板默认关）。台账开关行是权威，
+  // 命令只做 upsert；重入同 id 即改状态。
+  teamAutoFlow: z.object({
+    batchId: z.string().trim().min(1).max(128),
+    enabled: z.boolean(),
+  }),
 } as const;
 
 export type CommandType = keyof typeof commandPayloadSchemas;
@@ -459,6 +465,12 @@ export const commandResultSchema = z.discriminatedUnion("type", [
     // teamBoardState ACK（团队看板批 2026-10-05）：当前会话的团队快照。
     type: z.literal("teamBoardState"),
     snapshot: teamBoardSnapshotSchema,
+  }),
+  z.object({
+    // teamAutoFlow ACK（团队看板批2）：开关落账后的回执状态。
+    type: z.literal("teamAutoFlow"),
+    batchId: z.string().min(1),
+    enabled: z.boolean(),
   }),
   z.object({
     // restart discarded 过去只返回一个无差别 fault，renderer 无法区分

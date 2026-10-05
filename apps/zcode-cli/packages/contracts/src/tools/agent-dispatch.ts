@@ -82,6 +82,17 @@ export const AgentDispatchInputSchema = z
       .describe(
         "task_key values of OTHER orders in the same batch that this order waits on: it should only start once all of them complete. Omit when there are no prerequisites.",
       ),
+    // 自动返修链（团队看板批2 2026-10-05）：评审单点名它审的是哪张工单——团队
+    // 「自动流转」开着时，不通过 verdict 触发有界返修循环（修→复审→…→上限停）。
+    reviews: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .optional()
+      .describe(
+        "For REVIEW orders: the workOrderId of the order whose deliverable this review judges. With the team auto-flow switch on, a 不通过 verdict automatically dispatches a repair order back to the original worker and re-reviews the fix (max 2 rounds) instead of leaving the failure entirely to the user.",
+      ),
   })
   .strict()
   // 未点名（对齐稿 §三 #2/#5）：不点名员工只允许派生新普通会话；否则无落点。
@@ -111,6 +122,9 @@ export const AgentDispatchOutputSchema = z
     workOrderId: nonEmptyString.optional(),
     batchId: nonEmptyString.optional(),
     batchTitle: nonEmptyString.optional(),
+    // 依赖持派（团队看板批2）：工单已受理但等前置，未投目标会话；回执在后置
+    // 全部交活、本单释放投递之后才回来。
+    held: z.array(nonEmptyString).optional(),
     message: nonEmptyString,
   })
   .strict();

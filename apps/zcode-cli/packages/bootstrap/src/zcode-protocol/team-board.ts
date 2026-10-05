@@ -7,15 +7,17 @@
 // 测试不用起真实 runtime。上界防呆：teams 32 / orders 64 / members 16（快照 schema
 // 同界），超出截断——看板是视图，不是审计工具。
 
-import type {
-  TeamBoardMemberLive,
+import {
+  TEAM_BOARD_MAX_REPAIR_ROUNDS,
+  type TeamBoardMemberLive,
   TeamBoardOrderStatus,
-  TeamBoardQcState,
-  TeamBoardSnapshot,
+  type TeamBoardQcState,
+  type TeamBoardSnapshot,
 } from "@zcode/shared/zcode-protocol-v4";
 
 /** 台账行的窄视图（SessionInputRecord 的子集，测试夹具照此造）。 */
 export interface TeamBoardInputRow {
+  id: string;
   kind: string;
   status: string;
   admittedSequence: number;
@@ -62,6 +64,8 @@ interface OrderDraft {
   workOrderId: string;
   taskKey?: string;
   dependsOn?: string[];
+  repairOf?: string;
+  repairRound?: number;
   agentName: string;
   agentId?: string;
   deskSessionId?: string;
@@ -116,6 +120,11 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
     if (!workOrderId) continue;
     const team = ensureTeam(batchId, readString(envelope.batchTitle), row.time.created);
     const taskKey = readString(envelope.taskKey);
+    const repairOf = readString(envelope.repairOf);
+    const repairRound =
+      typeof envelope.repairRound === "number" && Number.isFinite(envelope.repairRound)
+        ? Math.max(1, Math.floor(envelope.repairRound))
+        : undefined;
     const rawDeps = Array.isArray(envelope.dependsOn) ? envelope.dependsOn : undefined;
     const dependsOn = rawDeps
       ?.map((key) => (typeof key === "string" && key.trim() ? key.trim() : ""))
@@ -128,6 +137,8 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
       workOrderId,
       ...(taskKey ? { taskKey } : {}),
       ...(dependsOn?.length ? { dependsOn } : {}),
+      ...(repairOf ? { repairOf } : {}),
+      ...(repairRound !== undefined ? { repairRound } : {}),
       agentName,
       ...(agentId ? { agentId } : {}),
       ...(deskSessionId ? { deskSessionId } : {}),
@@ -237,6 +248,14 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
         createdAt: team.createdAt,
         updatedAt: team.updatedAt,
         ...(qcByBatch.get(team.batchId) ? { qc: qcByBatch.get(team.batchId)! } : {}),
+        // 自动流转开关（批2）：台账开关行是权威，快照带一份给面板画状态；
+        // escalated = 返修轮次到上限（停手等人）。
+        ...(isTeamAutoFlowEnabledRow(deps.rows, team.batchId) ? { autoFlow: true } : {}),
+        ...([...team.orders.values()].some(
+          (order) => (order.repairRound ?? 0) >= TEAM_BOARD_MAX_REPAIR_ROUNDS,
+        )
+          ? { escalated: true }
+          : {}),
         orders: [...team.orders.values()]
           .sort((a, b) => a.createdAt - b.createdAt || a.workOrderId.localeCompare(b.workOrderId))
           .slice(0, MAX_ORDERS)
@@ -253,6 +272,8 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
               ...(order.model ? { model: order.model } : {}),
               status: order.status,
               unlocked: depsKeys.every((key) => completedTaskKeys.has(key)),
+              ...(order.repairOf ? { repairOf: order.repairOf } : {}),
+              ...(order.repairRound !== undefined ? { repairRound: order.repairRound } : {}),
             };
           }),
         members,
@@ -264,6 +285,47 @@ export function buildTeamBoardSnapshotFromRows(deps: TeamBoardDeps): TeamBoardSn
     generatedAt: deps.now ?? Date.now(),
     teams: teamList,
   };
+}
+
+/** 已交活（completed）的批内符号名集合：解锁判定的唯一基准。 */
+export function computeCompletedTaskKeys(rows: readonly TeamBoardInputRow[]): Set<string> {
+  // 工单号 → 批内符号名（派单行；重派/续批可能同 key 多单，任一 completed 即算）。
+  const taskKeyByWorkOrder = new Map<string, string>();
+  const latestStatus = new Map<string, { status: unknown; sequence: number }>();
+  for (const row of rows) {
+    const envelope = readEnvelopeRecord(row.payload.envelope);
+    const workOrderId = readString(row.payload.workOrderId) ?? readString(envelope?.workOrderId);
+    if (!workOrderId) continue;
+    if (row.kind === "agentWorkOrderDispatch") {
+      const taskKey = readString(envelope?.taskKey);
+      if (taskKey && !taskKeyByWorkOrder.has(workOrderId)) {
+        taskKeyByWorkOrder.set(workOrderId, taskKey);
+      }
+    }
+    if (row.kind !== "agentWorkOrderReceipt") continue;
+    const outcome =
+      typeof row.payload.outcome === "object" && row.payload.outcome !== null
+        ? (row.payload.outcome as { status?: unknown })
+        : undefined;
+    const previous = latestStatus.get(workOrderId);
+    if (previous && previous.sequence >= row.admittedSequence) continue;
+    latestStatus.set(workOrderId, { status: outcome?.status, sequence: row.admittedSequence });
+  }
+  const completed = new Set<string>();
+  for (const [workOrderId, taskKey] of taskKeyByWorkOrder) {
+    if (latestStatus.get(workOrderId)?.status === "completed") completed.add(taskKey);
+  }
+  return completed;
+}
+
+/** 团队「自动流转」开关是否打开（台账开关行 payload.enabled 权威）。 */
+export function isTeamAutoFlowEnabledRow(rows: readonly TeamBoardInputRow[], batchId: string): boolean {
+  return rows.some(
+    (row) =>
+      row.kind === "agentWorkOrderTeamFlow" &&
+      row.payload.batchId === batchId &&
+      row.payload.enabled === true,
+  );
 }
 
 /** CLI 端实时状态查询的窄接口：只在会话注册表里看，不为看板激活冷会话。 */

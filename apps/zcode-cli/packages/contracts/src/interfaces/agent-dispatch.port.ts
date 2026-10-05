@@ -49,6 +49,18 @@ export interface AgentWorkOrderEnvelope {
   /** 前置工单的批内符号名（工具输入 depends_on 逐字透传）；全部交活后本单才就绪。 */
   dependsOn?: string[];
   /**
+   * 本评审单审的是哪张工单（工具输入 reviews 逐字透传，团队看板批2）：自动返修
+   * 链的对账键——不通过 verdict 据它找原工单派返修。缺席 = 未挂返修链。
+   */
+  reviews?: string;
+  /**
+   * 返修单标记（团队看板批2）：由调度器代码直派时携带——repairOf=被返修的工单
+   * id，repairRound 单调递增（≥ 上限即停手升级老板）。模型面不暴露，与 council*
+   * 同一"召集方代码铸造"纪律。
+   */
+  repairOf?: string;
+  repairRound?: number;
+  /**
    * 圆桌会席位单（真会议，2026-10-03）：本单是某场圆桌会某轮的一个席位。与
    * batchId 互斥使用（席位单按 councilId 聚合，不进工地卡）；缺席 = 普通工单。
    * councilId 是全场分组键，回执轮头 originMeta.council* 与它对号。
@@ -96,6 +108,11 @@ export interface AgentDispatchRequest {
   taskKey?: string;
   /** 前置工单符号名数组（工具输入 depends_on 逐字透传）。 */
   dependsOn?: string[];
+  /** 本评审单审的工单 id（工具输入 reviews 逐字透传）；缺席 = 未挂返修链。 */
+  reviews?: string;
+  /** 返修单标记（调度器代码直派，模型面不暴露——council* 同纪律）。 */
+  repairOf?: string;
+  repairRound?: number;
   /** 评审单标记（工具输入 review 逐字透传）；缺席 = 普通施工单。 */
   review?: boolean;
   /**
@@ -130,6 +147,8 @@ export interface AgentDispatchResult {
   batchId?: string;
   /** 批次标题回显（与 batchId 同进退）。 */
   batchTitle?: string;
+  /** 依赖持派回显（团队看板批2）：未满足的批内符号名；缺席 = 已正常投递。 */
+  held?: string[];
   /** 圆桌会身份回显（席位单必在）：召集方代码据它对账收票进度。 */
   councilId?: string;
 }

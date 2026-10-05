@@ -6,6 +6,13 @@
 // （taskPreview 200 字符、dependsOn ≤16、teams/orders 上界防呆），zod 剥未知键。
 import { z } from "zod";
 
+/**
+ * 自动返修上限（团队看板批2 2026-10-05 老板拍板 T6）：同一张工单最多自动返修
+ * 2 轮，到顶停手——看板标"升级给老板"，绝不无限循环。调度器与快照 escalated
+ * 判定共用这一个常量，两侧不会漂移。
+ */
+export const TEAM_BOARD_MAX_REPAIR_ROUNDS = 2;
+
 /** 单张工单在看板上的状态：终态来自最新回执，没回执的都是"在途"。 */
 export const teamBoardOrderStatusSchema = z.enum([
   "in_flight",
@@ -28,8 +35,11 @@ export const teamBoardOrderSchema = z.object({
   taskPreview: z.string().max(200).optional(),
   model: z.string().optional(),
   status: teamBoardOrderStatusSchema,
-  /** 依赖是否全部满足（无依赖恒 true）；批1 只展示，解锁调度随批2。 */
+  /** 依赖是否全部满足（无依赖恒 true）；解锁释放由调度器执行（批2）。 */
   unlocked: z.boolean(),
+  /** 返修单标记（批2）：repairOf=被返修的工单 id，repairRound 单调轮次。 */
+  repairOf: z.string().optional(),
+  repairRound: z.number().int().positive().optional(),
 });
 export type TeamBoardOrder = z.infer<typeof teamBoardOrderSchema>;
 
@@ -65,6 +75,14 @@ export const teamBoardTeamSchema = z.object({
   qc: teamBoardQcStateSchema.optional(),
   orders: z.array(teamBoardOrderSchema).max(64),
   members: z.array(teamBoardMemberSchema).max(16),
+  /**
+   * 团队「自动流转」开关（批2，老板拍板 T3 默认关）：开=评审不通过自动返修
+   * （有界），关=失败照旧只报不修。台账行（agentWorkOrderTeamFlow）是权威，
+   * 快照带一份给面板开关画状态。
+   */
+  autoFlow: z.boolean().optional(),
+  /** 自动返修到上限停手（repairRound ≥ TEAM_BOARD_MAX_REPAIR_ROUNDS）：等人拍板。 */
+  escalated: z.boolean().optional(),
 });
 export type TeamBoardTeam = z.infer<typeof teamBoardTeamSchema>;
 

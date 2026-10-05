@@ -10,6 +10,19 @@ import type {
 import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
 
+async function teamAutoFlow(
+  host: V4CommandCoreHost,
+  envelope: CommandEnvelope,
+): Promise<CommandResult | undefined> {
+  const payload = envelope.payload as CommandPayloadMap["teamAutoFlow"];
+  if (!host.teamAutoFlow) {
+    throw new Error("v4 teamAutoFlow requires host.teamAutoFlow capability");
+  }
+  const record = requireRecord(host, envelope.sessionId);
+  const result = await host.teamAutoFlow(record.app.sessionId, payload);
+  return { type: "teamAutoFlow", batchId: result.batchId, enabled: result.enabled };
+}
+
 async function teamBoardState(
   host: V4CommandCoreHost,
   envelope: CommandEnvelope,
@@ -25,4 +38,5 @@ async function teamBoardState(
 
 export const teamBoardHandlers = {
   teamBoardState,
+  teamAutoFlow,
 };
