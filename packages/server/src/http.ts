@@ -18,6 +18,7 @@ import {
 import {
   ServiceCollection,
   IZCodeAgentService,
+  IZCodeSessionService,
   createZCodeAgentConnectionScope,
   IFileService,
   IGitService,
@@ -32,6 +33,7 @@ import {
   formatZodError,
   remoteTargetSchema,
   SERVER_REMOTE_PROTOCOL_VERSION,
+  textFromZCodeMessageParts,
   ZCODE_RPC_HOST_CAPABILITY_HEADER,
   ZCODE_VERSION,
   type BotProvider,
@@ -413,6 +415,54 @@ export function createHttpServer(
 
   app.post("/api/bots/:provider", handleBotCallback);
   app.post("/api/bots/:provider/:botId", handleBotCallback);
+
+  // ---- Web 远程控制精简面：手机占位页用（轮询式）；流式/订阅走 /ws 的 RPC 通道。
+  // 全部在 /api/ 下，自动吃上面的 token 中间件；只读会话面 + 单条发言，不做权限/附件。
+  const remoteSessionService = services.getOptional(IZCodeSessionService);
+  const remoteAgentService = services.getOptional(IZCodeAgentService);
+  const requireWorkspace = (c: Context): string | null => {
+    const workspacePath = c.req.query("workspacePath")?.trim();
+    return workspacePath ? workspacePath : null;
+  };
+  app.get("/api/remote/sessions", (c) => {
+    if (!remoteSessionService) return c.json({ error: "session service unavailable" }, 503);
+    const workspacePath = requireWorkspace(c);
+    if (!workspacePath) return c.json({ error: "workspacePath required" }, 400);
+    return c.json({
+      sessions: remoteSessionService.listSessions({ workspacePath, limit: 20 }),
+    });
+  });
+  app.get("/api/remote/messages", (c) => {
+    if (!remoteSessionService) return c.json({ error: "session service unavailable" }, 503);
+    const workspacePath = requireWorkspace(c);
+    const sessionId = c.req.query("sessionId")?.trim();
+    if (!workspacePath || !sessionId) {
+      return c.json({ error: "workspacePath and sessionId required" }, 400);
+    }
+    return c.json({
+      messages: remoteSessionService.readSessionMessages({
+        workspacePath,
+        sessionId,
+        limit: 80,
+      }),
+    });
+  });
+  app.post("/api/remote/send", async (c) => {
+    if (!remoteAgentService) return c.json({ error: "agent service unavailable" }, 503);
+    const body = (await c.req.json().catch(() => null)) as {
+      workspacePath?: unknown;
+      sessionId?: unknown;
+      content?: unknown;
+    } | null;
+    const workspacePath = typeof body?.workspacePath === "string" ? body.workspacePath.trim() : "";
+    const sessionId = typeof body?.sessionId === "string" ? body.sessionId.trim() : "";
+    const content = typeof body?.content === "string" ? body.content.trim() : "";
+    if (!workspacePath || !sessionId || !content) {
+      return c.json({ error: "workspacePath, sessionId and content are required" }, 400);
+    }
+    const result = await remoteAgentService.sendPrompt({ workspacePath, sessionId, content });
+    return c.json({ result });
+  });
 
   // 远程连接的 WebSocket 端点，将远程 services 桥接给浏览器
   app.get(

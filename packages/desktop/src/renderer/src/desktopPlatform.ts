@@ -165,7 +165,8 @@ export function createDesktopPlatform(options: {
     voiceTranscribe: (request) => window.zcode.voiceTranscribe(request),
     voiceGetEngineStatus: () => window.zcode.voiceGetEngineStatus(),
     voiceRequestMicrophoneAccess: () => window.zcode.voiceRequestMicrophoneAccess(),
-    webRemoteControlStartSession: () => window.zcode.webRemoteControlStartSession(),
+    webRemoteControlStartSession: (payload?: { workspacePath?: string }) =>
+      window.zcode.webRemoteControlStartSession(payload),
     webRemoteControlStopSession: () => window.zcode.webRemoteControlStopSession(),
     webRemoteControlGetSessionState: () => window.zcode.webRemoteControlGetSessionState(),
   };

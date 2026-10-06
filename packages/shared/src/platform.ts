@@ -1063,7 +1063,9 @@ export interface IPlatformService {
   // ---- Web 远程控制（手机扫码/开链接连到窗口 Host；仅桌面端实现）----
 
   /** 开启当前窗口的服务：选端口/局域网 IP/token，Host 挂 HTTP+WS，返回二维码链接 */
-  webRemoteControlStartSession?(): Promise<WebRemoteControlSessionState>;
+  webRemoteControlStartSession?(payload?: {
+    workspacePath?: string;
+  }): Promise<WebRemoteControlSessionState>;
 
   /** 停止服务（吊销全部手机连接） */
   webRemoteControlStopSession?(): Promise<WebRemoteControlSessionState>;

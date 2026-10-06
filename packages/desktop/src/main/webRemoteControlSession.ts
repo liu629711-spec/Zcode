@@ -4,7 +4,7 @@ import { app, ipcMain, type UtilityProcess } from "electron";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { createServer, type AddressInfo } from "node:net";
 
 type ElectronUtilityProcess = UtilityProcess;
@@ -68,24 +68,148 @@ function pickFreePort(): Promise<number> {
   });
 }
 
-/** 批 1 占位页；批 2 的手机控制台 bundle 会写到同一目录顶掉它 */
+/** 批 2 手机控制台（自包含单页，无构建步骤）：会话列表 + 消息流（轮询）+ 发言。
+ *  流式订阅后续走 /ws 的 RPC 通道；本页只吃三条 token 保护的 /api/remote/* 路由。 */
+function renderPlaceholderHtml(): string {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ZCode 工作区</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #26221e; color: #e8e4de;
+         display: flex; flex-direction: column; height: 100dvh; }
+  header { padding: calc(10px + env(safe-area-inset-top)) 14px 10px; font-weight: 600; font-size: 15px;
+           border-bottom: 1px solid #3a352f; display: flex; align-items: center; gap: 8px; }
+  header select { flex: 1; min-width: 0; background: #322d28; color: inherit; border: 1px solid #4a443c;
+                  border-radius: 8px; padding: 6px 8px; font-size: 14px; }
+  #msgs { flex: 1; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 8px; }
+  .bubble { max-width: 86%; padding: 8px 11px; border-radius: 12px; font-size: 14.5px; line-height: 1.55;
+            white-space: pre-wrap; word-break: break-word; }
+  .user { align-self: flex-end; background: #7c5c3e; color: #fdf9f3; border-bottom-right-radius: 4px; }
+  .assistant { align-self: flex-start; background: #322d28; border-bottom-left-radius: 4px; }
+  .meta { align-self: center; font-size: 11.5px; color: #a89f92; padding: 4px 0; }
+  footer { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #3a352f;
+           display: flex; gap: 8px; }
+  #input { flex: 1; min-width: 0; background: #322d28; color: inherit; border: 1px solid #4a443c;
+           border-radius: 10px; padding: 10px 12px; font-size: 16px; /* 16px 防 iOS 聚焦缩放 */ }
+  #send { background: #c26736; color: #fff; border: 0; border-radius: 10px; padding: 0 16px;
+          font-size: 15px; font-weight: 600; }
+  #send:disabled { opacity: .5; }
+  .hint { text-align: center; color: #a89f92; font-size: 13px; padding: 24px; }
+</style></head><body>
+<header>ZCode<span style="flex:1"></span><select id="sessions"></select></header>
+<div id="msgs"><div class="hint">正在连接工作区…</div></div>
+<footer>
+  <input id="input" type="text" placeholder="发消息给工作区…" autocomplete="off">
+  <button id="send">发送</button>
+</footer>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const qs = (o) => new URLSearchParams(o).toString();
+  const msgsEl = document.getElementById("msgs");
+  const selEl = document.getElementById("sessions");
+  const inputEl = document.getElementById("input");
+  const sendEl = document.getElementById("send");
+  let workspacePath = null;
+  let sessionId = sessionStorage.getItem("remoteSessionId") || null;
+  let sendBusy = false;
+
+  async function jfetch(url, options) {
+    const res = await fetch(url, options);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+    return body;
+  }
+
+  function esc(text) {
+    return text.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  }
+
+  function renderMessages(messages) {
+    if (!messages.length) { msgsEl.innerHTML = '<div class="hint">这个会话还没有消息</div>'; return; }
+    msgsEl.innerHTML = messages.map((m) => {
+      const role = m.info && m.info.role === "user" ? "user" : "assistant";
+      const text = (m.parts || []).map((p) => (p.type === "text" ? p.text || "" : "")).join("").trim();
+      if (!text) return "";
+      if (text.startsWith("<system-reminder>") || text.startsWith("<system-reminder ")) return "";
+      return '<div class="bubble ' + role + '">' + esc(text) + "</div>";
+    }).join("");
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  }
+
+  async function loadMessages() {
+    if (!workspacePath || !sessionId) return;
+    try {
+      const body = await jfetch("/api/remote/messages?" + qs({ workspacePath, sessionId }));
+      renderMessages(body.messages || []);
+    } catch (e) { /* 轮询失败安静跳过，下一轮再试 */ }
+  }
+
+  async function loadSessions() {
+    const body = await jfetch("/api/remote/sessions?" + qs({ workspacePath }));
+    const sessions = (body.sessions || []).filter((s) => !s.workOrderOnly);
+    if (!sessions.length) { msgsEl.innerHTML = '<div class="hint">这个工作区还没有会话，回桌面先聊一句</div>'; return; }
+    const current = sessionId && sessions.some((s) => s.sessionId === sessionId)
+      ? sessionId : sessions[0].sessionId;
+    if (current !== sessionId) { sessionId = current; sessionStorage.setItem("remoteSessionId", current); }
+    selEl.innerHTML = sessions.map((s) =>
+      '<option value="' + esc(s.sessionId) + '"' + (s.sessionId === current ? " selected" : "") + ">" +
+      esc(s.title || "未命名会话") + "</option>").join("");
+    await loadMessages();
+  }
+
+  selEl.addEventListener("change", () => {
+    sessionId = selEl.value; sessionStorage.setItem("remoteSessionId", sessionId); void loadMessages();
+  });
+
+  async function send() {
+    const content = inputEl.value.trim();
+    if (!content || !workspacePath || !sessionId || sendBusy) return;
+    sendBusy = true; sendEl.disabled = true;
+    msgsEl.insertAdjacentHTML("beforeend", '<div class="bubble user">' + esc(content) + "</div>");
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+    inputEl.value = "";
+    try {
+      await jfetch("/api/remote/send", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspacePath, sessionId, content }),
+      });
+      setTimeout(() => { void loadMessages(); }, 800);
+    } catch (e) {
+      msgsEl.insertAdjacentHTML("beforeend", '<div class="meta">发送失败：' + esc(e.message) + "</div>");
+    } finally { sendBusy = false; sendEl.disabled = false; inputEl.focus(); }
+  }
+  sendEl.addEventListener("click", () => void send());
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); void send(); }
+  });
+
+  (async () => {
+    try {
+      const info = await jfetch("/api/server-info");
+      workspacePath = info.workspaces && info.workspaces[0] && info.workspaces[0].path;
+      if (!workspacePath) throw new Error("server-info 缺少 workspaces");
+      await loadSessions();
+      window.setInterval(() => { void loadMessages(); }, 2000);
+      window.setInterval(() => { void loadSessions().catch(() => undefined); }, 8000);
+    } catch (e) {
+      msgsEl.innerHTML = '<div class="hint">连接失败：' + esc(e.message) + "</div>";
+    }
+  })();
+})();
+</script></body></html>`;
+}
+
+/** 批 2 手机控制台静态根：写 index.html（自包含单页，无构建步骤） */
 function ensurePlaceholderStaticRoot(logger: WebRemoteControlLogger): string {
   const root = join(app.getPath("userData"), "web-remote-control", "static");
   try {
     mkdirSync(root, { recursive: true });
-    writeFileSync(
-      join(root, "index.html"),
-      `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">` +
-        `<meta name="viewport" content="width=device-width, initial-scale=1">` +
-        `<title>ZCode 工作区</title></head>` +
-        `<body style="font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;background:#1b1917;color:#e8e4de">` +
-        `<div style="text-align:center;padding:2rem"><div style="font-size:2rem">&#9989;</div>` +
-        `<h1 style="font-size:1.1rem;font-weight:600">已连接到工作区服务</h1>` +
-        `<p style="opacity:.65;font-size:.9rem">手机控制台正在路上</p></div></body></html>`,
-      "utf8",
-    );
+    writeFileSync(join(root, "index.html"), renderPlaceholderHtml(), "utf8");
   } catch (error) {
-    logger.warn("[web-remote] 占位页写入失败", {
+    logger.warn("[web-remote] 手机控制台页写入失败", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -116,6 +240,7 @@ function waitForHostAck(
 
 async function startSession(
   senderId: number,
+  request: { workspacePath?: string },
   options: WebRemoteControlSessionOptions,
 ): Promise<WebRemoteControlSessionState> {
   const existing = sessionsByWebContentsId.get(senderId);
@@ -136,6 +261,10 @@ async function startSession(
     const token = randomBytes(24).toString("base64url");
     const link = `http://${lanHost}:${port}/?token=${encodeURIComponent(token)}`;
     const requestId = randomBytes(8).toString("hex");
+    const workspacePath = request.workspacePath?.trim() || undefined;
+    const workspaces = workspacePath
+      ? [{ path: workspacePath, label: basename(workspacePath) || workspacePath }]
+      : undefined;
 
     hostChild.postMessage({
       type: HostMessageTypes.WebRemoteControlStart,
@@ -143,6 +272,7 @@ async function startSession(
       port,
       token,
       staticRoot: ensurePlaceholderStaticRoot(options.logger),
+      ...(workspaces ? { workspaces } : {}),
     });
     const ack = await waitForHostAck(hostChild, requestId, 10_000);
     if (!ack.ok) {
@@ -184,8 +314,10 @@ export function registerWebRemoteControlIpcHandlers(options: {
   windowHostProcessMap: Map<number, ElectronUtilityProcess>;
   logger: WebRemoteControlLogger;
 }): void {
-  options.ipcMain.handle(PlatformChannels.WebRemoteControlStartSession, async (event) =>
-    startSession(event.sender.id, options),
+  options.ipcMain.handle(
+    PlatformChannels.WebRemoteControlStartSession,
+    async (event, request?: { workspacePath?: string }) =>
+      startSession(event.sender.id, request ?? {}, options),
   );
   options.ipcMain.handle(PlatformChannels.WebRemoteControlStopSession, (event) =>
     stopSession(event.sender.id, options),

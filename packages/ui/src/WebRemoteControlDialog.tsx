@@ -46,7 +46,7 @@ const REMOTE_CONTROL_BOT_ENTRIES: Array<{
 const SESSION_STATE_POLL_INTERVAL_MS = 2_000;
 
 /** 扫码半边：本机起服务 → 二维码/链接给手机（局域网直连 + token 鉴权） */
-function QrConnectSection(): ReactNode {
+function QrConnectSection({ workspacePath }: { workspacePath?: string }): ReactNode {
   const { intl } = useZCodeIntl();
   const platform = useOptionalPlatform();
   const [session, setSession] = useState<WebRemoteControlSessionState | null>(null);
@@ -99,7 +99,7 @@ function QrConnectSection(): ReactNode {
     if (!startSession) return;
     setStarting(true);
     try {
-      setSession(await startSession());
+      setSession(await startSession({ workspacePath }));
     } catch (error) {
       logger.warn("[WebRemoteControlDialog] 开启服务失败", {
         error: error instanceof Error ? error.message : String(error),
@@ -110,7 +110,7 @@ function QrConnectSection(): ReactNode {
     } finally {
       setStarting(false);
     }
-  }, [startSession, intl]);
+  }, [startSession, intl, workspacePath]);
 
   const stopSession = platform?.webRemoteControlStopSession;
   const handleStop = useCallback(async () => {
@@ -318,7 +318,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
             </DialogHeader>
 
             <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
-              <QrConnectSection />
+              <QrConnectSection workspacePath={workspacePath} />
               <section className="flex min-h-[360px] flex-col rounded-xl border border-border bg-card p-4">
                 <div className="mb-4 flex items-start gap-2">
                   <BotIcon className="mt-0.5 size-4 shrink-0 text-foreground-subtle" />

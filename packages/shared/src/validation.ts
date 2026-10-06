@@ -483,6 +483,13 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
       port: z.number().int().min(1).max(65535),
       token: nonEmptyStringSchema,
       staticRoot: nonEmptyStringSchema,
+      workspaces: z
+        .array(
+          z
+            .object({ path: z.string().min(1), label: z.string().min(1) })
+            .strict(),
+        )
+        .optional(),
     })
     .strict(),
   z.object({ type: z.literal("web-remote-control-stop") }).strict(),

@@ -25,6 +25,7 @@ interface StartMessage {
   port: number;
   token: string;
   staticRoot: string;
+  workspaces?: Array<{ path: string; label: string }>;
 }
 
 function reply(
@@ -60,6 +61,7 @@ export function startWebRemoteControlHost(
       host: "0.0.0.0",
       staticRoot: message.staticRoot,
       spaFallback: true,
+      ...(message.workspaces ? { workspaces: message.workspaces } : {}),
     });
     reply(message.requestId, true, undefined, logger);
     logger.info("[web-remote-host] 服务已挂起", { port: message.port });

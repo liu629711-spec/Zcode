@@ -1210,7 +1210,7 @@ export interface PlatformChannelMap {
     response: boolean;
   };
   [PlatformChannels.WebRemoteControlStartSession]: {
-    request: void;
+    request: { workspacePath?: string };
     response: WebRemoteControlSessionState;
   };
   [PlatformChannels.WebRemoteControlStopSession]: {

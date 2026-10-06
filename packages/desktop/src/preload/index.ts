@@ -835,8 +835,8 @@ contextBridge.exposeInMainWorld("zcode", {
   voiceRequestMicrophoneAccess: () =>
     ipcRenderer.invoke(PlatformChannels.VoiceRequestMicrophoneAccess),
   /** Web 远程控制：开启当前窗口的服务（返回二维码链接），停止，读状态 */
-  webRemoteControlStartSession: () =>
-    ipcRenderer.invoke(PlatformChannels.WebRemoteControlStartSession),
+  webRemoteControlStartSession: (payload?: { workspacePath?: string }) =>
+    ipcRenderer.invoke(PlatformChannels.WebRemoteControlStartSession, payload),
   webRemoteControlStopSession: () =>
     ipcRenderer.invoke(PlatformChannels.WebRemoteControlStopSession),
   webRemoteControlGetSessionState: () =>
