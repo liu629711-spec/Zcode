@@ -6897,6 +6897,7 @@ const zhCN: Record<string, string> = {
   "voice.settings.language.yue": "粤语",
   "voice.settings.engine.sensevoice": "SenseVoice 引擎",
   "voice.settings.engine.whisper": "Whisper 引擎",
+  "voice.settings.checking": "正在检查本机引擎…",
   "voice.settings.engineReady": "已就绪",
   "voice.settings.engineNotInstalled": "未安装",
   "voice.settings.engineMissing": "缺模型文件；重新运行安装脚本可补齐。",

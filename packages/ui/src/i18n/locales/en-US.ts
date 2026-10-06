@@ -7230,6 +7230,7 @@ const enUS: Record<string, string> = {
   "voice.settings.language.yue": "Cantonese",
   "voice.settings.engine.sensevoice": "SenseVoice engine",
   "voice.settings.engine.whisper": "Whisper engine",
+  "voice.settings.checking": "Checking local engines…",
   "voice.settings.engineReady": "Ready",
   "voice.settings.engineNotInstalled": "Not installed",
   "voice.settings.engineMissing": "Model file missing; re-run the setup script to repair.",

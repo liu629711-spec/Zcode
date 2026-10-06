@@ -43,22 +43,23 @@ function EngineStatusRow(): ReactNode {
 
   if (!platform?.voiceGetEngineStatus) return null;
 
-  const renderEngineLine = (labelId: string, engine: VoiceEngineStatus["whisper"]) => (
+  const renderEngineLine = (labelId: string, engine: VoiceEngineStatus["whisper"] | null) => (
     <SettingsRow
       label={intl.formatMessage({ id: labelId })}
       description={
-        engine.installed
-          ? engine.modelPath
-          : intl.formatMessage({ id: "voice.settings.engineMissing" })
+        engine === null
+          ? intl.formatMessage({ id: "voice.settings.checking" })
+          : engine.installed
+            ? engine.modelPath
+            : intl.formatMessage({ id: "voice.settings.engineMissing" })
       }
       control={
-        <span
-          className="text-ui-base font-medium"
-          style={{ color: engine.installed ? undefined : "var(--text-warning, #b45309)" }}
-        >
-          {intl.formatMessage({
-            id: engine.installed ? "voice.settings.engineReady" : "voice.settings.engineNotInstalled",
-          })}
+        <span className="text-ui-base font-medium text-foreground-subtle">
+          {engine === null
+            ? "…"
+            : intl.formatMessage({
+                id: engine.installed ? "voice.settings.engineReady" : "voice.settings.engineNotInstalled",
+              })}
         </span>
       }
     />
@@ -66,8 +67,8 @@ function EngineStatusRow(): ReactNode {
 
   return (
     <SettingsGroupCard>
-      {renderEngineLine("voice.settings.engine.sensevoice", status?.sensevoice ?? { installed: false })}
-      {renderEngineLine("voice.settings.engine.whisper", status?.whisper ?? { installed: false })}
+      {renderEngineLine("voice.settings.engine.sensevoice", status?.sensevoice ?? null)}
+      {renderEngineLine("voice.settings.engine.whisper", status?.whisper ?? null)}
       <SettingsRow
         label={intl.formatMessage({ id: "voice.settings.engineFolder" })}
         description={intl.formatMessage({ id: "voice.settings.engineFolderHint" })}
