@@ -332,6 +332,10 @@ declare global {
       voiceGetEngineStatus(): Promise<import("@zcode/shared").VoiceEngineStatus>;
       /** macOS 申请麦克风权限；Windows 恒 true */
       voiceRequestMicrophoneAccess(): Promise<boolean>;
+      /** Web 远程控制：开启当前窗口的服务（返回二维码链接），停止，读状态 */
+      webRemoteControlStartSession(): Promise<import("@zcode/shared").WebRemoteControlSessionState>;
+      webRemoteControlStopSession(): Promise<import("@zcode/shared").WebRemoteControlSessionState>;
+      webRemoteControlGetSessionState(): Promise<import("@zcode/shared").WebRemoteControlSessionState>;
     };
   }
 }

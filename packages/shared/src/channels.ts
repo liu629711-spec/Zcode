@@ -49,6 +49,7 @@ import type {
   VoiceTranscribeRequest,
   VoiceTranscribeResult,
   VoiceEngineStatus,
+  WebRemoteControlSessionState,
   AssetLibraryWriteFilesRequest,
   AssetLibraryWriteFilesResult,
   PrintPageToPdfResult,
@@ -439,6 +440,12 @@ export const PlatformChannels = {
   VoiceGetEngineStatus: "zcode:voice-get-engine-status",
   /** Renderer → Main：macOS 显式申请麦克风权限（TCC）；Windows 恒 true */
   VoiceRequestMicrophoneAccess: "zcode:voice-request-microphone-access",
+  /** Renderer → Main：开启当前窗口的 Web 远程控制服务（选端口/局域网 IP/token，转告窗口 Host 挂 HTTP） */
+  WebRemoteControlStartSession: "zcode:web-remote-start-session",
+  /** Renderer → Main：停止当前窗口的 Web 远程控制服务（吊销全部手机连接） */
+  WebRemoteControlStopSession: "zcode:web-remote-stop-session",
+  /** Renderer → Main：读取当前窗口的 Web 远程控制会话状态 */
+  WebRemoteControlGetSessionState: "zcode:web-remote-session-state",
 } as const;
 
 export type PlatformChannelName = (typeof PlatformChannels)[keyof typeof PlatformChannels];
@@ -577,10 +584,16 @@ export const HostMessageTypes = {
   /** main → host：资源管理器请求 Host 采样其后代进程（Agent / MCP / 终端）的 CPU 与内存 */
   ResourceUsageSnapshotRequest: "resource-usage-snapshot-request",
   ResourceUsageSnapshotCancel: "resource-usage-snapshot-cancel",
+  /** main → host：在窗口 Host 上挂起 Web 远程控制 HTTP+WS 服务 */
+  WebRemoteControlStart: "web-remote-control-start",
+  /** main → host：停掉 Web 远程控制服务（吊销全部手机连接） */
+  WebRemoteControlStop: "web-remote-control-stop",
 } as const;
 
 /** host process → main process 的反馈消息类型 */
 export const HostResponseTypes = {
+  /** host → main：Web 远程控制服务的启动回执/失败原因（requestId 与启动请求关联） */
+  WebRemoteControlState: "web-remote-control-state",
   DatabaseStartupState: "database-startup-state",
   /** window Host → main：按 requestId 上报远程连接过程日志 */
   RemoteWorkspaceConnectionLog: "remote-workspace-connection-log",
@@ -1195,5 +1208,17 @@ export interface PlatformChannelMap {
   [PlatformChannels.VoiceRequestMicrophoneAccess]: {
     request: void;
     response: boolean;
+  };
+  [PlatformChannels.WebRemoteControlStartSession]: {
+    request: void;
+    response: WebRemoteControlSessionState;
+  };
+  [PlatformChannels.WebRemoteControlStopSession]: {
+    request: void;
+    response: WebRemoteControlSessionState;
+  };
+  [PlatformChannels.WebRemoteControlGetSessionState]: {
+    request: void;
+    response: WebRemoteControlSessionState;
   };
 }

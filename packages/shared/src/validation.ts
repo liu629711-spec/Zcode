@@ -475,6 +475,17 @@ export const hostIncomingMessageSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("resource-usage-snapshot-cancel"), requestId: nonEmptyStringSchema })
     .strict(),
+  // Web 远程控制：main → host 挂起/停掉 HTTP+WS 服务（手机扫码连接同一工作区引擎）
+  z
+    .object({
+      type: z.literal("web-remote-control-start"),
+      requestId: nonEmptyStringSchema,
+      port: z.number().int().min(1).max(65535),
+      token: nonEmptyStringSchema,
+      staticRoot: nonEmptyStringSchema,
+    })
+    .strict(),
+  z.object({ type: z.literal("web-remote-control-stop") }).strict(),
   hostInitLocalMessageSchema,
   hostConnectRemoteWorkspaceMessageSchema,
   hostCancelRemoteWorkspaceConnectMessageSchema,
@@ -985,6 +996,15 @@ export type HostResourceUsageSnapshotResultResponse = z.infer<
 export const hostResponseMessageSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("database-startup-state"), state: databaseStartupStateSchema })
+    .strict(),
+  // Web 远程控制：host → main 启动回执/失败原因（requestId 与启动请求关联）
+  z
+    .object({
+      type: z.literal("web-remote-control-state"),
+      requestId: nonEmptyStringSchema,
+      ok: z.boolean(),
+      error: z.string().optional(),
+    })
     .strict(),
   hostResourceUsageSnapshotResultResponseSchema,
   hostRemoteWorkspaceConnectionLogResponseSchema,

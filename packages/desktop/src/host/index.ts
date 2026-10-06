@@ -14,6 +14,10 @@
  * 3. 后续远端 connect / scoped attachment 都由同一 Host 处理
  */
 import { createHostDatabaseStartup } from "./hostDatabaseStartup.js";
+import {
+  startWebRemoteControlHost,
+  stopWebRemoteControlHost,
+} from "./webRemoteControlHost.js";
 import { randomUUID } from "node:crypto";
 import {
   MessagePortProtocol,
@@ -2305,6 +2309,15 @@ parentPort.on("message", async (e: Electron.MessageEvent) => {
     if (msg.control.action === "snapshot") databaseStartup?.coordinator.publish();
     else if (msg.control.action === "retry")
       void databaseStartup?.coordinator.retry(msg.control.attemptId);
+    return;
+  }
+
+  if (msg.type === HostMessageTypes.WebRemoteControlStart) {
+    startWebRemoteControlHost(msg, activeServices, logger);
+    return;
+  }
+  if (msg.type === HostMessageTypes.WebRemoteControlStop) {
+    stopWebRemoteControlHost(logger);
     return;
   }
 

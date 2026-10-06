@@ -1,9 +1,22 @@
-import { memo, useState } from "react";
-import type { BotProvider } from "@zcode/shared";
-import { Bot as BotIcon, MonitorSmartphone, XIcon } from "lucide-react";
+import { memo, useCallback, useEffect, useState, type ReactNode } from "react";
+import type { BotProvider, WebRemoteControlSessionState } from "@zcode/shared";
+import {
+  Bot as BotIcon,
+  CopyIcon,
+  MonitorSmartphone,
+  PlayIcon,
+  RefreshCwIcon,
+  SmartphoneIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
+import QRCode from "qrcode";
+
 import { BotsDialog } from "@/BotsDialog.js";
 import { ProviderIcon } from "@/BotsDialog/shared.js";
 import { Button } from "@/components/ui/button.js";
+import { Spinner } from "@/components/ui/spinner.js";
+import { toast } from "@/components/ui/toast.js";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog.js";
+import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { getBotProviderRegionTagLabelId } from "@/botsUi.js";
@@ -28,6 +42,207 @@ const REMOTE_CONTROL_BOT_ENTRIES: Array<{
   { provider: "lark" },
   { provider: "telegram" },
 ];
+
+const SESSION_STATE_POLL_INTERVAL_MS = 2_000;
+
+/** 扫码半边：本机起服务 → 二维码/链接给手机（局域网直连 + token 鉴权） */
+function QrConnectSection(): ReactNode {
+  const { intl } = useZCodeIntl();
+  const platform = useOptionalPlatform();
+  const [session, setSession] = useState<WebRemoteControlSessionState | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  const available = Boolean(platform?.webRemoteControlStartSession);
+
+  // 弹窗打开期间轮询会话状态（服务被外部停止/窗口关闭时 UI 能如实跟随）
+  const getSessionState = platform?.webRemoteControlGetSessionState;
+  useEffect(() => {
+    if (!getSessionState) return;
+    let cancelled = false;
+    const poll = () => {
+      void getSessionState()
+        .then((state) => {
+          if (!cancelled) setSession(state);
+        })
+        .catch(() => undefined);
+    };
+    poll();
+    const timer = window.setInterval(poll, SESSION_STATE_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [getSessionState]);
+
+  // 链接就绪后渲染二维码
+  useEffect(() => {
+    if (!session?.link) {
+      setQrDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(session.link, { width: 320, margin: 1 })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.link]);
+
+  const startSession = platform?.webRemoteControlStartSession;
+  const handleStart = useCallback(async () => {
+    if (!startSession) return;
+    setStarting(true);
+    try {
+      setSession(await startSession());
+    } catch (error) {
+      logger.warn("[WebRemoteControlDialog] 开启服务失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      toast(intl.formatMessage({ id: "webRemoteControl.qr.startFailed" }), {
+        variant: "warning",
+      });
+    } finally {
+      setStarting(false);
+    }
+  }, [startSession, intl]);
+
+  const stopSession = platform?.webRemoteControlStopSession;
+  const handleStop = useCallback(async () => {
+    if (!stopSession) return;
+    try {
+      setSession(await stopSession());
+    } catch {
+      toast(intl.formatMessage({ id: "webRemoteControl.qr.stopFailed" }), {
+        variant: "warning",
+      });
+    }
+  }, [stopSession, intl]);
+
+  const handleRefresh = useCallback(async () => {
+    // 刷新二维码 = 换 token 重开（旧二维码与已连设备一并作废）
+    await handleStop();
+    await handleStart();
+  }, [handleStop, handleStart]);
+
+  const handleCopy = useCallback(async () => {
+    if (!session?.link) return;
+    try {
+      await navigator.clipboard.writeText(session.link);
+      toast(intl.formatMessage({ id: "webRemoteControl.qr.copied" }));
+    } catch {
+      toast(intl.formatMessage({ id: "webRemoteControl.qr.copyFailed" }), {
+        variant: "warning",
+      });
+    }
+  }, [session?.link, intl]);
+
+  const active = session?.active === true;
+
+  return (
+    <section className="flex min-h-[360px] flex-col rounded-xl border border-border bg-card p-4">
+      <div className="mb-4 flex items-start gap-2">
+        <SmartphoneIcon className="mt-0.5 size-4 shrink-0 text-foreground-subtle" />
+        <div className="min-w-0 space-y-1">
+          <div className="text-ui-base font-medium text-foreground">
+            {intl.formatMessage({ id: "webRemoteControl.qr.title" })}
+          </div>
+          <p className="text-ui-base/relaxed text-foreground-subtle">
+            {intl.formatMessage({ id: "webRemoteControl.qr.description" })}
+          </p>
+        </div>
+      </div>
+
+      {!available ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-surface px-3 py-6 text-center text-ui-base text-foreground-subtle">
+          {intl.formatMessage({ id: "webRemoteControl.qr.unavailable" })}
+        </div>
+      ) : !active ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-surface px-3 py-6">
+          {session?.error ? (
+            <p className="text-center text-ui-base text-foreground-subtle">{session.error}</p>
+          ) : null}
+          <Button
+            type="button"
+            variant="secondary"
+            className="cursor-pointer gap-2"
+            disabled={starting}
+            onClick={() => void handleStart()}
+          >
+            {starting ? <Spinner className="size-4" /> : <PlayIcon className="size-4" />}
+            {intl.formatMessage({ id: "webRemoteControl.qr.start" })}
+          </Button>
+          <p className="text-center text-ui-base/relaxed text-foreground-subtle">
+            {intl.formatMessage({ id: "webRemoteControl.qr.sameWifiHint" })}
+          </p>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-3 rounded-lg border border-border bg-surface p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-ui-base font-medium text-foreground">
+                {intl.formatMessage({ id: "webRemoteControl.qr.waiting" })}
+              </span>
+              <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-brand/10 px-2 text-ui-xs font-medium text-foreground">
+                {intl.formatMessage({ id: "webRemoteControl.qr.readyBadge" })}
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="cursor-pointer gap-1.5"
+              onClick={() => void handleStop()}
+            >
+              <SquareIcon className="size-3.5" />
+              {intl.formatMessage({ id: "webRemoteControl.qr.stop" })}
+            </Button>
+          </div>
+          <p className="text-ui-base/relaxed text-foreground-subtle">
+            {intl.formatMessage({ id: "webRemoteControl.qr.waitingHint" })}
+          </p>
+          <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg bg-white p-3">
+            {qrDataUrl ? (
+              <img src={qrDataUrl} alt={intl.formatMessage({ id: "webRemoteControl.qr.title" })} className="size-56" />
+            ) : (
+              <Spinner className="size-6" />
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-ui-base text-foreground-subtle">
+              {intl.formatMessage({ id: "webRemoteControl.qr.openLinkHint" })}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="cursor-pointer gap-1.5"
+              onClick={() => void handleRefresh()}
+            >
+              <RefreshCwIcon className="size-3.5" />
+              {intl.formatMessage({ id: "webRemoteControl.qr.refresh" })}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="cursor-pointer gap-1.5"
+              onClick={() => void handleCopy()}
+            >
+              <CopyIcon className="size-3.5" />
+              {intl.formatMessage({ id: "webRemoteControl.qr.copy" })}
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export const WebRemoteControlDialog = memo(function WebRemoteControlDialogComponent({
   open,
@@ -69,7 +284,7 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           showCloseButton={false}
-          className="max-h-[calc(100vh-6rem)] max-w-lg gap-0 overflow-hidden rounded-2xl p-0"
+          className="max-h-[calc(100vh-6rem)] max-w-3xl gap-0 overflow-hidden rounded-2xl p-0"
         >
           <Button
             type="button"
@@ -102,7 +317,8 @@ export const WebRemoteControlDialog = memo(function WebRemoteControlDialogCompon
               </div>
             </DialogHeader>
 
-            <div className="mt-5 grid gap-4">
+            <div className="mt-5 grid items-start gap-4 lg:grid-cols-2">
+              <QrConnectSection />
               <section className="flex min-h-[360px] flex-col rounded-xl border border-border bg-card p-4">
                 <div className="mb-4 flex items-start gap-2">
                   <BotIcon className="mt-0.5 size-4 shrink-0 text-foreground-subtle" />

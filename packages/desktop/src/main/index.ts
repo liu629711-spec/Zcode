@@ -200,6 +200,7 @@ import {
 import { createDesktopHelpConfigReader } from "./desktopHelpConfig.js";
 import { registerPlatformIpcHandlers } from "./desktopMainIpcPlatform.js";
 import { installVoiceMediaPermissions, registerVoiceIpcHandlers } from "./voiceEngineManager.js";
+import { registerWebRemoteControlIpcHandlers } from "./webRemoteControlSession.js";
 import {
   loadCliMcpFromUserDirectory,
   migrateLegacyCommonMcp,
@@ -2060,6 +2061,12 @@ app.whenReady().then(async () => {
   });
 
   registerVoiceIpcHandlers({ logger });
+
+  registerWebRemoteControlIpcHandlers({
+    ipcMain,
+    windowHostProcessMap,
+    logger,
+  });
 
   registerPlatformIpcHandlers({
     fetchHelpConfig: readHelpConfig,

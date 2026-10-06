@@ -834,6 +834,13 @@ contextBridge.exposeInMainWorld("zcode", {
   /** macOS 申请麦克风权限；Windows 恒 true */
   voiceRequestMicrophoneAccess: () =>
     ipcRenderer.invoke(PlatformChannels.VoiceRequestMicrophoneAccess),
+  /** Web 远程控制：开启当前窗口的服务（返回二维码链接），停止，读状态 */
+  webRemoteControlStartSession: () =>
+    ipcRenderer.invoke(PlatformChannels.WebRemoteControlStartSession),
+  webRemoteControlStopSession: () =>
+    ipcRenderer.invoke(PlatformChannels.WebRemoteControlStopSession),
+  webRemoteControlGetSessionState: () =>
+    ipcRenderer.invoke(PlatformChannels.WebRemoteControlGetSessionState),
 });
 
 /**

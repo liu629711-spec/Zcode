@@ -198,6 +198,7 @@ export type {
   VoiceTranscribeRequest,
   VoiceTranscribeResult,
   VoiceEngineStatus,
+  WebRemoteControlSessionState,
   PrintPageToPdfResult,
   DesktopCommandId,
   CuaOsSupport,

@@ -301,6 +301,20 @@ export interface VoiceEngineStatus {
   sensevoice: { installed: boolean; modelPath?: string };
 }
 
+// ============================================================================
+// Web 远程控制（手机扫码/开链接，浏览器连到窗口 Host 的同一个工作区引擎）
+// ============================================================================
+
+export interface WebRemoteControlSessionState {
+  active: boolean;
+  /** 手机浏览器打开的完整地址（含 ?token=）；仅 active 时存在 */
+  url?: string;
+  /** 供二维码渲染的裸链接（与 url 相同，独立字段便于 UI 复制展示） */
+  link?: string;
+  /** 出错原因（启动失败等） */
+  error?: string;
+}
+
 
 /** 素材库 V2-2：把素材图纸静默写入 workspace 的 `.zcode/asset-library/<id>/`。 */
 export interface AssetLibraryWriteFilesRequest {
@@ -1045,4 +1059,15 @@ export interface IPlatformService {
 
   /** macOS 显式申请麦克风权限（TCC 弹窗）；Windows/其他平台恒返回 true */
   voiceRequestMicrophoneAccess?(): Promise<boolean>;
+
+  // ---- Web 远程控制（手机扫码/开链接连到窗口 Host；仅桌面端实现）----
+
+  /** 开启当前窗口的服务：选端口/局域网 IP/token，Host 挂 HTTP+WS，返回二维码链接 */
+  webRemoteControlStartSession?(): Promise<WebRemoteControlSessionState>;
+
+  /** 停止服务（吊销全部手机连接） */
+  webRemoteControlStopSession?(): Promise<WebRemoteControlSessionState>;
+
+  /** 读取当前会话状态（弹窗打开期间轮询） */
+  webRemoteControlGetSessionState?(): Promise<WebRemoteControlSessionState>;
 }
