@@ -2,7 +2,8 @@ import type { WebRemoteControlSessionState } from "@zcode/shared";
 import { HostMessageTypes, HostResponseTypes, PlatformChannels } from "@zcode/shared";
 import { app, ipcMain, type UtilityProcess } from "electron";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { networkInterfaces } from "node:os";
 import { join, basename } from "node:path";
 import { createServer, type AddressInfo } from "node:net";
@@ -68,35 +69,86 @@ function pickFreePort(): Promise<number> {
   });
 }
 
+/** 把 marked/DOMPurify 的浏览器版复制进静态根（缺了页面自动退化纯文本，不阻断）。
+ *  ponytail: 打包态的 node_modules 布局未验证，真机打包验收时再看要不要随包资源化。 */
+function copyStaticLibs(root: string, logger: WebRemoteControlLogger): void {
+  const libs: Array<{ source: string; dest: string }> = [];
+  try {
+    const require = createRequire(import.meta.url);
+    libs.push(
+      { source: require.resolve("marked/lib/marked.umd.js"), dest: "marked.umd.js" },
+      { source: require.resolve("dompurify/dist/purify.min.js"), dest: "purify.min.js" },
+    );
+  } catch (error) {
+    logger.warn("[web-remote] 静态库解析失败，手机页将退化纯文本", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
+  for (const lib of libs) {
+    try {
+      copyFileSync(lib.source, join(root, lib.dest));
+    } catch (error) {
+      logger.warn("[web-remote] 静态库复制失败", {
+        dest: lib.dest,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
 /** 批 2 手机控制台（自包含单页，无构建步骤）：会话列表 + 消息流（轮询）+ 发言。
+ *  助手消息走 marked+DOMPurify 的 Markdown 渲染（库缺失退化纯文本）；
  *  流式订阅后续走 /ws 的 RPC 通道；本页只吃三条 token 保护的 /api/remote/* 路由。 */
 function renderPlaceholderHtml(): string {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ZCode 工作区</title>
+<script src="/marked.umd.js"></script>
+<script src="/purify.min.js"></script>
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: dark; --bg: #26221e; --panel: #322d28; --line: #3a352f;
+          --ink: #e8e4de; --sub: #a89f92; --accent: #c26736; --code-bg: #1d1a17; }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #26221e; color: #e8e4de;
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: var(--bg); color: var(--ink);
          display: flex; flex-direction: column; height: 100dvh; }
   header { padding: calc(10px + env(safe-area-inset-top)) 14px 10px; font-weight: 600; font-size: 15px;
-           border-bottom: 1px solid #3a352f; display: flex; align-items: center; gap: 8px; }
-  header select { flex: 1; min-width: 0; background: #322d28; color: inherit; border: 1px solid #4a443c;
+           border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  header select { flex: 1; min-width: 0; background: var(--panel); color: inherit; border: 1px solid #4a443c;
                   border-radius: 8px; padding: 6px 8px; font-size: 14px; }
-  #msgs { flex: 1; overflow-y: auto; padding: 12px 12px 6px; display: flex; flex-direction: column; gap: 8px; }
-  .bubble { max-width: 86%; padding: 8px 11px; border-radius: 12px; font-size: 14.5px; line-height: 1.55;
-            white-space: pre-wrap; word-break: break-word; }
-  .user { align-self: flex-end; background: #7c5c3e; color: #fdf9f3; border-bottom-right-radius: 4px; }
-  .assistant { align-self: flex-start; background: #322d28; border-bottom-left-radius: 4px; }
-  .meta { align-self: center; font-size: 11.5px; color: #a89f92; padding: 4px 0; }
-  footer { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #3a352f;
+  #msgs { flex: 1; overflow-y: auto; padding: 14px 12px 6px; display: flex; flex-direction: column; gap: 14px; }
+  /* 助手消息：全宽平铺 Markdown（对齐桌面观感）；用户消息：右对齐气泡 */
+  .assistant { width: 100%; font-size: 14.5px; line-height: 1.6; }
+  .user { align-self: flex-end; max-width: 86%; background: #7c5c3e; color: #fdf9f3; padding: 8px 12px;
+          border-radius: 12px; border-bottom-right-radius: 4px; font-size: 14.5px; line-height: 1.55;
+          white-space: pre-wrap; word-break: break-word; }
+  .meta { align-self: center; font-size: 11.5px; color: var(--sub); padding: 2px 0; }
+  .hint { text-align: center; color: var(--sub); font-size: 13px; padding: 24px; }
+  footer { padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line);
            display: flex; gap: 8px; }
-  #input { flex: 1; min-width: 0; background: #322d28; color: inherit; border: 1px solid #4a443c;
-           border-radius: 10px; padding: 10px 12px; font-size: 16px; /* 16px 防 iOS 聚焦缩放 */ }
-  #send { background: #c26736; color: #fff; border: 0; border-radius: 10px; padding: 0 16px;
+  #input { flex: 1; min-width: 0; background: var(--panel); color: inherit; border: 1px solid #4a443c;
+           border-radius: 10px; padding: 10px 12px; font-size: 16px; }
+  #send { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 0 16px;
           font-size: 15px; font-weight: 600; }
   #send:disabled { opacity: .5; }
-  .hint { text-align: center; color: #a89f92; font-size: 13px; padding: 24px; }
+  /* ---- Markdown 排版（对齐桌面暖色暗主题）---- */
+  .assistant > :first-child { margin-top: 0; }
+  .assistant > :last-child { margin-bottom: 0; }
+  .assistant p { margin: .5em 0; }
+  .assistant h1, .assistant h2, .assistant h3, .assistant h4 { margin: 1em 0 .4em; line-height: 1.35; }
+  .assistant h1 { font-size: 1.25em; } .assistant h2 { font-size: 1.15em; } .assistant h3 { font-size: 1.05em; }
+  .assistant ul, .assistant ol { margin: .5em 0; padding-left: 1.4em; }
+  .assistant li { margin: .25em 0; }
+  .assistant code { font-family: ui-monospace, Consolas, monospace; font-size: .88em; background: var(--code-bg);
+                    border: 1px solid #37312b; border-radius: 5px; padding: .1em .35em; }
+  .assistant pre { background: var(--code-bg); border: 1px solid #37312b; border-radius: 10px; padding: 10px 12px;
+                   overflow-x: auto; margin: .6em 0; }
+  .assistant pre code { background: none; border: 0; padding: 0; font-size: .85em; line-height: 1.5; white-space: pre; }
+  .assistant blockquote { margin: .6em 0; padding: .1em 0 .1em 12px; border-left: 3px solid #4a443c; color: var(--sub); }
+  .assistant a { color: #e0985f; text-decoration: underline; text-underline-offset: 2px; }
+  .assistant table { border-collapse: collapse; margin: .6em 0; font-size: .92em; display: block; overflow-x: auto; }
+  .assistant th, .assistant td { border: 1px solid #4a443c; padding: 5px 9px; }
+  .assistant hr { border: 0; border-top: 1px solid var(--line); margin: 1em 0; }
 </style></head><body>
 <header>ZCode<span style="flex:1"></span><select id="sessions"></select></header>
 <div id="msgs"><div class="hint">正在连接工作区…</div></div>
@@ -106,7 +158,18 @@ function renderPlaceholderHtml(): string {
 </footer>
 <script>
 (() => {
-  const params = new URLSearchParams(location.search);
+  const canRenderMarkdown = Boolean(window.marked && window.DOMPurify);
+  function renderAssistant(text) {
+    const el = document.createElement("div");
+    el.className = "assistant";
+    if (canRenderMarkdown) {
+      // marked 输出经 DOMPurify 白名单消毒再上屏（模型输出里也可能藏 HTML）
+      el.innerHTML = DOMPurify.sanitize(marked.parse(text, { breaks: true, gfm: true }));
+    } else {
+      el.textContent = text;
+    }
+    return el;
+  }
   const qs = (o) => new URLSearchParams(o).toString();
   const msgsEl = document.getElementById("msgs");
   const selEl = document.getElementById("sessions");
@@ -129,13 +192,21 @@ function renderPlaceholderHtml(): string {
 
   function renderMessages(messages) {
     if (!messages.length) { msgsEl.innerHTML = '<div class="hint">这个会话还没有消息</div>'; return; }
-    msgsEl.innerHTML = messages.map((m) => {
+    msgsEl.innerHTML = "";
+    let last = null;
+    for (const m of messages) {
       const role = m.info && m.info.role === "user" ? "user" : "assistant";
       const text = (m.parts || []).map((p) => (p.type === "text" ? p.text || "" : "")).join("").trim();
-      if (!text) return "";
-      if (text.startsWith("<system-reminder>") || text.startsWith("<system-reminder ")) return "";
-      return '<div class="bubble ' + role + '">' + esc(text) + "</div>";
-    }).join("");
+      if (!text) continue;
+      if (text.startsWith("<system-reminder>") || text.startsWith("<system-reminder ")) continue;
+      last = role;
+      if (role === "user") {
+        msgsEl.insertAdjacentHTML("beforeend", '<div class="user">' + esc(text) + "</div>");
+      } else {
+        msgsEl.appendChild(renderAssistant(text));
+      }
+    }
+    if (!last) { msgsEl.innerHTML = '<div class="hint">（没有可显示的文本消息）</div>'; return; }
     msgsEl.scrollTop = msgsEl.scrollHeight;
   }
 
@@ -146,7 +217,6 @@ function renderPlaceholderHtml(): string {
       renderMessages(body.messages || []);
       msgsEl.dataset.state = "ok";
     } catch (e) {
-      // 首次失败必须亮出原因（运行时拉起/权限/路径错都靠这行字定位），轮询失败不打滚屏
       if (msgsEl.dataset.state !== "error") {
         msgsEl.dataset.state = "error";
         msgsEl.innerHTML = '<div class="hint">加载消息失败：' + esc(e.message) + "<br>每 2 秒自动重试，成功即恢复</div>";
@@ -175,7 +245,7 @@ function renderPlaceholderHtml(): string {
     const content = inputEl.value.trim();
     if (!content || !workspacePath || !sessionId || sendBusy) return;
     sendBusy = true; sendEl.disabled = true;
-    msgsEl.insertAdjacentHTML("beforeend", '<div class="bubble user">' + esc(content) + "</div>");
+    msgsEl.insertAdjacentHTML("beforeend", '<div class="user">' + esc(content) + "</div>");
     msgsEl.scrollTop = msgsEl.scrollHeight;
     inputEl.value = "";
     try {
@@ -209,12 +279,13 @@ function renderPlaceholderHtml(): string {
 </script></body></html>`;
 }
 
-/** 批 2 手机控制台静态根：写 index.html（自包含单页，无构建步骤） */
+/** 批 2 手机控制台静态根：写 index.html + 复制 Markdown 渲染库 */
 function ensurePlaceholderStaticRoot(logger: WebRemoteControlLogger): string {
   const root = join(app.getPath("userData"), "web-remote-control", "static");
   try {
     mkdirSync(root, { recursive: true });
     writeFileSync(join(root, "index.html"), renderPlaceholderHtml(), "utf8");
+    copyStaticLibs(root, logger);
   } catch (error) {
     logger.warn("[web-remote] 手机控制台页写入失败", {
       error: error instanceof Error ? error.message : String(error),
