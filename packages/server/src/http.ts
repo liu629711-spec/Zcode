@@ -424,6 +424,26 @@ export function createHttpServer(
     const workspacePath = c.req.query("workspacePath")?.trim();
     return workspacePath ? workspacePath : null;
   };
+  // 引擎只认"已唤醒"的会话（冷会话直接读会报 Session is not active）；
+  // 手机首次访问某会话时先 resume（broadcastSnapshot:false 免得桌面列表跟着闪）。
+  const webRemoteResumedSessions = new Set<string>();
+  const ensureWebRemoteSessionReady = async (
+    workspacePath: string,
+    sessionId: string,
+  ): Promise<void> => {
+    if (!remoteSessionService) throw new Error("session service unavailable");
+    const key = `${workspacePath}\u0000${sessionId}`;
+    if (webRemoteResumedSessions.has(key)) return;
+    await remoteSessionService.resumeSession({
+      workspacePath,
+      sessionId,
+      broadcastSnapshot: false,
+    });
+    webRemoteResumedSessions.add(key);
+  };
+  const forgetWebRemoteSessionReady = (workspacePath: string, sessionId: string): void => {
+    webRemoteResumedSessions.delete(`${workspacePath}\u0000${sessionId}`);
+  };
   app.get("/api/remote/sessions", async (c) => {
     if (!remoteSessionService) return c.json({ error: "session service unavailable" }, 503);
     const workspacePath = requireWorkspace(c);
@@ -440,16 +460,28 @@ export function createHttpServer(
     if (!workspacePath || !sessionId) {
       return c.json({ error: "workspacePath and sessionId required" }, 400);
     }
-    return c.json({
-      messages: await remoteSessionService.readSessionMessages({
-        workspacePath,
-        sessionId,
-        limit: 80,
-      }),
-    });
+    try {
+      await ensureWebRemoteSessionReady(workspacePath, sessionId);
+      return c.json({
+        messages: await remoteSessionService.readSessionMessages({
+          workspacePath,
+          sessionId,
+          limit: 80,
+        }),
+      });
+    } catch (error) {
+      // 唤醒失败不记账，下轮轮询重试；读失败（如引擎重启弄丢激活态）同样退回重唤醒
+      forgetWebRemoteSessionReady(workspacePath, sessionId);
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        500,
+      );
+    }
   });
   app.post("/api/remote/send", async (c) => {
-    if (!remoteAgentService) return c.json({ error: "agent service unavailable" }, 503);
+    if (!remoteAgentService || !remoteSessionService) {
+      return c.json({ error: "agent service unavailable" }, 503);
+    }
     const body = (await c.req.json().catch(() => null)) as {
       workspacePath?: unknown;
       sessionId?: unknown;
@@ -461,8 +493,17 @@ export function createHttpServer(
     if (!workspacePath || !sessionId || !content) {
       return c.json({ error: "workspacePath, sessionId and content are required" }, 400);
     }
-    const result = await remoteAgentService.sendPrompt({ workspacePath, sessionId, content });
-    return c.json({ result });
+    try {
+      await ensureWebRemoteSessionReady(workspacePath, sessionId);
+      const result = await remoteAgentService.sendPrompt({ workspacePath, sessionId, content });
+      return c.json({ result });
+    } catch (error) {
+      forgetWebRemoteSessionReady(workspacePath, sessionId);
+      return c.json(
+        { error: error instanceof Error ? error.message : String(error) },
+        500,
+      );
+    }
   });
 
   // 远程连接的 WebSocket 端点，将远程 services 桥接给浏览器
