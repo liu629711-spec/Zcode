@@ -424,15 +424,16 @@ export function createHttpServer(
     const workspacePath = c.req.query("workspacePath")?.trim();
     return workspacePath ? workspacePath : null;
   };
-  app.get("/api/remote/sessions", (c) => {
+  app.get("/api/remote/sessions", async (c) => {
     if (!remoteSessionService) return c.json({ error: "session service unavailable" }, 503);
     const workspacePath = requireWorkspace(c);
     if (!workspacePath) return c.json({ error: "workspacePath required" }, 400);
+    // 别漏 await：Hono 的 c.json 不会替你解包 Promise，漏了序列化出来就是非数组
     return c.json({
-      sessions: remoteSessionService.listSessions({ workspacePath, limit: 20 }),
+      sessions: await remoteSessionService.listSessions({ workspacePath, limit: 20 }),
     });
   });
-  app.get("/api/remote/messages", (c) => {
+  app.get("/api/remote/messages", async (c) => {
     if (!remoteSessionService) return c.json({ error: "session service unavailable" }, 503);
     const workspacePath = requireWorkspace(c);
     const sessionId = c.req.query("sessionId")?.trim();
@@ -440,7 +441,7 @@ export function createHttpServer(
       return c.json({ error: "workspacePath and sessionId required" }, 400);
     }
     return c.json({
-      messages: remoteSessionService.readSessionMessages({
+      messages: await remoteSessionService.readSessionMessages({
         workspacePath,
         sessionId,
         limit: 80,
