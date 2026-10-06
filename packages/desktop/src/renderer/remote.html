@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>ZCode</title>
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      body {
+        background: #26221e;
+        color: #e8e4de;
+      }
+
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        color: #a89f92;
+        text-align: center;
+        padding: 24px;
+        white-space: pre-wrap;
+      }
+
+      body.zcode-remote-ready #boot {
+        display: none;
+      }
+
+      .boot-hint {
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        color: #a89f92;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="boot">正在连接工作区…</div>
+    <script type="module" src="./src/remote-main.tsx"></script>
+  </body>
+</html>

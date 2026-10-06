@@ -2,7 +2,7 @@ import type { WebRemoteControlSessionState } from "@zcode/shared";
 import { HostMessageTypes, HostResponseTypes, PlatformChannels } from "@zcode/shared";
 import { app, ipcMain, type UtilityProcess } from "electron";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { networkInterfaces } from "node:os";
 import { join, basename } from "node:path";
@@ -100,7 +100,7 @@ function copyStaticLibs(root: string, logger: WebRemoteControlLogger): void {
 /** 批 2 手机控制台（自包含单页，无构建步骤）：会话列表 + 消息流（轮询）+ 发言。
  *  助手消息走 marked+DOMPurify 的 Markdown 渲染（库缺失退化纯文本）；
  *  流式订阅后续走 /ws 的 RPC 通道；本页只吃三条 token 保护的 /api/remote/* 路由。 */
-function renderPlaceholderHtml(): string {
+function renderFallbackHtml(): string {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ZCode 工作区</title>
@@ -279,19 +279,29 @@ function renderPlaceholderHtml(): string {
 </script></body></html>`;
 }
 
-/** 批 2 手机控制台静态根：写 index.html + 复制 Markdown 渲染库 */
-function ensurePlaceholderStaticRoot(logger: WebRemoteControlLogger): string {
-  const root = join(app.getPath("userData"), "web-remote-control", "static");
+/**
+ * 静态根选择：优先用 renderer 构建产物里的 remote.html 全量页（桌面组件 fork 版）；
+ * 产物缺失（构建未跑/被清理）退回自包含精简页，功能可用但不对齐桌面。
+ */
+function pickWebRemoteStaticRoot(logger: WebRemoteControlLogger): string {
+  const fallbackRoot = join(app.getPath("userData"), "web-remote-control", "static");
+  const remoteHtml = join(app.getAppPath(), "out", "renderer", "remote.html");
+  if (existsSync(remoteHtml)) {
+    logger.info("[web-remote] 使用 renderer 构建的全量手机页", { remoteHtml });
+    return join(app.getAppPath(), "out", "renderer");
+  }
+  logger.warn("[web-remote] renderer 全量页缺失，退回精简页", { remoteHtml });
   try {
-    mkdirSync(root, { recursive: true });
-    writeFileSync(join(root, "index.html"), renderPlaceholderHtml(), "utf8");
-    copyStaticLibs(root, logger);
+    mkdirSync(fallbackRoot, { recursive: true });
+    writeFileSync(join(fallbackRoot, "remote.html"), renderFallbackHtml(), "utf8");
+    writeFileSync(join(fallbackRoot, "index.html"), renderFallbackHtml(), "utf8");
+    copyStaticLibs(fallbackRoot, logger);
   } catch (error) {
-    logger.warn("[web-remote] 手机控制台页写入失败", {
+    logger.warn("[web-remote] 精简页写入失败", {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-  return root;
+  return fallbackRoot;
 }
 
 function waitForHostAck(
@@ -337,7 +347,7 @@ async function startSession(
       return { active: false, error: "未找到可用的局域网 IPv4 地址" };
     }
     const token = randomBytes(24).toString("base64url");
-    const link = `http://${lanHost}:${port}/?token=${encodeURIComponent(token)}`;
+    const link = `http://${lanHost}:${port}/remote.html?token=${encodeURIComponent(token)}`;
     const requestId = randomBytes(8).toString("hex");
     const workspacePath = request.workspacePath?.trim() || undefined;
     const workspaces = workspacePath
@@ -349,7 +359,7 @@ async function startSession(
       requestId,
       port,
       token,
-      staticRoot: ensurePlaceholderStaticRoot(options.logger),
+      staticRoot: pickWebRemoteStaticRoot(options.logger),
       ...(workspaces ? { workspaces } : {}),
     });
     const ack = await waitForHostAck(hostChild, requestId, 10_000);

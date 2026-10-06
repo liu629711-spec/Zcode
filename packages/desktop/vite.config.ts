@@ -263,11 +263,12 @@ export default defineConfig(({ mode }) => {
       // 生产使用 hidden sourcemap：本地/发布流程保留 .map，不在产物里暴露映射入口。
       sourcemap: mode === "production" ? "hidden" : true,
       rollupOptions: {
-        // 多入口：主窗口 + 进程监控 + CUA 权限拖拽浮窗
+        // 多入口：主窗口 + 进程监控 + CUA 权限拖拽浮窗 + Web 远控手机端
         input: {
           index: resolve(__dirname, "src/renderer/index.html"),
           "resource-manager": resolve(__dirname, "src/renderer/resource-manager.html"),
           "cua-permission-panel": resolve(__dirname, "src/renderer/cua-permission-panel.html"),
+          remote: resolve(__dirname, "src/renderer/remote.html"),
         },
       },
     },
