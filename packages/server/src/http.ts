@@ -462,13 +462,15 @@ export function createHttpServer(
     }
     try {
       await ensureWebRemoteSessionReady(workspacePath, sessionId);
-      return c.json({
-        messages: await remoteSessionService.readSessionMessages({
-          workspacePath,
-          sessionId,
-          limit: 80,
-        }),
+      // 走 readSession 快照拿消息：协议口 sessionMessages 回的是引擎 v4 裸线格式
+      // （sessionID/messageID/callID 旧命名），与共享归一化 schema 对不上；
+      // 快照的 messages 才是桌面同款的归一化形态。
+      const snapshot = await remoteSessionService.readSession({
+        workspacePath,
+        sessionId,
+        messageLimit: 80,
       });
+      return c.json({ messages: snapshot.messages ?? [] });
     } catch (error) {
       // 唤醒失败不记账，下轮轮询重试；读失败（如引擎重启弄丢激活态）同样退回重唤醒
       forgetWebRemoteSessionReady(workspacePath, sessionId);
