@@ -101,12 +101,16 @@ function QrConnectSection({ workspacePath }: { workspacePath?: string }): ReactN
     try {
       setSession(await startSession({ workspacePath }));
     } catch (error) {
-      logger.warn("[WebRemoteControlDialog] 开启服务失败", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      toast(intl.formatMessage({ id: "webRemoteControl.qr.startFailed" }), {
-        variant: "warning",
-      });
+      const detail = error instanceof Error ? error.message : String(error);
+      logger.warn("[WebRemoteControlDialog] 开启服务失败", { error: detail });
+      // 带出具体原因（如 preload 未更新/Host 未响应），别只给一句"请重试"
+      toast(
+        `${intl.formatMessage({ id: "webRemoteControl.qr.startFailed" })}：${detail}`.slice(
+          0,
+          200,
+        ),
+        { variant: "warning" },
+      );
     } finally {
       setStarting(false);
     }

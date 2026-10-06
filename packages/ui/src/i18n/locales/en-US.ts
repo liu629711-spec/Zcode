@@ -1843,7 +1843,7 @@ const enUS: Record<string, string> = {
   "webRemoteControl.qr.readyBadge": "Ready",
   "webRemoteControl.qr.waitingHint": "Scan the code, or open the link on your phone.",
   "webRemoteControl.qr.openLinkHint": "Can't scan? Open the link on your phone.",
-  "webRemoteControl.qr.sameWifiHint": "Your phone must be on the same Wi-Fi as this computer.",
+  "webRemoteControl.qr.sameWifiHint": "Phone and computer must share a network (wired PC + phone on Wi-Fi is fine; no AP isolation on the router).",
   "webRemoteControl.qr.startFailed": "Failed to start the service. Please try again.",
   "webRemoteControl.qr.stopFailed": "Failed to stop. Please try again.",
   "webRemoteControl.qr.unavailable": "Remote control is unavailable here (desktop only).",

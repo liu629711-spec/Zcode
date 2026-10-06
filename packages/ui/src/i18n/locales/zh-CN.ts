@@ -1723,7 +1723,7 @@ const zhCN: Record<string, string> = {
   "webRemoteControl.qr.readyBadge": "已就绪",
   "webRemoteControl.qr.waitingHint": "用手机扫码，或在手机上打开链接。",
   "webRemoteControl.qr.openLinkHint": "无法扫码？可以在手机上打开链接。",
-  "webRemoteControl.qr.sameWifiHint": "手机需要和这台电脑连同一个 Wi-Fi。",
+  "webRemoteControl.qr.sameWifiHint": "手机和这台电脑需连同一个网络（电脑网线、手机 Wi-Fi 也行，路由器不能开设备隔离）。",
   "webRemoteControl.qr.startFailed": "服务开启失败，请重试。",
   "webRemoteControl.qr.stopFailed": "停止失败，请重试。",
   "webRemoteControl.qr.unavailable": "当前环境不支持远程控制（仅桌面端可用）。",
