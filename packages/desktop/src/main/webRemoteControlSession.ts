@@ -144,7 +144,14 @@ function renderPlaceholderHtml(): string {
     try {
       const body = await jfetch("/api/remote/messages?" + qs({ workspacePath, sessionId }));
       renderMessages(body.messages || []);
-    } catch (e) { /* 轮询失败安静跳过，下一轮再试 */ }
+      msgsEl.dataset.state = "ok";
+    } catch (e) {
+      // 首次失败必须亮出原因（运行时拉起/权限/路径错都靠这行字定位），轮询失败不打滚屏
+      if (msgsEl.dataset.state !== "error") {
+        msgsEl.dataset.state = "error";
+        msgsEl.innerHTML = '<div class="hint">加载消息失败：' + esc(e.message) + "<br>每 2 秒自动重试，成功即恢复</div>";
+      }
+    }
   }
 
   async function loadSessions() {
