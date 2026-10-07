@@ -99,6 +99,13 @@ interface MobileRemoteShellProps {
   workspacePath: string;
 }
 
+/** 查看器页签身份：同源（同类型+同标题+同路径）去重，评审签带评审请求 id。 */
+function viewerTabKey(source: CodeViewerSource): string {
+  const path = "path" in source ? source.path : "";
+  const review = source.type === "code-review" ? source.review.requestId : "";
+  return `${source.type}:${source.title}:${path}:${review}`;
+}
+
 function workspaceLabel(path: string): string {
   return path.split(/[\\/]+/).filter(Boolean).pop() ?? path;
 }
@@ -265,8 +272,40 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     boundWorkspacePath: workspacePath,
   });
 
-  // 文件审查/查看浮层：onOpenCodeViewer 落到这里（手机形态=右抽屉，不是桌面右坞）
-  const [viewerSource, setViewerSource] = useState<CodeViewerSource | null>(null);
+  // 文件审查/查看浮层：onOpenCodeViewer 落到这里（手机形态=右抽屉，不是桌面右坞）。
+  // 多文件页签（官方同款）：连点几个文件顶部攒页签，单签可关；关抽屉页签保留，
+  // 再点同文件直接激活已开的签。
+  const [viewerState, setViewerState] = useState<{
+    tabs: CodeViewerSource[];
+    active: number;
+    open: boolean;
+  }>({ tabs: [], active: 0, open: false });
+  const viewerSource = viewerState.tabs[viewerState.active] ?? null;
+  const viewerOpen = viewerState.open && viewerSource !== undefined && viewerState.tabs.length > 0;
+  const openViewerTab = (source: CodeViewerSource) => {
+    setViewerState((state) => {
+      const key = viewerTabKey(source);
+      const existing = state.tabs.findIndex((tab) => viewerTabKey(tab) === key);
+      if (existing >= 0) return { tabs: state.tabs, active: existing, open: true };
+      const tabs = [...state.tabs, source];
+      return { tabs, active: tabs.length - 1, open: true };
+    });
+  };
+  const closeViewerTab = (index: number) => {
+    setViewerState((state) => {
+      const tabs = state.tabs.filter((_, i) => i !== index);
+      if (tabs.length === 0) return { tabs: [], active: 0, open: false };
+      const active =
+        index < state.active
+          ? state.active - 1
+          : Math.min(state.active, tabs.length - 1);
+      return { tabs, active, open: state.open };
+    });
+  };
+  const closeViewerDrawer = () =>
+    setViewerState((state) => ({ ...state, open: false }));
+  const clearViewerTabs = () =>
+    setViewerState({ tabs: [], active: 0, open: false });
   const theme = useZCodeStore((state) => state.theme);
   const setTheme = useZCodeStore((state) => state.setTheme);
   const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
@@ -451,7 +490,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
       .archiveTask({ taskId: view.sessionId, workspacePath: view.workspacePath })
       .then(() => {
         toast(intl.formatMessage({ id: "taskList.archiveSucceed" }));
-        setViewerSource(null);
+        clearViewerTabs();
         setView({ kind: "home" });
         setReloadToken((token) => token + 1);
       })
@@ -495,7 +534,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
           <button
             type="button"
             onClick={() => {
-              setViewerSource(null);
+              clearViewerTabs();
               setDockOpen(false);
               setView({ kind: "home" });
             }}
@@ -615,7 +654,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                   : previous,
               );
             }}
-            onOpenCodeViewer={(source) => setViewerSource(source)}
+            onOpenCodeViewer={openViewerTab}
           />
         </div>
         {/* 重命名任务弹窗（"…"菜单入口） */}
@@ -629,28 +668,60 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
           onCancel={() => setRenameOpen(false)}
           onConfirm={handleRenameConfirm}
         />
-        {viewerSource ? (
+        {viewerOpen && viewerSource ? (
           <>
             {/* 遮罩：点它关闭；会话保持挂载在后面（官方抽屉式右坞的移动形态） */}
             <div
               className="absolute inset-0 z-40 bg-black/40 animate-in fade-in-0 duration-200"
-              onClick={() => setViewerSource(null)}
+              onClick={closeViewerDrawer}
               aria-hidden
             />
             {/* 抽屉：右侧滑入占 ~94%，左侧留一条变暗的会话 */}
             <div className="absolute inset-y-0 right-0 z-50 flex w-[94%] flex-col border-l border-border bg-background shadow-2xl animate-in slide-in-from-right-[100%] fade-in-0 duration-200">
-              <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
+              <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
                 <button
                   type="button"
-                  onClick={() => setViewerSource(null)}
+                  onClick={closeViewerDrawer}
                   className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
                   aria-label={intl.formatMessage({ id: "common.close" })}
                 >
                   <X className="h-5 w-5" />
                 </button>
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                  {viewerSource.title}
-                </span>
+                {/* 多文件页签（官方同款）：横向滚动，活动签高亮，单签可关 */}
+                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+                  {viewerState.tabs.map((tab, index) => {
+                    const active = index === viewerState.active;
+                    return (
+                      <span
+                        key={viewerTabKey(tab)}
+                        className={
+                          "flex h-8 max-w-44 shrink-0 items-center gap-1 rounded-md border px-2 text-xs " +
+                          (active
+                            ? "border-brand/50 bg-muted text-foreground"
+                            : "border-transparent text-muted-foreground")
+                        }
+                      >
+                        <button
+                          type="button"
+                          className="min-w-0 truncate"
+                          onClick={() =>
+                            setViewerState((state) => ({ ...state, active: index, open: true }))
+                          }
+                        >
+                          {tab.title}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded p-0.5 hover:bg-muted"
+                          aria-label={intl.formatMessage({ id: "common.close" })}
+                          onClick={() => closeViewerTab(index)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
               </header>
               <div className="min-h-0 flex-1">
                 <MobileViewerErrorBoundary>
@@ -678,7 +749,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                   ) : (
                     <PreviewPane
                       source={viewerSource}
-                      onClose={() => setViewerSource(null)}
+                      onClose={closeViewerDrawer}
                       workspacePath={view.workspacePath}
                     />
                   )}
@@ -755,7 +826,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                     onOpenReviewTab={appPanels.handleToggleGit}
                     onOpenSelectionSideConversation={() => {}}
                     onOpenBrowserUrl={appPanels.handleOpenBrowserUrl}
-                    onOpenCodeViewer={(source) => setViewerSource(source)}
+                    onOpenCodeViewer={openViewerTab}
                     onOpenBackgroundBash={appPanels.handleOpenBackgroundBash}
                     onOpenSubagentSession={appPanels.handleOpenSubagentSession}
                     onOpenWorkflowActorSession={appPanels.handleOpenWorkflowActorSession}
