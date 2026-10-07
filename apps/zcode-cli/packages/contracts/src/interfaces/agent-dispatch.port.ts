@@ -14,6 +14,13 @@ import type {
  * 与 automation- / offpeak- 前缀同一执法家族。
  */
 export const WORK_ORDER_INPUT_ID_PREFIX = "workorder-";
+/**
+ * 复盘轮的确定性 inputId 前缀（复盘站证据门禁 2026-10-07）：工单轮的 inputId 是
+ * `workorder-<workOrderId>`，bootstrap 的复盘终态 watcher 靠这个前缀对号回写结算
+ * 行。刻意不借 workorder- 前缀——那是工单轮 denylist/queryId 的身份信号，复盘轮
+ * 不沾。同单自动重试会再跑一次复盘，同 id 幂等无碍。
+ */
+export const WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX = "agent-work-order-debrief:";
 
 /** 工单信封：随工单正文落库 + 提交入参携带（谁派的单、派给谁的会话、干什么）。 */
 export interface AgentWorkOrderEnvelope {

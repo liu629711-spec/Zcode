@@ -6,7 +6,6 @@
 
 import { createMessageId, traceContextToLogContext } from "../deps.js";
 import type { QueryId, TraceContext } from "../deps.js";
-import { uuidv7 } from "@zcode/shared";
 import type { AgentWorkOrderEnvelope } from "@zcode/contracts";
 import { WORK_ORDER_INPUT_ID_PREFIX, boundAgentWorkOrderMeta } from "@zcode/contracts";
 import type { ModelSelection } from "@zcode/shared";
@@ -15,6 +14,7 @@ import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js"
 import {
   buildWorkOrderEnvelopeText,
   WORK_ORDER_RESTRICTED_TOOL_NAMES,
+  WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX,
 } from "../../subagent/work-order.js";
 import {
   buildWorkOrderDebriefText,
@@ -283,7 +283,9 @@ export async function runWorkOrderCommand(
           });
           await this.executeTurnCommand(debriefText, undefined, {
             abortSignal: foregroundExecution.controller.signal,
-            inputId: uuidv7(),
+            // 确定性 inputId（复盘站证据门禁 2026-10-07）：bootstrap 的复盘终态
+            // watcher 靠它对号回写结算行；随机 uuidv7 时代无法对号。
+            inputId: `${WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX}${command.workOrderId}`,
             inputPresentation: "agent_work_order_debrief",
             inputSource: "agent_work_order_debrief",
             inputVisibility: "model-only",
@@ -355,4 +357,29 @@ export async function runWorkOrderCommand(
   } finally {
     finishForegroundExecution.call(this, foregroundExecution);
   }
+}
+
+/**
+ * 复盘站证据门禁（2026-10-07 拍板）的期望面：这只员工会不会在工单轮后跑复盘轮。
+ * 判定与 runWorkOrderCommand 的 debriefSkillsRoot 同源（persona+记忆开+非评审由
+ * 调用侧的信封带去），bootstrap 在回执投递时对目标会话 runtime 探这个值并写进
+ * 回执终态（debriefExpected），批次质检闸门据此决定免检要不要等复盘结算行。
+ */
+export function isWorkOrderDebriefExpected(this: AgentRuntimeInternal): boolean {
+  const persona = this.config.projectAgentPersona;
+  const memory = this.config.memory as MemoryRuntimeConfig | undefined;
+  if (!persona || memory?.enabled !== true || memory.use === false || !memory.storageRoot) {
+    return false;
+  }
+  return Boolean(
+    resolveAgentSkillsRoot(
+      resolveAgentMemoryRoot({
+        agentName: persona.name,
+        ...(persona.agentId ? { agentId: persona.agentId } : {}),
+        scope: "user",
+        storageRoot: memory.storageRoot,
+        workspaceRoot: this.workspaceRoot,
+      }),
+    ),
+  );
 }

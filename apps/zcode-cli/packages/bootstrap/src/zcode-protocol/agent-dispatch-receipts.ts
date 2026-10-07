@@ -11,6 +11,7 @@
 import {
   SessionEventType,
   WORK_ORDER_INPUT_ID_PREFIX,
+  WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX,
   type AgentWorkOrderEnvelope,
   type SessionEvent,
   type SessionId,
@@ -171,23 +172,40 @@ export function scheduleWorkOrderReceiptRelay(
     }
     const finalOutcome =
       outcome.status === "failed" && input.retried ? { ...outcome, retried: true } : outcome;
+    // 复盘站证据门禁（2026-10-07 拍板）：completed 终态时对目标会话探一次「会不会
+    // 跑复盘轮」，随终态标注 debriefExpected——批次免检要等复盘结算行。
+    const debriefExpected =
+      finalOutcome.status === "completed" &&
+      (input.targetRecord.app.runtime.isWorkOrderDebriefExpected?.() ?? false);
+    const outcomeWithDebrief = debriefExpected
+      ? { ...finalOutcome, debriefExpected: true }
+      : finalOutcome;
     void deliverWorkOrderReceipt(context, deps, {
       envelope: input.envelope,
       agentName: input.agentName,
       ...(input.agentId ? { agentId: input.agentId } : {}),
       targetSessionId: input.targetRecord.app.sessionId,
-      outcome: finalOutcome,
+      outcome: outcomeWithDebrief,
     }).catch((error) => {
       context.logger?.warn("Failed to deliver agent work order receipt", {
         errorMessage: error instanceof Error ? error.message : String(error),
         event: "agent_work_order_receipt.delivery_failed",
         fromSessionId: input.envelope.fromSessionId,
         module: "bootstrap.zcode_protocol",
-        outcomeStatus: finalOutcome.status,
+        outcomeStatus: outcomeWithDebrief.status,
         targetSessionId: input.targetRecord.app.sessionId,
         workOrderId: input.envelope.workOrderId,
       });
     });
+    // 复盘终态 watcher：工单轮之后必然跟着复盘轮（确定性 inputId），落终态就回写
+    // 结算行并重触发批次质检——免检判定在复盘缺席时被缓裁决，全靠这里解冻。
+    if (debriefExpected) {
+      scheduleWorkOrderDebriefSettleWatcher(context, deps, {
+        targetRecord: input.targetRecord,
+        envelope: input.envelope,
+        ...(input.watchdogMs === undefined ? {} : { watchdogMs: input.watchdogMs }),
+      });
+    }
   };
   // 回执看门狗（audit 2026-10-01 对账批）：目标 record 关闭/卡死时订阅随 record
   // 消失，回执永不到达，老板的卡永远停在「已派单」。到点先看本单是否还在目标
@@ -306,6 +324,140 @@ async function retryWorkOrderOnce(
       outcome: failedOutcome,
     });
   }
+}
+
+/**
+ * 复盘结算宽限：复盘轮是一轮普通模型轮（禁派单、无嵌套），分钟级就该落终态。
+ * 到点没等到就回写 timeout 结算行并照常重触发——批次不被卡死的复盘晾住（权威
+ * 复盘留档仍在员工会话，门禁侧另有 24h 新鲜度兜底崩溃场景）。测试可注入小值。
+ */
+const DEBRIEF_SETTLE_GRACE_MS_DEFAULT = 30 * 60_000;
+
+/**
+ * 复盘终态 watcher（复盘站证据门禁 2026-10-07 拍板）：工单轮终态后武装，盯
+ * `agent-work-order-debrief:<workOrderId>` 的 TurnComplete/TurnError——到了就
+ * （1）给发起方台账回写 agentWorkOrderDebrief 结算行（确定性 id，存在即结算，
+ * 幂等重入无害）；（2）重触发批次质检（免检判定此前被缓裁决，全靠这里解冻）。
+ * 宽限到点没等到 = 如实回写 timeout 结算行照常重触发。与回执看门狗同一档
+ * best-effort：目标 record 关闭时订阅随之消失，兜底走宽限定时器。
+ */
+export function scheduleWorkOrderDebriefSettleWatcher(
+  context: ZCodeProtocolAgentServerContext,
+  deps: ReceiptRelayDeps,
+  input: {
+    targetRecord: ZCodeProtocolSessionRecord;
+    envelope: AgentWorkOrderEnvelope;
+    /** 结算宽限；缺席用 30 分钟默认（测试注入小值）。 */
+    watchdogMs?: number;
+  },
+): void {
+  const debriefInputId = `${WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX}${input.envelope.workOrderId}`;
+  let settled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const clearTimer = () => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const settle = async (status: "completed" | "failed" | "timeout") => {
+    if (settled) return;
+    settled = true;
+    unsubscribe();
+    clearTimer();
+    try {
+      await context.deps.sessionStore?.saveSessionInput?.({
+        id: `agentWorkOrderDebrief:${input.envelope.workOrderId}`,
+        sessionID: input.envelope.fromSessionId as SessionId,
+        kind: "agentWorkOrderDebrief",
+        delivery: "queue",
+        payload: {
+          text: `复盘轮已结算（${status}）`,
+          workOrderId: input.envelope.workOrderId,
+          ...(input.envelope.batchId ? { batchId: input.envelope.batchId } : {}),
+          debriefStatus: status,
+        },
+      });
+    } catch (error) {
+      context.logger?.warn("Failed to save agent work order debrief settled row", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "agent_work_order_debrief.settle_save_failed",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        debriefStatus: status,
+        workOrderId: input.envelope.workOrderId,
+      });
+      return; // 结算行写不进去，重触发也只是再缓裁决一轮——不做无用触发
+    }
+    if (!input.envelope.batchId) return;
+    try {
+      const initiatorRecord =
+        context.sessions.get(input.envelope.fromSessionId) ??
+        (await deps.activateSessionRecord(input.envelope.fromSessionId));
+      await initiatorRecord.app.runtime.maybeEnqueueAgentWorkOrderBatchQc({
+        batchId: input.envelope.batchId,
+        traceContext: initiatorRecord.traceContext,
+      });
+      context.logger?.info("Agent work order debrief settled; batch QC re-triggered", {
+        event: "agent_work_order_debrief.settled",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        debriefStatus: status,
+        workOrderId: input.envelope.workOrderId,
+      });
+    } catch (error) {
+      context.logger?.warn("Failed to re-trigger batch QC after debrief settle", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "agent_work_order_debrief.retrigger_failed",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        debriefStatus: status,
+        workOrderId: input.envelope.workOrderId,
+      });
+    }
+  };
+  timer = setTimeout(() => {
+    context.logger?.warn("Agent work order debrief settle grace elapsed; synthesizing settled row", {
+      event: "agent_work_order_debrief.settle_timeout",
+      fromSessionId: input.envelope.fromSessionId,
+      module: "bootstrap.zcode_protocol",
+      workOrderId: input.envelope.workOrderId,
+    });
+    void settle("timeout").catch((error) => {
+      context.logger?.warn("Failed to settle agent work order debrief", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "agent_work_order_debrief.settle_failed",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        workOrderId: input.envelope.workOrderId,
+      });
+    });
+  }, input.watchdogMs ?? DEBRIEF_SETTLE_GRACE_MS_DEFAULT);
+  const unsubscribe = input.targetRecord.app.runtime.subscribeEvents({
+    onSessionEvent: (event: SessionEvent) => {
+      const payload = event.payload;
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return;
+      const record = payload as Record<string, unknown>;
+      if (record.inputId !== debriefInputId) return;
+      if (
+        event.type !== SessionEventType.TurnComplete &&
+        event.type !== SessionEventType.TurnError
+      ) {
+        return;
+      }
+      void settle(event.type === SessionEventType.TurnComplete ? "completed" : "failed").catch(
+        (error) => {
+          context.logger?.warn("Failed to settle agent work order debrief", {
+            errorMessage: error instanceof Error ? error.message : String(error),
+            event: "agent_work_order_debrief.settle_failed",
+            fromSessionId: input.envelope.fromSessionId,
+            module: "bootstrap.zcode_protocol",
+            workOrderId: input.envelope.workOrderId,
+          });
+        },
+      );
+    },
+  });
 }
 
 async function deliverWorkOrderReceipt(

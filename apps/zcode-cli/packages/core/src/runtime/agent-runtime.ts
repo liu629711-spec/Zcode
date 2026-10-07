@@ -474,6 +474,13 @@ export interface AgentRuntime {
    */
   maybeAdvanceCouncilRound(input: MaybeAdvanceCouncilRoundInput): Promise<void>;
   /**
+   * 复盘站证据门禁（2026-10-07 拍板）：这只员工会预期在工单轮后跑复盘轮
+   * （persona+记忆开；评审单豁免由调用侧信封判定）。bootstrap 回执投递时对
+   * 目标会话探这个值，随回执终态写 debriefExpected，批次质检闸门据此决定
+   * 免检要不要等复盘结算行。旧宿主/测试桩缺席 = 复盘站不参与判定。
+   */
+  isWorkOrderDebriefExpected?(): boolean;
+  /**
    * 圆桌会控场：暂停/恢复。暂停冻结下一轮派单与推进（进行中的席位发言自然跑完）；
    * 恢复时立即自查推进一次（冻结期间到齐的回执此刻收票）。
    */

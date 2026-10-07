@@ -46,7 +46,10 @@ import {
   sealBackgroundTaskNotifications,
 } from "./background-notifications.js";
 import { drainPendingRuntimeCommandsForActiveLoop } from "./runtime-command-active-loop.js";
-import { enqueueAgentWorkOrder } from "./work-orders.js";
+import {
+  enqueueAgentWorkOrder,
+  isWorkOrderDebriefExpected,
+} from "./work-orders.js";
 import { enqueueAgentWorkOrderReceipt } from "./work-order-receipts.js";
 import {
   enqueueAgentWorkOrderBatchQc,
@@ -276,6 +279,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.enqueueAgentWorkOrderBatchQc = enqueueAgentWorkOrderBatchQc;
   proto.maybeEnqueueAgentWorkOrderBatchQc = maybeEnqueueAgentWorkOrderBatchQc;
   proto.maybeAdvanceCouncilRound = maybeAdvanceCouncilRound;
+  proto.isWorkOrderDebriefExpected = isWorkOrderDebriefExpected;
   proto.setCouncilMeetingPaused = setCouncilMeetingPaused;
   proto.addCouncilInterjection = addCouncilInterjection;
   proto.enqueueSubagentMessage = enqueueSubagentMessage;

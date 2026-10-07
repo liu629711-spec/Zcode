@@ -201,6 +201,8 @@ export interface AgentRuntimeCoreMethods {
     input: MaybeEnqueueAgentWorkOrderBatchQcInput,
   ): Promise<void>;
   maybeAdvanceCouncilRound(input: MaybeAdvanceCouncilRoundInput): Promise<void>;
+  /** 复盘站证据门禁（2026-10-07 拍板）：这只员工会预期在工单轮后跑复盘轮。 */
+  isWorkOrderDebriefExpected(): boolean;
   setCouncilMeetingPaused(input: SetCouncilMeetingPausedInput): Promise<void>;
   addCouncilInterjection(input: AddCouncilInterjectionInput): Promise<void>;
   enqueueSubagentMessage(input: EnqueueSubagentMessageInput): undefined;

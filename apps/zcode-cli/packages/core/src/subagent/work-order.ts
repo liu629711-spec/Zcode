@@ -4,11 +4,16 @@
 
 import type { AgentProfile } from "./profile.js";
 import type { ModelSelection } from "@zcode/shared";
-import { WORK_ORDER_INPUT_ID_PREFIX, type AgentWorkOrderEnvelope } from "@zcode/contracts";
+import {
+  WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX,
+  WORK_ORDER_INPUT_ID_PREFIX,
+  type AgentWorkOrderEnvelope,
+} from "@zcode/contracts";
 import { COUNCIL_SEAT_FIRST_LINE, COUNCIL_VERDICT_INSTRUCTION } from "./council.js";
 
 // 前缀单一来源在 contracts（turn-loop state 与 bootstrap 端口自检共用同一词表）。
-export { WORK_ORDER_INPUT_ID_PREFIX };
+export { WORK_ORDER_INPUT_ID_PREFIX, WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX };
+
 
 // 目标解析判据（与点将的宽容匹配刻意不同——工单永不落错人）：
 // - uuid 形状 → 按工号（agentId）在全量现役档案里唯一匹配；
@@ -266,6 +271,14 @@ export interface WorkOrderReceiptOutcome {
    * 证据缺席一律照旧开轮。失败终态不带此项。
    */
   toolCallCount?: number;
+  /**
+   * 复盘站证据门禁（2026-10-07 拍板）：这只员工会预期在工单轮之后跑复盘轮
+   * （persona+记忆开且非评审单），由 bootstrap 在回执投递时从目标会话 runtime
+   * 探得并随终态标注。true = 批次免检还要等复盘结算行落地（bootstrap 复盘终态
+   * watcher 回写+重触发，另有限时兜底）；**缺席 = 旧回执**，复盘站不参与免检
+   * 判定（watcher 从未武装过，等它只会把历史批次永远晾着）。
+   */
+  debriefExpected?: boolean;
 }
 
 export type WorkOrderReceiptStatus = WorkOrderReceiptOutcome["status"];

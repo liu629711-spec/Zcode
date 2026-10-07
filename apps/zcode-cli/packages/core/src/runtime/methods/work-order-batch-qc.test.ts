@@ -123,8 +123,14 @@ const trigger = (runtime: TestRuntime, batchId = BATCH_ID) =>
 /** 回执台账行（与 work-order-receipts.ts 落账的 payload 形状一致）。 */
 function receiptRow(
   workOrderId: string,
-  outcome: { status: string; toolCallCount?: number; response?: string },
+  outcome: {
+    status: string;
+    toolCallCount?: number;
+    response?: string;
+    debriefExpected?: boolean;
+  },
   sequence = 10,
+  timeCreated = 0,
 ): LedgerRow {
   return {
     id: `receipt-${workOrderId}-${sequence}`,
@@ -137,6 +143,20 @@ function receiptRow(
       outcome,
     },
     admittedSequence: sequence,
+    status: "discarded",
+    time: { created: timeCreated, updated: 0 },
+  };
+}
+
+/** 复盘结算行（与 bootstrap watcher 回写的形状一致；存在即结算）。 */
+function debriefSettledRow(workOrderId: string, status = "completed"): LedgerRow {
+  return {
+    id: `agentWorkOrderDebrief:${workOrderId}`,
+    sessionID: SESSION,
+    kind: "agentWorkOrderDebrief",
+    delivery: "queue",
+    payload: { text: "复盘已结算", workOrderId, status },
+    admittedSequence: 99,
     status: "discarded",
     time: { created: 0, updated: 0 },
   };
@@ -436,4 +456,93 @@ test("诊断轮禁派单是机制不是空话：质检与合议轮的轮选项�
   // advisory 改造（2026-10-04）：质检与合议一律禁派单——诊断建议的采纳权在老板。
   assert.deepEqual(captured[0]!.toolDisallowlist, ["AgentDispatch"]);
   assert.deepEqual(captured[1]!.toolDisallowlist, ["AgentDispatch"]);
+});
+
+// ============================================================
+// 复盘站证据门禁（2026-10-07 拍板）：预期复盘的单要等结算行才免检。
+// ============================================================
+
+const FRESH_MS = Date.now() - 60_000;
+
+test("复盘站门禁：回执绿但预期复盘未结算 → 缓裁决（不开轮也不落闸）", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    receiptRow(
+      "wo-1",
+      { status: "completed", toolCallCount: 3, response: "交活了", debriefExpected: true },
+      11,
+      FRESH_MS,
+    ),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0, "复盘未结算不该开质检轮");
+  const gateRow = runtime.store.rows.find(
+    (row: LedgerRow) => row.kind === "agentWorkOrderBatchQc",
+  ) as LedgerRow | undefined;
+  assert.equal(gateRow, undefined, "缓裁决不落闸（这批还要等复盘结算再裁）");
+});
+
+test("复盘站门禁：结算行到场 → 照常免检落闸", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    receiptRow(
+      "wo-1",
+      { status: "completed", toolCallCount: 3, response: "交活了", debriefExpected: true },
+      11,
+      FRESH_MS,
+    ),
+    debriefSettledRow("wo-1"),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0);
+  const skipRow = runtime.store.rows.find(
+    (row: LedgerRow) => row.kind === "agentWorkOrderBatchQc",
+  ) as LedgerRow | undefined;
+  assert.ok(skipRow, "复盘已结算 → 全绿免检照常");
+  assert.equal((skipRow.payload as { skipped?: boolean }).skipped, true);
+});
+
+test("复盘站门禁：结算行缺席但回执已过 24h 宽限 → fail-open 免检（purgatory 兜底）", async () => {
+  const stale = Date.now() - 25 * 60 * 60_000;
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    receiptRow(
+      "wo-1",
+      { status: "completed", toolCallCount: 3, response: "交活了", debriefExpected: true },
+      11,
+      stale,
+    ),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0, "宽限过期视同结算");
+  const skipRow = runtime.store.rows.find(
+    (row: LedgerRow) => row.kind === "agentWorkOrderBatchQc",
+  ) as LedgerRow | undefined;
+  assert.ok(skipRow);
+});
+
+test("复盘站门禁：旧回执无 debriefExpected 标注 → 复盘站不参与判定，照旧免检", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 3, response: "交活了" }, 11),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0, "旧口径批次不能被新门禁晾死");
+});
+
+test("复盘站门禁：混批（一单预期复盘未结算）→ 整批缓裁决", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    dispatchRow("wo-2", "discarded"),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 2, response: "好了" }, 11, FRESH_MS),
+    receiptRow(
+      "wo-2",
+      { status: "completed", toolCallCount: 5, response: "也好了", debriefExpected: true },
+      12,
+      FRESH_MS,
+    ),
+    debriefSettledRow("wo-1"),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 0, "wo-2 的复盘还没结算，整批等");
 });

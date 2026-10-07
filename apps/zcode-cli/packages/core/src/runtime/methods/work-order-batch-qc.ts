@@ -60,15 +60,30 @@ export function latestReceiptOutcomeByWorkOrderId(
   rows: readonly {
     kind: string;
     admittedSequence: number;
+    time?: { created?: unknown };
     payload: { workOrderId?: unknown; outcome?: unknown; [key: string]: unknown };
   }[],
 ): Map<
   string,
-  { status: unknown; toolCallCount?: number; response?: string; admittedSequence: number }
+  {
+    status: unknown;
+    toolCallCount?: number;
+    response?: string;
+    debriefExpected?: boolean;
+    admittedSequence: number;
+    timeCreated: number;
+  }
 > {
   const latest = new Map<
     string,
-    { status: unknown; toolCallCount?: number; response?: string; admittedSequence: number }
+    {
+      status: unknown;
+      toolCallCount?: number;
+      response?: string;
+      debriefExpected?: boolean;
+      admittedSequence: number;
+      timeCreated: number;
+    }
   >();
   for (const record of rows) {
     if (record.kind !== "agentWorkOrderReceipt") continue;
@@ -80,6 +95,7 @@ export function latestReceiptOutcomeByWorkOrderId(
       status?: unknown;
       toolCallCount?: unknown;
       response?: unknown;
+      debriefExpected?: unknown;
     };
     const previous = latest.get(workOrderId);
     if (previous && previous.admittedSequence >= record.admittedSequence) continue;
@@ -90,9 +106,35 @@ export function latestReceiptOutcomeByWorkOrderId(
         ? { toolCallCount: outcomeRecord.toolCallCount }
         : {}),
       ...(typeof outcomeRecord.response === "string" ? { response: outcomeRecord.response } : {}),
+      ...(outcomeRecord.debriefExpected === true ? { debriefExpected: true } : {}),
+      timeCreated:
+        typeof record.time?.created === "number" && Number.isFinite(record.time.created)
+          ? record.time.created
+          : 0,
     });
   }
   return latest;
+}
+
+/**
+ * 复盘结算行（agentWorkOrderDebrief）的宽限上限：收口时复盘预期在、结算行缺席，
+ * 且最新回执已老于此期限 → 视同结算（fail-open），批次不再晾着。正常路径结算行
+ * 在复盘轮终态后几分钟内就到（bootstrap watcher 回写）；这条只兜进程崩溃/长期
+ * 停机后 watcher 丢失的 purgatory，不是常规等待。
+ */
+export const DEBRIEF_SETTLE_MAX_AGE_MS = 24 * 60 * 60_000;
+
+/** 复盘结算台账行（bootstrap 复盘终态 watcher 回写，确定性 id，存在即结算）。 */
+export function collectDebriefSettledWorkOrderIds(
+  rows: readonly { kind: string; payload: { workOrderId?: unknown; [key: string]: unknown } }[],
+): Set<string> {
+  const settled = new Set<string>();
+  for (const record of rows) {
+    if (record.kind !== "agentWorkOrderDebrief") continue;
+    const workOrderId = record.payload?.workOrderId;
+    if (typeof workOrderId === "string" && workOrderId) settled.add(workOrderId);
+  }
+  return settled;
 }
 
 /**
@@ -309,18 +351,42 @@ async function startBatchQcIfComplete(
       (record.payload as { envelope?: { review?: unknown } } | undefined)?.envelope !== undefined &&
       (record.payload as { envelope?: { review?: unknown } }).envelope?.review === true,
   );
-  // 证据门禁（地基清理·质检免检 2026-10-05；四站走线补强 2026-10-07）：普通质检批
+  // 证据门禁（地基清理·质检免检 2026-10-05；四站走线 2026-10-07 拍板）：普通质检批
   // 先过确定性证据闸——施工站=回执终态 completed 且真动过手（工具调用 >0），回执
-  // 站=每单有回执行且交了话（response 非空）；全绿批次免开 advisory 质检轮（tianshu/
-  // AgentCore 口径：确定性门禁先行，模型轮只在报警后做 advisory 诊断）。质检站就是
-  // 被免的对象；合议轮（review）是评审会的裁决流程本身，永不免检。复盘站证据不进
-  // 门禁：复盘轮在工单轮之后才跑（work-orders.ts），而回执随工单轮 TurnComplete
-  // 出站——批次收口那一刻复盘必然未完，等它就得把「批次何时收口」推迟到复盘完成
-  // （跨会话等待+超时兜底），真需求出现再单开一批。取消/失败/零工具调用/没交话
-  // （可能摸鱼）/证据缺席（旧回执、畸形行）fail-open 照旧开轮。
+  // 站=每单有回执行且交了话（response 非空），复盘站=预期复盘的单要见到复盘结算行
+  // （agentWorkOrderDebrief，bootstrap 复盘终态 watcher 回写）；全绿且复盘已结算的
+  // 批次免开 advisory 质检轮（确定性门禁先行，模型轮只在报警后做 advisory 诊断）。
+  // 质检站就是被免的对象；合议轮（review）是评审会的裁决流程本身，永不免检。
+  // 复盘预期在而结算行缺席 = **缓裁决**：不落闸、不开轮，等复盘终态重触发——复盘轮
+  // 在工单轮之后才跑（work-orders.ts），回执随工单轮出站，收口那一刻复盘必然未完。
+  // 缓裁决有两条兜底：watcher 限时回写（bootstrap，分钟级）+ 本门禁 24h 新鲜度
+  // （DEBRIEF_SETTLE_MAX_AGE_MS，崩溃后 watcher 丢失的 purgatory 不再把批次晾死）。
+  // 取消/失败/零工具调用/没交话（可能摸鱼）/证据缺席（旧回执、畸形行）fail-open 照旧开轮。
   if (!review) {
     const receipts = latestReceiptOutcomeByWorkOrderId(rows);
     if (orders.every((order) => isGreenReceiptOutcome(receipts.get(order.workOrderId)))) {
+      const debriefSettled = collectDebriefSettledWorkOrderIds(rows);
+      const nowMs = Date.now();
+      const debriefPending = orders.filter((order) => {
+        const outcome = receipts.get(order.workOrderId);
+        if (outcome?.debriefExpected !== true) return false;
+        if (debriefSettled.has(order.workOrderId)) return false;
+        // 结算行缺席但回执已过宽限上限：视同结算（watcher 兜底失效的 purgatory，
+        // 权威复盘留档仍在员工会话里）。回执时间缺席（0/旧行）不启用兜底，继续等。
+        const timeCreated = outcome.timeCreated;
+        if (timeCreated > 0 && nowMs - timeCreated > DEBRIEF_SETTLE_MAX_AGE_MS) return false;
+        return true;
+      });
+      if (debriefPending.length > 0) {
+        this.logger?.info("Batch QC deferred: debrief station evidence pending", {
+          batchId: input.batchId,
+          event: "agent_work_order_batch_qc.deferred_debrief",
+          module: "core.runtime",
+          pendingWorkOrderIds: debriefPending.map((order) => order.workOrderId),
+          sessionId: this.sessionId,
+        });
+        return;
+      }
       // 免检同样落内容锚定闸门行：这批永不重开质检，审计痕迹留档。
       // 落闸失败不硬撑——掉回下方正常开轮路径（开轮自带 fail-closed 落闸）。
       try {
