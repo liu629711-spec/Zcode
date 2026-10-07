@@ -63,6 +63,10 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* body 的文字色必须跟主题 token：各壳（桌面 index.html / 手机 remote.html）会在 head 里
+     为启动屏写死一个底色文字色，启动后没人覆盖它——浅色主题下全身继承近白字（实测 1.15:1，
+     正文看起来"消失"）。这里统一收口，任何壳都只需管自己的启动屏元素。 */
+  color: var(--color-foreground);
 }
 
 /* 文本选区跟随当前风格的品牌色，替代系统默认蓝。 */
