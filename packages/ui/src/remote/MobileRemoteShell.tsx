@@ -285,53 +285,62 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
           />
         </div>
         {viewerSource ? (
-          <div className="absolute inset-0 z-50 flex flex-col bg-background">
-            <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
-              <button
-                type="button"
-                onClick={() => setViewerSource(null)}
-                className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
-                aria-label={intl.formatMessage({ id: "common.close" })}
-              >
-                <X className="h-5 w-5" />
-              </button>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-                {viewerSource.title}
-              </span>
-            </header>
-            <div className="min-h-0 flex-1">
-              <MobileViewerErrorBoundary>
-                {viewerSource.type === "patch" ? (
-                  // 手机浮层绕开 @pierre/diffs 的 PatchDiff（移动端渲染会崩，桌面同源未查），
-                  // 直接用会话代码块同款的轻量 Shiki diff——纯文本行渲染，移动端已验证可用。
-                  <HighlightedLightweightDiffPreview
-                    className="h-full"
-                    codePreviewSettings={codePreviewSettings}
-                    language={inferCodeLanguage(
-                      viewerSource.path ?? viewerSource.title,
-                      viewerSource.patch,
-                    )}
-                    lines={
-                      getPlainTextPatchFallbackLines(viewerSource.patch) ??
-                      viewerSource.patch.split(/\r?\n/)
-                    }
-                    path={viewerSource.path ?? viewerSource.title}
-                    theme={
-                      resolveTheme(theme) === "dark"
-                        ? codePreviewSettings.darkTheme
-                        : codePreviewSettings.lightTheme
-                    }
-                  />
-                ) : (
-                  <PreviewPane
-                    source={viewerSource}
-                    onClose={() => setViewerSource(null)}
-                    workspacePath={view.workspacePath}
-                  />
-                )}
-              </MobileViewerErrorBoundary>
+          <>
+            {/* 遮罩：点它关闭；会话保持挂载在后面（官方抽屉式右坞的移动形态） */}
+            <div
+              className="absolute inset-0 z-40 bg-black/40 animate-in fade-in-0 duration-200"
+              onClick={() => setViewerSource(null)}
+              aria-hidden
+            />
+            {/* 抽屉：右侧滑入占 ~94%，左侧留一条变暗的会话 */}
+            <div className="absolute inset-y-0 right-0 z-50 flex w-[94%] flex-col border-l border-border bg-background shadow-2xl animate-in slide-in-from-right-[100%] fade-in-0 duration-200">
+              <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
+                <button
+                  type="button"
+                  onClick={() => setViewerSource(null)}
+                  className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+                  aria-label={intl.formatMessage({ id: "common.close" })}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                  {viewerSource.title}
+                </span>
+              </header>
+              <div className="min-h-0 flex-1">
+                <MobileViewerErrorBoundary>
+                  {viewerSource.type === "patch" ? (
+                    // 手机抽屉绕开 @pierre/diffs 的 PatchDiff（移动端渲染会崩，桌面同源未查），
+                    // 直接用会话代码块同款的轻量 Shiki diff——纯文本行渲染，移动端已验证可用。
+                    <HighlightedLightweightDiffPreview
+                      className="h-full"
+                      codePreviewSettings={codePreviewSettings}
+                      language={inferCodeLanguage(
+                        viewerSource.path ?? viewerSource.title,
+                        viewerSource.patch,
+                      )}
+                      lines={
+                        getPlainTextPatchFallbackLines(viewerSource.patch) ??
+                        viewerSource.patch.split(/\r?\n/)
+                      }
+                      path={viewerSource.path ?? viewerSource.title}
+                      theme={
+                        resolveTheme(theme) === "dark"
+                          ? codePreviewSettings.darkTheme
+                          : codePreviewSettings.lightTheme
+                      }
+                    />
+                  ) : (
+                    <PreviewPane
+                      source={viewerSource}
+                      onClose={() => setViewerSource(null)}
+                      workspacePath={view.workspacePath}
+                    />
+                  )}
+                </MobileViewerErrorBoundary>
+              </div>
             </div>
-          </div>
+          </>
         ) : null}
       </div>
     );
