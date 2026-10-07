@@ -65,8 +65,9 @@ const FRESH_PATTERNS: ReadonlyArray<{ name: string; re: RegExp }> = [
   { name: "top-navigation", re: /(?:top|parent)\.location(?:\s*=|\.href\s*=)/i },
 ];
 
-// 图纸原文（files）允许上游原文带外链（台账口径：清洗只发生在预览副本），
-// 这里只盘点数量作质量信号，不算违规。
+// 图纸原文（files）允许上游原文带外链（台账口径：清洗只发生在预览副本）。
+// 老板拍板 2026-10-07 定案：原文外链是上游原貌的一部分，**不清洗**——预览副本
+// 的清洗纪律不变；本扫描对 files 只盘点数量作质量信号，不算违规、不再留拍板。
 let filesExternalCount = 0;
 let filesExternalSamples = 0;
 
@@ -92,7 +93,7 @@ for (const manifest of ASSET_CATALOG) {
   }
 }
 
-// files 里的外链是交付质量信号（上游原文口径允许），单独汇报不计违规。
+// files 里的外链是交付质量信号（原文口径已拍板定案 2026-10-07），单独汇报不计违规。
 console.log(`COUNT files-with-external-refs=${filesExternalCount}`);
 
 // ── 4. uiverse 自动收录大袋（3,793 件）同一套体检与新鲜扫描 ────────────
