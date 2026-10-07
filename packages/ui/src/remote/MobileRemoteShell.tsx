@@ -57,9 +57,8 @@ import { useAppPanels } from "@/hooks/useAppPanels.js";
 import { useGitRepository } from "@/hooks/useGitRepository.js";
 import { useTaskSidePaneMemoryBridge } from "@/app-shell/useTaskSidePaneMemoryBridge.js";
 import { AnimatedSidePanePanel } from "@/app-shell/AnimatedSidePanePanel.js";
-import { useAnimatedResizablePanel } from "@/app-shell/useAnimatedResizablePanel.js";
 import { getActiveSidePaneTab } from "@/lib/workspaceSidePane.js";
-import { ResizablePanelGroup } from "@/components/ui/resizable.js";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 import type { GitChangeSourceId } from "@zcode/shared";
 
 /**
@@ -323,11 +322,11 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     setGitSelectedSourceId,
     workspaceAbsPath: dockWorkspacePath,
   });
-  const {
-    panelRef: dockPanelRef,
-    panelElementRef: dockPanelElementRef,
-    isVisible: dockPanelVisible,
-  } = useAnimatedResizablePanel({ open: dockOpen, expandedSize: "100%" });
+  // 兜底容器路径不渲染 ResizablePanel，可见性直接跟开关走（桌面钩子的 rAF
+  // 翻转在后台/遮挡标签页不触发，会造成内容永久 opacity-0）。
+  const dockPanelVisible = dockOpen;
+  const dockPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const dockPanelElementRef = useRef<HTMLDivElement | null>(null);
 
   const openChat = useCallback(
     (target: { workspacePath: string; sessionId: string | null; title: string }) => {
@@ -463,6 +462,15 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
       });
   }, [view, services, intl]);
 
+  const toggleDock = useCallback(() => {
+    // 全新右坞没有标签记忆（sidePaneState=null 会渲染空白）：开坞前种空状态，
+    // 官方"打开标签页"引导（审查/终端）才能渲染出来。
+    if (!dockOpen && !appPanels.sidePaneState) {
+      appPanels.setSidePaneState({ tabs: [], activeTabId: "" });
+    }
+    setDockOpen((open) => !open);
+  }, [dockOpen, appPanels]);
+
   if (view.kind === "chat") {
     return (
       <div className="relative flex h-full flex-col bg-background">
@@ -554,7 +562,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
           ) : null}
           <button
             type="button"
-            onClick={() => setDockOpen((open) => !open)}
+            onClick={toggleDock}
             className={cn(
               "rounded-md p-1.5 active:bg-muted",
               dockOpen ? "bg-muted text-foreground" : "text-muted-foreground",
@@ -671,19 +679,15 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                   <X className="h-5 w-5" />
                 </button>
               </div>
-              {/* 右坞本体渲染可缩放 Panel，必须落在 PanelGroup 布局上下文里 */}
+              {/* 右坞本体走满宽兜底容器（手机抽屉没有 ResizablePanelGroup 布局上下文） */}
               <div className="min-h-0 flex-1">
-                <ResizablePanelGroup
-                  layoutId="mobile-dock-layout"
-                  panelIds={["mobile-dock-pane"]}
-                  className="h-full min-h-0"
-                >
-                  <MobileViewerErrorBoundary>
-                    <AnimatedSidePanePanel
-                      services={services}
-                      isDesktop={false}
-                      isVisible={dockPanelVisible}
-                      sidePaneState={appPanels.sidePaneState}
+                <MobileViewerErrorBoundary>
+                  <AnimatedSidePanePanel
+                    services={services}
+                    isDesktop={false}
+                    isVisible={dockPanelVisible}
+                    useResizablePanel={false}
+                    sidePaneState={appPanels.sidePaneState}
                     recentClosedSidePaneTabs={appPanels.recentClosedSidePaneTabs}
                     isBrowserOpen={false}
                     supportsEmbeddedBrowser={false}
@@ -735,9 +739,8 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                     onBrowserUrlChange={handleBrowserUrlChange}
                     onBrowserPageMetadataChange={appPanels.handleBrowserPageMetadataChange}
                     onSelectGitSource={setGitSelectedSourceId}
-                    />
-                  </MobileViewerErrorBoundary>
-                </ResizablePanelGroup>
+                  />
+                </MobileViewerErrorBoundary>
               </div>
             </div>
           </>

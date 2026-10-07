@@ -1598,6 +1598,8 @@ export function useAppPanels(options: {
     isTerminalOpen,
     setIsTerminalOpen,
     sidePaneState,
+    // 无标签记忆的宿主（手机远控右坞）开坞前种空状态，让"打开标签页"引导渲染
+    setSidePaneState,
     recentClosedSidePaneTabs,
     isSidePaneCollapsed,
     setIsSidePaneCollapsed,

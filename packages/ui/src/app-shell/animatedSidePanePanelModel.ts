@@ -49,13 +49,16 @@ export function shouldOfferSelectionSideConversation({
   return Boolean(activeTaskId);
 }
 
-export function resolveAnimatedSidePanePanelLayout() {
+export function resolveAnimatedSidePanePanelLayout(options?: {
+  /** 宿主没有 ResizablePanelGroup 布局上下文（如手机远控抽屉）时关闭，走满宽兜底容器 */
+  useResizablePanel?: boolean;
+}) {
   return {
     collapsedSize: "0px",
     defaultSize: "0px",
     maxSize: "65%",
     minSize: "240px",
-    useResizablePanel: true,
+    useResizablePanel: options?.useResizablePanel ?? true,
   };
 }
 

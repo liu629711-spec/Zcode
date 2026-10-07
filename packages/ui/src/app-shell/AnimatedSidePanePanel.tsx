@@ -337,6 +337,7 @@ export function AnimatedSidePanePanel({
   onBrowserUrlChange,
   onBrowserPageMetadataChange,
   onSelectGitSource,
+  useResizablePanel = true,
   frameClassName = "rounded-xl border border-border",
   captionControlsStyle,
   showWindowControls,
@@ -409,6 +410,8 @@ export function AnimatedSidePanePanel({
   onBrowserUrlChange: (tabId: string, url: string) => void;
   onBrowserPageMetadataChange: (tabId: string, metadata: BrowserSidePaneMetadata) => void;
   onSelectGitSource: (value: GitChangeSourceId) => void;
+  /** 宿主没有 ResizablePanelGroup 布局上下文（手机远控抽屉）时关 false，走满宽兜底容器 */
+  useResizablePanel?: boolean;
 }) {
   const { intl } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
@@ -455,7 +458,7 @@ export function AnimatedSidePanePanel({
   const isWindowResizeSettling = useWindowResizeSettling(hasRenderedSidePane);
   const widthUnlockTimerRef = useRef<number | null>(null);
   const previousIsVisibleRef = useRef(isVisible);
-  const panelLayout = resolveAnimatedSidePanePanelLayout();
+  const panelLayout = resolveAnimatedSidePanePanelLayout({ useResizablePanel });
   const hasReviewTab = visibleTabs.some((tab) => tab.type === "git");
   const canOpenSelectionSideConversation = shouldOfferSelectionSideConversation({
     activeTaskId,
