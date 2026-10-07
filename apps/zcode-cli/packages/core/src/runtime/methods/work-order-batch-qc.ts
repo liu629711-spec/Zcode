@@ -54,7 +54,7 @@ export function batchQcGateId(sessionId: string, contentKey: string): string {
 /**
  * 证据门禁（地基清理·质检免检 2026-10-05）：从台账行里取每张工单**最新**的
  * 回执终态。回执行（kind=agentWorkOrderReceipt）的 payload 带 outcome——
- * toolCallCount 由 bootstrap 从 TurnComplete 载荷随终态回传。
+ * toolCallCount/response 由 bootstrap 从 TurnComplete 载荷随终态回传。
  */
 export function latestReceiptOutcomeByWorkOrderId(
   rows: readonly {
@@ -62,10 +62,13 @@ export function latestReceiptOutcomeByWorkOrderId(
     admittedSequence: number;
     payload: { workOrderId?: unknown; outcome?: unknown; [key: string]: unknown };
   }[],
-): Map<string, { status: unknown; toolCallCount?: number; admittedSequence: number }> {
+): Map<
+  string,
+  { status: unknown; toolCallCount?: number; response?: string; admittedSequence: number }
+> {
   const latest = new Map<
     string,
-    { status: unknown; toolCallCount?: number; admittedSequence: number }
+    { status: unknown; toolCallCount?: number; response?: string; admittedSequence: number }
   >();
   for (const record of rows) {
     if (record.kind !== "agentWorkOrderReceipt") continue;
@@ -73,7 +76,11 @@ export function latestReceiptOutcomeByWorkOrderId(
       typeof record.payload?.workOrderId === "string" ? record.payload.workOrderId : "";
     const outcome = record.payload?.outcome;
     if (!workOrderId || typeof outcome !== "object" || outcome === null) continue;
-    const outcomeRecord = outcome as { status?: unknown; toolCallCount?: unknown };
+    const outcomeRecord = outcome as {
+      status?: unknown;
+      toolCallCount?: unknown;
+      response?: unknown;
+    };
     const previous = latest.get(workOrderId);
     if (previous && previous.admittedSequence >= record.admittedSequence) continue;
     latest.set(workOrderId, {
@@ -82,19 +89,26 @@ export function latestReceiptOutcomeByWorkOrderId(
       ...(typeof outcomeRecord.toolCallCount === "number" && Number.isFinite(outcomeRecord.toolCallCount)
         ? { toolCallCount: outcomeRecord.toolCallCount }
         : {}),
+      ...(typeof outcomeRecord.response === "string" ? { response: outcomeRecord.response } : {}),
     });
   }
   return latest;
 }
 
 /**
- * 单张工单是否绿：终态 completed 且真动过手（工具调用 >0）。零工具调用成功
- * 可能是摸鱼（寒暄交差），不算绿；证据缺席（旧回执/畸形行）一律不算绿。
+ * 单张工单是否绿：终态 completed、真动过手（工具调用 >0）、且交了话（response
+ * 非空）。零工具调用成功可能是摸鱼（寒暄交差）；动了手却一个字不交同样不算交活
+ * （回执站证据，四站走线补强 2026-10-07）。证据缺席（旧回执/畸形行）一律不算绿。
  */
 export function isGreenReceiptOutcome(
-  outcome: { status: unknown; toolCallCount?: number } | undefined,
+  outcome: { status: unknown; toolCallCount?: number; response?: string } | undefined,
 ): boolean {
-  return outcome?.status === "completed" && (outcome.toolCallCount ?? 0) > 0;
+  return (
+    outcome?.status === "completed" &&
+    (outcome.toolCallCount ?? 0) > 0 &&
+    typeof outcome.response === "string" &&
+    outcome.response.trim().length > 0
+  );
 }
 
 export interface EnqueueAgentWorkOrderBatchQcInput {
@@ -295,11 +309,15 @@ async function startBatchQcIfComplete(
       (record.payload as { envelope?: { review?: unknown } } | undefined)?.envelope !== undefined &&
       (record.payload as { envelope?: { review?: unknown } }).envelope?.review === true,
   );
-  // 证据门禁（地基清理·质检免检 2026-10-05）：普通质检批先过确定性证据闸——
-  // 每张单的回执终态 completed 且真动过手（工具调用 >0）= 绿，全绿批次免开
-  // advisory 质检轮（tianshu/AgentCore 口径：确定性门禁先行，模型轮只在报警后
-  // 做 advisory 诊断）。合议轮是评审会的裁决流程本身，永不免检；取消/失败/零
-  // 工具调用（可能摸鱼）/证据缺席（旧回执、畸形行）fail-open 照旧开轮。
+  // 证据门禁（地基清理·质检免检 2026-10-05；四站走线补强 2026-10-07）：普通质检批
+  // 先过确定性证据闸——施工站=回执终态 completed 且真动过手（工具调用 >0），回执
+  // 站=每单有回执行且交了话（response 非空）；全绿批次免开 advisory 质检轮（tianshu/
+  // AgentCore 口径：确定性门禁先行，模型轮只在报警后做 advisory 诊断）。质检站就是
+  // 被免的对象；合议轮（review）是评审会的裁决流程本身，永不免检。复盘站证据不进
+  // 门禁：复盘轮在工单轮之后才跑（work-orders.ts），而回执随工单轮 TurnComplete
+  // 出站——批次收口那一刻复盘必然未完，等它就得把「批次何时收口」推迟到复盘完成
+  // （跨会话等待+超时兜底），真需求出现再单开一批。取消/失败/零工具调用/没交话
+  // （可能摸鱼）/证据缺席（旧回执、畸形行）fail-open 照旧开轮。
   if (!review) {
     const receipts = latestReceiptOutcomeByWorkOrderId(rows);
     if (orders.every((order) => isGreenReceiptOutcome(receipts.get(order.workOrderId)))) {

@@ -123,7 +123,7 @@ const trigger = (runtime: TestRuntime, batchId = BATCH_ID) =>
 /** 回执台账行（与 work-order-receipts.ts 落账的 payload 形状一致）。 */
 function receiptRow(
   workOrderId: string,
-  outcome: { status: string; toolCallCount?: number },
+  outcome: { status: string; toolCallCount?: number; response?: string },
   sequence = 10,
 ): LedgerRow {
   return {
@@ -142,12 +142,16 @@ function receiptRow(
   };
 }
 
-test("证据门禁：全部回执 completed 且动过手 → 免检，不排队质检轮、落 skipped 闸门行", async () => {
+test("证据门禁：全部回执 completed 且动过手、交了话 → 免检，不排队质检轮、落 skipped 闸门行", async () => {
   const runtime = makeRuntime([
     dispatchRow("wo-1", "discarded"),
     dispatchRow("wo-2", "discarded"),
-    receiptRow("wo-1", { status: "completed", toolCallCount: 3 }, 11),
-    receiptRow("wo-2", { status: "completed", toolCallCount: 1 }, 12),
+    receiptRow(
+      "wo-1",
+      { status: "completed", toolCallCount: 3, response: "登录页已按稿改完，自测通过" },
+      11,
+    ),
+    receiptRow("wo-2", { status: "completed", toolCallCount: 1, response: "已修复" }, 12),
   ]);
   await trigger(runtime);
   assert.equal(runtime.qcCommands.length, 0, "全绿批次不该开质检轮");
@@ -162,11 +166,22 @@ test("证据门禁：一张单零工具调用（可能摸鱼）→ 照旧开质�
   const runtime = makeRuntime([
     dispatchRow("wo-1", "discarded"),
     dispatchRow("wo-2", "discarded"),
-    receiptRow("wo-1", { status: "completed", toolCallCount: 5 }, 11),
-    receiptRow("wo-2", { status: "completed", toolCallCount: 0 }, 12),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 5, response: "已完成" }, 11),
+    receiptRow("wo-2", { status: "completed", toolCallCount: 0, response: "已完成" }, 12),
   ]);
   await trigger(runtime);
   assert.equal(runtime.qcCommands.length, 1);
+});
+
+test("证据门禁：动了手但没交话（response 空/纯空白）→ 照旧开质检轮", async () => {
+  const runtime = makeRuntime([
+    dispatchRow("wo-1", "discarded"),
+    dispatchRow("wo-2", "discarded"),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 3, response: "   " }, 11),
+    receiptRow("wo-2", { status: "completed", toolCallCount: 1, response: "" }, 12),
+  ]);
+  await trigger(runtime);
+  assert.equal(runtime.qcCommands.length, 1, "回执站证据：交活必须带话，一个字不交不算绿");
 });
 
 test("证据门禁：取消/失败的回执不是绿 → 照旧开质检轮", async () => {
@@ -193,8 +208,8 @@ test("证据门禁：回执行缺席（旧批次）fail-open 照旧开轮；评�
   const review = makeRuntime([
     dispatchRow("wo-1", "discarded", { review: true }),
     dispatchRow("wo-2", "discarded", { review: true }),
-    receiptRow("wo-1", { status: "completed", toolCallCount: 4 }, 11),
-    receiptRow("wo-2", { status: "completed", toolCallCount: 4 }, 12),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 4, response: "评审意见如下" }, 11),
+    receiptRow("wo-2", { status: "completed", toolCallCount: 4, response: "无异议" }, 12),
   ]);
   await trigger(review);
   assert.equal(review.qcCommands.length, 1, "合议轮是裁决流程本身，永不免检");
@@ -203,8 +218,8 @@ test("证据门禁：回执行缺席（旧批次）fail-open 照旧开轮；评�
 test("latestReceiptOutcomeByWorkOrderId：同单多张回执取 admittedSequence 最新", async () => {
   const runtime = makeRuntime([
     dispatchRow("wo-1", "discarded"),
-    receiptRow("wo-1", { status: "completed", toolCallCount: 0 }, 11),
-    receiptRow("wo-1", { status: "completed", toolCallCount: 6 }, 12),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 0, response: "收到" }, 11),
+    receiptRow("wo-1", { status: "completed", toolCallCount: 6, response: "真交活了" }, 12),
   ]);
   await trigger(runtime);
   assert.equal(runtime.qcCommands.length, 0, "最新回执是绿的就算绿");
