@@ -1862,6 +1862,7 @@ const enUS: Record<string, string> = {
   "webRemoteControl.botChannel.configure": "Configure in bot channels",
   "webRemoteControl.botChannel.manageBots": "Manage bots",
   "webRemoteControl.mobileHome.title": "ZCode remote control",
+  "webRemoteControl.mobileHome.workspaceKind.conversation": "Conversation",
   "webRemoteControl.mobileHome.connected": "Connected to this desktop window",
   "webRemoteControl.mobileHome.disconnected": "Disconnected",
   "webRemoteControl.mobileHome.reconnecting": "Reconnecting",

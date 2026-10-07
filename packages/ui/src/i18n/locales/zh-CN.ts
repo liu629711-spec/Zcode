@@ -1742,6 +1742,7 @@ const zhCN: Record<string, string> = {
   "webRemoteControl.botChannel.configure": "去 Bot Channels 配置",
   "webRemoteControl.botChannel.manageBots": "机器人管理",
   "webRemoteControl.mobileHome.title": "ZCode 远程控制",
+  "webRemoteControl.mobileHome.workspaceKind.conversation": "对话",
   "webRemoteControl.mobileHome.connected": "已连接到当前桌面窗口",
   "webRemoteControl.mobileHome.disconnected": "未连接",
   "webRemoteControl.mobileHome.reconnecting": "连接中",
