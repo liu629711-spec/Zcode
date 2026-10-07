@@ -17,6 +17,9 @@ export function createWebRemotePlatform(): IPlatformService {
       Promise.resolve(
         navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US",
       ),
+    // 预览面板拿返回值直接 .map（手机没有本地编辑器，空数组=正解）；
+    // 桩缺了这个，undefined 流进去就在 PreviewPane 渲染时炸 "reading 'map'"。
+    getInstalledEditors: () => Promise.resolve([] as Array<{ id: string; name?: string }>),
     openExternal: (url: string) => {
       window.open(url, "_blank", "noopener");
       return Promise.resolve();

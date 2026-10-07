@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Component, type ReactNode } from "react";
 import {
+  Bot,
   ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
@@ -8,13 +9,28 @@ import {
   MessageSquarePlus,
   Plus,
   RefreshCw,
+  X,
 } from "lucide-react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { AppSettings, WorkspacePurpose } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import type { CodeViewerSource } from "@/lib/codeViewer.js";
+import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { useWorkspaceTaskLists } from "@/hooks/useWorkspaceTaskLists.js";
+import { getPlainTextPatchFallbackLines } from "@/lib/patchDiffPreview.js";
+import { inferCodeLanguage } from "@/lib/codeViewer.js";
+import { HighlightedLightweightDiffPreview } from "@/components/ui/highlighted-lightweight-diff-preview.js";
+import { useZCodeStore } from "@/store/StoreProvider.js";
+import { resolveTheme } from "@/useTheme.js";
+import { useWorkspaceProjectAgents } from "@/WorkspaceSidebar/ProjectAgents.js";
+import {
+  applyDerivedPersonaChatBadges,
+  getPersonaChatBadge,
+  stripPersonaTitlePrefix,
+} from "@/WorkspaceSidebar/projectAgentsModel.js";
+import { PreviewPane } from "@/PreviewPane.js";
 import { V4ChatPane } from "@/v4/V4ChatPane.js";
 
 /**
@@ -27,7 +43,8 @@ import { V4ChatPane } from "@/v4/V4ChatPane.js";
  *
  * ponytail: 连接状态徽标 v1 静态展示"已连接"；官方"整理任务（按时间线/按工作区）
  * /排序方式"开关 v1 不做（固定按工作区分组、更新时间倒序、每卡 20 条）——缺口
- * 出现再加；员工徽标反推（applyDerivedPersonaChatBadges）v1 不做。
+ * 出现再加；文件审查/查看走全屏 PreviewPane 浮层（手机形态），桌面的壳层右坞
+ * （终端/embedded browser 等）不在移动端复刻。
  */
 
 type MobileView =
@@ -101,6 +118,29 @@ function resolveWorkspaceCards(
 
 const MOBILE_TASK_VISIBLE_LIMIT = 20;
 
+/** 查看器崩了不能连坐聊天：就地显示异常（也是定位渲染问题的窗口）。 */
+class MobileViewerErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="h-full overflow-auto p-4">
+          <p className="text-sm text-destructive break-all">
+            {this.state.error.message || String(this.state.error)}
+          </p>
+          <pre className="mt-2 whitespace-pre-wrap break-all text-[10px] leading-3 text-muted-foreground">
+            {this.state.error.stack ?? ""}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShellProps) {
   const { intl } = useZCodeIntl();
   const [view, setView] = useState<MobileView>({ kind: "home" });
@@ -171,6 +211,17 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     return map;
   }, [cards]);
 
+  // 员工名册（桌面侧栏同款）：任务行工牌（彩色名字牌）的反推数据源
+  const projectAgents = useWorkspaceProjectAgents({
+    tabs: workspaceTabs,
+    boundWorkspacePath: workspacePath,
+  });
+
+  // 文件审查/查看浮层：onOpenCodeViewer 落到这里（手机形态=全屏查看器，不是桌面右坞）
+  const [viewerSource, setViewerSource] = useState<CodeViewerSource | null>(null);
+  const theme = useZCodeStore((state) => state.theme);
+  const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
+
   const openChat = useCallback(
     (target: { workspacePath: string; sessionId: string | null; title: string }) => {
       entryTokenRef.current += 1;
@@ -199,11 +250,14 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
 
   if (view.kind === "chat") {
     return (
-      <div className="flex h-full flex-col bg-background">
+      <div className="relative flex h-full flex-col bg-background">
         <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
           <button
             type="button"
-            onClick={() => setView({ kind: "home" })}
+            onClick={() => {
+              setViewerSource(null);
+              setView({ kind: "home" });
+            }}
             className="flex items-center gap-0.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground active:bg-muted"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -227,8 +281,58 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                   : previous,
               );
             }}
+            onOpenCodeViewer={(source) => setViewerSource(source)}
           />
         </div>
+        {viewerSource ? (
+          <div className="absolute inset-0 z-50 flex flex-col bg-background">
+            <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
+              <button
+                type="button"
+                onClick={() => setViewerSource(null)}
+                className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+                aria-label={intl.formatMessage({ id: "common.close" })}
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                {viewerSource.title}
+              </span>
+            </header>
+            <div className="min-h-0 flex-1">
+              <MobileViewerErrorBoundary>
+                {viewerSource.type === "patch" ? (
+                  // 手机浮层绕开 @pierre/diffs 的 PatchDiff（移动端渲染会崩，桌面同源未查），
+                  // 直接用会话代码块同款的轻量 Shiki diff——纯文本行渲染，移动端已验证可用。
+                  <HighlightedLightweightDiffPreview
+                    className="h-full"
+                    codePreviewSettings={codePreviewSettings}
+                    language={inferCodeLanguage(
+                      viewerSource.path ?? viewerSource.title,
+                      viewerSource.patch,
+                    )}
+                    lines={
+                      getPlainTextPatchFallbackLines(viewerSource.patch) ??
+                      viewerSource.patch.split(/\r?\n/)
+                    }
+                    path={viewerSource.path ?? viewerSource.title}
+                    theme={
+                      resolveTheme(theme) === "dark"
+                        ? codePreviewSettings.darkTheme
+                        : codePreviewSettings.lightTheme
+                    }
+                  />
+                ) : (
+                  <PreviewPane
+                    source={viewerSource}
+                    onClose={() => setViewerSource(null)}
+                    workspacePath={view.workspacePath}
+                  />
+                )}
+              </MobileViewerErrorBoundary>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -416,45 +520,74 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                   {expanded ? (
                     group && group.items.length > 0 ? (
                       <ul className="border-t border-border px-1 pb-1 pt-1">
-                        {group.items.map((task) => (
-                          <li key={task.taskId}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openChat({
-                                  workspacePath: card.workspacePath,
-                                  sessionId: task.taskId,
-                                  title: task.title,
-                                })
-                              }
-                              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-left active:bg-muted"
-                            >
-                              <span
-                                className={cn(
-                                  "h-1.5 w-1.5 shrink-0 rounded-full",
-                                  task.status
-                                    ? (TASK_STATUS_DOT_CLASS[task.status] ??
-                                      "bg-muted-foreground/40")
-                                    : "bg-muted-foreground/40",
-                                )}
-                                aria-hidden
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm text-foreground">
-                                  {task.title ||
-                                    intl.formatMessage({ id: "taskList.untitled" })}
-                                </span>
-                                <span className="mt-0.5 block text-xs text-muted-foreground">
-                                  {intl.formatMessage(
-                                    { id: "webRemoteControl.mobileHome.updatedAt" },
-                                    { time: formatRelativeTime(task.updatedAt, Date.now()) },
+                        {applyDerivedPersonaChatBadges(
+                          group.items,
+                          projectAgents.agentsByWorkspaceKey.get(group.workspacePath) ?? [],
+                        ).map((task) => {
+                          const personaChatBadge = getPersonaChatBadge(task);
+                          const taskTitle = personaChatBadge
+                            ? stripPersonaTitlePrefix(
+                                task.title || intl.formatMessage({ id: "taskList.untitled" }),
+                                personaChatBadge.name,
+                              )
+                            : task.title || intl.formatMessage({ id: "taskList.untitled" });
+                          return (
+                            <li key={task.taskId}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openChat({
+                                    workspacePath: card.workspacePath,
+                                    sessionId: task.taskId,
+                                    title: task.title,
+                                  })
+                                }
+                                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-left active:bg-muted"
+                              >
+                                <span
+                                  className={cn(
+                                    "h-1.5 w-1.5 shrink-0 rounded-full",
+                                    task.status
+                                      ? (TASK_STATUS_DOT_CLASS[task.status] ??
+                                        "bg-muted-foreground/40")
+                                      : "bg-muted-foreground/40",
                                   )}
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex min-w-0 items-center gap-1.5">
+                                    <span className="min-w-0 truncate text-sm text-foreground">
+                                      {taskTitle}
+                                    </span>
+                                    {personaChatBadge ? (
+                                      <span
+                                        className={cn(
+                                          "flex shrink-0 items-center gap-1 rounded-[4px] px-1 leading-none",
+                                          SUBAGENT_COLOR_CLASS[
+                                            personaChatBadge.color ??
+                                              resolveSubagentColorFromName(personaChatBadge.name)
+                                          ],
+                                        )}
+                                      >
+                                        <Bot className="size-3 shrink-0" />
+                                        <span className="min-w-0 truncate text-[10px]">
+                                          {personaChatBadge.name}
+                                        </span>
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                                    {intl.formatMessage(
+                                      { id: "webRemoteControl.mobileHome.updatedAt" },
+                                      { time: formatRelativeTime(task.updatedAt, Date.now()) },
+                                    )}
+                                  </span>
                                 </span>
-                              </span>
-                              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-                            </button>
-                          </li>
-                        ))}
+                                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                              </button>
+                            </li>
+                          );
+                        })}
                         {group.hasMore ? (
                           <li className="px-2 py-2 text-xs text-muted-foreground">
                             {intl.formatMessage({
