@@ -6847,6 +6847,15 @@ const zhCN: Record<string, string> = {
   "chat.workOrderBatch.qcReview.done": "合议完成",
   "chat.workOrderBatch.qcReview.failed": "合议未完成",
   "chat.workOrderBatch.qcReview.station": "合议",
+  // 轮头标题显示时本地化（2026-10-07）：CLI 铸造的中文标题改由 UI 按结构化字段
+  // 组合——中文输出与铸造原文逐字一致，en 换词表；旧轮头缺字段退回铸造原文。
+  "chat.workOrderBatch.qcTitle": "质检 · {title}",
+  "chat.workOrderBatch.qcTitleReview": "合议 · {title}",
+  "chat.workOrderBatch.qcTitleFallback": "批次质检",
+  "chat.workOrderBatch.qcTitleReviewFallback": "评审合议",
+  "chat.receipt.headTitle.completed": "{name} 交活",
+  "chat.receipt.headTitle.cancelled": "{name} 的工单被中断",
+  "chat.receipt.headTitle.failed": "{name} 的工单未完成",
   // 圆桌评审会卡（2026-10-02 重设计）：桌牌/席位/结论徽章/发言记录。
   "chat.workOrderBatch.review.title": "评审会",
   "chat.workOrderBatch.review.subject": "评审对象",
@@ -6858,6 +6867,11 @@ const zhCN: Record<string, string> = {
   // 圆桌会（真会议，2026-10-03）：与评审会批（workOrderBatch.review/qcReview）不同，
   // 这里是 N 位员工按对立面攻角真开会——独立状态机、独立评审专区词表。
   "chat.council.title": "圆桌会",
+  // 主席轮头标题显示时本地化（2026-10-07）：议题只随铸造标题文本下发，UI 剥
+  // 已知前缀换词表（前缀对不上退回原文）。
+  "chat.council.moderationTitle": "圆桌会 · {title}",
+  "chat.council.moderationFallbackAcceptance": "圆桌会验收",
+  "chat.council.moderationFallbackPlan": "圆桌会评审",
   "chat.council.kind.plan": "方案评审",
   "chat.council.kind.acceptance": "验收",
   "chat.council.card.openAria": "打开圆桌会评审专区",

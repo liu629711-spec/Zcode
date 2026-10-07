@@ -1340,6 +1340,12 @@ function backgroundResultOriginMetaOfMessage(
       : undefined;
   const agentId =
     typeof record.agentId === "string" && record.agentId.trim() ? record.agentId.trim() : undefined;
+  // 交活方档案名（2026-10-07）同样过冷恢复：丢了的话重启后标题退回认中文旧口径。
+  // 防御性回读，畸形只丢字段。
+  const agentName =
+    typeof record.agentName === "string" && record.agentName.trim()
+      ? record.agentName.trim()
+      : undefined;
   return {
     backgroundSource,
     title,
@@ -1354,6 +1360,7 @@ function backgroundResultOriginMetaOfMessage(
     ...(failureReason ? { failureReason } : {}),
     ...(record.retried === true ? { retried: true } : {}),
     ...(agentId ? { agentId } : {}),
+    ...(agentName ? { agentName } : {}),
     ...(workflowNotification ? { workflowNotification } : {}),
   };
 }

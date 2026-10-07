@@ -77,6 +77,8 @@ export interface AgentWorkOrderReceiptMeta {
   retried?: boolean;
   /** 交活方工号（一键重派按号找人，改名不误派；audit 2026-10-01）。 */
   agentId?: string;
+  /** 交活方档案名（标题显示时本地化的结构化数据源，2026-10-07）。 */
+  agentName?: string;
 }
 
 /**
@@ -104,6 +106,7 @@ export function resolveAgentWorkOrderReceiptMeta(
     ...(originMeta.failureReason ? { failureReason: originMeta.failureReason } : {}),
     ...(originMeta.retried ? { retried: true } : {}),
     ...(originMeta.agentId ? { agentId: originMeta.agentId } : {}),
+    ...(originMeta.agentName ? { agentName: originMeta.agentName } : {}),
   };
 }
 
@@ -133,10 +136,107 @@ export function resolveAgentWorkOrderReceiptMetaItems(
       ...(item.failureReason ? { failureReason: item.failureReason } : {}),
       ...(item.retried ? { retried: true } : {}),
       ...(item.agentId ? { agentId: item.agentId } : {}),
+      ...(item.agentName ? { agentName: item.agentName } : {}),
     }));
   }
   const single = resolveAgentWorkOrderReceiptMeta(header);
   return single ? [single] : [];
+}
+
+/** 组合器共用的最小 intl 视图（值替换走 {placeholder} 槽）。 */
+interface TitleIntl {
+  formatMessage: (
+    desc: { id: string },
+    values?: Record<string, string | number>,
+  ) => string;
+}
+
+/**
+ * 回执轮头标题的显示时本地化（2026-10-07）：结构化字段（receiptStatus + agentName）
+ * 齐全才组合（中文输出与 CLI 铸造原文逐字一致，en 换词表）；旧轮头缺结构化字段
+ * 一律 undefined，调用方退回原文——不从标题文本反推。
+ */
+export function composeAgentWorkOrderReceiptHeadTitle(
+  intl: TitleIntl,
+  meta: { receiptStatus?: "completed" | "failed" | "cancelled"; agentName?: string; title: string },
+): string | undefined {
+  const name = meta.agentName?.trim();
+  if (!name || !meta.receiptStatus) return undefined;
+  const key =
+    meta.receiptStatus === "completed"
+      ? "chat.receipt.headTitle.completed"
+      : meta.receiptStatus === "cancelled"
+        ? "chat.receipt.headTitle.cancelled"
+        : "chat.receipt.headTitle.failed";
+  return intl.formatMessage({ id: key }, { name });
+}
+
+/**
+ * 批次质检/合议轮头标题的显示时本地化：qcKind 结构化分流口味，batchTitle 有则带
+ * 参数组合、无则走整词键（与 CLI 铸造的缺省词逐字对齐）。
+ */
+export function composeAgentWorkOrderBatchQcHeadTitle(
+  intl: TitleIntl,
+  meta: { qcKind?: "review"; batchTitle?: string },
+): string {
+  const review = meta.qcKind === "review";
+  const batchTitle = meta.batchTitle?.trim();
+  if (batchTitle) {
+    return intl.formatMessage(
+      { id: review ? "chat.workOrderBatch.qcTitleReview" : "chat.workOrderBatch.qcTitle" },
+      { title: batchTitle },
+    );
+  }
+  return intl.formatMessage({
+    id: review ? "chat.workOrderBatch.qcTitleReviewFallback" : "chat.workOrderBatch.qcTitleFallback",
+  });
+}
+
+/**
+ * 圆桌会主席轮头标题的显示时本地化：议题只随标题文本下发（CLI 铸造原文是唯一
+ * 载体），这里按铸造格式剥离已知中文前缀换词表——前缀对不上（旧数据/异形）退回
+ * 原文。与 workOrderForward 的 legacy 标题反解同一档：显示层回退，不作权威依据。
+ */
+export function composeCouncilModerationHeadTitle(
+  intl: TitleIntl,
+  meta: { councilKind?: "plan" | "acceptance"; title: string },
+): string | undefined {
+  const raw = meta.title;
+  const topic = raw.startsWith("圆桌会 · ") ? raw.slice("圆桌会 · ".length).trim() : "";
+  if (topic) {
+    return intl.formatMessage({ id: "chat.council.moderationTitle" }, { title: topic });
+  }
+  if (raw === "圆桌会验收" || raw === "圆桌会评审") {
+    return intl.formatMessage({
+      id: raw === "圆桌会验收" ? "chat.council.moderationFallbackAcceptance" : "chat.council.moderationFallbackPlan",
+    });
+  }
+  return undefined;
+}
+
+/**
+ * 后台结果轮头标题的显示时本地化总入口：只接派单家族（回执/质检合议/圆桌会主席），
+ * bash/subagent/workflow 一律 undefined（标题本就是权威原文）。返回 undefined =
+ * 调用方显示铸造原文。
+ */
+export function composeAgentWorkOrderHeadTitle(
+  intl: TitleIntl,
+  originMeta: TurnHeaderRow["originMeta"],
+): string | undefined {
+  if (!originMeta) return undefined;
+  if (originMeta.backgroundSource === AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE) {
+    return composeAgentWorkOrderReceiptHeadTitle(intl, originMeta);
+  }
+  if (originMeta.backgroundSource === AGENT_WORK_ORDER_BATCH_QC_BACKGROUND_SOURCE) {
+    if (originMeta.councilId && originMeta.councilPhase === "moderation") {
+      return composeCouncilModerationHeadTitle(intl, {
+        ...(originMeta.councilKind ? { councilKind: originMeta.councilKind } : {}),
+        title: originMeta.title,
+      });
+    }
+    return composeAgentWorkOrderBatchQcHeadTitle(intl, originMeta);
+  }
+  return undefined;
 }
 
 /**

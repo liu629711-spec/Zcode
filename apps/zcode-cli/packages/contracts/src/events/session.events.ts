@@ -368,6 +368,11 @@ export interface BackgroundResultOriginMeta {
    */
   agentId?: string;
   /**
+   * 交活方档案名（2026-10-07）：轮头标题「显示时本地化」的结构化数据源——标题
+   * 前缀（交活/被中断/未完成）由 UI 按终态换词，名字不再从中文标题反解。
+   */
+  agentName?: string;
+  /**
    * 合并回执轮（回执洪泛合并 2026-10-05）携带：同轮收拢的**逐张**回执对账元数据，
    * 首张=轮头顶层字段本身。UI 工地卡按数组逐张记账；缺数组（旧轮头/单张轮）照旧
    * 读顶层。与 shared 的 backgroundResultOriginMetaSchema.receipts 保持同步
@@ -389,6 +394,8 @@ export interface BackgroundReceiptOriginMeta {
   failureReason?: string;
   retried?: boolean;
   agentId?: string;
+  /** 交活方档案名（标题显示时本地化的结构化数据源，与顶层同名字段对齐）。 */
+  agentName?: string;
 }
 
 /**

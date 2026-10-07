@@ -70,6 +70,8 @@ import type { WorkOrderBatchRenderInfo } from "@/v4/agentWorkOrderBatch.js";
 import type { CouncilMeetingModel } from "@/v4/councilMeeting.js";
 import {
   AGENT_WORK_ORDER_RECEIPT_BACKGROUND_SOURCE,
+  composeAgentWorkOrderHeadTitle,
+  composeAgentWorkOrderReceiptHeadTitle,
   resolveAgentWorkOrderMeta,
   resolveAgentWorkOrderReceiptMetaItems,
 } from "@/v4/agentWorkOrderTurn.js";
@@ -1012,6 +1014,7 @@ function ConversationBackgroundResultWork({
   /** 批次派单（工地卡）成员：散的回执头卡压掉（答案本体照常渲染），由工地卡代言。 */
   suppressAgentWorkOrderReceiptCard?: boolean;
 }) {
+  const { intl } = useZCodeIntl();
   const hasHistory = unit.assistantHistoryRows.length > 0;
   const hasFollowing = unit.assistantFollowingRows.length > 0;
   const showLoading = shouldShowTurnChatLoading({
@@ -1139,7 +1142,11 @@ function ConversationBackgroundResultWork({
                   )}
                   className="min-w-0 whitespace-pre-wrap break-words text-left text-ui-base text-[var(--color-foreground-subtle)]"
                 >
-                  {item ? item.title : title}
+                  {/* 逐张显示时本地化（2026-10-07）：结构化字段齐全才换词表，
+                      旧轮头缺字段退回铸造原文。单张轮走 title（容器已组合）。 */}
+                  {(item
+                    ? (composeAgentWorkOrderReceiptHeadTitle(intl, item) ?? item.title)
+                    : title)}
                 </div>
               </div>
             ))}
@@ -1324,7 +1331,12 @@ function ConversationTurnGroupImpl({
     unit.hookInvocations.some((row) => row.executions.some((execution) => execution.didExecute));
   const canRetryLatestAssistant = latestAssistantTextRow?.actions?.canRetry === true;
   const canForkLatestAssistant = latestAssistantTextRow?.actions?.canFork === true;
-  const backgroundResultTitle = resolveBackgroundResultTitle(unit);
+  const backgroundResultTitleRaw = resolveBackgroundResultTitle(unit);
+  // 轮头标题显示时本地化（2026-10-07）：派单家族按结构化字段换词表，其余来源
+  // 组合器返回 undefined 原文透传。
+  const backgroundResultTitle = backgroundResultTitleRaw
+    ? (composeAgentWorkOrderHeadTitle(intl, unit.header?.originMeta) ?? backgroundResultTitleRaw)
+    : undefined;
   const agentWorkOrderMeta = resolveAgentWorkOrderMeta(unit.header);
   const hasAssistantWorkContent = unit.timelineOnly
     ? unit.assistantWorkRows.length > 0

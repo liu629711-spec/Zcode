@@ -86,6 +86,9 @@ export async function enqueueAgentWorkOrderReceipt(
     // 回执终态结构化（地基清理 2026-10-04）：UI 三态灯的权威来源，不再认中文
     // 标题；三种终态恒带（不是 failed 专属）。
     receiptStatus: input.outcome.status,
+    // 交活方档案名随轮头下发（2026-10-07）：UI 轮头标题「显示时本地化」的结构化
+    // 数据源——前缀按终态换词，名字不再从中文标题反解。
+    agentName: input.agentName,
     // 批次（工地卡）随回执轮头下发：发起方 UI 据它把同批回执归进一张工地卡。
     ...(input.envelope.batchId ? { batchId: input.envelope.batchId } : {}),
     ...(input.envelope.batchTitle ? { batchTitle: input.envelope.batchTitle } : {}),
@@ -240,6 +243,7 @@ export function buildMergedReceiptOriginMeta(
         ...(meta.failureReason ? { failureReason: meta.failureReason } : {}),
         ...(meta.retried ? { retried: true } : {}),
         ...(meta.agentId ? { agentId: meta.agentId } : {}),
+        ...(meta.agentName ? { agentName: meta.agentName } : {}),
       };
       return item;
     }),

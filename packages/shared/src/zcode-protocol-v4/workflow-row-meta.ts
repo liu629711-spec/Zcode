@@ -132,6 +132,9 @@ export const backgroundResultOriginMetaSchema = z.object({
   retried: z.boolean().optional(),
   // 交活方工号（一键重派按号找人，改名不误派）；UUID 形状，上界照 batchId 口径。
   agentId: z.string().min(1).max(128).optional(),
+  // 交活方档案名（2026-10-07）：轮头标题「显示时本地化」的结构化数据源——前缀由
+  // UI 按终态换词，名字不再从中文标题反解。zod 剥未知键，不加即退回认中文标题。
+  agentName: z.string().min(1).max(64).optional(),
   // 合并回执轮（回执洪泛合并 2026-10-05）携带：同轮收拢的逐张回执对账元数据，
   // 首张=顶层字段本身；UI 工地卡按数组逐张记账，缺数组照旧读顶层。zod 剥离
   // 未知键，不加即冷恢复后合并轮的回执证据全丢（工地卡永远停在"在跑"）。
@@ -151,6 +154,7 @@ export const backgroundResultOriginMetaSchema = z.object({
         failureReason: z.string().min(1).max(500).optional(),
         retried: z.boolean().optional(),
         agentId: z.string().min(1).max(128).optional(),
+        agentName: z.string().min(1).max(64).optional(),
       }),
     )
     .max(64)

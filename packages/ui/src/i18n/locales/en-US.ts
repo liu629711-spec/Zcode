@@ -7180,6 +7180,15 @@ const enUS: Record<string, string> = {
   "chat.workOrderBatch.qcReview.done": "Council complete",
   "chat.workOrderBatch.qcReview.failed": "Council incomplete",
   "chat.workOrderBatch.qcReview.station": "Council",
+  // Head-title display-time localization (2026-10-07): CLI-minted Chinese titles are
+  // composed UI-side from structured fields; legacy headers without them fall back raw.
+  "chat.workOrderBatch.qcTitle": "Quality check · {title}",
+  "chat.workOrderBatch.qcTitleReview": "Council · {title}",
+  "chat.workOrderBatch.qcTitleFallback": "Batch quality check",
+  "chat.workOrderBatch.qcTitleReviewFallback": "Review council",
+  "chat.receipt.headTitle.completed": "{name} delivered",
+  "chat.receipt.headTitle.cancelled": "{name}'s work order was interrupted",
+  "chat.receipt.headTitle.failed": "{name}'s work order did not complete",
   // Roundtable council card (2026-10-02 redesign): subject plaque, seats, verdict badges, notes.
   "chat.workOrderBatch.review.title": "Review council",
   "chat.workOrderBatch.review.subject": "Under review",
@@ -7191,6 +7200,11 @@ const enUS: Record<string, string> = {
   // Council meeting (the real one, 2026-10-03): unlike the review batch
   // (workOrderBatch.review/qcReview), N employees deliberate on opposing lenses.
   "chat.council.title": "Council",
+  // Moderation head title (2026-10-07): the topic only travels inside the minted
+  // title text — UI strips the known prefix and swaps the wording.
+  "chat.council.moderationTitle": "Round table · {title}",
+  "chat.council.moderationFallbackAcceptance": "Round table acceptance",
+  "chat.council.moderationFallbackPlan": "Round table review",
   "chat.council.kind.plan": "Plan review",
   "chat.council.kind.acceptance": "Acceptance",
   "chat.council.card.openAria": "Open the council review zone",
