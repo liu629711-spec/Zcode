@@ -70,7 +70,9 @@ function cspMetaPlugin(): Plugin {
           "font-src 'self' data: https:",
           dev
             ? "connect-src 'self' ws: wss: http: https:"
-            : "connect-src 'self' ws: wss: http: https: zcode-media:",
+            // 生产去掉明文 http:（拍板 2026-10-07）：同源请求归 'self'，明文 WS 保留
+            // 给手机局域网页面；渲染层对任意 http 主机出站没有正当场景。
+            : "connect-src 'self' ws: wss: https: zcode-media:",
           "worker-src 'self' blob:",
           "object-src 'none'",
           "base-uri 'self'",
