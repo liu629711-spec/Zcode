@@ -64,6 +64,8 @@ export interface AgentWorkOrderReceiptMeta {
   /** 原工单批次（工地卡聚合键）；缺席 = 散单（旧 CLI / 单发）。 */
   batchId?: string;
   batchTitle?: string;
+  /** 评审单标记（随信封下发）：一键重派透传 review 的权威数据源。 */
+  review?: true;
   /**
    * 失败回执的结构化线索（2026-10-01 员工可靠性批，CLI 只在 failed 时下发）：
    * 大白话映射 + 一键重派的权威数据源，UI 不从回执文本反推。
@@ -95,6 +97,7 @@ export function resolveAgentWorkOrderReceiptMeta(
     ...(originMeta.receiptStatus ? { receiptStatus: originMeta.receiptStatus } : {}),
     ...(originMeta.batchId ? { batchId: originMeta.batchId } : {}),
     ...(originMeta.batchTitle ? { batchTitle: originMeta.batchTitle } : {}),
+    ...(originMeta.review ? { review: true as const } : {}),
     ...(originMeta.task ? { task: originMeta.task } : {}),
     ...(originMeta.failureCode ? { failureCode: originMeta.failureCode } : {}),
     ...(originMeta.failureModelId ? { failureModelId: originMeta.failureModelId } : {}),
@@ -123,6 +126,7 @@ export function resolveAgentWorkOrderReceiptMetaItems(
       receiptStatus: item.receiptStatus,
       ...(item.batchId ? { batchId: item.batchId } : {}),
       ...(item.batchTitle ? { batchTitle: item.batchTitle } : {}),
+      ...(item.review ? { review: true as const } : {}),
       ...(item.task ? { task: item.task } : {}),
       ...(item.failureCode ? { failureCode: item.failureCode } : {}),
       ...(item.failureModelId ? { failureModelId: item.failureModelId } : {}),

@@ -269,6 +269,9 @@ export const commandPayloadSchemas = {
     // 原工地卡而不是散单。字段与 AgentDispatch 工具的 batch_id/batch_title 同源。
     batchId: z.string().trim().min(1).max(128).optional(),
     batchTitle: z.string().trim().min(1).max(200).optional(),
+    // 评审单重派透传（2026-10-07）：失败卡「重派这单」把原单 review 标记原样带回，
+    // 重派收口才不会把合议口味退化成普通质检（评审会批交接项）。
+    review: z.boolean().optional(),
   }),
   renameSession: z.object({ title: z.string() }),
   deleteSession: z.object({}),

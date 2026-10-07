@@ -1386,6 +1386,8 @@ export function createConversationV4Gateway(
         // 重派回执归回原工地卡，不再散单。
         ...(input.batchId ? { batchId: input.batchId } : {}),
         ...(input.batchTitle ? { batchTitle: input.batchTitle } : {}),
+        // 评审单重派透传（2026-10-07）：review 原样进端口，重派收口不改口味。
+        ...(input.review === true ? { review: true } : {}),
         sourceSessionId: sessionId,
       });
     },

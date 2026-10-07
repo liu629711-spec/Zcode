@@ -89,6 +89,9 @@ export async function enqueueAgentWorkOrderReceipt(
     // 批次（工地卡）随回执轮头下发：发起方 UI 据它把同批回执归进一张工地卡。
     ...(input.envelope.batchId ? { batchId: input.envelope.batchId } : {}),
     ...(input.envelope.batchTitle ? { batchTitle: input.envelope.batchTitle } : {}),
+    // 评审单标记随轮头下发（2026-10-07）：失败卡一键重派据此透传 review，
+    // 重派收口才不会把合议口味退化成普通质检（评审会批交接项）。
+    ...(input.envelope.review === true ? { review: true as const } : {}),
     // 圆桌会（真会议）随轮头下发：席位回执轮带 councilId/类型/轮次/阶段 + 座次与
     // 攻角——UI 据它把同场会议的发言聚成圆桌卡并按座次入席（batchId 同纪律）。
     ...(input.envelope.councilId
@@ -230,6 +233,7 @@ export function buildMergedReceiptOriginMeta(
         receiptStatus: meta.receiptStatus ?? command.outcome.status,
         ...(meta.batchId ? { batchId: meta.batchId } : {}),
         ...(meta.batchTitle ? { batchTitle: meta.batchTitle } : {}),
+        ...(meta.review ? { review: true } : {}),
         ...(meta.task ? { task: meta.task } : {}),
         ...(meta.failureCode ? { failureCode: meta.failureCode } : {}),
         ...(meta.failureModelId ? { failureModelId: meta.failureModelId } : {}),

@@ -215,6 +215,7 @@ function FailureNotice({
       unitKey={`batch:${batch.batchId}:${order.key}`}
       batchId={batch.batchId}
       batchTitle={batch.title}
+      review={batch.review === true}
     />
   );
 }

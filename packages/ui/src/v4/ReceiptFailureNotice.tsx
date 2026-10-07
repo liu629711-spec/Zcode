@@ -34,6 +34,7 @@ export function ReceiptFailureNotice({
   unitKey,
   batchId,
   batchTitle,
+  review,
   inline = false,
 }: {
   /** 回执标题（CLI 权威铸造；解员工名用）。 */
@@ -44,6 +45,7 @@ export function ReceiptFailureNotice({
     | "agentId"
     | "batchId"
     | "batchTitle"
+    | "review"
     | "failureCode"
     | "failureModelId"
     | "failureReason"
@@ -54,6 +56,8 @@ export function ReceiptFailureNotice({
   /** 工地卡行内模式：批次身份由卡片显式传入（行模型不携带批次键）。 */
   batchId?: string;
   batchTitle?: string;
+  /** 工地卡行内模式：批次口味由卡片显式传入（行模型不携带 review）；单卡读 meta.review。 */
+  review?: boolean;
   /** 工地卡行内模式：短语与按钮同行（随父级 flex-wrap 换行），不带独立面板。 */
   inline?: boolean;
 }) {
@@ -86,6 +90,8 @@ export function ReceiptFailureNotice({
   const target = rosterEntry?.name ?? nameEntry?.name ?? titleName;
   const redispatchBatchId = meta.batchId ?? batchId;
   const redispatchBatchTitle = meta.batchTitle ?? batchTitle;
+  // 评审单口味透传（2026-10-07）：单卡读轮头 meta.review，工地卡行内由卡片传批次口味。
+  const redispatchReview = review === true || meta.review === true;
   const canRedispatch =
     !done &&
     Boolean(dispatchWorkOrder) &&
@@ -98,6 +104,7 @@ export function ReceiptFailureNotice({
       const delivery = await dispatchWorkOrder(target, task, {
         ...(redispatchBatchId ? { batchId: redispatchBatchId } : {}),
         ...(redispatchBatchTitle ? { batchTitle: redispatchBatchTitle } : {}),
+        ...(redispatchReview ? { review: true } : {}),
       });
       toast(
         intl.formatMessage(

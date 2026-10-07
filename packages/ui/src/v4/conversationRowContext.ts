@@ -97,8 +97,9 @@ export interface ConversationRowRenderContext {
   onDispatchAgentWorkOrder?: (
     agent: string,
     task: string,
-    /** 失败卡「重派这单」的批次续批与工号寻址（audit 2026-10-01）；@ 面板不传。 */
-    options?: { batchId?: string; batchTitle?: string },
+    /** 失败卡「重派这单」的批次续批与工号寻址（audit 2026-10-01）；review 透传
+     *  评审单口味（2026-10-07）；@ 面板不传。 */
+    options?: { batchId?: string; batchTitle?: string; review?: boolean },
   ) => Promise<"started" | "queued">;
   /**
    * 产物的全尺寸查看 tab 入口。

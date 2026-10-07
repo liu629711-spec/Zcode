@@ -315,6 +315,9 @@ export interface BackgroundResultOriginMeta {
   batchId?: string;
   /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
   batchTitle?: string;
+  /** 评审单标记（随信封下发）：一键重派透传 review 的权威数据源，失败卡「重派
+   *  这单」原样带回，重派后批次收口才不会把合议口味退化成普通质检。 */
+  review?: true;
   /**
    * 批次收口自动轮的口味（评审会批，2026-10-02）："review" = 合议轮（本批是评审会，
    * UI 词表换合议）；缺席 = 批次质检轮（词表不变）。取值与 shared 的
@@ -545,6 +548,9 @@ export interface AgentWorkOrderMeta {
   batchId?: string;
   /** 批次人类短标题（工地卡标题）；与 batchId 同进退。 */
   batchTitle?: string;
+  /** 评审单标记（随信封下发）：一键重派透传 review 的权威数据源，失败卡「重派
+   *  这单」原样带回，重派后批次收口才不会把合议口味退化成普通质检。 */
+  review?: true;
 }
 
 /** {@link AgentWorkOrderMeta.task} 的字符上界；超界截断加省略号（卡片要完整可读，不能丢行）。 */

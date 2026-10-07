@@ -2187,7 +2187,7 @@ export function SessionPane({
     async (
       agent: string,
       task: string,
-      options?: { batchId?: string; batchTitle?: string },
+      options?: { batchId?: string; batchTitle?: string; review?: boolean },
     ): Promise<"started" | "queued"> => {
       if (!sessionId) {
         // 草稿还没有归属会话：回执没有归还地址，先发一条消息把会话建起来。
@@ -2201,6 +2201,7 @@ export function SessionPane({
             task,
             ...(options?.batchId ? { batchId: options.batchId } : {}),
             ...(options?.batchTitle ? { batchTitle: options.batchTitle } : {}),
+            ...(options?.review ? { review: true } : {}),
           },
           sessionId,
         }),

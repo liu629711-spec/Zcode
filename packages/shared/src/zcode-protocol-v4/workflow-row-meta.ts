@@ -123,6 +123,9 @@ export const backgroundResultOriginMetaSchema = z.object({
   // UI 三态灯的权威来源（标题解析仅作旧轮头回退）。zod 剥离未知键，不加即
   // 冷恢复后静默丢——UI 全体退回认中文标题的旧口径。
   receiptStatus: z.enum(["completed", "failed", "cancelled"]).optional(),
+  // 评审单标记（随信封下发，2026-10-07）：一键重派透传 review 的权威数据源——
+  // 失败卡「重派这单」原样带回。zod 剥未知键，不加即冷恢复后评审单重派丢口味。
+  review: z.literal(true).optional(),
   failureCode: z.string().min(1).max(128).optional(),
   failureModelId: z.string().min(1).max(160).optional(),
   failureReason: z.string().min(1).max(500).optional(),
@@ -141,6 +144,7 @@ export const backgroundResultOriginMetaSchema = z.object({
         receiptStatus: z.enum(["completed", "failed", "cancelled"]),
         batchId: z.string().min(1).max(128).optional(),
         batchTitle: z.string().max(200).optional(),
+        review: z.literal(true).optional(),
         task: z.string().min(1).max(8192).optional(),
         failureCode: z.string().min(1).max(128).optional(),
         failureModelId: z.string().min(1).max(160).optional(),

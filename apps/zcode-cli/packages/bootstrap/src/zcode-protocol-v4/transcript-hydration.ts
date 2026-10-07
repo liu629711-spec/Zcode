@@ -1320,6 +1320,9 @@ function backgroundResultOriginMetaOfMessage(
   // 合议口味（评审会批）同样过冷恢复：丢了的话重启后合议卡退化回「质检」词表
   // （数据无恙、标签说谎）。防御性回读，畸形只丢字段。
   const qcKind = record.qcKind === "review" ? "review" : undefined;
+  // 评审单标记（2026-10-07）同样过冷恢复：丢了的话重启后失败卡重派丢 review，
+  // 重派收口把合议口味退化成普通质检。防御性回读，畸形只丢字段。
+  const review = record.review === true;
   // 失败回执的结构化线索（2026-10-01 员工可靠性批）同样要过冷恢复：丢了的话重启后
   // 失败卡讲不出大白话、「一键重派」也没了原任务。同上防御性回读，畸形只丢字段。
   const task = typeof record.task === "string" && record.task.trim() ? record.task : undefined;
@@ -1344,6 +1347,7 @@ function backgroundResultOriginMetaOfMessage(
     ...(batchId ? { batchId } : {}),
     ...(batchTitle ? { batchTitle } : {}),
     ...(qcKind ? { qcKind } : {}),
+    ...(review ? { review: true as const } : {}),
     ...(task ? { task } : {}),
     ...(failureCode ? { failureCode } : {}),
     ...(failureModelId ? { failureModelId } : {}),
