@@ -61,7 +61,9 @@ function cspMetaPlugin(): Plugin {
         const dev = ctx.server !== undefined;
         const csp = [
           "default-src 'self'",
-          `script-src 'self' 'unsafe-inline'${dev ? " 'unsafe-eval'" : ""}`,
+          // wasm-unsafe-eval：代码高亮/差异组件的 WASM 在生产 CSP 下也要能起
+          // （dev 的 unsafe-eval 恰好覆盖，生产没有会炸 WebAssembly.instantiate）。
+          `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${dev ? " 'unsafe-eval'" : ""}`,
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: https: zcode-media:",
           "media-src 'self' data: blob: https: zcode-media:",

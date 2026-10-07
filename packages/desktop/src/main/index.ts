@@ -201,6 +201,7 @@ import { createDesktopHelpConfigReader } from "./desktopHelpConfig.js";
 import { registerPlatformIpcHandlers } from "./desktopMainIpcPlatform.js";
 import { installVoiceMediaPermissions, registerVoiceIpcHandlers } from "./voiceEngineManager.js";
 import { registerWebRemoteControlIpcHandlers } from "./webRemoteControlSession.js";
+import { watchForDevWebRemoteAutoStart } from "./webRemoteControlSession.js";
 import {
   loadCliMcpFromUserDirectory,
   migrateLegacyCommonMcp,
@@ -2065,6 +2066,13 @@ app.whenReady().then(async () => {
   registerWebRemoteControlIpcHandlers({
     ipcMain,
     windowHostProcessMap,
+    logger,
+  });
+  watchForDevWebRemoteAutoStart({
+    windowHostProcessMap,
+    windowWorkspaceMap,
+    resolveDefaultWorkspacePath: async () =>
+      (await mainSettingService.get()).lastWorkspaceSession?.[0]?.workspacePath,
     logger,
   });
 

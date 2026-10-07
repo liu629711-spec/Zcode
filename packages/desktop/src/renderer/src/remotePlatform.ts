@@ -34,7 +34,12 @@ export function createWebRemotePlatform(): IPlatformService {
       if (prop in target) {
         return Reflect.get(target, prop, receiver);
       }
-      // 未实现的平台方法统一 no-op：返回 Promise.resolve(undefined) 兼容 await 调用
+      // 订阅类方法（onXxx(handler): () => void）调用方会把返回值直接当退订函数调，
+      // 返回 Promise 会炸 "not a function... instance of Promise"——必须返回退订函数。
+      if (/^on[A-Z]/.test(String(prop))) {
+        return () => () => {};
+      }
+      // 其余未实现的平台方法统一 no-op：返回 Promise.resolve(undefined) 兼容 await 调用
       return () => Promise.resolve(undefined);
     },
   }) as unknown as IPlatformService;

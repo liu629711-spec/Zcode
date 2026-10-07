@@ -159,6 +159,7 @@ function RootInner({
   supportsEmbeddedBrowser: explicitSupportsEmbeddedBrowser,
   allowRemoteWorkspace = true,
   initialWorkspaceLoadingFallback,
+  presentationMode = "desktop",
 }: RootProps) {
   useEffect(() => {
     setMcpStorePlatform(platform);
@@ -1039,6 +1040,7 @@ function RootInner({
             workspaceRemoteSessionId={workspaceShellRemoteSessionId}
             activeWorkspacePath={activeWorkspacePath}
             isSettingsTabActive={isSettingsTabActive}
+            presentationMode={presentationMode}
             handleConnectRemote={handleConnectRemote}
             handleSelectRemoteProject={handleSelectRemoteProject}
             handleCancelRemoteProject={handleCancelRemoteProject}

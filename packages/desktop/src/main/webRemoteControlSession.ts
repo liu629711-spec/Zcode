@@ -1,6 +1,6 @@
 import type { WebRemoteControlSessionState } from "@zcode/shared";
 import { HostMessageTypes, HostResponseTypes, PlatformChannels } from "@zcode/shared";
-import { app, ipcMain, type UtilityProcess } from "electron";
+import { app, ipcMain, webContents, type UtilityProcess } from "electron";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -75,9 +75,13 @@ function copyStaticLibs(root: string, logger: WebRemoteControlLogger): void {
   const libs: Array<{ source: string; dest: string }> = [];
   try {
     const require = createRequire(import.meta.url);
+    // pnpm 不提升：marked/dompurify 是 @zcode/ui 的私有依赖，主进程包解析不到，
+    // 显式把 ui 包目录加进解析路径（dev 态 app path = packages/desktop）。
+    const uiPackageDir = join(app.getAppPath(), "..", "..", "packages", "ui");
+    const resolvePaths = existsSync(uiPackageDir) ? [uiPackageDir] : undefined;
     libs.push(
-      { source: require.resolve("marked/lib/marked.umd.js"), dest: "marked.umd.js" },
-      { source: require.resolve("dompurify/dist/purify.min.js"), dest: "purify.min.js" },
+      { source: require.resolve("marked/lib/marked.umd.js", { paths: resolvePaths }), dest: "marked.umd.js" },
+      { source: require.resolve("dompurify/dist/purify.min.js", { paths: resolvePaths }), dest: "purify.min.js" },
     );
   } catch (error) {
     logger.warn("[web-remote] 静态库解析失败，手机页将退化纯文本", {
@@ -280,17 +284,24 @@ function renderFallbackHtml(): string {
 }
 
 /**
- * 静态根选择：优先用 renderer 构建产物里的 remote.html 全量页（桌面组件 fork 版）；
- * 产物缺失（构建未跑/被清理）退回自包含精简页，功能可用但不对齐桌面。
+ * 静态根选择：优先用构建产物里的 remote.html 全量页（桌面组件 fork 版）。
+ * 候选一 = renderer 产物（打包态必然在场；dev 态 pre-dev 会整删 out/，通常落空）；
+ * 候选二 = out-remote-web（build:remote-web 的专用产物目录，dev 管线不清理）；
+ * 都缺才退回自包含精简页，功能可用但不对齐桌面。
  */
 function pickWebRemoteStaticRoot(logger: WebRemoteControlLogger): string {
   const fallbackRoot = join(app.getPath("userData"), "web-remote-control", "static");
-  const remoteHtml = join(app.getAppPath(), "out", "renderer", "remote.html");
-  if (existsSync(remoteHtml)) {
-    logger.info("[web-remote] 使用 renderer 构建的全量手机页", { remoteHtml });
+  const rendererRemoteHtml = join(app.getAppPath(), "out", "renderer", "remote.html");
+  if (existsSync(rendererRemoteHtml)) {
+    logger.info("[web-remote] 使用 renderer 构建的全量手机页", { remoteHtml: rendererRemoteHtml });
     return join(app.getAppPath(), "out", "renderer");
   }
-  logger.warn("[web-remote] renderer 全量页缺失，退回精简页", { remoteHtml });
+  const remoteWebRemoteHtml = join(app.getAppPath(), "out-remote-web", "remote.html");
+  if (existsSync(remoteWebRemoteHtml)) {
+    logger.info("[web-remote] 使用 remote-web 构建的全量手机页", { remoteHtml: remoteWebRemoteHtml });
+    return join(app.getAppPath(), "out-remote-web");
+  }
+  logger.warn("[web-remote] renderer 全量页缺失，退回精简页", { remoteHtml: rendererRemoteHtml });
   try {
     mkdirSync(fallbackRoot, { recursive: true });
     writeFileSync(join(fallbackRoot, "remote.html"), renderFallbackHtml(), "utf8");
@@ -418,4 +429,46 @@ export function registerWebRemoteControlIpcHandlers(options: {
 /** 窗口关闭时顺手清会话记录（Host 随窗口退出，监听自然消亡） */
 export function forgetWebRemoteControlSession(senderId: number): void {
   sessionsByWebContentsId.delete(senderId);
+}
+
+/**
+ * dev 自测钩子（ZCODE_DEV_WEB_REMOTE_AUTO=1 才生效）：盯到第一个窗口 Host 就绪
+ * 即自动开服务、把链接写进日志——浏览器/真机自测不用每次手点弹窗。
+ */
+export function watchForDevWebRemoteAutoStart(options: {
+  windowHostProcessMap: Map<number, ElectronUtilityProcess>;
+  /** win.id → 该窗口打开过的工作区集合（main 全局登记，dev 自测取第一个当默认工作区） */
+  windowWorkspaceMap: Map<number, Set<string>>;
+  /** 渲染层恢复工作区不走 main 登记，兜底读设置里的 lastWorkspaceSession */
+  resolveDefaultWorkspacePath?: () => Promise<string | undefined>;
+  logger: WebRemoteControlLogger;
+}): void {
+  if (process.env.ZCODE_DEV_WEB_REMOTE_AUTO !== "1") return;
+  // Host 进程先进 map、服务后初始化（相差数秒），失败就地重试，最多约 1 分钟
+  let attempts = 0;
+  const timer = setInterval(() => {
+    const first = options.windowHostProcessMap.entries().next();
+    if (first.done) return;
+    const [senderId] = first.value;
+    void (async () => {
+      const win = webContents.fromId(senderId)?.getOwnerBrowserWindow();
+      const fromWindow = win
+        ? [...(options.windowWorkspaceMap.get(win.id) ?? [])][0]
+        : undefined;
+      const workspacePath =
+        fromWindow ?? (await options.resolveDefaultWorkspacePath?.());
+      return startSession(senderId, workspacePath ? { workspacePath } : {}, options);
+    })().then((state) => {
+      if (state.active) {
+        clearInterval(timer);
+        options.logger.info("[web-remote] dev 自动开启服务", { link: state.link });
+        return;
+      }
+      attempts += 1;
+      if (attempts >= 30) {
+        clearInterval(timer);
+        options.logger.warn("[web-remote] dev 自动开启服务放弃", { error: state.error });
+      }
+    });
+  }, 2_000);
 }

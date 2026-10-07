@@ -18,6 +18,11 @@ export interface RootProps {
   initialTaskId?: string;
   /** Electron renderer 传 true，用于启用自绘标题栏 */
   isDesktop?: boolean;
+  /**
+   * 壳层形态：desktop = 桌面三栏（默认）；mobile = 移动远控壳（官方 mobileShell 对齐：
+   * 首页任务列表 + 全屏任务会话），不渲染侧栏/页签/标题栏等桌面 chrome。
+   */
+  presentationMode?: "desktop" | "mobile";
   /** macOS 桌面端需要给红绿灯按钮预留安全区 */
   isMacDesktop?: boolean;
   /** Windows 桌面端需要展示更准确的资源管理器文案 */

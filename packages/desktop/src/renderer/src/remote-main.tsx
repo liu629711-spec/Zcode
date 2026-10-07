@@ -50,6 +50,7 @@ async function boot(): Promise<void> {
           services={services}
           platform={platform}
           isDesktop={false}
+          presentationMode="mobile"
           restoreSession={false}
           supportsSettings={false}
           allowOpenWorkspace={false}

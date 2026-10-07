@@ -3,6 +3,7 @@ import { App } from "@/App.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
 import { ServiceProvider } from "@/hooks/useServices.js";
 import { logger } from "@/logger.js";
+import { MobileRemoteShell } from "@/remote/MobileRemoteShell.js";
 import { WorkspaceSettingsLayer } from "@/root/WorkspaceSettingsLayer.js";
 import type { AppProps } from "@/app-shell/types.js";
 import type { RootProps } from "@/root/types.js";
@@ -47,6 +48,7 @@ interface RootWorkspaceContentProps {
   isWindowsDesktop?: RootProps["isWindowsDesktop"];
   supportsEmbeddedBrowser: NonNullable<RootProps["supportsEmbeddedBrowser"]>;
   windowsWindowControlsRightPaddingPx?: number;
+  presentationMode?: RootProps["presentationMode"];
 }
 
 export function RootWorkspaceContent({
@@ -85,6 +87,7 @@ export function RootWorkspaceContent({
   isWindowsDesktop,
   supportsEmbeddedBrowser,
   windowsWindowControlsRightPaddingPx,
+  presentationMode = "desktop",
 }: RootWorkspaceContentProps) {
   const workspaceKey = workspaceIdentity?.trim() || workspaceShellPath;
 
@@ -136,7 +139,13 @@ export function RootWorkspaceContent({
               variant="panel"
               className="h-full"
             >
-              <StableWorkspaceApp
+              {presentationMode === "mobile" ? (
+                <MobileRemoteShell
+                  services={workspaceScopedServices}
+                  workspacePath={workspaceShellPath}
+                />
+              ) : (
+                <StableWorkspaceApp
                 services={workspaceScopedServices}
                 baseFeedbackService={baseFeedbackService}
                 onConnectRemote={handleConnectRemote}
@@ -173,6 +182,7 @@ export function RootWorkspaceContent({
                 isWindowsDesktop={isWindowsDesktop}
                 supportsEmbeddedBrowser={supportsEmbeddedBrowser}
               />
+              )}
             </ScopedErrorBoundary>
           </ServiceProvider>
         </ConversationTelemetryWorkspaceAttachment>

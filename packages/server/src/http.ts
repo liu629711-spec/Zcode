@@ -549,7 +549,9 @@ export function createHttpServer(
         return c.notFound();
       }
       return c.body(await readFile(filePath), 200, {
-        "Cache-Control": filePath.endsWith("index.html")
+        // HTML 入口一律 no-cache（内容随构建换哈希资源名，缓存旧 html 会指向已删资源）；
+        // 带内容哈希的 assets 才敢发一年 immutable。
+        "Cache-Control": filePath.endsWith(".html")
           ? "no-cache"
           : "public, max-age=31536000, immutable",
         "Content-Type": staticContentType(filePath),
