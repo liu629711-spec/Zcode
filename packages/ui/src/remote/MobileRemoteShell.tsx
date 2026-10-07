@@ -1,32 +1,51 @@
-import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Folder,
+  MessageSquarePlus,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
 import type { IServiceAccessor } from "@zcode/services";
-import type { AppSettings, ZCodeSessionInfo } from "@zcode/shared";
+import type { AppSettings, WorkspacePurpose } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import type { WorkspaceTabState } from "@/store/tabStore.js";
+import { useWorkspaceTaskLists } from "@/hooks/useWorkspaceTaskLists.js";
 import { V4ChatPane } from "@/v4/V4ChatPane.js";
 
 /**
  * 移动端远控壳（对照官方 mobileShell/mobileHome 信息架构）：
- * 首页 = 连接状态 + 当前设备上的工作区和任务（settings.lastWorkspaceSession 全清单，
- * 与桌面恢复会话同一数据源；逐工作区 listSessions 分组）；点任务 → 全屏任务会话
- * （桌面同款 V4ChatPane，流式/工具卡/Markdown 与桌面完全同源）。桌面三栏壳层
- * （侧栏/页签/标题栏）在移动端不渲染。
+ * 首页 = 连接状态 + 当前设备上的工作区和任务卡片（可收纳；官方卡片=图标+名称+
+ * 本地/对话徽标+路径+任务数+新建"+"+更新时间）。任务列表走桌面侧栏同款
+ * useWorkspaceTaskLists 投影（合议轮/评审轮/工单/归档的进出与桌面完全一致，
+ * 任务数与桌面侧栏对得上）；点任务 → 全屏任务会话（桌面同款 V4ChatPane）；
+ * 卡片"+"= 新建任务（draft 会话）。桌面三栏壳层在移动端不渲染。
  *
- * ponytail: 连接状态徽标 v1 静态展示"已连接"（能进本壳即 WS 已握手）；列表 20s
- * 轮询 + 手动刷新，不做订阅级实时；官方的"整理任务（按时间线/按工作区）/排序"
- * 开关 v1 不做，固定按工作区分组、组内按更新时间倒序——缺口出现再加。
+ * ponytail: 连接状态徽标 v1 静态展示"已连接"；官方"整理任务（按时间线/按工作区）
+ * /排序方式"开关 v1 不做（固定按工作区分组、更新时间倒序、每卡 20 条）——缺口
+ * 出现再加；员工徽标反推（applyDerivedPersonaChatBadges）v1 不做。
  */
 
 type MobileView =
   | { kind: "home" }
-  | { kind: "chat"; workspacePath: string; sessionId: string; title: string };
+  | {
+      kind: "chat";
+      /** key 稳定符：draft 首发建会话后不得变，否则整树重挂 */
+      entryToken: number;
+      workspacePath: string;
+      sessionId: string | null;
+      title: string;
+    };
 
-interface TaskGroup {
+interface WorkspaceCard {
   workspacePath: string;
   label: string;
-  purpose?: string;
-  sessions: ZCodeSessionInfo[];
+  purpose?: WorkspacePurpose;
+  identity?: string;
 }
 
 interface MobileRemoteShellProps {
@@ -38,39 +57,38 @@ function workspaceLabel(path: string): string {
   return path.split(/[\\/]+/).filter(Boolean).pop() ?? path;
 }
 
-function formatTaskTime(timestamp: number, now: number): string {
-  const date = new Date(timestamp);
-  const sameDay = date.toDateString() === new Date(now).toDateString();
-  if (sameDay) {
-    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  }
-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  if (sameYear) return `${month}-${day}`;
-  return `${date.getFullYear()}-${month}-${day}`;
+/** 官方口径的相对时间：3分 / 2天 / 1天 */
+function formatRelativeTime(timestamp: number, now: number): string {
+  const minutes = Math.floor((now - timestamp) / 60_000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}小时`;
+  return `${Math.floor(hours / 24)}天`;
 }
 
-const TASK_STATUS_DOT_CLASS: Record<ZCodeSessionInfo["status"], string> = {
+const TASK_STATUS_DOT_CLASS: Record<string, string> = {
   running: "bg-emerald-500 animate-pulse",
-  waiting: "bg-amber-500",
-  paused: "bg-amber-500/70",
-  idle: "bg-muted-foreground/40",
-  completed: "bg-muted-foreground/40",
   error: "bg-red-500",
+  completed: "bg-muted-foreground/40",
 };
 
 /** 设备上打开过的工作区（桌面恢复会话同一来源）：local 项目 + 对话工作区，去重限量。 */
-function resolveWorkspaceTargets(
+function resolveWorkspaceCards(
   settings: AppSettings,
   fallbackPath: string,
-): Array<{ path: string; purpose?: string }> {
+  conversationLabel: string,
+): WorkspaceCard[] {
   const seen = new Set<string>();
-  const targets: Array<{ path: string; purpose?: string }> = [];
-  const push = (path: string, purpose?: string) => {
+  const cards: WorkspaceCard[] = [];
+  const push = (path: string, purpose?: WorkspacePurpose) => {
     if (!path || seen.has(path)) return;
     seen.add(path);
-    targets.push({ path, purpose });
+    cards.push({
+      workspacePath: path,
+      label: purpose === "conversation" ? conversationLabel : workspaceLabel(path),
+      purpose,
+    });
   };
   for (const entry of settings.lastWorkspaceSession ?? []) {
     if (entry.kind !== "local") continue;
@@ -78,46 +96,32 @@ function resolveWorkspaceTargets(
   }
   // 当前窗口工作区兜底（可能尚未落进 lastWorkspaceSession）
   push(fallbackPath);
-  return targets.slice(0, 10);
+  return cards.slice(0, 10);
 }
+
+const MOBILE_TASK_VISIBLE_LIMIT = 20;
 
 export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShellProps) {
   const { intl } = useZCodeIntl();
   const [view, setView] = useState<MobileView>({ kind: "home" });
-  const [groups, setGroups] = useState<TaskGroup[] | null>(null);
+  const [cards, setCards] = useState<WorkspaceCard[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const [allExpanded, setAllExpanded] = useState(false);
+  const entryTokenRef = useRef(0);
 
-  const loadGroups = useCallback(() => {
+  const conversationLabel = intl.formatMessage({
+    id: "webRemoteControl.mobileHome.conversationLabel",
+  });
+
+  const loadCards = useCallback(() => {
     setRefreshing(true);
-    (async () => {
-      const settings = await services.settingService.get();
-      const targets = resolveWorkspaceTargets(settings, workspacePath);
-      return Promise.all(
-        targets.map(async (target) => {
-          const sessions = await services.zcodeSessionService
-            .listSessions({ workspacePath: target.path, limit: 100 })
-            .catch(() => [] as ZCodeSessionInfo[]);
-          const visible = sessions
-            .filter((item) => !item.workOrderOnly)
-            .sort((a, b) => b.updatedAt - a.updatedAt);
-          return {
-            workspacePath: target.path,
-            label:
-              target.purpose === "conversation"
-                ? intl.formatMessage({
-                    id: "webRemoteControl.mobileHome.workspaceKind.conversation",
-                  })
-                : workspaceLabel(target.path),
-            purpose: target.purpose,
-            sessions: visible,
-          } satisfies TaskGroup;
-        }),
-      );
-    })()
-      .then((loaded) => {
-        setGroups(loaded);
+    services.settingService
+      .get()
+      .then((settings) => {
+        setCards(resolveWorkspaceCards(settings, workspacePath, conversationLabel));
         setLoadError(null);
       })
       .catch((error) => {
@@ -126,21 +130,72 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
       .finally(() => {
         setRefreshing(false);
       });
-  }, [services, workspacePath, intl]);
+  }, [services, workspacePath, conversationLabel]);
 
   useEffect(() => {
-    loadGroups();
-    // 列表级准实时：手机锁屏/切后台回来时拉一次，常驻轻轮询兜底
-    const timer = setInterval(loadGroups, 20_000);
+    loadCards();
     const onVisible = () => {
-      if (document.visibilityState === "visible") loadGroups();
+      if (document.visibilityState === "visible") loadCards();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [loadGroups, reloadToken]);
+  }, [loadCards, reloadToken]);
+
+  // 桌面侧栏同款任务投影：同一钩子、同一分页、同一排序——任务数与桌面侧栏一致
+  //（合议轮/评审轮/工单子会话/归档的进出全部由投影决定，不在此处再筛）。
+  const workspaceTabs = useMemo<WorkspaceTabState[]>(
+    () =>
+      (cards ?? [{ workspacePath, label: workspaceLabel(workspacePath) }]).map((card, index) => ({
+        kind: "workspace" as const,
+        id: `mobile-ws-${index}`,
+        workspacePath: card.workspacePath,
+        label: card.label,
+        ...(card.purpose ? { workspacePurpose: card.purpose } : {}),
+      })),
+    [cards, workspacePath],
+  );
+
+  const workspaceTaskLists = useWorkspaceTaskLists({
+    workspaceTabs,
+    activeWorkspacePath: workspacePath,
+    sortBy: "updated",
+    visibleLimitByWorkspaceKey: {},
+    defaultVisibleLimit: MOBILE_TASK_VISIBLE_LIMIT,
+  });
+
+  const cardByWorkspaceKey = useMemo(() => {
+    const map = new Map<string, WorkspaceCard>();
+    for (const card of cards ?? []) map.set(card.workspacePath, card);
+    return map;
+  }, [cards]);
+
+  const openChat = useCallback(
+    (target: { workspacePath: string; sessionId: string | null; title: string }) => {
+      entryTokenRef.current += 1;
+      setView({
+        kind: "chat",
+        entryToken: entryTokenRef.current,
+        workspacePath: target.workspacePath,
+        sessionId: target.sessionId,
+        title: target.title,
+      });
+    },
+    [],
+  );
+
+  const toggleCard = useCallback((key: string) => {
+    setExpandedKeys((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
   if (view.kind === "chat") {
     return (
@@ -161,18 +216,44 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
         </header>
         <div className="min-h-0 flex-1">
           <V4ChatPane
-            key={view.sessionId}
+            key={view.entryToken}
             workspacePath={view.workspacePath}
             sessionId={view.sessionId}
             isDesktop={false}
+            onSessionCreated={(sessionId) => {
+              setView((previous) =>
+                previous.kind === "chat"
+                  ? { ...previous, sessionId, title: previous.title }
+                  : previous,
+              );
+            }}
           />
         </div>
       </div>
     );
   }
 
-  const workspaceCount = groups?.length ?? 0;
-  const taskCount = groups?.reduce((sum, group) => sum + group.sessions.length, 0) ?? 0;
+  const groups = workspaceTaskLists.groups;
+  const taskCount = groups.reduce((sum, group) => sum + group.total, 0);
+  const workspaceCount = cards?.length ?? groups.length;
+
+  const toggleAllCards = () => {
+    if (allExpanded) {
+      setExpandedKeys(new Set());
+      setAllExpanded(false);
+    } else {
+      setExpandedKeys(
+        new Set(
+          groups.map((group) =>
+            group.workspaceIdentity
+              ? `${group.workspacePath}::${group.workspaceIdentity}`
+              : group.workspacePath,
+          ),
+        ),
+      );
+      setAllExpanded(true);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
@@ -203,19 +284,37 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
             )}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setReloadToken((token) => token + 1)}
-          className="flex shrink-0 items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground active:bg-muted"
-          aria-label={intl.formatMessage({ id: "webRemoteControl.mobileHome.refresh" })}
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={toggleAllCards}
+            className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+            aria-label={intl.formatMessage({
+              id: allExpanded
+                ? "webRemoteControl.mobileHome.collapseAll"
+                : "webRemoteControl.mobileHome.expandAll",
+            })}
+          >
+            {allExpanded ? (
+              <ChevronsDownUp className="h-4 w-4" />
+            ) : (
+              <ChevronsUpDown className="h-4 w-4" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setReloadToken((token) => token + 1)}
+            className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+            aria-label={intl.formatMessage({ id: "webRemoteControl.mobileHome.refresh" })}
+          >
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-[max(env(safe-area-inset-bottom),0.5rem)]">
         {loadError ? (
-          <div className="mx-2 mt-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="mt-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
             <p className="break-all">{loadError}</p>
             <button
               type="button"
@@ -225,72 +324,160 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
               {intl.formatMessage({ id: "webRemoteControl.mobileHome.reconnect" })}
             </button>
           </div>
-        ) : groups === null ? (
-          <div className="space-y-2 px-2 pt-3">
+        ) : cards === null ? (
+          <div className="space-y-2 pt-2">
             {[0, 1, 2].map((index) => (
-              <div key={index} className="h-14 animate-pulse rounded-lg bg-muted" />
+              <div key={index} className="h-20 animate-pulse rounded-xl bg-muted" />
             ))}
           </div>
         ) : (
-          groups.map((group) => (
-            <section key={group.workspacePath} className="px-2 pt-3">
-              <div className="flex items-baseline justify-between px-1">
-                <h3 className="truncate text-sm font-medium text-foreground">{group.label}</h3>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {intl.formatMessage(
-                    { id: "webRemoteControl.mobileHome.taskCount" },
-                    { count: group.sessions.length },
-                  )}
-                </span>
-              </div>
-              {group.sessions.length === 0 ? (
-                <p className="px-1 py-3 text-xs text-muted-foreground">
-                  {intl.formatMessage({ id: "webRemoteControl.mobileHome.workspaceEmpty" })}
-                </p>
-              ) : (
-                <ul className="mt-1 space-y-1">
-                  {group.sessions.map((task) => (
-                    <li key={task.sessionId}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setView({
-                            kind: "chat",
-                            workspacePath: group.workspacePath,
-                            sessionId: task.sessionId,
-                            title: task.title,
-                          })
-                        }
-                        className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left active:bg-muted"
-                      >
-                        <span
-                          className={cn(
-                            "h-2 w-2 shrink-0 rounded-full",
-                            TASK_STATUS_DOT_CLASS[task.status],
-                          )}
-                          aria-hidden
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm text-foreground">
-                            {task.title || intl.formatMessage({ id: "taskList.untitled" })}
-                          </span>
-                          <span className="mt-0.5 block text-xs text-muted-foreground">
-                            {intl.formatMessage(
-                              { id: "webRemoteControl.mobileHome.updatedAt" },
-                              { time: formatTaskTime(task.updatedAt, Date.now()) },
-                            )}
-                          </span>
+          <div className="space-y-2">
+            {cards.map((card) => {
+              const group = groups.find((item) => item.workspacePath === card.workspacePath);
+              const key = card.workspacePath;
+              const expanded = expandedKeys.has(key);
+              const latestUpdatedAt = group?.items[0]?.updatedAt;
+              return (
+                <section
+                  key={key}
+                  className="overflow-hidden rounded-xl border border-border bg-card"
+                >
+                  <div className="flex items-center gap-3 px-3 py-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                      {card.purpose === "conversation" ? (
+                        <MessageSquarePlus className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Folder className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleCard(key)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {card.label}
                         </span>
-                        <ChevronLeft className="h-4 w-4 shrink-0 rotate-180 text-muted-foreground/50" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ))
+                        <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none text-muted-foreground">
+                          {card.purpose === "conversation"
+                            ? intl.formatMessage({
+                                id: "webRemoteControl.mobileHome.workspaceKind.conversation",
+                              })
+                            : intl.formatMessage({
+                                id: "webRemoteControl.mobileHome.workspaceKind.local",
+                              })}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
+                        {card.workspacePath}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {latestUpdatedAt
+                          ? intl.formatMessage(
+                              { id: "webRemoteControl.mobileHome.updatedAt" },
+                              {
+                                time: formatRelativeTime(latestUpdatedAt, Date.now()),
+                              },
+                            )
+                          : null}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleCard(key)}
+                      className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground"
+                    >
+                      {intl.formatMessage(
+                        { id: "webRemoteControl.mobileHome.taskCount" },
+                        { count: group?.total ?? 0 },
+                      )}
+                      <ChevronRight
+                        className={cn("h-4 w-4 transition-transform", expanded && "rotate-90")}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openChat({
+                          workspacePath: card.workspacePath,
+                          sessionId: null,
+                          title: intl.formatMessage({ id: "taskList.untitled" }),
+                        })
+                      }
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground active:bg-muted"
+                      aria-label={intl.formatMessage({
+                        id: "webRemoteControl.mobileHome.newTask",
+                      })}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
+                  {expanded ? (
+                    group && group.items.length > 0 ? (
+                      <ul className="border-t border-border px-1 pb-1 pt-1">
+                        {group.items.map((task) => (
+                          <li key={task.taskId}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openChat({
+                                  workspacePath: card.workspacePath,
+                                  sessionId: task.taskId,
+                                  title: task.title,
+                                })
+                              }
+                              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-left active:bg-muted"
+                            >
+                              <span
+                                className={cn(
+                                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                                  task.status
+                                    ? (TASK_STATUS_DOT_CLASS[task.status] ??
+                                      "bg-muted-foreground/40")
+                                    : "bg-muted-foreground/40",
+                                )}
+                                aria-hidden
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm text-foreground">
+                                  {task.title ||
+                                    intl.formatMessage({ id: "taskList.untitled" })}
+                                </span>
+                                <span className="mt-0.5 block text-xs text-muted-foreground">
+                                  {intl.formatMessage(
+                                    { id: "webRemoteControl.mobileHome.updatedAt" },
+                                    { time: formatRelativeTime(task.updatedAt, Date.now()) },
+                                  )}
+                                </span>
+                              </span>
+                              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                            </button>
+                          </li>
+                        ))}
+                        {group.hasMore ? (
+                          <li className="px-2 py-2 text-xs text-muted-foreground">
+                            {intl.formatMessage({
+                              id: "webRemoteControl.mobileHome.moreInDesktop",
+                            })}
+                          </li>
+                        ) : null}
+                      </ul>
+                    ) : (
+                      <p className="border-t border-border px-3 py-3 text-xs text-muted-foreground">
+                        {intl.formatMessage({
+                          id: "webRemoteControl.mobileHome.workspaceEmpty",
+                        })}
+                      </p>
+                    )
+                  ) : null}
+                </section>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
   );
 }
+
