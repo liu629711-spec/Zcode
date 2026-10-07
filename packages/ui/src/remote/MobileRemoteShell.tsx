@@ -39,6 +39,7 @@ import { getPlainTextPatchFallbackLines } from "@/lib/patchDiffPreview.js";
 import { HighlightedLightweightDiffPreview } from "@/components/ui/highlighted-lightweight-diff-preview.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { applyTaskQueryCacheMutation } from "@/store/taskQueryCacheStore.js";
+import { useModelTrajectoryStore } from "@/store/modelTrajectoryStore.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useTaskListItemContextActions } from "@/useTaskListItemContextActions.js";
 import { TaskActionMenuContent } from "@/TaskActionMenuContent.js";
@@ -556,6 +557,20 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                     void copyText(taskContext.taskNativeSessionLogFile.path)
                   }
                   onCopySessionId={() => void copyText(view.sessionId)}
+                  onViewModelTrajectory={
+                    dockActiveTaskId
+                      ? () => {
+                          // 轨迹页签经 useAppPanels 桥进右坞（AnimatedSidePanePanel 已
+                          // 支持 model-trajectory）；手机壳可见性直跟 dockOpen，开签后手动开坞。
+                          useModelTrajectoryStore.getState().requestOpen({
+                            taskId: dockActiveTaskId,
+                            workspaceKey: dockWorkspacePath,
+                            title: view.title ?? null,
+                          });
+                          setDockOpen(true);
+                        }
+                      : undefined
+                  }
                 />
               </DropdownMenuContent>
             </DropdownMenu>

@@ -45,6 +45,7 @@ import { TaskWorkflowRunLines } from "@/components/workflow-run-line/TaskWorkflo
 import { useTaskInteractionAutoResolutionSnooze } from "@/hooks/useTaskInteractionAutoResolutionSnooze.js";
 import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceReadOnly } from "@/store/tabStore.js";
+import { useModelTrajectoryStore } from "@/store/modelTrajectoryStore.js";
 import { TaskTitleOverflowText } from "@/components/TaskTitleOverflowText.js";
 
 function GroupedTaskRowComponent({
@@ -564,6 +565,15 @@ function GroupedTaskRowComponent({
           onMarkTaskAsUnread={onMarkTaskAsUnread}
           onOpenTaskPathInFileManager={() => void handleOpenTaskPathInFileManager()}
           onCopyText={(label, text) => void handleCopyText(label, text)}
+          onViewModelTrajectory={() => {
+            // 单例 store 桥：把“打开轨迹”请求交给所属 workspace 的侧边栏控制器
+            // （useAppPanels），与侧栏行菜单（TaskListItem）同一模式。
+            useModelTrajectoryStore.getState().requestOpen({
+              taskId: task.taskId,
+              workspaceKey: task.workspaceIdentity?.trim() || task.workspacePath,
+              title: taskTitle,
+            });
+          }}
           onOpenTaskFeedback={() => void handleOpenTaskFeedback()}
           disabledReason={workspaceActionsDisabledReason}
         />

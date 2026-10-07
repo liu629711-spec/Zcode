@@ -26,6 +26,7 @@ export function GroupedTaskContextMenuContent({
   onMarkTaskAsUnread,
   onOpenTaskPathInFileManager,
   onCopyText,
+  onViewModelTrajectory,
   onOpenTaskFeedback,
   disabledReason,
 }: {
@@ -46,6 +47,7 @@ export function GroupedTaskContextMenuContent({
   onMarkTaskAsUnread: (task: ZCodeTaskMeta) => void;
   onOpenTaskPathInFileManager: () => void;
   onCopyText: (label: string, text: string | null) => void;
+  onViewModelTrajectory?: () => void;
   onOpenTaskFeedback: () => void;
   disabledReason?: string;
 }) {
@@ -187,6 +189,24 @@ export function GroupedTaskContextMenuContent({
       >
         {intl.formatMessage({ id: "appHeader.copySessionId" })}
       </ContextMenuItem>
+      {onViewModelTrajectory ? (
+        <>
+          <ContextMenuSeparator />
+          {/* 调用轨迹查看：从 ~/.zcode/cli 的 model-io 还原该 task 的模型请求/响应/工具调用。
+              只依赖 taskId（即 sessionId），不依赖快照文件是否落盘。与侧栏行菜单同款。 */}
+          <ContextMenuItem
+            disabled={Boolean(disabledReason)}
+            title={disabledReason}
+            onSelect={() => {
+              if (!disabledReason) {
+                onViewModelTrajectory();
+              }
+            }}
+          >
+            {intl.formatMessage({ id: "taskList.viewModelTrajectory" })}
+          </ContextMenuItem>
+        </>
+      ) : null}
       <ContextMenuSeparator />
       <ContextMenuItem onSelect={onOpenTaskFeedback}>
         {intl.formatMessage({ id: "taskList.feedback" })}
