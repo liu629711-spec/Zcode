@@ -1,4 +1,4 @@
-import { validateSkin, type SkinPack } from "./skinSchema.js";
+import { validateSkin, type SkinPack, type SkinValidationError } from "./skinSchema.js";
 
 /**
  * 皮肤分享链接——纯配色皮肤编码进 URL hash（#skin=...），点开即装，不需要服务器。
@@ -38,14 +38,14 @@ export function buildSkinShareUrl(skin: SkinPack): string | null {
 
 export type SkinShareDecodeResult =
   | { ok: true; skin: SkinPack }
-  | { ok: false; errors: string[] };
+  | { ok: false; errors: SkinValidationError[] };
 
 /** hash 参数值 → 皮肤包（过与文件导入同一条校验门） */
 export function decodeSkinFromShare(value: string): SkinShareDecodeResult {
   try {
     return validateSkin(JSON.parse(fromBase64Url(value)));
   } catch {
-    return { ok: false, errors: ["分享链接已损坏或不完整，无法解析"] };
+    return { ok: false, errors: [{ key: "shareBroken" }] };
   }
 }
 

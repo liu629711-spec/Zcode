@@ -366,7 +366,7 @@ export function SettingsPage({
   const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
   const theme = useZCodeStore((state) => state.theme);
   const designStyle = useZCodeStore((state) => state.designStyle);
-  const setDesignStyle = useZCodeStore((state) => state.setDesignStyle);
+  const activatePresetStyle = useZCodeStore((state) => state.activatePresetStyle);
   const setTheme = useZCodeStore((state) => state.setTheme);
   const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
   const setCodePreviewSettings = useZCodeStore((state) => state.setCodePreviewSettings);
@@ -1859,7 +1859,7 @@ export function SettingsPage({
                             theme={theme}
                             setTheme={(nextTheme) => handleFooterThemeChange(nextTheme)}
                             designStyle={designStyle}
-                            setDesignStyle={(style: DesignStyle) => setDesignStyle(style)}
+                            activatePresetStyle={(style: DesignStyle) => activatePresetStyle(style)}
                             uiFontSizePx={uiFontSizePx}
                             setUiFontSizePx={(fontSizePx) =>
                               runUserAction({

@@ -10,6 +10,7 @@ import {
   type Theme,
 } from "@zcode/ui";
 import "@zcode/ui/styles.css";
+import { DESIGN_STYLE_STORAGE_KEY } from "@zcode/ui/themeStyles";
 import { connectViaWebSocket } from "@zcode/client";
 import { WebCallbackPage } from "./auth/WebCallbackPage.js";
 import { createWebAuthService } from "./auth/webAuthService.js";
@@ -65,7 +66,7 @@ function resolveWebThemePreference(defaultTheme: Theme = WEB_DEFAULT_THEME): The
   document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
   document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
   document.documentElement.dataset.designStyle =
-    localStorage.getItem("zcode-design-style") || "claude";
+    localStorage.getItem(DESIGN_STYLE_STORAGE_KEY) || "claude";
 }
 
 async function resolveFeedbackUrl(): Promise<string | undefined> {

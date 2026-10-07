@@ -10,6 +10,7 @@ import { DESIGN_STYLE_RAMP_PREVIEW } from "@/themeStyles.js";
 import { ActiveSkinTuning } from "@/settings/skinTuningPanel.js";
 import {
   createSkinFromStyle,
+  formatSkinValidationErrors,
   serializeSkin,
   validateSkin,
   type SkinPack,
@@ -157,7 +158,7 @@ export function SkinSettingsSection() {
   const skinLibrary = useZCodeStore((state) => state.skinLibrary);
   const activeSkinId = useZCodeStore((state) => state.activeSkinId);
   const designStyle = useZCodeStore((state) => state.designStyle);
-  const setDesignStyle = useZCodeStore((state) => state.setDesignStyle);
+  const activatePresetStyle = useZCodeStore((state) => state.activatePresetStyle);
   const importSkin = useZCodeStore((state) => state.importSkin);
   const setActiveSkinId = useZCodeStore((state) => state.setActiveSkinId);
   const requestConfirmation = useConfirmDialogStore((state) => state.requestConfirmation);
@@ -178,7 +179,7 @@ export function SkinSettingsSection() {
       setActiveSkinId(id);
     } else {
       // 现实失败原因基本是存储配额满——不能静默无反应
-      toast(result.errors.join("；"));
+      toast(formatSkinValidationErrors(intl, result.errors));
     }
   };
 
@@ -201,7 +202,7 @@ export function SkinSettingsSection() {
     if (!confirmed) return;
     const imported = importSkin(pack);
     if (!imported.ok) {
-      toast(imported.errors.join("；"));
+      toast(formatSkinValidationErrors(intl, imported.errors));
       return;
     }
     setActiveSkinId(imported.skin.id);
@@ -218,7 +219,7 @@ export function SkinSettingsSection() {
     }
     const result = validateSkin(raw);
     if (!result.ok) {
-      toast(result.errors.join("；"));
+      toast(formatSkinValidationErrors(intl, result.errors));
       return;
     }
     await installPack(result.skin);
@@ -265,8 +266,8 @@ export function SkinSettingsSection() {
               key={style}
               type="button"
               onClick={() => {
-                setActiveSkinId(null);
-                setDesignStyle(style);
+                // 双入口统一（换肤引擎批 2）：走 store 的唯一入口，先停用皮肤再换风格。
+                activatePresetStyle(style);
               }}
               aria-pressed={active}
               data-testid={`skin-preset-${style}`}

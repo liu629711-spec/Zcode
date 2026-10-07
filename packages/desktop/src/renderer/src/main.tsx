@@ -16,6 +16,7 @@ import {
   setReactErrorArmsReporter,
 } from "@zcode/ui";
 import "@zcode/ui/styles.css";
+import { DESIGN_STYLE_STORAGE_KEY } from "@zcode/ui/themeStyles";
 import { connectViaMessagePort, createMessagePortServiceConnection } from "@zcode/client";
 import {
   InternalChannels,
@@ -98,7 +99,7 @@ function registerE2EStoreBridgesIfEnabled() {
   document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
   document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
   document.documentElement.dataset.designStyle =
-    localStorage.getItem("zcode-design-style") || "claude";
+    localStorage.getItem(DESIGN_STYLE_STORAGE_KEY) || "claude";
 }
 
 const isMacDesktop = navigator.userAgent.includes("Mac");

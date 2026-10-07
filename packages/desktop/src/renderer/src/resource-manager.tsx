@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import type { ResourceUsageSnapshot, StorageManagementBridge } from "@zcode/shared";
 import "@zcode/ui/styles.css";
+import { DESIGN_STYLE_STORAGE_KEY } from "@zcode/ui/themeStyles";
 import {
   ResourceManagerApp,
   ZCodeIntlProvider,
@@ -45,7 +46,7 @@ function applyResourceManagerTheme(): void {
   document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
   document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
   document.documentElement.dataset.designStyle =
-    localStorage.getItem("zcode-design-style") || "claude";
+    localStorage.getItem(DESIGN_STYLE_STORAGE_KEY) || "claude";
 }
 
 applyResourceManagerTheme();

@@ -1,4 +1,4 @@
-import { validateSkin, type SkinPack } from "./skinSchema.js";
+import { validateSkin, type SkinPack, type SkinValidationError } from "./skinSchema.js";
 import { applySkinToDocument } from "./skinApply.js";
 import {
   readActiveSkinId,
@@ -8,17 +8,24 @@ import {
   writeActiveSkinId,
   writeSkinLibrary,
 } from "./skinLibrary.js";
+import type { DesignStyle } from "../themeStyles.js";
 
-/** 皮肤导入结果：ok=入库成功；失败带逐条错误；quotaFull=校验过了但存不进 localStorage */
+/** 皮肤导入结果：ok=入库成功；失败带逐条机器码错误；quotaFull=校验过了但存不进 localStorage */
 export type SkinImportResult =
   | { ok: true; skin: SkinPack }
-  | { ok: false; errors: string[]; quotaFull?: boolean };
+  | { ok: false; errors: SkinValidationError[]; quotaFull?: boolean };
 
 type SkinSet = (partial: {
   skinLibrary?: SkinPack[];
   activeSkinId?: string | null;
+  designStyle?: DesignStyle;
 }) => void;
-type SkinGet = () => { skinLibrary: SkinPack[]; activeSkinId: string | null };
+type SkinGet = () => {
+  skinLibrary: SkinPack[];
+  activeSkinId: string | null;
+  designStyle: DesignStyle;
+  setDesignStyle: (style: DesignStyle) => void;
+};
 
 /** 库内按 id 覆盖式插入（同 id 替换，其余不动）。 */
 function upsertSkinInLibrary(library: SkinPack[], pack: SkinPack): SkinPack[] {
@@ -43,7 +50,7 @@ export function createSkinStoreSlice(set: SkinSet, get: SkinGet) {
       if (!writeSkinLibrary(library)) {
         return {
           ok: false,
-          errors: ["皮肤校验通过，但浏览器存储空间不足，保存失败"],
+          errors: [{ key: "quotaFullImport" }],
           quotaFull: true,
         };
       }
@@ -57,7 +64,7 @@ export function createSkinStoreSlice(set: SkinSet, get: SkinGet) {
       if (!validated.ok) return { ok: false as const, errors: validated.errors };
       const library = upsertSkinInLibrary(readSkinLibrary(), validated.skin);
       if (!writeSkinLibrary(library)) {
-        return { ok: false as const, errors: ["浏览器存储空间不足，保存失败"], quotaFull: true };
+        return { ok: false as const, errors: [{ key: "quotaFull" }], quotaFull: true };
       }
       set({ skinLibrary: library });
       if (get().activeSkinId === validated.skin.id) {
@@ -81,6 +88,10 @@ export function createSkinStoreSlice(set: SkinSet, get: SkinGet) {
         id === null ? null : get().skinLibrary.find((entry) => entry.id === id) ?? null;
       writeActiveSkinId(pack?.id ?? null);
       applySkinToDocument(pack);
+      // 外观下拉跟屏（换肤引擎批 2 双入口统一）：激活皮肤时预设风格同步成皮肤的
+      // baseStyle，下拉显示的就是屏幕上真实生效的 ramp；停用不动（用户没说要回到
+      // 哪套预设， activatePresetStyle 才负责停用+切换）。
+      if (pack) get().setDesignStyle(pack.baseStyle);
       set({ activeSkinId: pack?.id ?? null });
     },
     /** 广播接收专用：对端已落库，本窗口只刷新+应用；未知 id 不回写（防覆盖对端刚写的激活标记）。 */

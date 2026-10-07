@@ -67,9 +67,19 @@ export interface SkinPack {
   glass?: SkinGlass;
 }
 
+/**
+ * 校验错误（机器码 + 参数，换肤引擎批 2）：schema 不铸人话——错误词表在 i18n
+ * （skin.error.*），显示层经 formatSkinValidationErrors 换话；params 槽与词条
+ * 里的 {placeholder} 对应。
+ */
+export interface SkinValidationError {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
 export type SkinValidateResult =
   | { ok: true; skin: SkinPack }
-  | { ok: false; errors: string[] };
+  | { ok: false; errors: SkinValidationError[] };
 
 /** data URL 壁纸上限（字符）：localStorage 单键约 5MB，留余量给库里其他皮肤 */
 export const MAX_SKIN_IMAGE_CHARS = 4_000_000;
@@ -117,14 +127,14 @@ function validateBoundedNumber(
   min: number,
   max: number,
   label: string,
-  errors: string[],
+  errors: SkinValidationError[],
 ): number | undefined {
   if (!isFiniteNumber(value)) {
-    errors.push(`${label} 必须是数字`);
+    errors.push({ key: "notNumber", params: { label } });
     return undefined;
   }
   if (value < min || value > max) {
-    errors.push(`${label} 必须在 ${min} ~ ${max} 之间`);
+    errors.push({ key: "outOfRange", params: { label, min, max } });
     return undefined;
   }
   return value;
@@ -133,22 +143,22 @@ function validateBoundedNumber(
 function validateTokenOverrides(
   value: unknown,
   label: string,
-  errors: string[],
+  errors: SkinValidationError[],
 ): SkinTokenOverrides | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
-    errors.push(`${label} 必须是对象`);
+    errors.push({ key: "notObject", params: { label } });
     return undefined;
   }
   const overrides: SkinTokenOverrides = {};
   for (const [key, raw] of Object.entries(value)) {
     if (!(SKIN_TOKEN_SLOTS as readonly string[]).includes(key)) {
-      errors.push(`${label}.${key} 不是可覆盖的槽位`);
+      errors.push({ key: "unknownSlot", params: { label, key } });
       continue;
     }
     const hex = pickHexColor(raw);
     if (!hex) {
-      errors.push(`${label}.${key} 必须是 #RGB/#RRGGBB/#RRGGBBAA 色值`);
+      errors.push({ key: "badColor", params: { label, key } });
       continue;
     }
     overrides[key as SkinTokenSlot] = hex;
@@ -156,15 +166,18 @@ function validateTokenOverrides(
   return overrides;
 }
 
-function validateWallpaper(value: unknown, errors: string[]): SkinWallpaper | undefined {
+function validateWallpaper(
+  value: unknown,
+  errors: SkinValidationError[],
+): SkinWallpaper | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
-    errors.push("wallpaper 必须是对象");
+    errors.push({ key: "wallpaperNotObject" });
     return undefined;
   }
   const kind = value.kind;
   if (kind !== "image" && kind !== "gradient") {
-    errors.push('wallpaper.kind 必须是 "image" 或 "gradient"');
+    errors.push({ key: "wallpaperKind" });
     return undefined;
   }
   const wallpaper: SkinWallpaper = {
@@ -176,11 +189,11 @@ function validateWallpaper(value: unknown, errors: string[]): SkinWallpaper | un
   if (kind === "image") {
     const source = value.imageDataUrl;
     if (typeof source !== "string" || !IMAGE_SOURCE_RE.test(source.trim())) {
-      errors.push("wallpaper.imageDataUrl 必须是 data:image/* 或 http(s) 图片地址");
+      errors.push({ key: "wallpaperImageSource" });
       return undefined;
     }
     if (source.length > MAX_SKIN_IMAGE_CHARS) {
-      errors.push(`wallpaper.imageDataUrl 超过 ${MAX_SKIN_IMAGE_CHARS} 字符上限`);
+      errors.push({ key: "wallpaperImageTooLarge", params: { max: MAX_SKIN_IMAGE_CHARS } });
       return undefined;
     }
     wallpaper.imageDataUrl = source.trim();
@@ -192,7 +205,7 @@ function validateWallpaper(value: unknown, errors: string[]): SkinWallpaper | un
       gradient.length > 2000 ||
       !isSafeGradient(gradient.trim())
     ) {
-      errors.push("wallpaper.gradient 必须是 linear/radial/conic-gradient 渐变字符串");
+      errors.push({ key: "wallpaperGradient" });
       return undefined;
     }
     wallpaper.gradient = gradient.trim();
@@ -209,14 +222,14 @@ function validateWallpaper(value: unknown, errors: string[]): SkinWallpaper | un
   return wallpaper;
 }
 
-function validateGlass(value: unknown, errors: string[]): SkinGlass | undefined {
+function validateGlass(value: unknown, errors: SkinValidationError[]): SkinGlass | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) {
-    errors.push("glass 必须是对象");
+    errors.push({ key: "glassNotObject" });
     return undefined;
   }
   if (typeof value.enabled !== "boolean") {
-    errors.push("glass.enabled 必须是布尔值");
+    errors.push({ key: "glassEnabled" });
     return undefined;
   }
   const blend = validateBoundedNumber(value.blend, 0, 1, "glass.blend", errors);
@@ -234,24 +247,27 @@ function validateGlass(value: unknown, errors: string[]): SkinGlass | undefined 
 /** 校验并归一化一个裸皮肤包（导入/分享链接/localStorage 回读共用这条门）。 */
 export function validateSkin(raw: unknown): SkinValidateResult {
   if (!isRecord(raw)) {
-    return { ok: false, errors: ["皮肤包必须是 JSON 对象"] };
+    return { ok: false, errors: [{ key: "notJsonObject" }] };
   }
-  const errors: string[] = [];
+  const errors: SkinValidationError[] = [];
   if (raw.formatVersion !== SKIN_FORMAT_VERSION) {
     return {
       ok: false,
       errors: [
-        `formatVersion 必须是 ${SKIN_FORMAT_VERSION}（收到：${String(raw.formatVersion)}）`,
+        {
+          key: "badFormatVersion",
+          params: { expected: SKIN_FORMAT_VERSION, received: String(raw.formatVersion) },
+        },
       ],
     };
   }
   const id = typeof raw.id === "string" ? raw.id.trim() : "";
   if (!SKIN_ID_RE.test(id)) {
-    errors.push("id 必须是 1~64 位字母/数字/-/_ 且以字母数字开头");
+    errors.push({ key: "badId" });
   }
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
   if (name.length < 1 || name.length > 60) {
-    errors.push("name 必须是 1~60 个字符");
+    errors.push({ key: "badName" });
   }
   const author = typeof raw.author === "string" ? raw.author.trim().slice(0, 60) : undefined;
 
@@ -260,7 +276,7 @@ export function validateSkin(raw: unknown): SkinValidateResult {
     if (typeof raw.baseStyle === "string" && (DESIGN_STYLES as readonly string[]).includes(raw.baseStyle)) {
       baseStyle = raw.baseStyle as DesignStyle;
     } else {
-      errors.push(`baseStyle 必须是 ${DESIGN_STYLES.join(" / ")} 之一`);
+      errors.push({ key: "badBaseStyle", params: { styles: DESIGN_STYLES.join(" / ") } });
     }
   }
 
@@ -303,4 +319,14 @@ export function createSkinFromStyle(
     name,
     baseStyle,
   };
+}
+
+/** 校验错误 → 人话（显示层统一走这条；key 映射 i18n 词表 skin.error.*）。 */
+export function formatSkinValidationErrors(
+  intl: { formatMessage: (desc: { id: string }, values?: Record<string, string | number>) => string },
+  errors: readonly SkinValidationError[],
+): string {
+  return errors
+    .map((error) => intl.formatMessage({ id: `skin.error.${error.key}` }, error.params))
+    .join(intl.formatMessage({ id: "skin.errorJoin" }));
 }

@@ -86,7 +86,7 @@ export function AppearanceSectionContent({
   theme,
   setTheme,
   designStyle,
-  setDesignStyle,
+  activatePresetStyle,
   uiFontSizePx,
   setUiFontSizePx,
 }: {
@@ -95,7 +95,8 @@ export function AppearanceSectionContent({
   theme: Theme;
   setTheme: (theme: Theme) => void;
   designStyle: DesignStyle;
-  setDesignStyle: (style: DesignStyle) => void;
+  /** 双入口统一（换肤引擎批 2）：换预设风格先停用激活皮肤，走 store 的唯一入口。 */
+  activatePresetStyle: (style: DesignStyle) => void;
   uiFontSizePx: number;
   setUiFontSizePx: (fontSizePx: number) => void;
 }) {
@@ -123,7 +124,7 @@ export function AppearanceSectionContent({
               control={
                 <Select
                   value={designStyle}
-                  onValueChange={(value) => setDesignStyle(value as DesignStyle)}
+                  onValueChange={(value) => activatePresetStyle(value as DesignStyle)}
                 >
                   <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
                     <SelectValue />

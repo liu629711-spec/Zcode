@@ -4,6 +4,7 @@ import { useZCodeIntl } from "@/i18n/index.js";
 import { useConfirmDialogStore } from "@/store/confirmDialogStore.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { consumeSkinShareFromLocation } from "./skinShare.js";
+import { formatSkinValidationErrors } from "./skinSchema.js";
 
 /**
  * 皮肤分享链接 intake——挂在 RootShell，启动时消费一次 location.hash 里的 #skin=...。
@@ -22,7 +23,7 @@ export function SkinShareIntake() {
     const result = consumeSkinShareFromLocation();
     if (!result) return;
     if (!result.ok) {
-      toast(result.errors.join("；"));
+      toast(formatSkinValidationErrors(intl, result.errors));
       return;
     }
     void (async () => {
@@ -34,7 +35,7 @@ export function SkinShareIntake() {
       if (!confirmed) return;
       const imported = importSkin(result.skin);
       if (!imported.ok) {
-        toast(imported.errors.join("；"));
+        toast(formatSkinValidationErrors(intl, imported.errors));
         return;
       }
       setActiveSkinId(imported.skin.id);

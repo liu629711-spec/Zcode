@@ -46,7 +46,10 @@ import {
   initSkinPersistence,
   type SkinImportResult,
 } from "../skin-engine/skinStoreSlice.js";
-import type { SkinPack } from "../skin-engine/skinSchema.js";
+import type {
+  SkinPack,
+  SkinValidationError,
+} from "../skin-engine/skinSchema.js";
 import type { Theme } from "../useTheme.js";
 import { applyTheme, normalizeThemePreference, resolveTheme } from "../useTheme.js";
 
@@ -119,6 +122,8 @@ export interface ZCodeState {
   theme: Theme;
   designStyle: DesignStyle;
   setDesignStyle: (style: DesignStyle) => void;
+  /** 预设风格切换的唯一入口（换肤引擎批 2 双入口统一）：先停用激活皮肤再换风格。 */
+  activatePresetStyle: (style: DesignStyle) => void;
   setTheme: (theme: Theme) => void;
 
   /** 皮肤引擎：已安装皮肤库与当前激活皮肤 id（null=未激活，纯预设风格） */
@@ -129,7 +134,10 @@ export interface ZCodeState {
   /** 调参保存：过校验门后覆盖库中同 id 皮肤；激活中则即时重应用 */
   upsertSkin: (
     skin: SkinPack,
-  ) => { ok: true; skin: SkinPack } | { ok: false; errors: string[]; quotaFull?: boolean };
+  ) => {
+    ok: true;
+    skin: SkinPack;
+  } | { ok: false; errors: SkinValidationError[]; quotaFull?: boolean };
   removeSkin: (id: string) => void;
   /** 激活/停用皮肤；未知 id 视为停用 */
   setActiveSkinId: (id: string | null) => void;
@@ -301,6 +309,12 @@ export function createZCodeStore(
       writeSafeLocalStorage(DESIGN_STYLE_STORAGE_KEY, designStyle);
       applyTheme(get().theme, designStyle);
       set({ designStyle });
+    },
+    activatePresetStyle: (style: DesignStyle) => {
+      // 双入口统一（换肤引擎批 2）：预设风格切换一律先停用激活皮肤——皮肤 ramp 带
+      // !important 盖预设，不清掉的话换风格不上屏，皮肤库与外观下拉也会各说各话。
+      get().setActiveSkinId(null);
+      get().setDesignStyle(style);
     },
     ...createSkinStoreSlice(set, get),
     theme: normalizeThemePreference((readSafeLocalStorage("zcode-theme") as Theme) || "zai-dark"),

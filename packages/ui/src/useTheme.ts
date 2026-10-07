@@ -89,23 +89,6 @@ function isTheme(value: string | null): value is Theme {
   );
 }
 
-export function useDesignStyle() {
-  const [designStyle, setDesignStyleState] = useState<DesignStyle>(currentDesignStyle);
-
-  const setDesignStyle = useCallback((style: DesignStyle) => {
-    const normalizedStyle = normalizeDesignStyle(style);
-    localStorage.setItem(DESIGN_STYLE_STORAGE_KEY, normalizedStyle);
-    setDesignStyleState(normalizedStyle);
-    applyDesignStyle(normalizedStyle);
-  }, []);
-
-  useEffect(() => {
-    applyDesignStyle(designStyle);
-  }, [designStyle]);
-
-  return { designStyle, setDesignStyle } as const;
-}
-
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
