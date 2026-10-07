@@ -1,33 +1,53 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Component, type ReactNode } from "react";
 import {
   Bot,
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  Clock,
+  Ellipsis,
   Folder,
   MessageSquarePlus,
+  Palette,
   Plus,
   RefreshCw,
+  SlidersHorizontal,
   X,
 } from "lucide-react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { AppSettings, WorkspacePurpose } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu.js";
+import { toast } from "@/components/ui/toast.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
+import { inferCodeLanguage } from "@/lib/codeViewer.js";
 import { resolveSubagentColorFromName, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { useWorkspaceTaskLists } from "@/hooks/useWorkspaceTaskLists.js";
 import { getPlainTextPatchFallbackLines } from "@/lib/patchDiffPreview.js";
-import { inferCodeLanguage } from "@/lib/codeViewer.js";
 import { HighlightedLightweightDiffPreview } from "@/components/ui/highlighted-lightweight-diff-preview.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
+import { applyTaskQueryCacheMutation } from "@/store/taskQueryCacheStore.js";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
+import { useTaskListItemContextActions } from "@/useTaskListItemContextActions.js";
+import { TaskActionMenuContent } from "@/TaskActionMenuContent.js";
+import { TaskRenameDialog } from "@/TaskRenameDialog.js";
 import { resolveTheme } from "@/useTheme.js";
 import { useWorkspaceProjectAgents } from "@/WorkspaceSidebar/ProjectAgents.js";
 import {
   applyDerivedPersonaChatBadges,
   getPersonaChatBadge,
+  restorePersonaTitlePrefix,
   stripPersonaTitlePrefix,
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { PreviewPane } from "@/PreviewPane.js";
@@ -183,6 +203,10 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     };
   }, [loadCards, reloadToken]);
 
+  // 官方 mobileHome 的"整理任务/排序方式"（sliders 菜单）——先于任务投影声明
+  const [organizeMode, setOrganizeMode] = useState<"workspace" | "timeline">("workspace");
+  const [sortMode, setSortMode] = useState<"created" | "updated">("updated");
+
   // 桌面侧栏同款任务投影：同一钩子、同一分页、同一排序——任务数与桌面侧栏一致
   //（合议轮/评审轮/工单子会话/归档的进出全部由投影决定，不在此处再筛）。
   const workspaceTabs = useMemo<WorkspaceTabState[]>(
@@ -200,7 +224,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
   const workspaceTaskLists = useWorkspaceTaskLists({
     workspaceTabs,
     activeWorkspacePath: workspacePath,
-    sortBy: "updated",
+    sortBy: sortMode,
     visibleLimitByWorkspaceKey: {},
     defaultVisibleLimit: MOBILE_TASK_VISIBLE_LIMIT,
   });
@@ -217,10 +241,47 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     boundWorkspacePath: workspacePath,
   });
 
-  // 文件审查/查看浮层：onOpenCodeViewer 落到这里（手机形态=全屏查看器，不是桌面右坞）
+  // 文件审查/查看浮层：onOpenCodeViewer 落到这里（手机形态=右抽屉，不是桌面右坞）
   const [viewerSource, setViewerSource] = useState<CodeViewerSource | null>(null);
   const theme = useZCodeStore((state) => state.theme);
+  const setTheme = useZCodeStore((state) => state.setTheme);
   const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
+  // 会话页任务菜单（"…"）：重命名弹窗状态
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const confirmDialog = useConfirmDialog();
+  // "…" 菜单的任务级上下文（会话文件/日志路径、文件管理器文案）——仅会话页装载
+  const chatTaskId = view.kind === "chat" ? (view.sessionId ?? "") : "";
+  const taskContext = useTaskListItemContextActions({
+    workspacePath: view.kind === "chat" ? view.workspacePath : workspacePath,
+    taskId: chatTaskId,
+    intl,
+    loadTaskPaths: view.kind === "chat" && view.sessionId !== null,
+  });
+
+  // 整理任务=按时间线：跨工作区拍平（排序方式随 sliders 菜单）
+  const timelineItems = useMemo(() => {
+    if (organizeMode !== "timeline") return null;
+    const items = workspaceTaskLists.groups.flatMap((group) =>
+      applyDerivedPersonaChatBadges(
+        group.items,
+        projectAgents.agentsByWorkspaceKey.get(group.workspacePath) ?? [],
+      ).map((task) => ({
+        task,
+        workspacePath: group.workspacePath,
+        workspaceLabel:
+          cardByWorkspaceKey.get(group.workspacePath)?.label ??
+          workspaceLabel(group.workspacePath),
+      })),
+    );
+    items.sort((a, b) =>
+      sortMode === "created"
+        ? b.task.createdAt - a.task.createdAt
+        : b.task.updatedAt - a.task.updatedAt,
+    );
+    return items;
+  }, [organizeMode, sortMode, workspaceTaskLists.groups, projectAgents.agentsByWorkspaceKey, cardByWorkspaceKey]);
 
   const openChat = useCallback(
     (target: { workspacePath: string; sessionId: string | null; title: string }) => {
@@ -248,9 +309,118 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     });
   }, []);
 
+  // 局域网 http 下 navigator.clipboard 不可用，剪贴板走 execCommand 兜底
+  const copyText = useCallback(async (value: string | null, label?: string) => {
+    if (!value) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
+      toast(label ?? intl.formatMessage({ id: "startup.global.copied" }));
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    }
+  }, [intl]);
+
+  // "…" 菜单动作（桌面 WorkspaceHeaderSections 同款服务链路；列表即时性靠轮询兜底）
+  const handleTogglePinTask = useCallback(() => {
+    if (view.kind !== "chat" || !view.sessionId) return;
+    void services.zcodeTaskService
+      .setTaskPinned({
+        taskId: view.sessionId,
+        workspacePath: view.workspacePath,
+        pinned: true,
+      })
+      .then(() => {
+        toast(intl.formatMessage({ id: "taskList.pinSucceed" }));
+      })
+      .catch((error) => {
+        toast(error instanceof Error ? error.message : String(error));
+      });
+  }, [view, services, intl]);
+
+  const handleStartRenameTask = useCallback(() => {
+    if (view.kind !== "chat") return;
+    setRenameDraft(view.title);
+    setRenameOpen(true);
+  }, [view]);
+
+  const handleRenameConfirm = useCallback(() => {
+    if (view.kind !== "chat" || !view.sessionId) return;
+    const normalizedTitle = restorePersonaTitlePrefix(view.title, renameDraft.trim());
+    void services.zcodeTaskService
+      .renameTask({
+        taskId: view.sessionId,
+        workspacePath: view.workspacePath,
+        title: normalizedTitle,
+      })
+      .then((renamedTask) => {
+        setView((previous) =>
+          previous.kind === "chat" ? { ...previous, title: renamedTask.title } : previous,
+        );
+        toast(intl.formatMessage({ id: "taskList.renameSucceed" }));
+      })
+      .catch((error) => {
+        toast(error instanceof Error ? error.message : String(error));
+      });
+    setRenameOpen(false);
+  }, [view, renameDraft, services, intl]);
+
+  const handleArchiveTask = useCallback(async () => {
+    if (view.kind !== "chat" || !view.sessionId) return;
+    const confirmed = await confirmDialog({
+      title: intl.formatMessage({ id: "confirmDialog.taskArchiveTitle" }),
+      description: intl.formatMessage(
+        { id: "confirmDialog.taskArchiveDescription" },
+        { taskTitle: view.title || intl.formatMessage({ id: "taskList.untitled" }) },
+      ),
+      confirmLabel: intl.formatMessage({ id: "taskList.archive" }),
+    });
+    if (!confirmed) return;
+    void services.zcodeTaskService
+      .archiveTask({ taskId: view.sessionId, workspacePath: view.workspacePath })
+      .then(() => {
+        toast(intl.formatMessage({ id: "taskList.archiveSucceed" }));
+        setViewerSource(null);
+        setView({ kind: "home" });
+        setReloadToken((token) => token + 1);
+      })
+      .catch((error) => {
+        toast(error instanceof Error ? error.message : String(error));
+      });
+  }, [view, services, intl, confirmDialog]);
+
+  const handleMarkTaskAsUnread = useCallback(() => {
+    if (view.kind !== "chat" || !view.sessionId) return;
+    void services.zcodeTaskService
+      .setTaskUnread({
+        taskId: view.sessionId,
+        workspacePath: view.workspacePath,
+        unread: true,
+      })
+      .then(() => {
+        toast(intl.formatMessage({ id: "taskList.unreadSucceed" }));
+        setView({ kind: "home" });
+        setReloadToken((token) => token + 1);
+      })
+      .catch((error) => {
+        toast(error instanceof Error ? error.message : String(error));
+      });
+  }, [view, services, intl]);
+
   if (view.kind === "chat") {
     return (
       <div className="relative flex h-full flex-col bg-background">
+        {/* 第一行：官方 chrome 行（返回 + 页面标题 + 任务菜单 + 界面风格） */}
         <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
           <button
             type="button"
@@ -261,12 +431,73 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
             className="flex items-center gap-0.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground active:bg-muted"
           >
             <ChevronLeft className="h-5 w-5" />
-            {intl.formatMessage({ id: "webRemoteControl.mobileShell.backHome" })}
+            {intl.formatMessage({ id: "webRemoteControl.mobileShell.chatTitle" })}
           </button>
-          <span className="min-w-0 flex-1 truncate text-center text-sm font-medium text-foreground">
-            {view.title || intl.formatMessage({ id: "webRemoteControl.mobileShell.chatTitle" })}
-          </span>
-          <span className="w-16 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1" />
+          {view.sessionId ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+                  aria-label={intl.formatMessage({ id: "common.more" })}
+                >
+                  <Ellipsis className="h-5 w-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <TaskActionMenuContent
+                  intl={intl}
+                  isPinned={false}
+                  fileManagerLabel={taskContext.fileManagerLabel}
+                  taskSessionFile={taskContext.taskSessionFile}
+                  activeSessionId={view.sessionId}
+                  taskNativeSessionLogFile={taskContext.taskNativeSessionLogFile}
+                  hideMobileUnsupportedActions
+                  Item={DropdownMenuItem}
+                  Separator={DropdownMenuSeparator}
+                  onTogglePinTask={handleTogglePinTask}
+                  onStartRenameTask={handleStartRenameTask}
+                  onArchiveTask={() => void handleArchiveTask()}
+                  onMarkTaskAsUnread={handleMarkTaskAsUnread}
+                  onOpenTaskPathInFileManager={() => {}}
+                  onCopyWorkspacePath={() => void copyText(view.workspacePath)}
+                  onCopyTaskPath={() =>
+                    void copyText(taskContext.taskSessionFile.path)
+                  }
+                  onCopyTaskLogPath={() =>
+                    void copyText(taskContext.taskNativeSessionLogFile.path)
+                  }
+                  onCopySessionId={() => void copyText(view.sessionId)}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+                aria-label={intl.formatMessage({ id: "settings.themeMode" })}
+              >
+                <Palette className="h-5 w-5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              {(
+                [
+                  ["system", "settings.themeMode.system"],
+                  ["zai-light", "settings.themeMode.light"],
+                  ["zai-dark", "settings.themeMode.dark"],
+                ] as const
+              ).map(([value, labelKey]) => (
+                <DropdownMenuItem key={value} onSelect={() => setTheme(value)}>
+                  {intl.formatMessage({ id: labelKey })}
+                  {theme === value ? <Check className="ml-auto h-4 w-4" /> : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </header>
         <div className="min-h-0 flex-1">
           <V4ChatPane
@@ -284,6 +515,17 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
             onOpenCodeViewer={(source) => setViewerSource(source)}
           />
         </div>
+        {/* 重命名任务弹窗（"…"菜单入口） */}
+        <TaskRenameDialog
+          open={renameOpen}
+          value={renameDraft}
+          inputRef={renameInputRef}
+          intl={intl}
+          onOpenChange={setRenameOpen}
+          onChange={setRenameDraft}
+          onCancel={() => setRenameOpen(false)}
+          onConfirm={handleRenameConfirm}
+        />
         {viewerSource ? (
           <>
             {/* 遮罩：点它关闭；会话保持挂载在后面（官方抽屉式右坞的移动形态） */}
@@ -398,6 +640,47 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {/* 官方 sliders 菜单：整理任务（按工作区/按时间线）+ 排序方式（创建/更新） */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+                aria-label={intl.formatMessage({
+                  id: "webRemoteControl.mobileHome.organize",
+                })}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>
+                {intl.formatMessage({ id: "webRemoteControl.mobileHome.organize" })}
+              </DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setOrganizeMode("workspace")}>
+                <Folder className="h-4 w-4" />
+                {intl.formatMessage({ id: "webRemoteControl.mobileHome.organizeByWorkspace" })}
+                {organizeMode === "workspace" ? <Check className="ml-auto h-4 w-4" /> : null}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setOrganizeMode("timeline")}>
+                <Clock className="h-4 w-4" />
+                {intl.formatMessage({ id: "webRemoteControl.mobileHome.organizeByTimeline" })}
+                {organizeMode === "timeline" ? <Check className="ml-auto h-4 w-4" /> : null}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>
+                {intl.formatMessage({ id: "webRemoteControl.mobileHome.sortBy" })}
+              </DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setSortMode("created")}>
+                {intl.formatMessage({ id: "webRemoteControl.mobileHome.sortByCreated" })}
+                {sortMode === "created" ? <Check className="ml-auto h-4 w-4" /> : null}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setSortMode("updated")}>
+                {intl.formatMessage({ id: "webRemoteControl.mobileHome.sortByUpdated" })}
+                {sortMode === "updated" ? <Check className="ml-auto h-4 w-4" /> : null}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             type="button"
             onClick={toggleAllCards}
@@ -443,6 +726,69 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
               <div key={index} className="h-20 animate-pulse rounded-xl bg-muted" />
             ))}
           </div>
+        ) : organizeMode === "timeline" && timelineItems ? (
+          /* 整理任务=按时间线：跨工作区拍平的扁平任务列表 */
+          <ul className="space-y-1 px-2 pt-1">
+            {timelineItems.map(({ task, workspacePath: taskWorkspacePath, workspaceLabel: itemWorkspaceLabel }) => {
+              const badge = getPersonaChatBadge(task);
+              const title = badge
+                ? stripPersonaTitlePrefix(task.title, badge.name)
+                : task.title;
+              return (
+                <li key={`${taskWorkspacePath}:${task.taskId}`}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openChat({
+                        workspacePath: taskWorkspacePath,
+                        sessionId: task.taskId,
+                        title: task.title,
+                      })
+                    }
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left active:bg-muted"
+                  >
+                    <span
+                      className={cn(
+                        "h-2 w-2 shrink-0 rounded-full",
+                        task.status
+                          ? (TASK_STATUS_DOT_CLASS[task.status] ?? "bg-muted-foreground/40")
+                          : "bg-muted-foreground/40",
+                      )}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 truncate text-sm text-foreground">
+                          {title || intl.formatMessage({ id: "taskList.untitled" })}
+                        </span>
+                        {badge ? (
+                          <span
+                            className={cn(
+                              "flex shrink-0 items-center gap-1 rounded-[4px] px-1 leading-none",
+                              SUBAGENT_COLOR_CLASS[
+                                badge.color ?? resolveSubagentColorFromName(badge.name)
+                              ],
+                            )}
+                          >
+                            <Bot className="size-3 shrink-0" />
+                            <span className="min-w-0 truncate text-[10px]">{badge.name}</span>
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        {itemWorkspaceLabel} ·{" "}
+                        {intl.formatMessage(
+                          { id: "webRemoteControl.mobileHome.updatedAt" },
+                          { time: formatRelativeTime(task.updatedAt, Date.now()) },
+                        )}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         ) : (
           <div className="space-y-2">
             {cards.map((card) => {
