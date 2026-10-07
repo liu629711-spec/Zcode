@@ -40,14 +40,20 @@ test("校验：focus-border 槽位不存在——机制级禁彩焦", () => {
   });
   assert.equal(result.ok, false);
   if (result.ok) return;
-  assert.ok(result.errors.some((e) => e.includes("focusBorder")));
+  assert.ok(
+    result.errors.some(
+      (e) => e.key === "unknownSlot" && e.params?.key === "focusBorder",
+    ),
+  );
 });
 
 test("校验：formatVersion 不匹配直接拒收（不同版本字段语义不可信）", () => {
   const bad = validateSkin({ ...baseSkin, formatVersion: 2, id: "!!!" });
   assert.equal(bad.ok, false);
   if (bad.ok) return;
-  assert.deepEqual(bad.errors, ["formatVersion 必须是 1（收到：2）"]);
+  assert.deepEqual(bad.errors, [
+    { key: "badFormatVersion", params: { expected: 1, received: "2" } },
+  ]);
 });
 
 test("校验：坏色值/越界数值/坏 id 逐条报错", () => {
@@ -59,9 +65,9 @@ test("校验：坏色值/越界数值/坏 id 逐条报错", () => {
   });
   assert.equal(bad.ok, false);
   if (bad.ok) return;
-  assert.ok(bad.errors.some((e) => e.includes("id")));
-  assert.ok(bad.errors.some((e) => e.includes("light.brand")));
-  assert.ok(bad.errors.some((e) => e.includes("imageDataUrl")));
+  assert.ok(bad.errors.some((e) => e.key === "badId"));
+  assert.ok(bad.errors.some((e) => e.key === "badColor" && e.params?.key === "brand"));
+  assert.ok(bad.errors.some((e) => e.key === "wallpaperImageSource"));
 });
 
 test("校验：壁纸数值越界逐项报错（图源合法时，数值从左到右报首个错）", () => {
@@ -70,17 +76,26 @@ test("校验：壁纸数值越界逐项报错（图源合法时，数值从左�
     ...baseSkin,
     wallpaper: { kind: "image", imageDataUrl: image, opacity: 0, blurPx: 0, dim: 0 },
   });
-  assert.ok(!opacityOnly.ok && opacityOnly.errors.some((e) => e.includes("wallpaper.opacity")));
+  assert.ok(
+    !opacityOnly.ok &&
+      opacityOnly.errors.some((e) => e.key === "outOfRange" && e.params?.label === "wallpaper.opacity"),
+  );
   const blurOnly = validateSkin({
     ...baseSkin,
     wallpaper: { kind: "image", imageDataUrl: image, opacity: 1, blurPx: 99, dim: 0 },
   });
-  assert.ok(!blurOnly.ok && blurOnly.errors.some((e) => e.includes("wallpaper.blurPx")));
+  assert.ok(
+    !blurOnly.ok &&
+      blurOnly.errors.some((e) => e.key === "outOfRange" && e.params?.label === "wallpaper.blurPx"),
+  );
   const dimOnly = validateSkin({
     ...baseSkin,
     wallpaper: { kind: "image", imageDataUrl: image, opacity: 1, blurPx: 0, dim: 2 },
   });
-  assert.ok(!dimOnly.ok && dimOnly.errors.some((e) => e.includes("wallpaper.dim")));
+  assert.ok(
+    !dimOnly.ok &&
+      dimOnly.errors.some((e) => e.key === "outOfRange" && e.params?.label === "wallpaper.dim"),
+  );
 });
 
 test("校验：渐变串加固——分号/url(/括号失衡拒绝，嵌套函数合法放行", () => {
@@ -144,4 +159,45 @@ test("序列化往返：serialize 后回读一致", () => {
   if (parsed.ok) {
     assert.deepEqual(parsed.skin, skin);
   }
+});
+
+// ============================================================
+// 视频壁纸（2026-10-07 补第 2 期欠账）：schema 只收 IndexedDB 素材引用。
+// ============================================================
+
+test("视频壁纸：合法素材引用通过并保留失焦暂停开关", () => {
+  const result = validateSkin({
+    ...baseSkin,
+    wallpaper: {
+      kind: "video",
+      videoAssetId: "vid-abc123",
+      opacity: 1,
+      blurPx: 0,
+      dim: 0.25,
+      pauseWhenUnfocused: false,
+    },
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.skin.wallpaper?.kind, "video");
+  assert.equal(result.skin.wallpaper?.videoAssetId, "vid-abc123");
+  assert.equal(result.skin.wallpaper?.pauseWhenUnfocused, false);
+});
+
+test("视频壁纸：缺席引用/畸形引用（路径、空白、超长串）全拒；暂停开关非布尔也拒", () => {
+  const bad = (wallpaper: Record<string, unknown>) =>
+    validateSkin({ ...baseSkin, wallpaper: { opacity: 1, blurPx: 0, dim: 0, ...wallpaper } });
+  assert.equal(bad({ kind: "video" }).ok, false, "缺席引用要拒");
+  assert.equal(
+    bad({ kind: "video", videoAssetId: "C:\videos\loop.mp4" }).ok,
+    false,
+    "本地路径不再合法（改走素材引用）",
+  );
+  assert.equal(bad({ kind: "video", videoAssetId: "   " }).ok, false);
+  assert.equal(bad({ kind: "video", videoAssetId: "x".repeat(80) }).ok, false);
+  assert.equal(
+    bad({ kind: "video", videoAssetId: "vid-abc123", pauseWhenUnfocused: "yes" }).ok,
+    false,
+    "暂停开关不是布尔要拒",
+  );
 });

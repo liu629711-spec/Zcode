@@ -30,9 +30,21 @@ export type SkinTokenSlot = (typeof SKIN_TOKEN_SLOTS)[number];
 export type SkinTokenOverrides = Partial<Record<SkinTokenSlot, string>>;
 
 export interface SkinWallpaper {
-  kind: "image" | "gradient";
+  /**
+   * image = 静态图/动图（GIF/WebP 走 <img> 原生循环）；video = 视频（静音循环 +
+   * 失焦暂停）；gradient = CSS 渐变。视频壁纸原方案排第 2 期
+   * （docs/ZCode-主题壁纸系统-调研与方案.md），2026-10-07 补上。
+   */
+  kind: "image" | "gradient" | "video";
   /** 仅 kind=image：data:image/* 或 http(s) URL，内嵌素材上限见 MAX_SKIN_IMAGE_CHARS */
   imageDataUrl?: string;
+  /**
+   * 仅 kind=video：视频本体存在 IndexedDB（皮肤包只记引用，见 skinVideoAssets.ts），
+   * 本字段是那个引用的 id。不落 data URL/本地绝对路径的原因：视频动辄几十 MB，
+   * localStorage 放不下；本地路径则绑死机器且受媒体授权时效限制。引用查不到
+   * （清过浏览器数据/换机器）→ 壁纸层静默回退无壁纸，皮肤其余部分照常。
+   */
+  videoAssetId?: string;
   /** 仅 kind=gradient：CSS 渐变函数字符串 */
   gradient?: string;
   /** 壁纸层自身不透明度 */
@@ -41,6 +53,11 @@ export interface SkinWallpaper {
   blurPx: number;
   /** 暗化遮罩强度（压暗壁纸保证前景可读） */
   dim: number;
+  /**
+   * 仅 kind=video：失焦自动暂停（原方案抄 dsh-wallpaper 的性能坑清单）。
+   * 缺席 = true（视频壁纸默认失焦暂停）。
+   */
+  pauseWhenUnfocused?: boolean;
 }
 
 export interface SkinGlass {
@@ -176,7 +193,7 @@ function validateWallpaper(
     return undefined;
   }
   const kind = value.kind;
-  if (kind !== "image" && kind !== "gradient") {
+  if (kind !== "image" && kind !== "gradient" && kind !== "video") {
     errors.push({ key: "wallpaperKind" });
     return undefined;
   }
@@ -186,7 +203,26 @@ function validateWallpaper(
     blurPx: 0,
     dim: 0,
   };
-  if (kind === "image") {
+  if (kind === "video") {
+    // 视频壁纸（2026-10-07 补第 2 期欠账）：只收 IndexedDB 资产引用，绝不落
+    // data URL/本地路径（理由见 SkinWallpaper.videoAssetId 注释）。
+    const videoAssetId = value.videoAssetId;
+    if (
+      typeof videoAssetId !== "string" ||
+      !/^[a-z0-9][a-z0-9-]{0,63}$/i.test(videoAssetId.trim())
+    ) {
+      errors.push({ key: "wallpaperVideoAsset" });
+      return undefined;
+    }
+    wallpaper.videoAssetId = videoAssetId.trim();
+    if (value.pauseWhenUnfocused !== undefined) {
+      if (typeof value.pauseWhenUnfocused !== "boolean") {
+        errors.push({ key: "wallpaperVideoPauseFlag" });
+        return undefined;
+      }
+      wallpaper.pauseWhenUnfocused = value.pauseWhenUnfocused;
+    }
+  } else if (kind === "image") {
     const source = value.imageDataUrl;
     if (typeof source !== "string" || !IMAGE_SOURCE_RE.test(source.trim())) {
       errors.push({ key: "wallpaperImageSource" });

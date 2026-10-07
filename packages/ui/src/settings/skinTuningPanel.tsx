@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ImagePlusIcon } from "lucide-react";
+import { ClapperboardIcon, ImagePlusIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.js";
 import { Button } from "@/components/ui/button.js";
 import { Switch } from "@/components/ui/switch.js";
@@ -17,6 +17,12 @@ import {
   type SkinPack,
   type SkinWallpaper,
 } from "@/skin-engine/skinSchema.js";
+import {
+  createSkinVideoAssetId,
+  deleteSkinVideoAsset,
+  MAX_SKIN_VIDEO_BYTES,
+  putSkinVideoAsset,
+} from "@/skin-engine/skinVideoAssets.js";
 
 /** 激活皮肤的实时调参面板：玻璃材质（融入度+三区域倍率）与壁纸（不透明度/模糊/暗化）。 */
 
@@ -68,6 +74,7 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
   const { intl } = useZCodeIntl();
   const upsertSkin = useZCodeStore((state) => state.upsertSkin);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
   const glass = skin.glass;
   const wallpaper = skin.wallpaper;
   // 显示态跟着引擎的"生效态"走：有壁纸未写 glass 时引擎按默认融入度生效，
@@ -165,6 +172,41 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
     });
   };
 
+  // 视频壁纸（2026-10-07 补第 2 期欠账）：本体进 IndexedDB，皮肤包只记引用。换过
+  // 壁纸时回收上一条素材（不清的话每换一次都留一份几十 MB 的孤儿）。
+  const importWallpaperVideo = async (file: File) => {
+    if (file.size > MAX_SKIN_VIDEO_BYTES) {
+      toast(intl.formatMessage({ id: "skin.videoWallpaperTooLarge" }));
+      return;
+    }
+    const assetId = createSkinVideoAssetId();
+    const stored = await putSkinVideoAsset(assetId, file);
+    if (!stored) {
+      toast(intl.formatMessage({ id: "skin.videoWallpaperStoreFailed" }));
+      return;
+    }
+    const previousAssetId = wallpaper?.kind === "video" ? wallpaper.videoAssetId : undefined;
+    patch({
+      wallpaper: {
+        kind: "video",
+        videoAssetId: assetId,
+        opacity: 1,
+        blurPx: 0,
+        dim: 0.25,
+      },
+    });
+    if (previousAssetId && previousAssetId !== assetId) {
+      void deleteSkinVideoAsset(previousAssetId);
+    }
+  };
+
+  // 移除壁纸时顺带回收视频素材（删除按钮走这个而不是裸 patch，避免留孤儿）。
+  const removeWallpaper = () => {
+    const previousAssetId = wallpaper?.kind === "video" ? wallpaper.videoAssetId : undefined;
+    patch({ wallpaper: undefined });
+    if (previousAssetId) void deleteSkinVideoAsset(previousAssetId);
+  };
+
   return (
     <Card className="border border-border bg-card py-0 shadow-none">
       <CardContent className="space-y-3 px-0 py-1">
@@ -207,10 +249,15 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
               <span className="text-ui-sm font-medium text-foreground">
                 {intl.formatMessage({ id: "skin.wallpaperTitle" })}
               </span>
-              <Button type="button" variant="ghost" size="sm" onClick={() => patch({ wallpaper: undefined })}>
+              <Button type="button" variant="ghost" size="sm" onClick={removeWallpaper}>
                 {intl.formatMessage({ id: "skin.removeWallpaper" })}
               </Button>
             </div>
+            {wallpaper?.kind === "video" ? (
+              <p className="text-ui-xs leading-4 text-foreground-subtle">
+                {intl.formatMessage({ id: "skin.videoWallpaperHint" })}
+              </p>
+            ) : null}
             <TuningSlider
               label={intl.formatMessage({ id: "skin.opacity" })}
               min={0.15}
@@ -249,6 +296,15 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
                 <ImagePlusIcon className="size-3.5" aria-hidden />
                 {intl.formatMessage({ id: "skin.addWallpaperImage" })}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => videoInputRef.current?.click()}
+              >
+                <ClapperboardIcon className="size-3.5" aria-hidden />
+                {intl.formatMessage({ id: "skin.addWallpaperVideo" })}
+              </Button>
               {GRADIENT_PRESETS.map((preset) => (
                 <Button
                   key={preset.value}
@@ -277,6 +333,17 @@ export function ActiveSkinTuning({ skin }: { skin: SkinPack }) {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = "";
                   if (file) void importWallpaperImage(file);
+                }}
+              />
+              <input
+                ref={videoInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,video/x-m4v"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) void importWallpaperVideo(file);
                 }}
               />
             </div>
