@@ -195,6 +195,14 @@ function QrConnectSection({ workspacePath }: { workspacePath?: string }): ReactN
               <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-brand/10 px-2 text-ui-xs font-medium text-foreground">
                 {intl.formatMessage({ id: "webRemoteControl.qr.readyBadge" })}
               </span>
+              {(session?.connections ?? 0) > 0 ? (
+                <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-brand/40 px-2 text-ui-xs font-medium text-foreground">
+                  {intl.formatMessage(
+                    { id: "webRemoteControl.qr.connectionsBadge" },
+                    { count: session?.connections ?? 0 },
+                  )}
+                </span>
+              ) : null}
             </div>
             <Button
               type="button"

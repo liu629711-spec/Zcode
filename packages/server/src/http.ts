@@ -142,6 +142,8 @@ interface HttpServerOptions {
   spaFallback?: boolean;
   staticRoot?: string;
   workspaces?: ServerRemoteWorkspaceInfo[];
+  /** /ws（web-remote-replayable）通道连接数变化回调（批 3 多设备角标）；只数手机通道，不含 /ws/host */
+  onWebRemoteConnectionsChange?: (connections: number) => void;
 }
 
 function readTrimmedEnv(name: string): string | undefined {
@@ -305,6 +307,10 @@ export function createHttpServer(
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
   const hostCapabilities = createHostCapabilityStore();
+  // /ws（web-remote-replayable）通道在线计数：手机连上/断开都回报（批 3 多设备角标）。
+  let webRemoteConnections = 0;
+  const notifyWebRemoteConnections = () =>
+    options.onWebRemoteConnectionsChange?.(webRemoteConnections);
 
   const authToken = options.authToken?.trim();
   if (authToken) {
@@ -328,7 +334,14 @@ export function createHttpServer(
     "/ws",
     upgradeWebSocket(() => ({
       onOpen(_event, ws) {
-        setupChannelServer(ws.raw as WebSocket, services, "web-remote-replayable");
+        const raw = ws.raw as WebSocket;
+        webRemoteConnections += 1;
+        notifyWebRemoteConnections();
+        raw.on("close", () => {
+          webRemoteConnections = Math.max(0, webRemoteConnections - 1);
+          notifyWebRemoteConnections();
+        });
+        setupChannelServer(raw, services, "web-remote-replayable");
       },
     })),
   );

@@ -22,13 +22,19 @@ function renderBoot(text: string): void {
 }
 
 async function boot(): Promise<void> {
-  // 工作区路径由 Host 的 /api/server-info 透出（main 开服务时从弹窗 prop 透传）
-  const info = (await fetch("/api/server-info").then((response) =>
+  // 工作区路径由 Host 的 /api/server-info 透出（main 开服务时从弹窗 prop 透传）。
+  // query token 一并带上：即使 cookie 被浏览器清了也能当场重新种上。
+  const info = (await fetch(`/api/server-info${location.search}`).then((response) =>
     response.json(),
   )) as { workspaces?: Array<{ path?: string }> };
   const workspacePath = info.workspaces?.[0]?.path;
   if (!workspacePath) {
     throw new Error("server-info 缺少 workspaces（服务开太久或 Host 未就绪，重启服务再试）");
+  }
+  // token 用完即从地址栏抹掉（cookie 已接管鉴权，历史记录里的本条入口一并替换）：
+  // 防截图/转发链接泄露；浏览器关掉 cookie 失效后回桌面重新扫码即可。
+  if (location.search) {
+    history.replaceState(null, "", location.pathname);
   }
 
   // ?token= 跟在页面 URL 上：静态页本身不拦，/ws 升级时中间件凭它种会话 cookie

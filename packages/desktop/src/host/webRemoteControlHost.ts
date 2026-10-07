@@ -61,6 +61,14 @@ export function startWebRemoteControlHost(
       host: "0.0.0.0",
       staticRoot: message.staticRoot,
       spaFallback: true,
+      // 在线手机连接数变化上报 main（批 3 多设备角标）：只带计数不带身份，
+      // main 再透传给弹窗渲染层。
+      onWebRemoteConnectionsChange: (connections) => {
+        parentPort?.postMessage({
+          type: HostResponseTypes.WebRemoteControlConnections,
+          connections,
+        });
+      },
       ...(message.workspaces ? { workspaces: message.workspaces } : {}),
     });
     reply(message.requestId, true, undefined, logger);

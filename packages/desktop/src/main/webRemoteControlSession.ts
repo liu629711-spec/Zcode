@@ -13,10 +13,12 @@ type ElectronUtilityProcess = UtilityProcess;
 /**
  * Web 远程控制会话（main 侧编排）：弹窗点"开始"→ 这里挑空闲端口、探局域网 IPv4、
  * 生成配对 token → 转告窗口 Host 挂 createHttpServer（手机连到的就是同一个工作区
- * 引擎）。停止 = Host 关监听 + 会话作废。renderer 按 webContentsId 轮询会话状态。
+ * 引擎）。停止 = Host 关监听 + 会话作废。renderer 按 webContentsId 轮询会话状态；
+ * Host 活跃手机连接数随消息上报，随状态带给弹窗画角标（批 3）。
  *
- * ponytail: 不维护手机连接计数（"已就绪"本就是服务就绪态，批 3 再补）；Host 绑定
- * 失败经 requestId 一次性回执兜底；跨网隧道 v1 不做，文档引导 cloudflared/Tailscale。
+ * ponytail: 只带连接计数不带设备身份（手机端没有身份协议，要列表先要配对握手）；
+ * Host 绑定失败经 requestId 一次性回执兜底；跨网隧道 v1 不做，文档引导
+ * cloudflared/Tailscale。
  */
 
 interface WebRemoteControlLogger {
@@ -39,6 +41,27 @@ const sessionsByWebContentsId = new Map<
 
 /** 虚拟网卡名黑名单：探局域网 IP 时跳过，避免二维码给出连不上的地址 */
 const VIRTUAL_ADAPTER_PATTERN = /virtual|vmware|vbox|hyper-v|wsl|loopback|tap|tun|vethernet|bluetooth/i;
+
+/** 已接好连接数上报监听的 Host（一个 Host 可能先后服务多个会话，监听只挂一次） */
+const connectionListenersWired = new WeakSet<ElectronUtilityProcess>();
+
+/** Host 的在线手机连接数消息 → 更新该 Host 名下活跃会话的 connections（弹窗轮询可见） */
+function wireConnectionListener(hostChild: ElectronUtilityProcess): void {
+  if (connectionListenersWired.has(hostChild)) return;
+  connectionListenersWired.add(hostChild);
+  hostChild.on("message", (payload: unknown) => {
+    const message = payload as { type?: string; connections?: unknown };
+    if (message?.type !== HostResponseTypes.WebRemoteControlConnections) return;
+    const connections =
+      typeof message.connections === "number" && Number.isFinite(message.connections)
+        ? Math.max(0, Math.floor(message.connections))
+        : undefined;
+    for (const session of sessionsByWebContentsId.values()) {
+      if (session.hostChild !== hostChild || !session.state.active) continue;
+      session.state = { ...session.state, connections };
+    }
+  });
+}
 
 function pickLanIpv4(): string | undefined {
   const candidates: string[] = [];
@@ -272,6 +295,8 @@ function renderFallbackHtml(): string {
       const info = await jfetch("/api/server-info");
       workspacePath = info.workspaces && info.workspaces[0] && info.workspaces[0].path;
       if (!workspacePath) throw new Error("server-info 缺少 workspaces");
+      // token 用完即从地址栏抹掉（cookie 已接管鉴权）：防截图/转发链接泄露。
+      if (location.search) history.replaceState(null, "", location.pathname);
       await loadSessions();
       window.setInterval(() => { void loadMessages(); }, 2000);
       window.setInterval(() => { void loadSessions().catch(() => undefined); }, 8000);
@@ -350,6 +375,8 @@ async function startSession(
   if (!hostChild || hostChild.pid == null) {
     return { active: false, error: "未找到当前窗口的 Host 进程" };
   }
+  // 连接数上报监听先于启动消息挂好，避免服务起来到监听就位之间丢第一条消息
+  wireConnectionListener(hostChild);
 
   try {
     const port = await pickFreePort();

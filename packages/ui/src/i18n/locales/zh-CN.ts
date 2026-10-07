@@ -1721,6 +1721,7 @@ const zhCN: Record<string, string> = {
   "webRemoteControl.qr.copyFailed": "复制失败，请手动选择链接复制。",
   "webRemoteControl.qr.waiting": "等待手机连接",
   "webRemoteControl.qr.readyBadge": "已就绪",
+  "webRemoteControl.qr.connectionsBadge": "已连接 {count} 台设备",
   "webRemoteControl.qr.waitingHint": "用手机扫码，或在手机上打开链接。",
   "webRemoteControl.qr.openLinkHint": "无法扫码？可以在手机上打开链接。",
   "webRemoteControl.qr.sameWifiHint": "手机和这台电脑需连同一个网络（电脑网线、手机 Wi-Fi 也行，路由器不能开设备隔离）。",

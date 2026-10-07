@@ -1841,6 +1841,7 @@ const enUS: Record<string, string> = {
   "webRemoteControl.qr.copyFailed": "Copy failed — select and copy the link manually.",
   "webRemoteControl.qr.waiting": "Waiting for phone",
   "webRemoteControl.qr.readyBadge": "Ready",
+  "webRemoteControl.qr.connectionsBadge": "{count} device(s) connected",
   "webRemoteControl.qr.waitingHint": "Scan the code, or open the link on your phone.",
   "webRemoteControl.qr.openLinkHint": "Can't scan? Open the link on your phone.",
   "webRemoteControl.qr.sameWifiHint": "Phone and computer must share a network (wired PC + phone on Wi-Fi is fine; no AP isolation on the router).",

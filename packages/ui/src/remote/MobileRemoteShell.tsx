@@ -212,9 +212,24 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     };
   }, [loadCards, reloadToken]);
 
-  // 官方 mobileHome 的"整理任务/排序方式"（sliders 菜单）——先于任务投影声明
-  const [organizeMode, setOrganizeMode] = useState<"workspace" | "timeline">("workspace");
-  const [sortMode, setSortMode] = useState<"created" | "updated">("updated");
+  // 官方 mobileHome 的"整理任务/排序方式"（sliders 菜单）——先于任务投影声明。
+  // 选择存 localStorage（手机页无 per-workspace 设置面），刷新/重开不再打回默认。
+  const [organizeMode, setOrganizeMode] = useState<"workspace" | "timeline">(() =>
+    localStorage.getItem("zcode-mobile-remote-organize") === "timeline" ? "timeline" : "workspace",
+  );
+  const [sortMode, setSortMode] = useState<"created" | "updated">(() =>
+    localStorage.getItem("zcode-mobile-remote-sort") === "created" ? "created" : "updated",
+  );
+  useEffect(() => {
+    try {
+      localStorage.setItem("zcode-mobile-remote-organize", organizeMode);
+    } catch {}
+  }, [organizeMode]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("zcode-mobile-remote-sort", sortMode);
+    } catch {}
+  }, [sortMode]);
 
   // 桌面侧栏同款任务投影：同一钩子、同一分页、同一排序——任务数与桌面侧栏一致
   //（合议轮/评审轮/工单子会话/归档的进出全部由投影决定，不在此处再筛）。

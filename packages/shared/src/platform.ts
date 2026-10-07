@@ -313,6 +313,8 @@ export interface WebRemoteControlSessionState {
   link?: string;
   /** 出错原因（启动失败等） */
   error?: string;
+  /** 当前在线手机连接数（批 3：Host 活跃 WS 通道计数；缺席=旧 Host 未上报） */
+  connections?: number;
 }
 
 

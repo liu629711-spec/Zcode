@@ -594,6 +594,8 @@ export const HostMessageTypes = {
 export const HostResponseTypes = {
   /** host → main：Web 远程控制服务的启动回执/失败原因（requestId 与启动请求关联） */
   WebRemoteControlState: "web-remote-control-state",
+  /** host → main：Web 远程控制在线手机连接数变化（批 3 多设备角标） */
+  WebRemoteControlConnections: "web-remote-control-connections",
   DatabaseStartupState: "database-startup-state",
   /** window Host → main：按 requestId 上报远程连接过程日志 */
   RemoteWorkspaceConnectionLog: "remote-workspace-connection-log",
