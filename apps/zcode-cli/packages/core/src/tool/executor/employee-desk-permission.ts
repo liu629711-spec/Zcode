@@ -1,6 +1,7 @@
 import type { PermissionDecisionResult } from "../../permission/service.js";
 import {
   findEmployeeDeskBashEscapes,
+  isForeignMemoryCabinetRead,
   isOutsideEmployeeDesksWrite,
 } from "../../permission/employee-desk.js";
 
@@ -15,7 +16,7 @@ interface EmployeeDeskPermissionInput {
    * 非驻场会话（老板），闸整体不生效**——判空信号与判定参数同源，避免"没带参数"
    * 被误读成"没带本子"。
    */
-  desk?: { personalNotebookRoot: string };
+  desk?: { personalNotebookRoot: string; memoryCabinetRoot?: string };
 }
 
 /**
@@ -38,6 +39,29 @@ export function applyEmployeeDeskPermission(
   if (!input.desk) return decision;
   if (decision.decision !== "allow") return decision;
   if (decision.ruleId === "mode.plan.nonReadOnly") return decision;
+
+  // 读闸（拍板 2026-10-07）：员工读**别人**的本子（共享柜内、自己本子外）把放行
+  // 改判 ask——串门看别人的复盘/教训要老板点头；读自己的本子、工作区、柜外一律照旧。
+  if (
+    isForeignMemoryCabinetRead({
+      toolName: input.toolName,
+      input: input.executionInput,
+      personalNotebookRoot: input.desk.personalNotebookRoot,
+      ...(input.desk.memoryCabinetRoot
+        ? { memoryCabinetRoot: input.desk.memoryCabinetRoot }
+        : {}),
+    })
+  ) {
+    return {
+      ...decision,
+      allowed: false,
+      decision: "ask",
+      escalated: true,
+      reason:
+        "Employee tried to read a teammate's memory book - the boss must approve",
+      ruleId: "guard.employeeDesk",
+    };
+  }
 
   const bashEscapes =
     input.toolName === "Bash"

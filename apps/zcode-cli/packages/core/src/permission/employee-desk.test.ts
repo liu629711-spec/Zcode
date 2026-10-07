@@ -9,7 +9,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { win32 } from "node:path";
 
-import { isOutsideEmployeeDesksWrite } from "./employee-desk.js";
+import {
+  isForeignMemoryCabinetRead,
+  isOutsideEmployeeDesksWrite,
+} from "./employee-desk.js";
 import { applyEmployeeDeskPermission } from "../tool/executor/employee-desk-permission.js";
 import type { PermissionDecisionResult } from "./service.js";
 
@@ -243,4 +246,80 @@ test("调整器：Bash 桌外重定向把 yolo 放行改判 ask（与 Write/Edit
     adjustBash("echo x > C:/Users/22830/PRD/x.md", asked, PERSONAL).ruleId,
     "rule.project.ask",
   );
+});
+
+// ============================================================
+// 记忆柜读闸（拍板 2026-10-07）：读别人的本子改判 ask；自己的本子/工作区/柜外照旧。
+// ============================================================
+
+const CABINET = "C:\\Users\\22830\\.zcode\\agent-memory";
+
+function foreignRead(
+  toolName: string,
+  rawPath: string,
+  overrides?: { memoryCabinetRoot?: string },
+): boolean {
+  return isForeignMemoryCabinetRead({
+    toolName,
+    input: toolName === "Read" ? { file_path: rawPath } : { path: rawPath },
+    personalNotebookRoot: PERSONAL,
+    ...(overrides?.memoryCabinetRoot === undefined
+      ? { memoryCabinetRoot: CABINET }
+      : { memoryCabinetRoot: overrides.memoryCabinetRoot }),
+    pathModule: WIN,
+  });
+}
+
+test("读闸纯判定：别人的本子算串门，自己的本子/工作区/柜外/相对路径都不拦", () => {
+  // 别人的本子（柜内、自己本子外）
+  assert.equal(foreignRead("Read", "C:\\Users\\22830\\.zcode\\agent-memory\\a-uuid-2\\MEMORY.md"), true);
+  assert.equal(foreignRead("Glob", "C:\\Users\\22830\\.zcode\\agent-memory\\a-uuid-2\\skills"), true);
+  assert.equal(foreignRead("Grep", "C:\\Users\\22830\\.zcode\\agent-memory"), true);
+  // 自己的本子
+  assert.equal(foreignRead("Read", PERSONAL + "\\MEMORY.md"), false);
+  // 工作区与柜外
+  assert.equal(foreignRead("Read", WORKSPACE + "\\src\\a.ts"), false);
+  assert.equal(foreignRead("Read", "C:\\Users\\22830\\PRD\\x.md"), false);
+  // 相对路径不判（cwd=工作区语义，到不了另一盘符下的柜）
+  assert.equal(foreignRead("Read", "..\\other\\MEMORY.md"), false);
+  // 柜根缺席不拦（宁缺毋滥）
+  assert.equal(
+    foreignRead("Read", "C:\\Users\\22830\\.zcode\\agent-memory\\a-uuid-2\\MEMORY.md", {
+      memoryCabinetRoot: "",
+    }),
+    false,
+  );
+  // Write 不归读闸管（写闸另有判定）
+  assert.equal(
+    isForeignMemoryCabinetRead({
+      toolName: "Write",
+      input: { file_path: "C:\\Users\\22830\\.zcode\\agent-memory\\a-uuid-2\\x.md" },
+      personalNotebookRoot: PERSONAL,
+      memoryCabinetRoot: CABINET,
+      pathModule: WIN,
+    }),
+    false,
+  );
+});
+
+test("读闸调整器：yolo 放行的串门读被改判 ask；自己的本子放行原样", () => {
+  const adjustRead = (filePath: string, deskMemoryCabinetRoot?: string) =>
+    applyEmployeeDeskPermission({
+      decision: allowDecision(),
+      executionInput: { file_path: filePath },
+      toolName: "Read",
+      workingDirectory: WORKSPACE,
+      workspaceRoot: WORKSPACE,
+      desk: {
+        personalNotebookRoot: PERSONAL,
+        ...(deskMemoryCabinetRoot ? { memoryCabinetRoot: deskMemoryCabinetRoot } : {}),
+      },
+    });
+
+  const foreign = adjustRead("C:\\Users\\22830\\.zcode\\agent-memory\\a-uuid-2\\MEMORY.md", CABINET);
+  assert.equal(foreign.decision, "ask");
+  assert.equal(foreign.ruleId, "guard.employeeDesk");
+
+  const own = adjustRead(PERSONAL + "\\skills\\a.md", CABINET);
+  assert.equal(own.decision, "allow");
 });

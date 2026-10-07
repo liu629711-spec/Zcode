@@ -73,6 +73,49 @@ function isOutsideDesks(input: EmployeeDeskInput): boolean {
   return true;
 }
 
+// ============================================================
+// 记忆柜读闸（拍板 2026-10-07）：员工读**别人**的本子改判 ask。本子里的复盘/
+// 教训是员工间的私密账——看别人的要老板点头；自己的本子、工作区、柜外路径照旧
+// 放行。与写闸同一纪律：纯函数、不碰文件系统、逐例可测。
+// ============================================================
+
+/** 读闸拦的读工具：单一 file_path（Read）/ path（Glob/Grep）参数可判。 */
+const EMPLOYEE_CABINET_READ_GATED_TOOL_NAMES = new Set(["Read", "Glob", "Grep"]);
+
+export interface EmployeeCabinetReadInput {
+  toolName: string;
+  /** 工具输入（尚未按具体工具 schema 解析）：Read 取 `file_path`，Glob/Grep 取 `path`。 */
+  input: unknown;
+  /** 员工自己的随身本子根（读自己的不拦）。 */
+  personalNotebookRoot: string;
+  /** 共享记忆柜根（所有员工本子的父目录）；缺席 = 无柜不拦（宁缺毋滥）。 */
+  memoryCabinetRoot?: string;
+  pathModule?: EmployeeDeskPathModule;
+}
+
+/**
+ * 这次读取是否落在**别人的本子**里。相对路径一律不拦：本子根与柜根都是绝对路径
+ * 注入，员工会话 cwd=工作区，相对路径到不了另一盘符下的柜（同盘下柜在用户主目录，
+ * 工作区通常在项目目录——`..` 链能否穿越不赌，解析交给绝对路径判定）。
+ */
+export function isForeignMemoryCabinetRead(input: EmployeeCabinetReadInput): boolean {
+  if (!EMPLOYEE_CABINET_READ_GATED_TOOL_NAMES.has(input.toolName)) return false;
+  if (!input.memoryCabinetRoot) return false;
+  if (!input.input || typeof input.input !== "object") return false;
+  const record = input.input as Record<string, unknown>;
+  const raw = record.file_path ?? record.path;
+  if (typeof raw !== "string" || raw.trim().length === 0) return false;
+  const path = input.pathModule ?? nodePath;
+  if (!path.isAbsolute(raw)) return false;
+  const resolved = path.resolve(raw);
+  // Glob/Grep 的 path 可以就是柜根本身（搜**所有**本子）——目录相等也算在柜内。
+  const inCabinet =
+    resolved === input.memoryCabinetRoot || isInside(resolved, input.memoryCabinetRoot, path);
+  if (!inCabinet) return false;
+  if (isInside(resolved, input.personalNotebookRoot, path)) return false;
+  return true;
+}
+
 /** contained = 非空、非绝对（跨盘符时 relative 给绝对路径）、不以 `..` 开头（穿越）。 */
 function isInside(resolved: string, root: string, path: EmployeeDeskPathModule): boolean {
   const relativePath = path.relative(root, resolved);

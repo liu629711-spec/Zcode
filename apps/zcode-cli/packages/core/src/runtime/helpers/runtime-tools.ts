@@ -23,6 +23,7 @@ import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-genera
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
 import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
 import { resolveAgentMemoryRoot } from "@zcode/shared/node";
+import { join } from "node:path";
 import type { MemoryRuntimeConfig } from "../types.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
@@ -35,7 +36,7 @@ const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
  */
 function resolveEmployeeDesk(
   runtime: AgentRuntimeInternal,
-): { personalNotebookRoot: string } | undefined {
+): { personalNotebookRoot: string; memoryCabinetRoot: string } | undefined {
   const persona = runtime.config.projectAgentPersona;
   const memory = runtime.config.memory as MemoryRuntimeConfig | undefined;
   if (!persona || memory?.enabled !== true || memory.use === false || !memory.storageRoot) {
@@ -49,6 +50,9 @@ function resolveEmployeeDesk(
       storageRoot: memory.storageRoot,
       workspaceRoot: runtime.workspaceRoot,
     }),
+    // 共享记忆柜根（读闸拍板 2026-10-07）：所有员工的本子都是它的兄弟目录，
+    // 「柜内且不在自己本子内」的读取就是串门。
+    memoryCabinetRoot: join(memory.storageRoot, "agent-memory"),
   };
 }
 
