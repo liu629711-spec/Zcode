@@ -11,6 +11,7 @@ import {
   Folder,
   MessageSquarePlus,
   Palette,
+  PanelRightClose,
   Plus,
   RefreshCw,
   SlidersHorizontal,
@@ -52,6 +53,14 @@ import {
 } from "@/WorkspaceSidebar/projectAgentsModel.js";
 import { PreviewPane } from "@/PreviewPane.js";
 import { V4ChatPane } from "@/v4/V4ChatPane.js";
+import { useAppPanels } from "@/hooks/useAppPanels.js";
+import { useGitRepository } from "@/hooks/useGitRepository.js";
+import { useTaskSidePaneMemoryBridge } from "@/app-shell/useTaskSidePaneMemoryBridge.js";
+import { AnimatedSidePanePanel } from "@/app-shell/AnimatedSidePanePanel.js";
+import { useAnimatedResizablePanel } from "@/app-shell/useAnimatedResizablePanel.js";
+import { getActiveSidePaneTab } from "@/lib/workspaceSidePane.js";
+import { ResizablePanelGroup } from "@/components/ui/resizable.js";
+import type { GitChangeSourceId } from "@zcode/shared";
 
 /**
  * 移动端远控壳（对照官方 mobileShell/mobileHome 信息架构）：
@@ -283,6 +292,43 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
     return items;
   }, [organizeMode, sortMode, workspaceTaskLists.groups, projectAgents.agentsByWorkspaceKey, cardByWorkspaceKey]);
 
+  // 会话页右坞（桌面同款 shell side pane：审查/终端/代码查看器标签）——⇥ 按钮开关
+  const [dockOpen, setDockOpen] = useState(false);
+  const dockWorkspacePath = view.kind === "chat" ? view.workspacePath : workspacePath;
+  const dockActiveTaskId = view.kind === "chat" && view.sessionId ? view.sessionId : null;
+  const dockSidePaneOwnerId = view.kind === "chat" ? `mobile:${view.entryToken}` : "mobile:home";
+  const appPanels = useAppPanels({
+    workspaceAbsPath: dockWorkspacePath,
+    activeTaskId: dockActiveTaskId,
+    sidePaneOwnerId: dockSidePaneOwnerId,
+    isDesktop: false,
+    supportsEmbeddedBrowser: false,
+    defaultWhiteboardNamePrefix: intl.formatMessage({ id: "whiteboard.defaultName" }),
+  });
+  const [gitSelectedSourceId, setGitSelectedSourceId] = useState<GitChangeSourceId>("unstaged");
+  const [gitRefreshVersion, setGitRefreshVersion] = useState(0);
+  const dockHasGitTab = appPanels.sidePaneState?.tabs.some((tab) => tab.type === "git") ?? false;
+  const gitState = useGitRepository({
+    workspacePath: dockWorkspacePath,
+    activeTaskId: dockActiveTaskId,
+    includeExtendedData: dockHasGitTab,
+    refreshToken: gitRefreshVersion,
+    remoteSessionId: null,
+    remoteTarget: undefined,
+    workspaceIdentity: undefined,
+  });
+  const { browserRestoreUrls, handleBrowserUrlChange } = useTaskSidePaneMemoryBridge({
+    activeTaskId: dockActiveTaskId,
+    gitSelectedSourceId,
+    setGitSelectedSourceId,
+    workspaceAbsPath: dockWorkspacePath,
+  });
+  const {
+    panelRef: dockPanelRef,
+    panelElementRef: dockPanelElementRef,
+    isVisible: dockPanelVisible,
+  } = useAnimatedResizablePanel({ open: dockOpen, expandedSize: "100%" });
+
   const openChat = useCallback(
     (target: { workspacePath: string; sessionId: string | null; title: string }) => {
       entryTokenRef.current += 1;
@@ -420,12 +466,13 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
   if (view.kind === "chat") {
     return (
       <div className="relative flex h-full flex-col bg-background">
-        {/* 第一行：官方 chrome 行（返回 + 页面标题 + 任务菜单 + 界面风格） */}
+        {/* 第一行（chrome）：返回 + 页面标题 + 界面风格——官方同款 */}
         <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
           <button
             type="button"
             onClick={() => {
               setViewerSource(null);
+              setDockOpen(false);
               setView({ kind: "home" });
             }}
             className="flex items-center gap-0.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground active:bg-muted"
@@ -434,6 +481,38 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
             {intl.formatMessage({ id: "webRemoteControl.mobileShell.chatTitle" })}
           </button>
           <span className="min-w-0 flex-1" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+                aria-label={intl.formatMessage({ id: "settings.themeMode" })}
+              >
+                <Palette className="h-5 w-5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              {(
+                [
+                  ["system", "settings.themeMode.system"],
+                  ["zai-light", "settings.themeMode.light"],
+                  ["zai-dark", "settings.themeMode.dark"],
+                ] as const
+              ).map(([value, labelKey]) => (
+                <DropdownMenuItem key={value} onSelect={() => setTheme(value)}>
+                  {intl.formatMessage({ id: labelKey })}
+                  {theme === value ? <Check className="ml-auto h-4 w-4" /> : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </header>
+        {/* 第二行（任务行，钉住）：文件夹 + 任务名 + "…"会话管理 + 右坞开关——官方同款 */}
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+          <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            {view.title || intl.formatMessage({ id: "webRemoteControl.mobileShell.chatTitle" })}
+          </span>
           {view.sessionId ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -473,32 +552,18 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
-                aria-label={intl.formatMessage({ id: "settings.themeMode" })}
-              >
-                <Palette className="h-5 w-5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              {(
-                [
-                  ["system", "settings.themeMode.system"],
-                  ["zai-light", "settings.themeMode.light"],
-                  ["zai-dark", "settings.themeMode.dark"],
-                ] as const
-              ).map(([value, labelKey]) => (
-                <DropdownMenuItem key={value} onSelect={() => setTheme(value)}>
-                  {intl.formatMessage({ id: labelKey })}
-                  {theme === value ? <Check className="ml-auto h-4 w-4" /> : null}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </header>
+          <button
+            type="button"
+            onClick={() => setDockOpen((open) => !open)}
+            className={cn(
+              "rounded-md p-1.5 active:bg-muted",
+              dockOpen ? "bg-muted text-foreground" : "text-muted-foreground",
+            )}
+            aria-label={intl.formatMessage({ id: "sidePane.openTab" })}
+          >
+            <PanelRightClose className="h-5 w-5" />
+          </button>
+        </div>
         <div className="min-h-0 flex-1">
           <V4ChatPane
             key={view.entryToken}
@@ -580,6 +645,99 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                     />
                   )}
                 </MobileViewerErrorBoundary>
+              </div>
+            </div>
+          </>
+        ) : null}
+        {/* 右坞（桌面同款 shell side pane）：审查/终端/代码查看器标签，右抽屉承载 */}
+        {dockOpen ? (
+          <>
+            <div
+              className="absolute inset-0 z-40 bg-black/40 animate-in fade-in-0 duration-200"
+              onClick={() => setDockOpen(false)}
+              aria-hidden
+            />
+            <div className="absolute inset-y-0 right-0 z-50 flex w-[94%] flex-col border-l border-border bg-background shadow-2xl animate-in slide-in-from-right-[100%] duration-200">
+              <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                  {intl.formatMessage({ id: "sidePane.openTab" })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setDockOpen(false)}
+                  className="rounded-md p-1.5 text-muted-foreground active:bg-muted"
+                  aria-label={intl.formatMessage({ id: "common.close" })}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              {/* 右坞本体渲染可缩放 Panel，必须落在 PanelGroup 布局上下文里 */}
+              <div className="min-h-0 flex-1">
+                <ResizablePanelGroup
+                  layoutId="mobile-dock-layout"
+                  panelIds={["mobile-dock-pane"]}
+                  className="h-full min-h-0"
+                >
+                  <MobileViewerErrorBoundary>
+                    <AnimatedSidePanePanel
+                      services={services}
+                      isDesktop={false}
+                      isVisible={dockPanelVisible}
+                      sidePaneState={appPanels.sidePaneState}
+                    recentClosedSidePaneTabs={appPanels.recentClosedSidePaneTabs}
+                    isBrowserOpen={false}
+                    supportsEmbeddedBrowser={false}
+                    workspaceAbsPath={view.workspacePath}
+                    activeTaskId={dockActiveTaskId}
+                    sidePaneOwnerId={dockSidePaneOwnerId}
+                    gitState={gitState}
+                    activeGitSourceId={
+                      gitState.sourceOptions.find(
+                        (option) => option.id === gitSelectedSourceId,
+                      )?.id ??
+                      gitState.sourceOptions[0]?.id ??
+                      "unstaged"
+                    }
+                    panelRef={dockPanelRef}
+                    panelElementRef={dockPanelElementRef}
+                    browserNavigationRequest={appPanels.browserNavigationRequest}
+                    browserRestoreUrls={browserRestoreUrls}
+                    fileChangeFindActiveIndex={0}
+                    fileChangeFindNavigationRequestId={0}
+                    fileChangeFindQuery=""
+                    onFileChangeFindMatchCountChange={() => {}}
+                    onCloseCodeViewer={appPanels.handleCloseCodeViewer}
+                    onCloseGit={appPanels.handleCloseGit}
+                    onActivateTab={appPanels.handleActivateSidePaneTab}
+                    onReorderTab={appPanels.handleReorderSidePaneTab}
+                    onCloseTab={appPanels.handleCloseSidePaneTab}
+                    onCloseOtherTabs={appPanels.handleCloseOtherSidePaneTabs}
+                    onCloseAllTabs={appPanels.handleCloseAllSidePaneTabs}
+                    onReopenClosedTab={appPanels.handleReopenClosedSidePaneTab}
+                    onOpenBrowserTab={appPanels.handleOpenBrowserTab}
+                    onOpenWhiteboard={appPanels.handleOpenWhiteboard}
+                    onOpenDeveloperTools={appPanels.handleOpenDeveloperTools}
+                    onOpenTerminalTab={appPanels.handleOpenTerminalTab}
+                    onOpenReviewTab={appPanels.handleToggleGit}
+                    onOpenSelectionSideConversation={() => {}}
+                    onOpenBrowserUrl={appPanels.handleOpenBrowserUrl}
+                    onOpenCodeViewer={(source) => setViewerSource(source)}
+                    onOpenBackgroundBash={appPanels.handleOpenBackgroundBash}
+                    onOpenSubagentSession={appPanels.handleOpenSubagentSession}
+                    onOpenWorkflowActorSession={appPanels.handleOpenWorkflowActorSession}
+                    onOpenWorkflowWorkspace={appPanels.handleOpenWorkflowWorkspace}
+                    onOpenWorkflowArtifact={appPanels.handleOpenWorkflowArtifact}
+                    onOpenWorkflowRun={appPanels.handleOpenWorkflowRun}
+                    onRefreshGit={() => setGitRefreshVersion((version) => version + 1)}
+                    onBrowserNavigationRequestHandled={
+                      appPanels.handleBrowserNavigationRequestHandled
+                    }
+                    onBrowserUrlChange={handleBrowserUrlChange}
+                    onBrowserPageMetadataChange={appPanels.handleBrowserPageMetadataChange}
+                    onSelectGitSource={setGitSelectedSourceId}
+                    />
+                  </MobileViewerErrorBoundary>
+                </ResizablePanelGroup>
               </div>
             </div>
           </>
