@@ -23,6 +23,7 @@ import {
   type CodingPlanQuotaResetAutoPlayedSlot,
 } from "@/store/codingPlanQuotaResetState.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
+import { normalizeCodePreviewThemeSettings } from "@/lib/codePreviewPreferences.js";
 import { readSafeLocalStorage, writeSafeLocalStorage } from "@/lib/browserEnvironment.js";
 import {
   applyUiFontSizePx,
@@ -92,14 +93,16 @@ function loadCodePreviewSettings(): CodePreviewSettings {
     }
 
     const parsed = JSON.parse(raw) as Partial<CodePreviewSettings>;
-    return {
+    // 读写两侧都过归一化：老数据里可能出现 darkTheme=github-light 这类明暗错配，
+    // 深色界面配上浅色主题的深色文字就是"深底深字"，正文看起来消失。
+    return normalizeCodePreviewThemeSettings({
       ...DEFAULT_CODE_PREVIEW_SETTINGS,
       ...parsed,
       fontSizePx:
         typeof parsed.fontSizePx === "number"
           ? Math.min(20, Math.max(12, Math.round(parsed.fontSizePx)))
           : DEFAULT_CODE_PREVIEW_SETTINGS.fontSizePx,
-    };
+    });
   } catch {
     return DEFAULT_CODE_PREVIEW_SETTINGS;
   }
@@ -336,14 +339,16 @@ export function createZCodeStore(
     codePreviewSettings: loadCodePreviewSettings(),
     setCodePreviewSettings: (patch: Partial<CodePreviewSettings>) =>
       set((state) => {
-        const next = {
+        // 写入也过归一化：深色槽位写进浅色主题会被就地拉回深色默认值，
+        // 保证"错配值"永远进不了 localStorage，八个渲染面不必各自防御。
+        const next = normalizeCodePreviewThemeSettings({
           ...state.codePreviewSettings,
           ...patch,
           fontSizePx:
             typeof patch.fontSizePx === "number"
               ? Math.min(20, Math.max(12, Math.round(patch.fontSizePx)))
               : state.codePreviewSettings.fontSizePx,
-        };
+        });
         writeSafeLocalStorage(CODE_PREVIEW_SETTINGS_KEY, JSON.stringify(next));
         return { codePreviewSettings: next };
       }),

@@ -2,7 +2,11 @@ import type { CSSProperties, ReactNode } from "react";
 import type { BundledTheme } from "shiki";
 import { CodeBlock } from "@/components/ai-elements/code-block.js";
 import { Card, CardContent } from "@/components/ui/card.js";
-import { CODE_PREVIEW_THEME_OPTIONS, SETTINGS_PREVIEW_CODE } from "@/lib/codePreviewPreferences.js";
+import {
+  CODE_PREVIEW_THEME_OPTIONS,
+  getCodePreviewThemeOptions,
+  SETTINGS_PREVIEW_CODE,
+} from "@/lib/codePreviewPreferences.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   Select,
@@ -23,9 +27,12 @@ export const SETTINGS_FRAME_CONTENT_CLASSNAME =
 
 export function ThemeSelect({
   value,
+  mode,
   onValueChange,
 }: {
   value: BundledTheme;
+  /** 该槽位的明暗归属：只列同明暗的主题，深色槽位选不到浅色主题。 */
+  mode: "light" | "dark";
   onValueChange: (value: BundledTheme) => void;
 }) {
   return (
@@ -34,7 +41,7 @@ export function ThemeSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {CODE_PREVIEW_THEME_OPTIONS.map((option) => (
+        {getCodePreviewThemeOptions(mode).map((option) => (
           <SelectItem key={option.value} value={option.value}>
             {option.label}
           </SelectItem>

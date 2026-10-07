@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/highlighted-lightweight-diff-preview.js";
 import { inferCodeLanguage, type PatchCodeViewerSource } from "@/lib/codeViewer.js";
 import { getPlainTextPatchPreviewLines } from "@/lib/patchDiffPreview.js";
+import { resolveCodePreviewTheme } from "@/lib/codePreviewPreferences.js";
 import type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import type { Theme } from "@/useTheme.js";
@@ -20,19 +21,9 @@ function resolveInlineDiffHighlightTheme(
   theme: Theme | undefined,
   codePreviewSettings: CodePreviewSettings,
 ): BundledTheme {
-  if (theme === "system") {
-    if (typeof window !== "undefined") {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? codePreviewSettings.darkTheme
-        : codePreviewSettings.lightTheme;
-    }
-
-    return codePreviewSettings.lightTheme;
-  }
-
-  return theme === "dark" || theme === "zai-dark"
-    ? codePreviewSettings.darkTheme
-    : codePreviewSettings.lightTheme;
+  // 统一解析口径：聊天代码块/文件查看器/diff/手机页共用同一个函数，
+  // 避免各写一份三元表达式后出现"某一处没跟随 system / 明暗写反"的隐形文字。
+  return resolveCodePreviewTheme(theme, codePreviewSettings);
 }
 
 export const EditInlineDiffContent = memo(function EditInlineDiffContent({

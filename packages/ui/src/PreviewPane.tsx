@@ -52,6 +52,7 @@ import { logger } from "@/logger.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useCodeCommentPreviewStore } from "@/store/codeCommentPreviewStore.js";
 import { resolveTheme } from "@/useTheme.js";
+import { getCodePreviewTheme } from "@/lib/codePreviewPreferences.js";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -561,8 +562,8 @@ export function PreviewPane({
   });
   const previousRenderHeavyContentRef = useRef(renderHeavyContent);
   const resolvedTheme = resolveTheme(theme);
-  const codeTheme =
-    resolvedTheme === "dark" ? codePreviewSettings.darkTheme : codePreviewSettings.lightTheme;
+  // 代码高亮主题统一走共享解析（含明暗槽位归一化），不再各写一份三元表达式。
+  const codeTheme = getCodePreviewTheme(resolvedTheme, codePreviewSettings);
   const imageSource = useMemo(() => resolvePreviewPaneImageSource(source), [source]);
   const mediaSource = useMemo(() => resolvePreviewPaneMediaSource(source), [source]);
   const pdfSource = useMemo(() => resolvePreviewPanePdfSource(source), [source]);

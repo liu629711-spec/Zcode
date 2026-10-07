@@ -45,6 +45,7 @@ import { useTaskListItemContextActions } from "@/useTaskListItemContextActions.j
 import { TaskActionMenuContent } from "@/TaskActionMenuContent.js";
 import { TaskRenameDialog } from "@/TaskRenameDialog.js";
 import { resolveTheme } from "@/useTheme.js";
+import { getCodePreviewTheme } from "@/lib/codePreviewPreferences.js";
 import { useWorkspaceProjectAgents } from "@/WorkspaceSidebar/ProjectAgents.js";
 import {
   applyDerivedPersonaChatBadges,
@@ -740,11 +741,7 @@ export function MobileRemoteShell({ services, workspacePath }: MobileRemoteShell
                         viewerSource.patch.split(/\r?\n/)
                       }
                       path={viewerSource.path ?? viewerSource.title}
-                      theme={
-                        resolveTheme(theme) === "dark"
-                          ? codePreviewSettings.darkTheme
-                          : codePreviewSettings.lightTheme
-                      }
+                      theme={getCodePreviewTheme(resolveTheme(theme), codePreviewSettings)}
                     />
                   ) : (
                     <PreviewPane

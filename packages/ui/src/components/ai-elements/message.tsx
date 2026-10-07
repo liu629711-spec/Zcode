@@ -89,6 +89,7 @@ import { resolveWorkspaceEditorSelection } from "@/lib/workspaceEditorSelection.
 import { sortInstalledEditorsForFileTree } from "@/workspace-file-tree/helpers.js";
 import type { CodePreviewSettings } from "@/lib/codePreviewSettings.js";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
+import { resolveCodePreviewTheme } from "@/lib/codePreviewPreferences.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useOptionalPlatform, usePlatform } from "@/hooks/usePlatform.js";
@@ -843,15 +844,9 @@ function resolveMessageCodeTheme(
   theme: Theme,
   codePreviewSettings: { lightTheme: BundledTheme; darkTheme: BundledTheme },
 ): BundledTheme {
-  if (theme === "system" && typeof window !== "undefined") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? codePreviewSettings.darkTheme
-      : codePreviewSettings.lightTheme;
-  }
-
-  return theme === "dark" || theme === "zai-dark"
-    ? codePreviewSettings.darkTheme
-    : codePreviewSettings.lightTheme;
+  // 统一解析口径（含 system 跟随 OS + 明暗槽位归一化）：此前这里手写了一遍三元表达式，
+  // 与文件查看器/diff/手机页各写一份，任一处漏 system 或写反明暗就是"深底深字"。
+  return resolveCodePreviewTheme(theme, codePreviewSettings);
 }
 
 export function buildMessageStreamdownRenderKey(params: {

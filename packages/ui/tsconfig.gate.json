@@ -23,6 +23,7 @@
     "test/assetLibraryFilter.test.ts",
     "test/assetPreview.test.ts",
     "test/assetTryPrompt.test.ts",
-    "test/assetReferenceMessage.test.ts"
+    "test/assetReferenceMessage.test.ts",
+    "test/codePreviewTheme.test.ts"
   ]
 }

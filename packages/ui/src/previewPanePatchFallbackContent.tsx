@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { DiffViewer } from "@/components/ui/diff-viewer.js";
 import { HighlightedLightweightDiffPreview } from "@/components/ui/highlighted-lightweight-diff-preview.js";
 import { inferCodeLanguage } from "@/lib/codeViewer.js";
+import { getCodePreviewTheme } from "@/lib/codePreviewPreferences.js";
 import { getPlainTextPatchFallbackLines } from "@/lib/patchDiffPreview.js";
 import type { CodePreviewSettings } from "@/store/index.js";
 
@@ -26,8 +27,8 @@ export function PatchFallbackContent({
     () => inferCodeLanguage(highlightPath, patch),
     [highlightPath, patch],
   );
-  const highlightTheme =
-    resolvedTheme === "dark" ? codePreviewSettings.darkTheme : codePreviewSettings.lightTheme;
+  // 统一解析口径：明暗槽位错配会在数据边界被拉回默认，这里只表达"该用哪套"。
+  const highlightTheme = getCodePreviewTheme(resolvedTheme, codePreviewSettings);
 
   if (plainTextFallbackLines) {
     // @pierre/diffs 的 PatchDiff 只支持单文件 patch。日志里出现过多文件

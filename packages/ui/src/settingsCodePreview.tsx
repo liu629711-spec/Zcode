@@ -208,6 +208,7 @@ export function AppearanceSectionContent({
                 control={
                   <ThemeSelect
                     value={codePreviewSettings.lightTheme}
+                    mode="light"
                     onValueChange={(value) => setCodePreviewSettings({ lightTheme: value })}
                   />
                 }
@@ -220,6 +221,7 @@ export function AppearanceSectionContent({
                 control={
                   <ThemeSelect
                     value={codePreviewSettings.darkTheme}
+                    mode="dark"
                     onValueChange={(value) => setCodePreviewSettings({ darkTheme: value })}
                   />
                 }
