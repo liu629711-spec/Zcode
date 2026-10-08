@@ -162,12 +162,7 @@ impl WireAssembler {
         Self::default()
     }
 
-    fn fault(
-        &mut self,
-        topic: &str,
-        subscription_id: &str,
-        code: FaultCode,
-    ) -> AssemblyEvent {
+    fn fault(&mut self, topic: &str, subscription_id: &str, code: FaultCode) -> AssemblyEvent {
         self.faulted_routes
             .insert((topic.to_string(), subscription_id.to_string()));
         AssemblyEvent::Fault {
@@ -367,11 +362,21 @@ impl WireAssembler {
             events.push(self.fault(&wire.topic, &wire.subscription_id, code));
             return events;
         }
-        let Some(checksum) = wire.checksum_value.as_deref() else {
+        let Some(checksum) = wire.checksum.as_ref().map(|c| c.value.as_str()) else {
             let code = FaultCode::MetadataMismatch;
             events.push(self.fault(&wire.topic, &wire.subscription_id, code));
             return events;
         };
+        // 算法必须是 crc32（真源 z.literal("crc32")）。
+        if wire
+            .checksum
+            .as_ref()
+            .is_some_and(|c| c.algorithm != "crc32")
+        {
+            let code = FaultCode::MetadataMismatch;
+            events.push(self.fault(&wire.topic, &wire.subscription_id, code));
+            return events;
+        }
         let Some(data_b64) = wire.data_base64.as_deref() else {
             let code = FaultCode::MetadataMismatch;
             events.push(self.fault(&wire.topic, &wire.subscription_id, code));
@@ -545,8 +550,8 @@ pub fn crc32_hex(bytes: &[u8]) -> String {
 /// padding 只在末尾。Rust 的 STANDARD engine 容忍非规范 padding，
 /// 故先做长度与字符集预检，让 fault 分类与真源一致。
 fn decode_base64(input: &str) -> Option<Vec<u8>> {
-    use base64::engine::general_purpose::STANDARD;
     use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
 
     if input.len() < 4 || input.len() % 4 != 0 {
         return None;
@@ -607,7 +612,10 @@ mod tests {
             fragment_index: Some(index),
             fragment_count: Some(count),
             logical_bytes: Some(logical_bytes),
-            checksum_value: Some(checksum.to_string()),
+            checksum: Some(crate::conversation_stream::WireChecksum {
+                algorithm: "crc32".into(),
+                value: checksum.to_string(),
+            }),
             data_base64: Some(b64(data)),
         }
     }
@@ -623,7 +631,10 @@ mod tests {
     fn crc32_hex_is_lowercase_8_chars() {
         let hex = crc32_hex(b"hello");
         assert_eq!(hex.len(), 8);
-        assert!(hex.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()));
+        assert!(
+            hex.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+        );
     }
 
     #[test]
@@ -645,7 +656,10 @@ mod tests {
         let payload = logical_frame_json(0.0);
         let checksum = crc32_hex(payload.as_bytes());
         let mut asm = WireAssembler::new();
-        let events = asm.accept(&fragment(0, 1, 1, payload.as_bytes(), payload.len(), &checksum), 0);
+        let events = asm.accept(
+            &fragment(0, 1, 1, payload.as_bytes(), payload.len(), &checksum),
+            0,
+        );
         assert_eq!(events.len(), 1, "应产出一个事件");
         match &events[0] {
             AssemblyEvent::Complete(f) => {
@@ -675,8 +689,7 @@ mod tests {
                 1 => f1,
                 _ => f2,
             };
-            let ev =
-                asm.accept(&fragment(idx, 3, 1, piece, bytes.len(), &checksum), 0);
+            let ev = asm.accept(&fragment(idx, 3, 1, piece, bytes.len(), &checksum), 0);
             if idx != 1 {
                 assert!(ev.is_empty(), "未收齐时不该产出事件（idx={idx}）");
             } else {
@@ -710,10 +723,7 @@ mod tests {
         // logical_bytes 声明得比实际大 → 预检就拦住，不会走到 CRC。
         let payload = b"{}";
         let mut asm = WireAssembler::new();
-        let ev = asm.accept(
-            &fragment(0, 1, 1, payload, 9999, &crc32_hex(payload)),
-            0,
-        );
+        let ev = asm.accept(&fragment(0, 1, 1, payload, 9999, &crc32_hex(payload)), 0);
         match ev.first() {
             Some(AssemblyEvent::Fault { code, .. }) => assert_eq!(*code, FaultCode::LengthMismatch),
             other => panic!("期望 LengthMismatch，实际 {other:?}"),
@@ -755,9 +765,10 @@ mod tests {
         let mid = bytes.len() / 2;
         let (a, b) = bytes.split_at(mid);
         let mut asm = WireAssembler::new();
-        assert!(asm
-            .accept(&fragment(0, 2, 1, a, bytes.len(), &checksum), 0)
-            .is_empty());
+        assert!(
+            asm.accept(&fragment(0, 2, 1, a, bytes.len(), &checksum), 0)
+                .is_empty()
+        );
         let ev = asm.accept(&fragment(1, 2, 1, b, bytes.len(), &checksum), 0);
         match ev.first() {
             Some(AssemblyEvent::Complete(f)) => {
@@ -804,7 +815,10 @@ mod tests {
         match ev.first() {
             Some(AssemblyEvent::Fault { code, .. }) => {
                 assert_eq!(*code, FaultCode::InvalidPayload);
-                assert!(code.is_deterministic_content(), "InvalidPayload 是确定性内容失败");
+                assert!(
+                    code.is_deterministic_content(),
+                    "InvalidPayload 是确定性内容失败"
+                );
             }
             other => panic!("期望 InvalidPayload，实际 {other:?}"),
         }
@@ -828,12 +842,15 @@ mod tests {
     fn duplicate_fragment_conflicting_bytes_is_faulted() {
         let checksum = crc32_hex(b"x");
         let mut asm = WireAssembler::new();
-        assert!(asm
-            .accept(&fragment(0, 2, 1, b"aaa", 100, &checksum), 0)
-            .is_empty());
+        assert!(
+            asm.accept(&fragment(0, 2, 1, b"aaa", 100, &checksum), 0)
+                .is_empty()
+        );
         let ev = asm.accept(&fragment(0, 2, 1, b"bbb", 100, &checksum), 0);
         match ev.first() {
-            Some(AssemblyEvent::Fault { code, .. }) => assert_eq!(*code, FaultCode::FragmentConflict),
+            Some(AssemblyEvent::Fault { code, .. }) => {
+                assert_eq!(*code, FaultCode::FragmentConflict)
+            }
             other => panic!("期望 FragmentConflict，实际 {other:?}"),
         }
     }
@@ -855,9 +872,10 @@ mod tests {
     fn inconsistent_metadata_across_fragments_is_faulted() {
         let checksum = crc32_hex(b"aa");
         let mut asm = WireAssembler::new();
-        assert!(asm
-            .accept(&fragment(0, 3, 1, b"aa", 100, &checksum), 0)
-            .is_empty());
+        assert!(
+            asm.accept(&fragment(0, 3, 1, b"aa", 100, &checksum), 0)
+                .is_empty()
+        );
         // 同组但 fragmentCount 不一致。
         let mut f = fragment(1, 4, 1, b"bb", 100, &checksum);
         f.fragment_count = Some(4);
@@ -876,7 +894,10 @@ mod tests {
         let bytes = payload.as_bytes();
         let checksum = crc32_hex(bytes);
         let mut asm = WireAssembler::new();
-        asm.accept(&fragment(0, 2, 1, bytes, bytes.len() + 10, &checksum), 1_000);
+        asm.accept(
+            &fragment(0, 2, 1, bytes, bytes.len() + 10, &checksum),
+            1_000,
+        );
         assert_eq!(asm.next_expiry_ms(1_000), Some(1_000 + TIMEOUT_MS));
 
         // 未到时间不淘汰。
@@ -920,13 +941,15 @@ mod tests {
         let checksum = crc32_hex(a);
         let mut asm = WireAssembler::new();
         // ordinal=1 在组装中（2 片只送 1 片）。
-        assert!(asm
-            .accept(&fragment(0, 2, 1, a, 100, &checksum), 0)
-            .is_empty());
+        assert!(
+            asm.accept(&fragment(0, 2, 1, a, 100, &checksum), 0)
+                .is_empty()
+        );
         // ordinal=2 的首片 → 取代旧的，非 recovery 应 fault Superseded。
         let ev = asm.accept(&fragment(0, 2, 2, a, 100, &checksum), 0);
         assert!(
-            ev.iter().any(|e| matches!(e, AssemblyEvent::Fault { code, .. }
+            ev.iter()
+                .any(|e| matches!(e, AssemblyEvent::Fault { code, .. }
                 if *code == FaultCode::Superseded)),
             "非 recovery 取代应 fault Superseded，实际 {ev:?}"
         );
@@ -975,7 +998,7 @@ mod tests {
             fragment_index: None,
             fragment_count: None,
             logical_bytes: None,
-            checksum_value: None,
+            checksum: None,
             data_base64: None,
         };
         assert!(matches!(
@@ -1008,7 +1031,74 @@ mod tests {
     fn delivery_kind_parses_strictly() {
         assert_eq!(DeliveryKind::parse("initial"), Some(DeliveryKind::Initial));
         assert_eq!(DeliveryKind::parse("online"), Some(DeliveryKind::Online));
-        assert_eq!(DeliveryKind::parse("recovery"), Some(DeliveryKind::Recovery));
+        assert_eq!(
+            DeliveryKind::parse("recovery"),
+            Some(DeliveryKind::Recovery)
+        );
         assert_eq!(DeliveryKind::parse("bogus"), None);
+    }
+
+    /// **桥接路径回归**：通知桥拿到的是 agent 直发的 JSON（嵌套 checksum
+    /// 对象 + camelCase 字段），必须先反序列化成 WireFrame 再喂 assembler。
+    /// 直接构造结构体的测试覆盖不了字段名契约——此前 checksum 被误建模为
+    /// 扁平 `checksumValue`，真发分片会静默解不出来并无限 resync。
+    #[test]
+    fn agent_json_fragment_reassembles_via_serde_path() {
+        let payload = logical_frame_json(0.0);
+        let checksum = crc32_hex(payload.as_bytes());
+        let wire_json = serde_json::json!({
+            "wireVersion": 3,
+            "kind": "fragment",
+            "deliveryKind": "initial",
+            "logicalFrameId": "lf-1",
+            "logicalFrameOrdinal": 1,
+            "topic": "conversation/s1",
+            "subscriptionId": "sub-1",
+            "fragmentIndex": 0,
+            "fragmentCount": 1,
+            "logicalBytes": payload.len(),
+            // 真源 wire.ts:7-12：嵌套对象，不是扁平字符串。
+            "checksum": { "algorithm": "crc32", "value": checksum },
+            "dataBase64": b64(payload.as_bytes()),
+        });
+        let wire: WireFrame = serde_json::from_value(wire_json).expect("agent JSON 应可反序列化");
+
+        let mut asm = WireAssembler::new();
+        let events = asm.accept(&wire, 0);
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AssemblyEvent::Complete(_)),
+            "经 serde 路径的单分片应直接重组完成"
+        );
+    }
+
+    /// 非 crc32 算法必须拒（真源 z.literal("crc32")）。
+    #[test]
+    fn non_crc32_algorithm_is_faulted() {
+        let payload = logical_frame_json(0.0);
+        let wire_json = serde_json::json!({
+            "wireVersion": 3,
+            "kind": "fragment",
+            "deliveryKind": "initial",
+            "logicalFrameId": "lf-1",
+            "logicalFrameOrdinal": 1,
+            "topic": "conversation/s1",
+            "subscriptionId": "sub-1",
+            "fragmentIndex": 0,
+            "fragmentCount": 1,
+            "logicalBytes": payload.len(),
+            "checksum": { "algorithm": "md5", "value": crc32_hex(payload.as_bytes()) },
+            "dataBase64": b64(payload.as_bytes()),
+        });
+        let wire: WireFrame = serde_json::from_value(wire_json).unwrap();
+        let mut asm = WireAssembler::new();
+        let events = asm.accept(&wire, 0);
+        assert!(matches!(
+            &events[0],
+            AssemblyEvent::Fault {
+                code: FaultCode::MetadataMismatch,
+                ..
+            }
+        ));
     }
 }

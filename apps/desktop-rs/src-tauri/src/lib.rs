@@ -4,15 +4,15 @@
 
 pub mod agent;
 pub mod conversation_stream;
-pub mod wire;
 pub mod protocol;
 pub mod taskdb;
 pub mod taskgroup;
+pub mod wire;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::{Emitter, Manager, State};
 
 use agent::manager::{self, AgentRuntime};
@@ -51,19 +51,38 @@ async fn agent_start(
     }
 
     // workspace 缺省用用户主目录；真实 workspace 由 UI 侧传入。
-    let workspace = workspace
-        .map(PathBuf::from)
-        .unwrap_or_else(|| dirs_home());
+    let workspace = workspace.map(PathBuf::from).unwrap_or_else(|| dirs_home());
     let runtime = manager::start_agent(workspace.clone()).await?;
     let pid = runtime.pid;
     guard.replace(Arc::clone(&runtime));
 
     // 通知桥：把 agent 通知转发到前端事件总线。
+    //
+    // v4/conversation/frame **不直通**：先过 WireAssembler——
+    // - complete 帧原样放行（顺手记墓碑，防迟到分片复活旧帧）；
+    // - fragment 进 staging，收齐校验（CRC32/长度/UTF-8/JSON/信封一致）后
+    //   才作为完整逻辑帧放行；前端永远见不到分片，也就不需要重组代码；
+    // - fault（fail-closed）触发 same-sub resync，recovery 投递是唯一
+    //   能解故障门的帧（真源恢复阶梯 wire-fault.ts）。
+    // 其余通知（session/event 等）原样转发。
     if let Some(mut rx) = runtime.take_notifications().await {
         let handle = app.clone();
+        let runtime_for_resync = Arc::clone(&runtime);
         tauri::async_runtime::spawn(async move {
+            let mut assembler = wire::WireAssembler::new();
             while let Some(note) = rx.recv().await {
-                let _ = handle.emit("agent://notification", serde_json::to_value(&note).ok());
+                let value = serde_json::to_value(&note).unwrap_or(Value::Null);
+                if value["method"] == conversation_stream::NOTIFICATION_CONVERSATION_FRAME {
+                    forward_conversation_frame(
+                        &value,
+                        &mut assembler,
+                        &handle,
+                        &runtime_for_resync,
+                    )
+                    .await;
+                    continue;
+                }
+                let _ = handle.emit("agent://notification", value);
             }
         });
     }
@@ -73,6 +92,80 @@ async fn agent_start(
         "pid": pid,
         "workspace": workspace.to_string_lossy(),
     }))
+}
+
+/// 处理一帧 `v4/conversation/frame` 通知：过重组器，只把完整逻辑帧发给前端。
+///
+/// 前端 `stream.rs` 已按「外层信封 + frame 字段」的 complete 形态解析，
+/// 所以重组完成后**重塑回同一形态**再 emit——前端零改动就能吃到重组产物。
+/// 分片 staging 期间不 emit 任何东西（真源 consumer 同样只见逻辑帧）。
+async fn forward_conversation_frame(
+    note: &Value,
+    assembler: &mut wire::WireAssembler,
+    handle: &tauri::AppHandle,
+    runtime: &agent::manager::AgentRuntime,
+) {
+    let Some(params) = note.get("params") else {
+        return;
+    };
+    let Ok(wire_frame) = serde_json::from_value::<conversation_stream::WireFrame>(params.clone())
+    else {
+        // 解析不了的帧对前端也是噪声，静默丢（宽容协议，不打断对话）。
+        return;
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    for event in assembler.accept(&wire_frame, now) {
+        match event {
+            wire::AssemblyEvent::Complete(frame) => {
+                // 重组/整帧完成：重塑成前端已解析的 complete 形态。
+                // 注意逻辑帧序列化出来是 TopicFrame 的 camelCase JSON，
+                // 与 agent 直发的 frame 字段同构（同一份 serde 结构）。
+                let out = json!({
+                    "method": conversation_stream::NOTIFICATION_CONVERSATION_FRAME,
+                    "params": {
+                        "wireVersion": wire_frame.wire_version,
+                        "kind": "complete",
+                        "logicalFrameId": wire_frame.logical_frame_id,
+                        "logicalFrameOrdinal": wire_frame.logical_frame_ordinal,
+                        "subscriptionId": wire_frame.subscription_id,
+                        "topic": wire_frame.topic,
+                        "deliveryKind": wire_frame.delivery_kind,
+                        "frame": frame,
+                    }
+                });
+                let _ = handle.emit("agent://notification", out);
+            }
+            wire::AssemblyEvent::Fault { topic, .. } => {
+                // fail-closed：该路由后续帧会被 assembler 全部吞掉，
+                // 必须 resync 拿 recovery 投递解门（真源恢复阶梯第一级）。
+                // spawn 不阻塞后续帧转发；resync 失败则只能靠下一轮 recovery。
+                if let Some(session_id) = topic.strip_prefix("conversation/") {
+                    let client = Arc::clone(&runtime.client);
+                    let conn = resolve_connection_id(None);
+                    let topic_owned =
+                        conversation_stream::SubscribeParams::conversation_topic(session_id);
+                    tauri::async_runtime::spawn(async move {
+                        let req = json!({
+                            "connectionId": conn,
+                            "topic": topic_owned,
+                        });
+                        let _ = client
+                            .request(
+                                conversation_stream::CONVERSATION_RESYNC,
+                                Some(req),
+                                agent::client::DEFAULT_REQUEST_TIMEOUT,
+                            )
+                            .await;
+                    });
+                }
+            }
+        }
+    }
+    // Fragment 分片刚到时 accept 不产事件——staging 中，什么都不发。
 }
 
 /// 查询 agent 状态。
@@ -129,14 +222,19 @@ fn fs_list(path: String, include_hidden: Option<bool>) -> Result<Value, String> 
     let mut entries: Vec<Value> = Vec::new();
     let read = std::fs::read_dir(&dir).map_err(|e| format!("读取失败: {e}"))?;
     for entry in read.flatten() {
-        let Ok(file_type) = entry.file_type() else { continue };
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let name = entry.file_name().to_string_lossy().into_owned();
         // 跳过隐藏项（点开头），除非显式要求包含。
         if !include_hidden && name.starts_with('.') {
             continue;
         }
         if file_type.is_dir()
-            && matches!(name.as_str(), "node_modules" | "target" | "dist" | "__pycache__")
+            && matches!(
+                name.as_str(),
+                "node_modules" | "target" | "dist" | "__pycache__"
+            )
         {
             continue;
         }
@@ -150,15 +248,13 @@ fn fs_list(path: String, include_hidden: Option<bool>) -> Result<Value, String> 
     // 目录在前，同类型按名称排序。
     entries.sort_by(|a, b| {
         let dir_key = |v: &Value| !v["isDir"].as_bool().unwrap_or(false);
-        dir_key(a)
-            .cmp(&dir_key(b))
-            .then_with(|| {
-                a["name"]
-                    .as_str()
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .cmp(&b["name"].as_str().unwrap_or("").to_lowercase())
-            })
+        dir_key(a).cmp(&dir_key(b)).then_with(|| {
+            a["name"]
+                .as_str()
+                .unwrap_or("")
+                .to_lowercase()
+                .cmp(&b["name"].as_str().unwrap_or("").to_lowercase())
+        })
     });
     Ok(json!({ "entries": entries }))
 }
@@ -193,11 +289,8 @@ async fn agent_create_session_v4(
 ) -> Result<Value, String> {
     let guard = state.runtime.lock().await;
     let rt = guard.as_ref().ok_or("agent 未启动")?;
-    let workspace = workspace
-        .map(PathBuf::from)
-        .unwrap_or_else(dirs_home);
-    let session_id =
-        manager::create_session_v4(rt, &workspace.to_string_lossy()).await?;
+    let workspace = workspace.map(PathBuf::from).unwrap_or_else(dirs_home);
+    let session_id = manager::create_session_v4(rt, &workspace.to_string_lossy()).await?;
     Ok(json!({ "sessionId": session_id }))
 }
 
@@ -272,12 +365,7 @@ async fn task_list(
         // 库还没建（全新安装）：返回空列表，上层按"无置顶"处理。
         return Ok(json!({ "tasks": [] }));
     };
-    let tasks = taskdb::list_tasks(
-        &conn,
-        &workspace_path,
-        workspace_identity.as_deref(),
-        kind,
-    )?;
+    let tasks = taskdb::list_tasks(&conn, &workspace_path, workspace_identity.as_deref(), kind)?;
     Ok(json!({ "tasks": tasks }))
 }
 
@@ -478,11 +566,8 @@ async fn conversation_subscribe(
     let conn = resolve_connection_id(connection_id);
     let guard = state.runtime.lock().await;
     let rt = guard.as_ref().ok_or("agent 未启动")?;
-    let params = conversation_stream::SubscribeParams::desktop_conversation(
-        conn,
-        &session_id,
-        workspace,
-    );
+    let params =
+        conversation_stream::SubscribeParams::desktop_conversation(conn, &session_id, workspace);
     rt.client
         .request(
             conversation_stream::CONVERSATION_SUBSCRIBE,

@@ -141,9 +141,11 @@ pub struct WireFrame {
     /// 完整逻辑帧的字节数（重组时做长度校验，真源 wire-assembler.ts:406-423）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logical_bytes: Option<usize>,
-    /// CRC-32/IEEE 校验和，真源是 8 位小写 hex 串。
+    /// CRC-32/IEEE 校验和——**嵌套对象**（真源 wire.ts:7-12
+    /// `checksum: { algorithm: "crc32", value: <8位小写hex> }`）。
+    /// 此前误建模为扁平 `checksumValue` 字符串：真发分片永远解不出来。
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub checksum_value: Option<String>,
+    pub checksum: Option<WireChecksum>,
     /// fragment 的 base64 载荷（标准字母表）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_base64: Option<String>,
@@ -159,6 +161,15 @@ pub enum WireFrameKind {
     Complete,
     /// 大帧分片，需重组（本模块暂不支持）。
     Fragment,
+}
+
+/// 物理帧校验和（真源 wire.ts:7-12 `topicWireChecksumSchema`）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WireChecksum {
+    /// 目前只有 crc32（z.literal）；其他值重组时会拒绝。
+    pub algorithm: String,
+    /// 8 位小写 hex（regex `^[0-9a-f]{8}$`）。
+    pub value: String,
 }
 
 impl WireFrame {
@@ -284,7 +295,9 @@ impl StreamAccumulator {
     pub fn apply(&mut self, delta: &Delta) -> bool {
         match delta {
             Delta::RowDelta {
-                row_id, path, append,
+                row_id,
+                path,
+                append,
             } => {
                 let entry = self
                     .entries
@@ -611,16 +624,24 @@ mod wire_contract_tests {
             (r#"{"op":"row.appended","row":{}}"#, "row.appended"),
             (r#"{"op":"row.upserted","row":{}}"#, "row.upserted"),
             (r#"{"op":"row.removed","fromRowId":1}"#, "row.removed"),
-            (r#"{"op":"row.delta","rowId":1,"path":"text","append":"x"}"#, "row.delta"),
+            (
+                r#"{"op":"row.delta","rowId":1,"path":"text","append":"x"}"#,
+                "row.delta",
+            ),
             (r#"{"op":"state.updated","patch":{}}"#, "state.updated"),
-            (r#"{"op":"workflowRun.removed","runId":"r1"}"#, "workflowRun.removed"),
+            (
+                r#"{"op":"workflowRun.removed","runId":"r1"}"#,
+                "workflowRun.removed",
+            ),
         ];
         for (json, expected_op) in cases {
             let parsed: Delta = serde_json::from_str(json).unwrap_or_else(|e| {
                 panic!("{json} 解析失败: {e}（op 名或字段名与协议不符）");
             });
             assert!(
-                serde_json::to_string(&parsed).unwrap().contains(expected_op),
+                serde_json::to_string(&parsed)
+                    .unwrap()
+                    .contains(expected_op),
                 "序列化后必须保�� {expected_op}"
             );
         }
@@ -630,8 +651,7 @@ mod wire_contract_tests {
     /// 所以字段必须逐个 rename（如 from_row_id → fromRowId）。
     #[test]
     fn delta_fields_are_camel_case() {
-        let parsed: Delta =
-            serde_json::from_str(r#"{"op":"row.removed","fromRowId":42}"#).unwrap();
+        let parsed: Delta = serde_json::from_str(r#"{"op":"row.removed","fromRowId":42}"#).unwrap();
         match parsed {
             Delta::RowRemoved { from_row_id } => assert_eq!(from_row_id, 42.0),
             other => panic!("期望 RowRemoved，实际 {other:?}"),
@@ -641,7 +661,9 @@ mod wire_contract_tests {
             serde_json::from_str(r#"{"op":"workflowRun.updated","runId":"r1","revision":3}"#)
                 .unwrap();
         match parsed {
-            Delta::WorkflowRunUpdated { run_id, revision, .. } => {
+            Delta::WorkflowRunUpdated {
+                run_id, revision, ..
+            } => {
                 assert_eq!(run_id, "r1");
                 assert_eq!(revision, Some(3.0));
             }
