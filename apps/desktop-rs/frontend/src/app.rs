@@ -59,85 +59,38 @@ struct SessionListResult {
     sessions: Vec<SessionInfo>,
 }
 
-/// 消息部件（zcodeMessagePartSchema discriminated union 的宽松视图）。
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MessagePartView {
-    #[serde(rename = "type")]
-    part_type: String,
-    #[serde(default)]
-    text: Option<String>,
-}
-
-/// 消息（zcodeMessageWithPartsSchema）：info.role 区分 user/assistant。
-#[derive(Debug, Clone, serde::Deserialize)]
-struct MessageWithPartsView {
-    info: Value,
-    parts: Vec<MessagePartView>,
-}
-
-impl MessageWithPartsView {
-    fn role(&self) -> &str {
-        self.info["role"].as_str().unwrap_or("unknown")
-    }
-
-    fn text_content(&self) -> String {
-        self.parts
-            .iter()
-            .filter(|p| p.part_type == "text")
-            .filter_map(|p| p.text.as_deref())
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    fn reasoning_content(&self) -> Option<String> {
-        let texts: Vec<&str> = self
-            .parts
-            .iter()
-            .filter(|p| p.part_type == "reasoning")
-            .filter_map(|p| p.text.as_deref())
-            .collect();
-        if texts.is_empty() {
-            None
-        } else {
-            Some(texts.join("\n"))
-        }
-    }
-
-    /// 其他部件类型的展示摘要（tool/file 等后续按类型迁移专属视图）。
-    fn other_part_kinds(&self) -> Vec<String> {
-        self.parts
-            .iter()
-            .filter(|p| p.part_type != "text" && p.part_type != "reasoning")
-            .map(|p| p.part_type.clone())
-            .collect()
-    }
-}
-
+/// 部分字段（has_more/时间戳）保留完整 wire 结构供分页与时间显示使用。
+#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MessagesResult {
-    messages: Vec<MessageWithPartsView>,
+struct RowsRangeResult {
+    #[serde(default)]
+    rows: Vec<ConversationRowView>,
+    #[serde(default)]
+    has_more: bool,
 }
 
-/// 单条消息的展示视图（role + 文本 + reasoning 折叠 + 其他部件摘要）。
-#[derive(Debug, Clone)]
-struct ChatMessage {
-    role: String,
-    text: String,
-    reasoning: Option<String>,
-    other_parts: Vec<String>,
-}
-
-impl ChatMessage {
-    fn from_wire(m: MessageWithPartsView) -> Self {
-        Self {
-            role: m.role().to_string(),
-            text: m.text_content(),
-            reasoning: m.reasoning_content(),
-            other_parts: m.other_part_kinds(),
-        }
-    }
+/// v4 会话行（rows.ts rowBaseFields + 各 kind 字段的宽松视图）。
+#[allow(dead_code)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationRowView {
+    #[serde(default)]
+    pub row_id: i64,
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub state: String,
+    #[serde(default)]
+    pub created_at: Option<Value>,
+    #[serde(default)]
+    pub duration_ms: Option<i64>,
+    #[serde(default)]
+    pub origin: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// 会话状态徽标配色（zcodeSessionStatusSchema 六态）。
@@ -1223,7 +1176,7 @@ fn ChatView(session_id: String) -> impl IntoView {
     // 三处闭包各持一份：加载、发送、生命周期跟踪。
     let sid_load = session_id.clone();
     let sid_send = session_id.clone();
-    let (messages, set_messages) = signal(Vec::<ChatMessage>::new());
+    let (messages, set_messages) = signal(Vec::<ConversationRowView>::new());
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(String::new());
     let (draft, set_draft) = signal(String::new());
@@ -1239,18 +1192,14 @@ fn ChatView(session_id: String) -> impl IntoView {
         let set_error = set_error.clone();
         spawn_local(async move {
             match invoke_json(
-                "agent_request",
-                serde_json::json!({
-                    "method": "session/messages",
-                    "params": { "sessionId": sid, "limit": 200 }
-                }),
+                "agent_rows_range",
+                serde_json::json!({ "sessionId": sid, "limit": 200 }),
             )
             .await
             {
-                Ok(v) => match serde_json::from_value::<MessagesResult>(v) {
+                Ok(v) => match serde_json::from_value::<RowsRangeResult>(v) {
                     Ok(result) => {
-                        set_messages
-                            .set(result.messages.into_iter().map(ChatMessage::from_wire).collect());
+                        set_messages.set(result.rows);
                         set_error.set(String::new());
                     }
                     Err(e) => set_error.set(format!("解析失败: {e}")),
@@ -1311,21 +1260,17 @@ fn ChatView(session_id: String) -> impl IntoView {
             for _ in 0..20 {
                 browser_wait(1200).await;
                 let fetch = invoke_json(
-                    "agent_request",
-                    serde_json::json!({
-                        "method": "session/messages",
-                        "params": { "sessionId": sid, "limit": 200 }
-                    }),
+                    "agent_rows_range",
+                    serde_json::json!({ "sessionId": sid, "limit": 200 }),
                 )
                 .await;
                 if let Ok(v) = fetch {
-                    if let Ok(result) = serde_json::from_value::<MessagesResult>(v) {
-                        let view: Vec<ChatMessage> =
-                            result.messages.into_iter().map(ChatMessage::from_wire).collect();
+                    if let Ok(result) = serde_json::from_value::<RowsRangeResult>(v) {
+                        let view: Vec<ConversationRowView> = result.rows;
                         let tail_text = view
                             .iter()
                             .rev()
-                            .find(|m| m.role == "assistant")
+                            .find(|m| m.kind == "assistantText")
                             .map(|m| m.text.clone())
                             .unwrap_or_default();
                         if tail_text == last_text {
@@ -1390,7 +1335,7 @@ fn ChatView(session_id: String) -> impl IntoView {
                         return view! { <p class="text-sm text-muted">"还没有消息，发送第一条开始对话。"</p> }.into_any();
                     }
                     list.iter()
-                        .map(|m| view! { <MessageBubble msg=m.clone() /> })
+                        .map(|row| view! { <ConversationRow row=row.clone() /> })
                         .collect_view()
                         .into_any()
                 }}
@@ -1429,49 +1374,89 @@ fn ChatView(session_id: String) -> impl IntoView {
 }
 
 #[component]
-fn MessageBubble(msg: ChatMessage) -> impl IntoView {
-    let is_user = msg.role == "user";
-    let bubble_class = if is_user {
-        "ml-auto max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground"
-    } else {
-        "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-panel px-3.5 py-2 text-sm"
-    };
-    let other = msg.other_parts.clone();
+fn ConversationRow(row: ConversationRowView) -> impl IntoView {
+    match row.kind.as_str() {
+        "userInput" => view! { <UserInputRowView row=row /> }.into_any(),
+        "assistantText" => view! { <AssistantTextRowView row=row /> }.into_any(),
+        "reasoning" => view! { <ReasoningRowView row=row /> }.into_any(),
+        // 其余行类型（toolCall/turnHeader/artifact/...）按视图迁移节奏补齐。
+        _ => ().into_any(),
+    }
+}
+
+/// userInput 行（ConversationRowView 851 行起 UserInputRowView 的静态子集）：
+/// 右对齐 + bg-surface 卡片（rounded-xl rounded-tr-xs + border），时间戳右下。
+#[component]
+fn UserInputRowView(row: ConversationRowView) -> impl IntoView {
     view! {
-        <div class="mb-3 flex flex-col">
-            {match msg.reasoning.clone() {
-                Some(reasoning) => view! {
-                    <details class=if is_user { "ml-auto mb-1 max-w-[80%]" } else { "mr-auto mb-1 max-w-[85%]" }>
-                        <summary class="cursor-pointer text-xs text-muted">"思考过程"</summary>
-                        <pre class="mt-1 max-h-48 overflow-auto rounded-lg bg-[#f0f1f3] p-2 text-xs whitespace-pre-wrap text-muted">{reasoning}</pre>
-                    </details>
-                }.into_any(),
-                None => ().into_any(),
-            }}
-            <div class=bubble_class>
-                {if msg.text.is_empty() && !other.is_empty() {
-                    view! { <span>{format!("[{}]", other.join(", "))}</span> }.into_any()
-                } else if is_user {
-                    // 用户输入保持纯文本（所见即所输）。
-                    view! { <span>{msg.text.clone()}</span> }.into_any()
-                } else {
-                    // 助手回复走 markdown 结构化渲染。
-                    let rendered = render_markdown(&msg.text);
-                    view! {
-                        <div
-                            class="prose prose-sm max-w-none dark:prose-invert prose-pre:bg-[#f0f1f3] prose-pre:text-foreground prose-code:before:content-[''] prose-code:after:content-['']"
-                            inner_html=rendered
-                        ></div>
-                    }
-                    .into_any()
-                }}
+        <div class="group/user-row flex flex-col items-end" data-row-id=row.row_id>
+            <div class="flex max-w-xl max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground">
+                {row.text}
             </div>
-            {(!other.is_empty() && !msg.text.is_empty()).then(|| {
-                let other = other.clone();
-                view! { <div class="mt-1 text-[11px] text-muted">{format!("包含部件: {}", other.join(", "))}</div> }
+            <div class="mt-1 text-right text-ui-sm text-foreground-subtlest">"已发送"</div>
+        </div>
+    }
+}
+
+/// assistantText 行（AssistantTextRowView 1477 行同构）：
+/// 正文 w-full text-ui-base（markdown 渲染等价 streamdown），
+/// 完成态 actions hover 显现（opacity-0 group-hover/assistant-row:opacity-100）。
+#[component]
+fn AssistantTextRowView(row: ConversationRowView) -> impl IntoView {
+    let streaming = row.state == "streaming";
+    let text = row.text.clone();
+    let rendered = render_markdown(&text);
+    view! {
+        <div class="group/assistant-row" data-row-id=row.row_id>
+            <div data-conversation-selectable="true" class="w-full text-ui-base">
+                <div class="prose prose-sm max-w-none dark:prose-invert prose-pre:bg-[#f0f1f3] prose-pre:text-foreground prose-code:before:content-[''] prose-code:after:content-['']"
+                    inner_html=rendered></div>
+            </div>
+            {(!streaming).then(|| {
+                view! {
+                    <div class="mt-1 flex gap-1 opacity-0 transition-opacity group-hover/assistant-row:opacity-100 focus-within:opacity-100">
+                        <span class="text-ui-xs text-foreground-subtlest">{move || row.model.clone().unwrap_or_default()}</span>
+                    </div>
+                }
             })}
         </div>
     }
+}
+
+/// reasoning 行（ReasoningRowView 1592 行同构）：
+/// 折叠披露，streaming/complete 都默认收起；streaming 且 text 空不渲染。
+#[component]
+fn ReasoningRowView(row: ConversationRowView) -> impl IntoView {
+    let streaming = row.state == "streaming";
+    let duration_seconds = row
+        .duration_ms
+        .map(|ms| (ms / 1000).max(1))
+        .map(|s| format!("{s}s"));
+    if streaming && row.text.is_empty() {
+        return ().into_any();
+    }
+    view! {
+        <div data-row-id=row.row_id>
+            <details class="w-full">
+                <summary class="cursor-pointer text-xs text-muted">
+                    {move || {
+                        if streaming {
+                            "思考中…".to_string()
+                        } else {
+                            match &duration_seconds {
+                                Some(d) => format!("思考过程（{d}）"),
+                                None => "思考过程".to_string(),
+                            }
+                        }
+                    }}
+                </summary>
+                <div data-conversation-selectable="true">
+                    <pre class="mt-1 max-h-48 overflow-auto rounded-lg bg-surface p-2 text-xs whitespace-pre-wrap text-muted">{row.text.clone()}</pre>
+                </div>
+            </details>
+        </div>
+    }
+    .into_any()
 }
 
 /// 取 vendor/hljs.js 暴露的全局 hljsLib（不存在时返回 NULL）。
