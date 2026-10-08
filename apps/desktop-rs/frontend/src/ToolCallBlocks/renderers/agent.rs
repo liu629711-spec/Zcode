@@ -11,7 +11,8 @@
 //!   `getAgentColor(toolCall) ?? resolveSubagentColorFromName(name)` 保留；
 //! - `summaryAction`（摘要行点击打开右侧 tab）：依赖 onOpenSubagentSession
 //!   与侧栏会话视图（未迁），v1 不传——摘要行不可点；
-//! - `ToolSnapshotFieldNotice`：同 explore，未迁不渲染；
+//! **已接线**：`ToolSnapshotFieldNoticeComponent`——refs 空或宿主未接回调时
+//! 不渲染（真源 `return null` 语义；v4 投影下 snapshotRefs 无生产者，恒不显示）。
 //! - `toolCall.thought`：v4 行 schema 无该字段（adapter 未映射），
 //!   activityThought 恒 None——真源在 v4 路径下同为 undefined；
 //! - theme / codePreviewSettings / onOpenCodeViewer 等渲染上下文回调：
@@ -19,6 +20,10 @@
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use super::super::toolCallRowAdapter::{LegacyToolCall, LegacyToolCallNode};
 use super::agentHelpers::{
@@ -179,6 +184,9 @@ pub struct AgentBlockProps {
     /// runtime 权威的子代理类型（subagentRow.subagentType，配对时注入）。
     pub authoritative_agent_type: Option<String>,
     pub show_icon: bool,
+    /// 「加载完整工具数据」通道（快照提示按钮）。
+    /// refs 从 `legacy.snapshot_refs` 读（本卡不单列 props）。
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
 }
 
 /// `AgentToolCallBlock`（真源 :213-413）。
@@ -355,6 +363,13 @@ pub fn AgentToolCallBlock(props: AgentBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=Some(std::sync::Arc::new(render_content))
+        />
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.legacy.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }

@@ -2,10 +2,15 @@
 //!
 //! TaskStop 卡：taskId 摘要行 + 展开详情（任务类型 / 命令或描述 / 结果）。
 //!
-//! **裁剪注明**：`ToolSnapshotFieldNotice` 同其余卡，未迁不渲染。
+//! **已接线**：`ToolSnapshotFieldNoticeComponent`——refs 空或宿主未接回调时
+//! 不渲染（真源 `return null` 语义；v4 投影下 snapshotRefs 无生产者，恒不显示）。
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use super::super::toolResultDisplay::{ToolResultDisplay, read_tool_result_display};
 
@@ -237,6 +242,8 @@ pub fn build_task_stop_model(
 #[derive(Debug, Clone)]
 pub struct TaskStopBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub input: Value,
     pub output: Value,
     pub raw: Value,
@@ -336,6 +343,13 @@ pub fn TaskStopToolCallBlock(props: TaskStopBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=if model.has_details { Some(std::sync::Arc::new(render_content)) } else { None }
+        />
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }

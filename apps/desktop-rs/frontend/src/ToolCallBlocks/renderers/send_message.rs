@@ -8,10 +8,15 @@
 //! sendMessage.to「给」/ target「目标子智能体」/ summary「摘要」/ message「消息」
 //! （zh-CN.ts:4847/4905-4913）。
 //!
-//! **裁剪注明**：`ToolSnapshotFieldNotice` 未迁不渲染。
+//! **已接线**：`ToolSnapshotFieldNoticeComponent`——refs 空或宿主未接回调时
+//! 不渲染（真源 `return null` 语义；v4 投影下 snapshotRefs 无生产者，恒不显示）。
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use super::super::toolResultDisplay::{ToolResultDisplay, read_tool_result_display};
 use super::task_stop::to_record;
@@ -180,6 +185,8 @@ pub fn build_send_message_model(
 #[derive(Debug, Clone)]
 pub struct SendMessageBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub input: Value,
     pub output: Value,
     pub raw: Value,
@@ -278,6 +285,13 @@ pub fn SendMessageToolCallBlock(props: SendMessageBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=if model.has_details { Some(std::sync::Arc::new(render_content)) } else { None }
+        />
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }

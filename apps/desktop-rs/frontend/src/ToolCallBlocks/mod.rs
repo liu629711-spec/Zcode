@@ -8,6 +8,7 @@
 
 pub mod ToolCallBlock;
 pub mod ToolLayout;
+pub mod ToolSnapshotFieldNotice;
 pub mod ToolSummaryRow;
 pub mod exploreToolCall;
 pub mod fileSummaries;

@@ -44,6 +44,14 @@ pub struct LegacyToolCall {
     /// 组装的 raw 载荷（真源 :110-123）。
     pub raw: Value,
     pub started_at: Option<f64>,
+    /// 快照字段引用（真源 `TaskChatToolCall.snapshotRefs`，
+    /// taskChatMessageTypes.ts:35）。真源 v4 adapter 不产该字段
+    /// （生产者在 legacy 服务层 zcodeTaskServiceAdapter.ts:852），
+    /// 当前恒空；前向兼容读取见 ToolSnapshotFieldNotice::read_snapshot_refs。
+    pub snapshot_refs: Vec<super::ToolSnapshotFieldNotice::SnapshotFieldRef>,
+    /// 子代理思考输出（真源 `TaskChatToolCall.thought`，:31）。
+    /// 真源 v4 adapter 不桥接（legacy 路径由服务层写入），恒 None。
+    pub thought: Option<String>,
 }
 
 /// v4 status → 旧 ChatToolCall.status（真源 STATUS_MAP，:12-19）。
@@ -241,6 +249,9 @@ pub fn tool_call_row_to_legacy_node(row: &Value) -> LegacyToolCallNode {
             error: error_text,
             raw,
             started_at,
+            // 前向兼容：真源 v4 adapter 不传播 snapshotRefs（见字段注释）。
+            snapshot_refs: super::ToolSnapshotFieldNotice::read_snapshot_refs(row),
+            thought: None,
         },
         // 真源 :126-128 —— v4 行没有子树。
         child_tool_calls: Vec::new(),

@@ -6,8 +6,8 @@
 //!
 //! ## 裁剪注明
 //!
-//! - `ToolSnapshotFieldNotice`（80 行）：快照字段补拉提示，依赖
-//!   `toolCall.snapshotRefs` 与 `onLoadFullToolCallFields`（Rust 未迁），v1 不渲染；
+//! **已接线**：`ToolSnapshotFieldNoticeComponent`——refs 空或宿主未接回调时
+//! 不渲染（真源 `return null` 语义；v4 投影下 snapshotRefs 无生产者，恒不显示）。
 //! - read chip 的点击（`onOpenCodeViewer`）：Rust 无代码查看器回调，
 //!   chip 恒静态（真源 `canOpenPreview = entryType==="file" && onOpenCodeViewer`）；
 //! - `collectCommandStrings`（:70-122）：与 `exploreToolCall.rs` 的
@@ -16,6 +16,10 @@
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use super::super::toolCallRowAdapter::LegacyToolCallNode;
 use super::read::build_read_summary;
@@ -355,6 +359,8 @@ pub fn get_latest_explore_child_summary_from_children(
 #[derive(Debug, Clone)]
 pub struct ExploreBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub child_tool_calls: Vec<LegacyToolCallNode>,
     pub is_running: bool,
     pub status_label: Option<String>,
@@ -498,6 +504,13 @@ pub fn ExploreToolCallBlock(props: ExploreBlockProps) -> impl IntoView {
                 }
                 .into_any()
             }))
+        />
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }

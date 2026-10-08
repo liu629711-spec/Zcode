@@ -36,6 +36,12 @@ pub struct ToolCallBlockContext {
     /// runtime 权威的子代理类型（真源 `authoritativeAgentType`，:99；
     /// AgentToolCall 配对时从 subagentRow 注入——已投影的类型优先于流式半截 input）。
     pub authoritative_agent_type: Option<String>,
+    /// 「加载完整工具数据」请求通道（真源 `onLoadFullToolCallFields`，
+    /// ToolCallBlocks.tsx:137）。真源返回 `Promise<boolean | void> | boolean | void`：
+    /// resolve(false) / reject → 失败态。Rust 通道以同步
+    /// `Callback<String, bool>` 承接（false = 失败）。宿主未接线时 None——
+    /// 快照提示按真源语义（`!onLoadFullToolCallFields` → null）不渲染。
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
 }
 
 impl Default for ToolCallBlockContext {
@@ -47,6 +53,7 @@ impl Default for ToolCallBlockContext {
             // 真源默认 showIcon = true（:79）。
             show_icon: true,
             authoritative_agent_type: None,
+            on_load_full_tool_call_fields: None,
         }
     }
 }
@@ -138,6 +145,7 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
                 tc.clone(),
                 context.authoritative_agent_type.clone(),
                 context.workspace_path.clone(),
+                context.on_load_full_tool_call_fields.clone(),
             )}
         </div>
     }
@@ -170,6 +178,8 @@ fn render_dispatch(
     authoritative_agent_type: Option<String>,
     // 工作区路径（switch_mode 的 planFilePath 相对路径解析用）。
     workspace_path: String,
+    // 「加载完整工具数据」通道（宿主未接线时为 None，快照提示按真源不渲染）。
+    on_load_full_tool_call_fields: Option<Callback<String, bool>>,
 ) -> AnyView {
     use super::renderers::*;
 
@@ -186,6 +196,7 @@ fn render_dispatch(
                     is_failed: status == "failed",
                     authoritative_agent_type: authoritative_agent_type.clone(),
                     show_icon,
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -204,6 +215,8 @@ fn render_dispatch(
                     show_icon,
                     can_toggle: None,
                     force_open: None,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -378,6 +391,8 @@ fn render_dispatch(
                     status_label: Some(status_label),
                     source_label,
                     show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -396,6 +411,8 @@ fn render_dispatch(
                     error_text,
                     workspace_path,
                     show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -414,6 +431,8 @@ fn render_dispatch(
                     title,
                     source_label,
                     show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -430,6 +449,8 @@ fn render_dispatch(
                     title,
                     source_label,
                     show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -447,12 +468,74 @@ fn render_dispatch(
                     title,
                     source_label,
                     show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
         .into_any(),
-        // RespondToCoordinator 是独立卡（respond-to-coordinator.tsx，ReplyIcon +
-        // queued 状态词）——未迁，落 fallback，不借用 SendMessage 的形态。
+        Renderer::PlanGuidance => view! {
+            <plan_guidance::PlanGuidanceToolCallBlock
+                props=plan_guidance::PlanGuidanceBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    output,
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        Renderer::RespondToCoordinator => view! {
+            <respond_to_coordinator::RespondToCoordinatorToolCallBlock
+                props=respond_to_coordinator::RespondToCoordinatorBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        Renderer::Goal => view! {
+            <goal::GoalToolCallBlock
+                props=goal::GoalBlockProps {
+                    tool_id: tool_id.to_string(),
+                    output,
+                    // 真源 :92/:110 —— content/thought 从 legacy 载荷桥接
+                    // （v4 adapter 下 thought 恒 None，content 仅 Agent/Task 行有）。
+                    content: legacy.content.clone(),
+                    thought: legacy.thought.clone(),
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // 其余未迁 renderer 统一走 fallback 兜底卡（Workflow 系 / MCP / node-repl 等）。
         // 行级上下文不会命中的聚合类（changesGroup/executeGroup/cuaGroup 走
         // conversationAssistantWorkItems 分组器，未迁）；其余未迁 renderer 统一
         // 走 fallback 兜底卡——**未迁不隐藏**，标题/状态/错误仍可见。
@@ -497,6 +580,7 @@ mod tests {
             suppress_source_label: false,
             show_icon: true,
             authoritative_agent_type: None,
+            on_load_full_tool_call_fields: None,
         }
     }
 

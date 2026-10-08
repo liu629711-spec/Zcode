@@ -7,10 +7,15 @@
 //! 文案（zh-CN.ts:4844/4946-4951）：kind.skill「技能」/ running「正在运行技能」/
 //! label「技能」/ args「参数」/ unknown「未知技能」/ noOutput「没有输出。」。
 //!
-//! **裁剪注明**：`ToolSnapshotFieldNotice` 未迁不渲染。
+//! **已接线**：`ToolSnapshotFieldNoticeComponent`——refs 空或宿主未接回调时
+//! 不渲染（真源 `return null` 语义；v4 投影下 snapshotRefs 无生产者，恒不显示）。
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 /// 真源 :9 —— WandSparkles 图标类名。
 pub const SKILL_TOOL_ICON_CLASS: &str = "size-4 flex-none text-foreground-subtle";
@@ -161,6 +166,8 @@ pub fn build_skill_model(
 #[derive(Debug, Clone)]
 pub struct SkillBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub input: Value,
     pub output: Value,
     pub raw: Value,
@@ -286,6 +293,13 @@ pub fn SkillToolCallBlock(props: SkillBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=Some(std::sync::Arc::new(render_content))
+        />
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }

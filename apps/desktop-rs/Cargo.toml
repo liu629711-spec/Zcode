@@ -4,7 +4,10 @@ members = ["frontend", "src-tauri"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order：Map 用 IndexMap 保持插入序。Node 的 JSON.stringify 按插入序
+# 输出（goal 卡的 payload pretty 打印、raw 回退块等 1:1 展示依赖此行为）；
+# BTreeMap 的键排序会让展示顺序偏离真源。
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [profile.release]
 # 桌面端产物优先控制体积：短调试信息 + 单 codegen 单元。

@@ -10,12 +10,17 @@
 //! - `onOpenPlanDetail`（打开计划详情面板）：Rust 侧计划面板未迁，
 //!   `open_detail` 无操作——卡片仍完整呈现（复制/渐变/按钮都在），
 //!   仅「查看完整计划」按钮暂无跳转目标；
-//! - `ToolSnapshotFieldNotice`：未迁不渲染；
+//! **已接线**：`ToolSnapshotFieldNoticeComponent`——refs 空或宿主未接回调时
+//! 不渲染（真源 `return null` 语义；v4 投影下 snapshotRefs 无生产者，恒不显示）。
 //! - MessageResponse 的 theme/codePreview/链接回调：未迁，静态
 //!   pulldown-cmark 渲染。
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use super::planToolCall::{extract_plan_tool_call_content, get_plan_file_label};
 use super::toolOutput::ToolOutputBlock;
@@ -71,6 +76,25 @@ pub struct SwitchModeBlockProps {
     pub error_text: Option<String>,
     pub workspace_path: String,
     pub show_icon: bool,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
+}
+
+/// 快照提示视图（真源 :25-34 的 `snapshotNotice` 复用变量）。
+///
+/// 真源在三个渲染分支（markdown / output 回退 / 空）各自插入同一个
+/// `snapshotNotice` 节点；Rust 以辅助函数承接多次渲染。
+fn notice_view(props: &SwitchModeBlockProps) -> AnyView {
+    view! {
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
+        />
+    }
+    .into_any()
 }
 
 /// `SwitchModeToolCallBlock`（真源 :24-160）。
@@ -174,6 +198,7 @@ pub fn SwitchModeToolCallBlock(props: SwitchModeBlockProps) -> impl IntoView {
                     </button>
                 </div>
             </section>
+            {notice_view(&props)}
         }
         .into_any();
     }
@@ -187,10 +212,12 @@ pub fn SwitchModeToolCallBlock(props: SwitchModeBlockProps) -> impl IntoView {
         };
         return view! {
             <ToolOutputBlock output=output error_text=props.error_text.clone() />
+            {notice_view(&props)}
         }
         .into_any();
     }
-    ().into_any()
+    // 真源 :159 —— 空分支直接返回 snapshotNotice。
+    notice_view(&props)
 }
 
 #[cfg(test)]

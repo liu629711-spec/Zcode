@@ -228,6 +228,8 @@ fn group_tool_call(
         error: None,
         raw: Value::Null,
         started_at,
+        snapshot_refs: Vec::new(),
+        thought: None,
     }
 }
 

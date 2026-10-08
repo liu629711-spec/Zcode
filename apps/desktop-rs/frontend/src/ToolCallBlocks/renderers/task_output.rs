@@ -3,10 +3,15 @@
 //! TaskOutput 卡：任务号摘要 + 状态词（九级回落）+ 输出区（可折叠）。
 //! 文案（zh-CN.ts:4849/4925-4935）。
 //!
-//! **裁剪注明**：`ToolSnapshotFieldNotice` 未迁不渲染。
+//! **已接线**：`ToolSnapshotFieldNoticeComponent`——refs 空或宿主未接回调时
+//! 不渲染（真源 `return null` 语义；v4 投影下 snapshotRefs 无生产者，恒不显示）。
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use super::super::toolResultDisplay::{ToolResultDisplay, read_tool_result_display};
 use super::task_stop::to_record;
@@ -144,6 +149,8 @@ pub fn build_task_output_model(
 #[derive(Debug, Clone)]
 pub struct TaskOutputBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub input: Value,
     pub raw: Value,
     pub status: Option<String>,
@@ -226,6 +233,13 @@ pub fn TaskOutputToolCallBlock(props: TaskOutputBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=if has_output { Some(std::sync::Arc::new(render_content)) } else { None }
+        />
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }
