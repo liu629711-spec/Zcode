@@ -177,7 +177,8 @@
 
 **待决**
 
-8. **push 54 个 commit——积压已清空（网络恢复，全部同步至 fork）**（等你发话）
+8. **push 待网络恢复**（本地领先 3 笔：ToolCallBody 链第二步 / 进度 /
+   edit renderContent 收官）（等你发话）
 
 ---
 
@@ -229,3 +230,23 @@ exit code: 0xc0000139, STATUS_ENTRYPOINT_NOT_FOUND
 
 已用 `git stash` 验证：移除本轮全部改动后同样崩溃，**与重构无关**，
 属环境问题。待决：本机装匹配的 WebView2Loader runtime，或改用 msvc 工具链。
+## 下一批规划（已探路）
+
+### A. CUA 组（~1900 行，14 文件，toolResultDisplay 已有 CUA display 铺垫）
+- 纯逻辑层（可先做）：cuaResultState（219）/ cuaListDetails（230）/
+  cuaAccessDetails（120）/ cuaErrorDetails（51）/ cuaActionDetail（52）/
+  cuaSummaryMessages（27）/ cuaIcon（8）/ cuaAppSummaryIcon。
+- 组件层：cuaDetails（152）/ CuaScreenshotSection（84）/
+  cuaScreenshotDetails（87）/ ExecuteOutput（50，吸底滚动 + 上滚冻结，
+  Rust v1 简化静态 pre）。
+- 主卡：cua.tsx（504）+ cua-group.tsx（282）。
+
+### B. Workflow 系 9 卡（~2600 行）
+create-workflow（463）/ list-models（429）/ list-saved-workflows（303）/
+get-workflow-run（273）/ save-workflow（269）/ eval-workflow-snippet（264）/
+submit-result（204）/ read-session-context（287）/ list-workflow-runs（191）/
+resume-workflow-run（174）/ resolve-workflow-question（172）。
+
+### C. automationFormat 链（~900 行）
+cron-create / offpeak-create 轮尾卡片（ConversationTurnGroup :494/:1288/:1531
+接入；Rust 侧会话是单流扁平结构，轮结构未迁）。
