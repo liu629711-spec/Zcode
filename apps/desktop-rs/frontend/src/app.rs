@@ -91,6 +91,28 @@ pub struct ConversationRowView {
     pub origin: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    /// toolCall 行
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub input_text: Option<String>,
+    #[serde(default)]
+    pub error: Option<Value>,
+    /// userInput 行：引擎尾注起点（正文 = text[..epilogueStart]）
+    #[serde(default)]
+    pub epilogue_start: Option<usize>,
+    /// turnHeader 行
+    #[serde(default)]
+    pub turn_id: Option<String>,
+    /// artifact 行
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub artifact_type: Option<String>,
+    #[serde(default)]
+    pub size_bytes: Option<i64>,
 }
 
 /// 会话状态徽标配色（zcodeSessionStatusSchema 六态）。
@@ -1286,6 +1308,16 @@ fn ChatView(session_id: String) -> impl IntoView {
                     }
                 }
             }
+            // 轮询终态后再拉一次，确保与 agent 最新状态一致。
+            // 复用外层 sid（再 clone），避免二次 move 把 send 闭包降级成 FnOnce。
+            let sid = sid.clone();
+            spawn_local(async move {
+                let _ = invoke_json(
+                    "agent_rows_range",
+                    serde_json::json!({ "sessionId": sid, "limit": 200 }),
+                )
+                .await;
+            });
             set_sending.set(false);
         });
     };
@@ -1379,7 +1411,10 @@ fn ConversationRow(row: ConversationRowView) -> impl IntoView {
         "userInput" => view! { <UserInputRowView row=row /> }.into_any(),
         "assistantText" => view! { <AssistantTextRowView row=row /> }.into_any(),
         "reasoning" => view! { <ReasoningRowView row=row /> }.into_any(),
-        // 其余行类型（toolCall/turnHeader/artifact/...）按视图迁移节奏补齐。
+        "toolCall" => view! { <ToolCallRowView row=row /> }.into_any(),
+        "turnHeader" => view! { <TurnHeaderRowView row=row /> }.into_any(),
+        "artifact" => view! { <ArtifactRowView row=row /> }.into_any(),
+        // timelineMarker/subagent/hookInvocation 等按视图迁移节奏补齐。
         _ => ().into_any(),
     }
 }
@@ -1388,10 +1423,37 @@ fn ConversationRow(row: ConversationRowView) -> impl IntoView {
 /// 右对齐 + bg-surface 卡片（rounded-xl rounded-tr-xs + border），时间戳右下。
 #[component]
 fn UserInputRowView(row: ConversationRowView) -> impl IntoView {
+    // 引擎尾注折叠：正文只到 epilogueStart（splitUserInputEpilogue 同构），
+    // 之后是引擎附加文本（dwf ask 尾注/nudge），折进气泡底部披露。
+    // epilogueStart 按 UTF-16 code unit 计（TS 侧 string 下标）；Rust 侧按
+    // chars 计数换算到字节边界，避免多字节字符上 panic。
+    let (body, epilogue) = match row.epilogue_start {
+        Some(start) if start > 0 => {
+            let byte_idx = row
+                .text
+                .char_indices()
+                .nth(start)
+                .map(|(b, _)| b)
+                .unwrap_or(row.text.len());
+            (
+                row.text[..byte_idx].trim_end().to_string(),
+                Some(row.text[byte_idx..].trim_start().to_string()),
+            )
+        }
+        _ => (row.text.clone(), None),
+    };
     view! {
         <div class="group/user-row flex flex-col items-end" data-row-id=row.row_id>
             <div class="flex max-w-xl max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground">
-                {row.text}
+                {body}
+                {epilogue.map(|ep| {
+                    view! {
+                        <details class="text-xs text-muted">
+                            <summary class="cursor-pointer">"附加说明"</summary>
+                            <div class="mt-1 whitespace-pre-wrap">{ep}</div>
+                        </details>
+                    }
+                })}
             </div>
             <div class="mt-1 text-right text-ui-sm text-foreground-subtlest">"已发送"</div>
         </div>
@@ -1457,6 +1519,81 @@ fn ReasoningRowView(row: ConversationRowView) -> impl IntoView {
         </div>
     }
     .into_any()
+}
+
+/// toolCall 行（ToolCallRowView 1894 行的 v1 摘要形态）：
+/// 工具名 + 状态徽标 + 输入摘要；ToolCallBlock 按工具类型的专属卡后续迁移。
+/// 工具行去掉纵向内边距（py-0），间距由组容器统一给（同真源注释）。
+#[component]
+fn ToolCallRowView(row: ConversationRowView) -> impl IntoView {
+    let status = row.status.clone().unwrap_or_else(|| "running".into());
+    let status_class = match status.as_str() {
+        "success" => "bg-success",
+        "error" => "bg-destructive",
+        "running" | "inputStreaming" => "bg-warning animate-pulse motion-reduce:animate-none",
+        _ => "border-[1.5px] border-foreground-subtlest bg-transparent",
+    };
+    let input_summary = row
+        .input_text
+        .clone()
+        .map(|t| {
+            let t = t.trim().to_string();
+            if t.chars().count() > 120 {
+                format!("{}…", t.chars().take(120).collect::<String>())
+            } else {
+                t
+            }
+        })
+        .unwrap_or_default();
+    view! {
+        <div class="py-0" data-row-id=row.row_id>
+            <div data-conversation-selectable="true" class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+                <span class=format!("size-1.5 flex-none rounded-full {status_class}")></span>
+                <span class="flex-none text-ui-base font-medium text-foreground">
+                    {row.tool_name.clone().unwrap_or_default()}
+                </span>
+                <span class="min-w-0 flex-1 truncate text-ui-sm text-muted">{input_summary}</span>
+                {row.error.as_ref().map(|e| {
+                    let msg = e["message"].as_str().unwrap_or("error").to_string();
+                    view! { <span class="flex-none text-ui-sm text-destructive">{msg}</span> }
+                })}
+            </div>
+        </div>
+    }
+}
+
+/// turnHeader 行（TurnHeaderRowView 1627 行同构）：subtle 分隔文本。
+#[component]
+fn TurnHeaderRowView(row: ConversationRowView) -> impl IntoView {
+    let origin = row.origin.clone().unwrap_or_default();
+    let state = row.state.clone();
+    view! {
+        <div class="border-b border-border py-1 text-ui-sm text-foreground-subtle" data-row-id=row.row_id>
+            {format!("turn · {origin} · {state}")}
+        </div>
+    }
+}
+
+/// artifact 行（ArtifactRowView 同构）：文件卡（图标 + 名称 + 类型·大小）。
+#[component]
+fn ArtifactRowView(row: ConversationRowView) -> impl IntoView {
+    let display_name = row.display_name.clone().unwrap_or_default();
+    let meta = format!(
+        "{} · {} bytes",
+        row.artifact_type.clone().unwrap_or_default().to_uppercase(),
+        row.size_bytes.unwrap_or(0)
+    );
+    view! {
+        <div class="px-4 py-1" data-row-id=row.row_id>
+            <div class="flex items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2">
+                <span class="size-4 flex-none text-foreground-subtle">"▤"</span>
+                <div class="min-w-0 flex-1">
+                    <p class="truncate text-ui-base text-foreground">{display_name}</p>
+                    <p class="text-ui-sm text-foreground-subtle">{meta}</p>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 /// 取 vendor/hljs.js 暴露的全局 hljsLib（不存在时返回 NULL）。
