@@ -184,7 +184,7 @@
 
 ## 六、验证现状
 
-- 前端 **515 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **537 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
@@ -232,10 +232,14 @@ exit code: 0xc0000139, STATUS_ENTRYPOINT_NOT_FOUND
 属环境问题。待决：本机装匹配的 WebView2Loader runtime，或改用 msvc 工具链。
 ## 下一批规划（已探路）
 
-### A. CUA 组（~1900 行，14 文件，toolResultDisplay 已有 CUA display 铺垫）
-- 纯逻辑层（可先做）：cuaResultState（219）/ cuaListDetails（230）/
-  cuaAccessDetails（120）/ cuaErrorDetails（51）/ cuaActionDetail（52）/
-  cuaSummaryMessages（27）/ cuaIcon（8）/ cuaAppSummaryIcon。
+### A. CUA 组（~1900 行，14 文件；**逻辑层 7 个已迁**）
+- [x] 纯逻辑层：cuaResultState（219）/ cuaAccessDetails（120）/
+      cuaErrorDetails（51）/ cuaActionDetail（52）/ cuaScreenshotDetails（87）/
+      cuaSummaryMessages（25 项表）/ cuaIcon（8）。
+- [ ] 组件层：cuaDetails（152）/ CuaScreenshotSection（84，Dialog 未迁）/
+      cuaListDetails（230）/ cuaAppSummaryIcon（平台图标 IPC 未迁）/
+      ExecuteOutput（50，吸底滚动 → v1 静态 pre）。
+- [ ] 主卡：cua.tsx（504）+ cua-group.tsx（282）。
 - 组件层：cuaDetails（152）/ CuaScreenshotSection（84）/
   cuaScreenshotDetails（87）/ ExecuteOutput（50，吸底滚动 + 上滚冻结，
   Rust v1 简化静态 pre）。
