@@ -824,6 +824,7 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       automationPort: options.automationPort,
       agentDispatchPort: options.agentDispatchPort,
       teamMessagePort: options.teamMessagePort,
+      teamPlanPort: options.teamPlanPort,
       offPeakPort: options.offPeakPort,
       appVersion,
       traceContext,

@@ -34,6 +34,7 @@ import type {
   AutomationPort,
   AgentDispatchPort,
   TeamMessagePort,
+  TeamPlanPort,
   OffPeakPort,
   BackgroundTaskCancelResult,
   CollaborationMode,
@@ -186,6 +187,9 @@ export interface ZCodeAppOptions {
   agentDispatchPort?: AgentDispatchPort;
   /** 队内直达消息端口（团队看板批3）；存在即注册 TeamMessage。 */
   teamMessagePort?: TeamMessagePort;
+
+  /** 排班草案端口（团队看板批3b）；存在即注册 TeamPlan。 */
+  teamPlanPort?: TeamPlanPort;
   offPeakPort?: OffPeakPort;
   /** 首次真实用户执行或 cold-resume fallback 时解析一次，之后由 app 生命周期缓存。 */
   resolveInitialBashShellSelection?: () => Promise<ExecutionShellSelection | undefined>;
