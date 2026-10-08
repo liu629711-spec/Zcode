@@ -103,10 +103,13 @@
    - [x] **右键菜单已迁并接线**：`groupedTasks/taskMenu.rs`（13 项按能力分三类，
          纯视图变换类可用、其余保留为禁用项不隐藏）+ `grouped.rs` 的
          `TaskContextMenu` 渲染层（遮罩关闭 / 动作执行 / 与拖拽共用落库通道）。
-   - [ ] 卡片组件剩余：`group-item.tsx`(761) / `task-row.tsx`(584) 的
-         action 按钮（hover 快捷操作）、`sticky-group-header.tsx`。
-   - [ ] 拖拽预览：原生 ghost image 不可控，真源用 DragOverlay 自绘卡片。
-         需要接近真源手感时再补，或改用指针事件实现。
+   - [x] **hover 快捷按钮已迁**：移到顶部（可用）/ 关闭（禁用占位）/
+         文件树（条件不渲染），与拖拽共用落库通道。
+   - [x] **拖拽预览已迁**：setDragImage + 屏幕外预览元素（task 行纯展示版 /
+         group 组头复刻），dragend 按 data-drag-preview 清理。
+   - [ ] `sticky-group-header.tsx` **暂缓**：真源吸顶依赖虚拟化滚动
+         （IntersectionObserver + getBoundingClientRect 测量 + virtualized-*），
+         Rust 侧列表无虚拟化且长度尚短，等列表长度成为问题再连虚拟化一起迁。
 2. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
 
 **后续**
