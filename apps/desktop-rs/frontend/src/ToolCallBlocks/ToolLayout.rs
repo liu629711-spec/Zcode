@@ -96,6 +96,10 @@ pub struct ToolLayoutProps {
     /// 放进 Arc 跨闭包传递会编译失败。故传数据（路径+ 文件名 + 图标 + 是否可点），
     /// 由 ToolLayout 内部渲染 chip。
     pub primary_file_chip: Option<FileChipData>,
+    /// 主文本的自定义节点（真源 primaryText 是 ReactNode）。优先于 primary_text。
+    pub primary_text_view: Option<ChildrenFn>,
+    /// 次文本的自定义节点（真源 secondaryText 是 ReactNode）。优先于 secondary_text。
+    pub secondary_text_view: Option<ChildrenFn>,
     pub expanded_primary_text: Option<String>,
     pub secondary_text: Option<String>,
     pub expanded_secondary_text: Option<String>,
@@ -292,6 +296,8 @@ pub fn ToolLayoutComponent(
     let props_source_label = props.source_label.clone();
     let props_diff_count = props.diff_count;
     let props_primary_file_chip = props.primary_file_chip.clone();
+    let props_primary_text_view = props.primary_text_view.clone();
+    let props_secondary_text_view = props.secondary_text_view.clone();
 
     // ── :105-114 状态初始化 ──
     // 真源这些值都来自 props 解构（:67-99 已是常量），Effect 闭包里直接用不会有问题；
@@ -472,12 +478,28 @@ pub fn ToolLayoutComponent(
                             <span class="min-w-0 truncate">{chip.file_name.clone()}</span>
                         </span>
                     })}
-                    {primary_text.map(|p| view! {
-                        <span class="min-w-0 truncate">{p}</span>
-                    })}
-                    {secondary_text.map(|s| view! {
-                        <span class="min-w-0 truncate font-sans text-foreground-subtlest">{s}</span>
-                    })}
+                    {props_primary_text_view
+                        .map(|f| view! { <span class="min-w-0 truncate">{f()}</span> }.into_any())
+                        .or_else(|| {
+                            primary_text.map(|p| {
+                                view! { <span class="min-w-0 truncate">{p}</span> }.into_any()
+                            })
+                        })}
+                    {props_secondary_text_view
+                        .map(|f| {
+                            view! {
+                                <span class="min-w-0 truncate font-sans text-foreground-subtlest">{f()}</span>
+                            }
+                            .into_any()
+                        })
+                        .or_else(|| {
+                            secondary_text.map(|s| {
+                                view! {
+                                    <span class="min-w-0 truncate font-sans text-foreground-subtlest">{s}</span>
+                                }
+                                .into_any()
+                            })
+                        })}
                 </span>
                 // ── :245-286 statusWordNode ──
                 {show_status_label
