@@ -252,9 +252,6 @@ fn summary_content(
     .into_any()
 }
 
-/// 真源导出名。组件函数因 `#[component]` 会生成同名 struct 而改名，此处保持对外名一致。
-pub use ToolSummaryRowComponent as ToolSummaryRow;
-
 /// ChevronRight 的类名（真源 :216-220 `cn(...)` 的三个分支）。
 fn chevron_class(expanded_or_forced: bool) -> &'static str {
     if expanded_or_forced {
