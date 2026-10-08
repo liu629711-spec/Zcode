@@ -12,6 +12,7 @@
 //! - `renderJoinedFileChips`（:152-175）：多文件 chip 拼接（逗号分隔）
 
 pub mod edit;
+pub mod execute;
 pub mod read;
 
 use leptos::prelude::*;
