@@ -141,8 +141,12 @@
          折叠态实时摘要复用 explore、展开区后台过程/提示词/活动/递归子卡、
          带色子代理名（kind_detail_view 新通道）。AgentToolCall 配对注入
          authoritativeAgentType。
-   - [ ] toolCall 剩余：其余 ~50 个 renderer（按需）、CUA 组
-         （conversationCuaGroups 281 行）、工作流 run 联接、ToolSnapshotFieldNotice。
+   - [x] **小卡片批量推进第一批**：toolResultDisplay（五候选位置解析器，
+         三态 null 哨兵语义）+ TaskStop / TaskOutput / SendMessage 三卡。
+   - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 switch-mode/skill/
+         ask-question/respond-to-coordinator 等）、CUA 组
+         （conversationCuaGroups 281 + cua.tsx 504 + cua-group 282）、
+         工作流 run 联接、ToolSnapshotFieldNotice、工作流 display strict 字段表。
 4. 文件树剩余项：git 状态 / fileWatcher / 虚拟滚动 / 拖拽右键菜单
 5. 归档区剩余：变更统计（changeSummary）、清空全部归档按钮
 6. 富文本输入（`LexicalChatInput` 1535 行 → Rust 富文本方案待定）
@@ -150,13 +154,13 @@
 
 **待决**
 
-8. **push 44 个 commit（本地已提交，待网络恢复推送）**（等你发话）
+8. **push 46 个 commit（本地已提交 3 笔，待网络恢复推送）**（等你发话）
 
 ---
 
 ## 六、验证现状
 
-- 前端 **400 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **423 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
