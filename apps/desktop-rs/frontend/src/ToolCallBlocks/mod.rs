@@ -7,3 +7,4 @@
 #![allow(non_snake_case)]
 
 pub mod ToolLayout;
+pub mod ToolSummaryRow;
