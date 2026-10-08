@@ -148,6 +148,10 @@
    - [x] **小卡片批量推进第三批**：问询卡（ask-question，含 349 行
          问答数据规范化——单题/多题双向兼容、末项自定义升级、
          回答读取阶梯）。
+   - [x] **小卡片批量推进第四批**：快照提示组件 ToolSnapshotFieldNotice
+         正式迁移（清 7 卡裁剪债）+ 询问协调卡（respond-to-coordinator）/
+         计划引导卡（plan-guidance）/ 目标卡（goal）；workspace 启用
+         serde_json preserve_order 对齐 Node 键序。
    - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 switch-mode/skill/
          ask-question/respond-to-coordinator 等）、CUA 组
          （conversationCuaGroups 281 + cua.tsx 504 + cua-group 282）、
@@ -159,13 +163,13 @@
 
 **待决**
 
-8. **push 49 个 commit（本地已提交 6 笔，待网络恢复推送）**（等你发话）
+8. **push 54 个 commit——积压已清空（网络恢复，全部同步至 fork）**（等你发话）
 
 ---
 
 ## 六、验证现状
 
-- 前端 **446 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **463 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
