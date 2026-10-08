@@ -25,6 +25,10 @@ use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 
 use crate::app::{invoke_json, relative_time, status_dot_class, Icon};
+use crate::groupedTasks::join::{
+    index_sessions, join_grouped_structure, GroupedStructure, GroupedStructureNode,
+};
+use crate::groupedTasks::view::{GroupedTaskView, GroupedTaskViewNode, TaskGroup, TaskListItem};
 
 /// 真源 `zcode-task-types.ts:46,49` 系统分组 id。
 const CRON_DEFAULT_GROUP_ID: &str = "zcode-default-group-cron";
@@ -66,15 +70,10 @@ pub struct GroupedView {
     pub nodes: Vec<GroupedNode>,
 }
 
-/// 任务摘要（用于渲染组内成员行：真源靠 sessions-index join 得到，
-/// Rust 侧目前从 agent 会话列表补齐 title/status/updatedAt）。
-#[derive(Debug, Clone, PartialEq)]
-pub struct TaskSummary {
-    pub task_id: String,
-    pub title: String,
-    pub status: String,
-    pub updated_at: i64,
-}
+/// 任务摘要已移除：真实数据链路是 `groupedTasks::join` —— 后端只给 `task_ids`，
+/// 由 join 层补成带完整 task（含 workspacePath/Identity）的 `TaskListItem`，
+/// 渲染直接消费 join 产物。原先在这里用 `summaries: HashMap` 二次查表既重复
+/// 又拿不到 workspaceIdentity（会导致远程 workspace 的 taskKey 算错）。
 
 /// 组展示标题（真源 group-title.ts getTaskGroupDisplayTitle）。
 fn display_title(group: &Group) -> String {
@@ -197,7 +196,8 @@ pub fn GroupedTasksView() -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
     let sessions = expect_context::<crate::app::SessionsStore>();
 
-    let (view, set_view) = signal(None::<GroupedView>);
+    // 后端返回的分组结构（只含 task_ids），join 成完整视图后才交给渲染。
+    let (structure, set_structure) = signal(None::<GroupedStructure>);
     let collapsed = RwSignal::new(std::collections::HashSet::<String>::new());
 
     let store = GroupedStore {
@@ -210,11 +210,11 @@ pub fn GroupedTasksView() -> impl IntoView {
     Effect::new(move |_| {
         let _ = store.refresh.get();
         let Some(session_id) = selected_session.get() else {
-            set_view.set(None);
+            set_structure.set(None);
             return;
         };
         let Some(ws_path) = sessions.workspace_path_of(&session_id) else {
-            set_view.set(None);
+            set_structure.set(None);
             return;
         };
         store.error.set(String::new());
@@ -231,7 +231,32 @@ pub fn GroupedTasksView() -> impl IntoView {
                 Ok(v) => {
                     let parsed: GroupedView =
                         serde_json::from_value(v).unwrap_or(GroupedView { nodes: Vec::new() });
-                    set_view.set(Some(parsed));
+                    // 后端只给 task_ids（真源：服务端只提供分组结构，由客户端与
+                    // sessions-index join），转成 join 层的结构体。
+                    let structure = GroupedStructure {
+                        nodes: parsed
+                            .nodes
+                            .into_iter()
+                            .map(|node| match node {
+                                // 后端的 Group 与view.rs 的 TaskGroup 同构但不同类型，
+                                // 在此显式转换，避免两套模型并存。
+                                GroupedNode::Group { group, task_ids } => {
+                                    GroupedStructureNode::Group {
+                                        group: TaskGroup {
+                                            group_id: group.group_id,
+                                            title: group.title,
+                                            color: group.color,
+                                        },
+                                        task_ids,
+                                    }
+                                }
+                                GroupedNode::Task { task } => {
+                                    GroupedStructureNode::Task { task_id: task }
+                                }
+                            })
+                            .collect(),
+                    };
+                    set_structure.set(Some(structure));
                 }
                 Err(e) => store.error.set(e),
             }
@@ -248,57 +273,47 @@ pub fn GroupedTasksView() -> impl IntoView {
                     }
                     .into_any();
                 }
-                let Some(view) = view.get() else {
+                let Some(structure) = structure.get() else {
                     return view! {
                         <p class="px-3 py-2 text-xs text-muted">"加载中…"</p>
                     }
                     .into_any();
                 };
-                if view.nodes.is_empty() {
+                if structure.nodes.is_empty() {
                     return view! {
                         <p class="px-3 py-2 text-ui-base text-foreground-subtle">"暂无任务"</p>
                     }
                     .into_any();
                 }
-                // 组内成员行需要任务摘要，用会话列表补齐（真源走 sessions-index join）。
-                let summaries: std::collections::HashMap<String, TaskSummary> = sessions
-                    .all()
-                    .into_iter()
-                    .map(|s| {
-                        (
-                            s.session_id.clone(),
-                            TaskSummary {
-                                task_id: s.session_id.clone(),
-                                title: s.title.clone(),
-                                status: s.status.clone(),
-                                updated_at: s.updated_at,
-                            },
-                        )
-                    })
-                    .collect();
+                // 真源 join：后端只给分组结构（task_ids），任务内容由客户端与
+                // sessions-index 会话 join 得到。join 产物直接是 view.rs 的
+                // GroupedTaskView——拖拽重排就作用在它上面。
+                let session_index = index_sessions(&sessions.join_rows());
+                let ws_path_for_join = sessions
+                    .workspace_path_of(&selected_session.get().unwrap_or_default())
+                    .unwrap_or_default();
+                let view: GroupedTaskView = join_grouped_structure(
+                    &structure,
+                    &session_index,
+                    &ws_path_for_join,
+                    None,
+                );
 
                 view.nodes
                     .into_iter()
                     .map(|node| match node {
-                        GroupedNode::Group { group, task_ids } => {
+                        GroupedTaskViewNode::Group { group, tasks, .. } => {
                             view! {
                                 <GroupItem
-                                    group=group
-                                    task_ids=task_ids
-                                    summaries=summaries.clone()
+                                    group=Group { group_id: group.group_id, title: group.title, color: group.color }
+                                    tasks=tasks
                                     collapsed=collapsed
                                 />
                             }
                                 .into_any()
                         }
-                        GroupedNode::Task { task } => {
-                            let summary = summaries.get(&task).cloned().unwrap_or(TaskSummary {
-                                task_id: task.clone(),
-                                title: task.clone(),
-                                status: String::new(),
-                                updated_at: 0,
-                            });
-                            view! { <LooseTaskRow summary=summary /> }.into_any()
+                        GroupedTaskViewNode::Task { task, .. } => {
+                            view! { <LooseTaskRow task=task /> }.into_any()
                         }
                     })
                     .collect_view()
@@ -312,8 +327,7 @@ pub fn GroupedTasksView() -> impl IntoView {
 #[component]
 fn GroupItem(
     group: Group,
-    task_ids: Vec<String>,
-    summaries: std::collections::HashMap<String, TaskSummary>,
+    tasks: Vec<TaskListItem>,
     collapsed: RwSignal<std::collections::HashSet<String>>,
 ) -> impl IntoView {
     let store = expect_context::<GroupedStore>();
@@ -325,7 +339,7 @@ fn GroupItem(
     let title = display_title(&group);
     let color = group.color.clone();
     let border = border_color_class(&color);
-    let member_count = task_ids.len();
+    let member_count = tasks.len();
 
     let toggle = {
         let group_id = group.group_id.clone();
@@ -501,20 +515,9 @@ fn GroupItem(
                 <div class="min-h-0 overflow-hidden">
                     // TASK_GROUP_CONTENT_CLASS + 按色系左边框
                     <div class=format!("ml-4 border-l py-px pl-2 {border}")>
-                        {task_ids
+                        {tasks
                             .into_iter()
-                            .map(|task_id| {
-                                let summary = summaries
-                                    .get(&task_id)
-                                    .cloned()
-                                    .unwrap_or(TaskSummary {
-                                        task_id: task_id.clone(),
-                                        title: task_id.clone(),
-                                        status: String::new(),
-                                        updated_at: 0,
-                                    });
-                                view! { <GroupedTaskRow summary=summary /> }
-                            })
+                            .map(|task| view! { <GroupedTaskRow task=task /> })
                             .collect_view()}
                     </div>
                 </div>
@@ -525,9 +528,9 @@ fn GroupItem(
 
 /// 组内成员行（真源 task-row.tsx TASK_GROUP_ROW_CLASS + ROW_LINE_CLASS）。
 #[component]
-fn GroupedTaskRow(summary: TaskSummary) -> impl IntoView {
+fn GroupedTaskRow(task: TaskListItem) -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
-    let task_id = summary.task_id.clone();
+    let task_id = task.task_id.clone();
     let active = {
         let task_id = task_id.clone();
         move || selected_session.get().as_deref() == Some(task_id.as_str())
@@ -540,9 +543,9 @@ fn GroupedTaskRow(summary: TaskSummary) -> impl IntoView {
             "flex min-h-7 w-full min-w-0 flex-col justify-center rounded-lg border border-transparent pl-2.5 pr-1 text-left text-ui-base transition-[background-color,border-color,color,opacity] hover:bg-surface-hover"
         }
     };
-    let dot = status_dot_class(&summary.status).to_string();
-    let time = if summary.updated_at > 0 {
-        relative_time(summary.updated_at)
+    let dot = status_dot_class(&task.status).to_string();
+    let time = if task.updated_at > 0 {
+        relative_time(task.updated_at)
     } else {
         String::new()
     };
@@ -556,7 +559,7 @@ fn GroupedTaskRow(summary: TaskSummary) -> impl IntoView {
                     on:click=move |_| selected_session.set(Some(task_id.clone()))
                 >
                     <span class=format!("size-1.5 flex-none rounded-full {dot}")></span>
-                    <span class="min-w-0 flex-1 truncate text-foreground">{summary.title.clone()}</span>
+                    <span class="min-w-0 flex-1 truncate text-foreground">{task.title.clone()}</span>
                     <span class="flex-none text-foreground-subtlest">{time.clone()}</span>
                 </button>
             </span>
@@ -566,9 +569,9 @@ fn GroupedTaskRow(summary: TaskSummary) -> impl IntoView {
 
 /// 游离任务行（未入组，顶层节点）。
 #[component]
-fn LooseTaskRow(summary: TaskSummary) -> impl IntoView {
+fn LooseTaskRow(task: TaskListItem) -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
-    let task_id = summary.task_id.clone();
+    let task_id = task.task_id.clone();
     let active = {
         let task_id = task_id.clone();
         move || selected_session.get().as_deref() == Some(task_id.as_str())
@@ -580,7 +583,7 @@ fn LooseTaskRow(summary: TaskSummary) -> impl IntoView {
             "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg pl-2.5 pr-1 text-left text-foreground hover:bg-surface-hover"
         }
     };
-    let dot = status_dot_class(&summary.status).to_string();
+    let dot = status_dot_class(&task.status).to_string();
 
     view! {
         <div class=class>
@@ -589,7 +592,7 @@ fn LooseTaskRow(summary: TaskSummary) -> impl IntoView {
                 on:click=move |_| selected_session.set(Some(task_id.clone()))
             >
                 <span class=format!("size-1.5 flex-none rounded-full {dot}")></span>
-                <span class="min-w-0 flex-1 truncate text-sm">{summary.title.clone()}</span>
+                <span class="min-w-0 flex-1 truncate text-sm">{task.title.clone()}</span>
             </button>
         </div>
     }
@@ -671,6 +674,72 @@ mod tests {
             other => panic!("期望组节点，实际 {other:?}"),
         }
         assert_eq!(parsed.nodes[1], GroupedNode::Task { task: "t3".into() });
+    }
+
+    /// 端到端：真实后端 JSON → GroupedStructure → join → view.rs 重排。
+    ///
+    /// 这条链路横跨三处改动（后端契约 / join 层 / 渲染层），单测各自都过
+    /// 仍可能接不上，所以单独钉一条集成断言。
+    #[test]
+    fn backend_json_joins_into_reorderable_view() {
+        let raw = serde_json::json!({
+            "nodes": [
+                { "type": "task", "task": "t1" },
+                {
+                    "type": "group",
+                    "group": { "groupId": "g1", "title": "工作", "color": "blue" },
+                    "task_ids": ["t2", "t3"],
+                },
+            ]
+        });
+        let parsed: GroupedView = serde_json::from_value(raw).unwrap();
+        let structure = GroupedStructure {
+            nodes: parsed
+                .nodes
+                .into_iter()
+                .map(|node| match node {
+                    GroupedNode::Group { group, task_ids } => GroupedStructureNode::Group {
+                        group: TaskGroup {
+                            group_id: group.group_id,
+                            title: group.title,
+                            color: group.color,
+                        },
+                        task_ids,
+                    },
+                    GroupedNode::Task { task } => GroupedStructureNode::Task { task_id: task },
+                })
+                .collect(),
+        };
+
+        // 会话列表里只有 t1（t2/t3 未 join → 走兜底）。
+        let sessions = index_sessions(&[crate::groupedTasks::join::SessionRow {
+            session_id: "t1".into(),
+            title: "任务一".into(),
+            status: "idle".into(),
+            created_at: 0,
+            updated_at: 100,
+            workspace_path: "/ws".into(),
+            workspace_identity: None,
+        }]);
+        let view = join_grouped_structure(&structure, &sessions, "/ws", None);
+
+        // join 后 t1 拿到会话里的真实标题。
+        let GroupedTaskViewNode::Task { task: t1, .. } = &view.nodes[0] else {
+            panic!("期望顶层 task 节点");
+        };
+        assert_eq!(t1.title, "任务一");
+
+        // 整条链路可用：把 t2 拖到 t1 之前（t2 未 join，taskKey 仍成立）。
+        let moved = crate::groupedTasks::view::move_task_over_task(
+            &view,
+            &crate::groupedTasks::view::task_key("/ws", None, "t2"),
+            &crate::groupedTasks::view::task_key("/ws", None, "t1"),
+            crate::groupedTasks::view::InsertPosition::Before,
+        );
+        let GroupedTaskViewNode::Task { task: first, .. } = &moved.nodes[0] else {
+            panic!("t2 应被提到顶层首位");
+        };
+        assert_eq!(first.task_id, "t2");
     }
 
     #[test]

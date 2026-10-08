@@ -294,6 +294,36 @@ impl SessionsStore {
     pub fn all(&self) -> Vec<SessionInfo> {
         self.sessions.get_untracked()
     }
+
+    /// 会话列表投影成`groupedTasks::join::SessionRow`（join 层的输入）。
+    ///
+    /// `workspace` 在 wire 上是宽松 JSON（可能缺失或字段不全），这里按
+    /// `workspacePath` / `workspaceIdentity` 两个标准键提取，与
+    /// `workspace_path_of` 同一口径。**identity 缺失时保持 `None`**，绝不用
+    /// path顶替——那会让远程 workspace 的 taskKey 算错。
+    pub fn join_rows(&self) -> Vec<crate::groupedTasks::join::SessionRow> {
+        self.sessions
+            .get_untracked()
+            .iter()
+            .map(|s| {
+                let ws = s.workspace.as_ref();
+                crate::groupedTasks::join::SessionRow {
+                    session_id: s.session_id.clone(),
+                    title: s.title.clone(),
+                    status: s.status.clone(),
+                    created_at: s.created_at,
+                    updated_at: s.updated_at,
+                    workspace_path: ws
+                        .and_then(|w| w["workspacePath"].as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    workspace_identity: ws
+                        .and_then(|w| w["workspaceIdentity"].as_str())
+                        .map(|s| s.to_string()),
+                }
+            })
+            .collect()
+    }
 }
 
 // ---------------------------------------------------------------------------
