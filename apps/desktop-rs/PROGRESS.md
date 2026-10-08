@@ -110,7 +110,12 @@
    - [ ] `sticky-group-header.tsx` **暂缓**：真源吸顶依赖虚拟化滚动
          （IntersectionObserver + getBoundingClientRect 测量 + virtualized-*），
          Rust 侧列表无虚拟化且长度尚短，等列表长度成为问题再连虚拟化一起迁。
-2. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
+2. [x] **逐 token 流式已通**：delta 累积（stream.rs，11 测）+ 通知桥接入
+     WireAssembler（lib.rs `forward_conversation_frame`）——fragment 先
+     staging，收齐校验（base64/字节增量/CRC32/UTF-8/JSON/信封）后才以
+     complete 信封放行，前端见不到分片；fault 触发 same-sub resync 走
+     恢复阶梯。顺手修掉 checksum 建模 bug（扁平 `checksumValue` →
+     嵌套 `{algorithm, value}`，wire.ts:7-12）。
 
 **后续**
 
@@ -122,7 +127,7 @@
 
 **待决**
 
-8. **push 36 个 commit**（等你发话）
+8. **push 39 个 commit**（等你发话）
 
 ---
 
