@@ -24,4 +24,5 @@ pub mod dnd;
 pub mod domEvents;
 pub mod dragRuntime;
 pub mod join;
+pub mod taskMenu;
 pub mod view;
