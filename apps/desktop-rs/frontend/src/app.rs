@@ -299,6 +299,27 @@ pub fn App() -> impl IntoView {
     };
     provide_context(triggers);
 
+    // 命令中心（⌘K / Ctrl+K 唤起，对齐 WorkspaceSidebar 的 onOpenCommandCenter）。
+    let show_command_center: RwSignal<bool> = RwSignal::new(false);
+    provide_context(show_command_center);
+    {
+        let show = show_command_center;
+        let handler = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+            if (e.meta_key() || e.ctrl_key()) && e.key() == "k" {
+                e.prevent_default();
+                show.update(|v| *v = !*v);
+            }
+            if e.key() == "Escape" {
+                show.set(false);
+            }
+        });
+        web_sys::window().map(|w| {
+            w.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref::<js_sys::Function>())
+                .ok();
+        });
+        handler.forget();
+    }
+
     // agent 通知桥（主进程 emit `agent://notification`）：
     // state.updated → 刷新会话列表与当前会话消息。
     // 其余通知方法（遥测/存储启动等）与视图无关，忽略。
@@ -342,7 +363,100 @@ pub fn App() -> impl IntoView {
             <SidebarPanel />
             <SidebarSeparator />
             <ContentPanel />
+            <CommandCenter show=show_command_center />
         </div>
+    }
+}
+
+/// 命令中心：⌘K 快速搜索并跳转任务。
+/// 对齐真实产品 command-center 目录的能力面（会话跳转先行，命令执行后续接入）。
+#[component]
+fn CommandCenter(show: RwSignal<bool>) -> impl IntoView {
+    let (query, set_query) = signal(String::new());
+    let selected_session = expect_context::<RwSignal<Option<String>>>();
+    let store = expect_context::<SessionsStore>();
+
+    let results = move || {
+        let q = query.get().to_lowercase();
+        store
+            .sessions
+            .get()
+            .into_iter()
+            .filter(|s| {
+                q.is_empty() || s.title.to_lowercase().contains(&q)
+            })
+            .take(8)
+            .collect::<Vec<_>>()
+    };
+
+    view! {
+        {move || {
+            if !show.get() {
+                return ().into_any();
+            }
+            let open = Callback::new(move |id: String| {
+                selected_session.set(Some(id));
+                show.set(false);
+                set_query.set(String::new());
+            });
+            view! {
+                // 覆盖层：点击遮罩关闭。
+                <div
+                    class="fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-[12vh]"
+                    on:click=move |_| show.set(false)
+                >
+                    <div
+                        class="w-[520px] max-w-[90%] overflow-hidden rounded-xl border border-border bg-panel shadow-xl"
+                        on:click=move |e| e.stop_propagation()
+                    >
+                        <input
+                            class="w-full border-b border-border bg-transparent px-4 py-3 text-sm outline-none"
+                            placeholder="搜索任务…"
+                            autofocus=true
+                            prop:value=move || query.get()
+                            on:input=move |e| set_query.set(event_target_value(&e))
+                        />
+                        <div class="max-h-[320px] overflow-y-auto p-1">
+                            {move || {
+                                let list = results();
+                                if list.is_empty() {
+                                    return view! { <p class="px-3 py-2 text-sm text-muted">"无匹配任务"</p> }.into_any();
+                                }
+                                list.iter()
+                                    .map(|s| {
+                                        let sid = s.session_id.clone();
+                                        let sid_active = s.session_id.clone();
+                                        let title = s.title.clone();
+                                        let status = s.status.clone();
+                                        let dot = status_dot_class(&status).to_string();
+                                        let is_active = move || {
+                                            selected_session.get().as_deref()
+                                                == Some(sid_active.as_str())
+                                        };
+                                        let row_class = move || {
+                                            if is_active() {
+                                                "flex w-full items-center gap-2 rounded-lg bg-accent-weak px-3 py-2 text-left text-sm"
+                                            } else {
+                                                "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-hover"
+                                            }
+                                        };
+                                        view! {
+                                            <button class=row_class on:click=move |_| open.run(sid.clone())>
+                                                <span class=format!("h-2 w-2 flex-none rounded-full {dot}")></span>
+                                                <span class="min-w-0 flex-1 truncate">{title}</span>
+                                                <span class="flex-none text-[11px] text-muted">{status}</span>
+                                            </button>
+                                        }
+                                    })
+                                    .collect_view()
+                                    .into_any()
+                            }}
+                        </div>
+                    </div>
+                </div>
+            }
+            .into_any()
+        }}
     }
 }
 
@@ -448,7 +562,15 @@ fn SidebarPanel() -> impl IntoView {
                     <div class="absolute inset-0 flex min-h-0 flex-col">
                         <div class="flex flex-col gap-1 px-2 py-3">
                             <NewTaskButton />
-                            <SidebarGhostButton icon=view! { <IconSearch /> } label="命令中心" shortcut="⌘K" />
+                            {let show = expect_context::<RwSignal<bool>>();
+                            view! {
+                                <SidebarGhostButton
+                                    icon=view! { <IconSearch /> }
+                                    label="命令中心"
+                                    shortcut="⌘K"
+                                    on_click=Callback::new(move |_| show.set(true))
+                                />
+                            }}
                             <SidebarGhostButton icon=view! { <IconCalendarClock /> } label="自动化" />
                             <SidebarGhostButton icon=view! { <IconBlocks /> } label="插件商店" />
                             <SidebarGhostButton icon=view! { <IconShapes /> } label="资产库" />
@@ -473,9 +595,18 @@ fn SidebarGhostButton(
     icon: impl IntoView + 'static,
     label: &'static str,
     #[prop(optional)] shortcut: Option<&'static str>,
+    #[prop(optional)] on_click: Option<Callback<()>>,
 ) -> impl IntoView {
+    let handle = move |_| {
+        if let Some(cb) = on_click {
+            cb.run(());
+        }
+    };
     view! {
-        <button class="flex w-full items-center justify-start gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-surface-hover">
+        <button
+            class="flex w-full items-center justify-start gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-surface-hover"
+            on:click=handle
+        >
             {icon}
             <span class="min-w-0 flex-1 truncate text-left">{label}</span>
             {shortcut.map(|s| {
