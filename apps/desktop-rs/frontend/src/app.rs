@@ -181,10 +181,16 @@ struct SessionsStore {
     sessions: RwSignal<Vec<SessionInfo>>,
     loading: RwSignal<bool>,
     error: RwSignal<String>,
+    /// 当前视图（对齐 taskViewMode 概念的轻量版）。
+    view: RwSignal<&'static str>,
 }
+
+/// 任务视图定义。归档视图走 includeArchived 通道单独拉取。
+const TASK_VIEWS: [&str; 5] = ["全部", "进行中", "已完成", "出错", "归档"];
 
 impl SessionsStore {
     fn load(&self) {
+        let include_archived = self.view.get_untracked() == "归档";
         self.loading.set(true);
         self.error.set(String::new());
         let store = *self;
@@ -193,13 +199,19 @@ impl SessionsStore {
                 "agent_request",
                 serde_json::json!({
                     "method": "session/list",
-                    "params": { "includeArchived": false, "limit": 50 }
+                    "params": { "includeArchived": include_archived, "limit": 50 }
                 }),
             )
             .await
             {
                 Ok(v) => match serde_json::from_value::<SessionListResult>(v) {
-                    Ok(list) => {
+                    Ok(mut list) => {
+                        if include_archived {
+                            // 归档视图只看 archivedAt 非空的行。
+                            list.sessions.retain(|s| s.archived_at.is_some());
+                        } else {
+                            list.sessions.retain(|s| s.archived_at.is_none());
+                        }
                         store.sessions.set(list.sessions);
                         store.error.set(String::new());
                     }
@@ -209,6 +221,21 @@ impl SessionsStore {
             }
             store.loading.set(false);
         });
+    }
+
+    /// 按当前视图过滤会话（归档视图已在 load 时过滤）。
+    fn visible(&self) -> Vec<SessionInfo> {
+        let view = self.view.get();
+        self.sessions
+            .get()
+            .into_iter()
+            .filter(|s| match view {
+                "进行中" => matches!(s.status.as_str(), "running" | "waiting" | "paused"),
+                "已完成" => matches!(s.status.as_str(), "completed" | "idle"),
+                "出错" => s.status == "error",
+                _ => true,
+            })
+            .collect()
     }
 
     fn title_of(&self, session_id: &str) -> Option<String> {
@@ -244,6 +271,7 @@ pub fn App() -> impl IntoView {
         sessions: RwSignal::new(Vec::new()),
         loading: RwSignal::new(false),
         error: RwSignal::new(String::new()),
+        view: RwSignal::new("全部"),
     };
     provide_context(store);
 
@@ -439,16 +467,38 @@ fn SidebarGhostButton(
     }
 }
 
-/// 任务视图切换工具条（对齐 workspaceTaskToolbar；视图切换 v1 占位）。
+/// 任务视图切换工具条（对齐 workspaceTaskToolbar 的视图切换机制；
+/// 真实产品的自定义分组（员工/工作流组）语义待后续对齐）。
 #[component]
 fn TaskViewToolbar() -> impl IntoView {
+    let store = expect_context::<SessionsStore>();
     view! {
-        <div class="flex flex-none items-center justify-between px-3 pt-1">
-            <span class="text-xs font-medium text-muted">"任务"</span>
-            <div class="flex items-center gap-1 text-xs text-muted">
-                // 视图切换（grouped/timeline/workspace/archived）在分组视图迁移时接入。
-                <span class="rounded bg-surface-hover px-1.5 py-0.5">"全部"</span>
-            </div>
+        <div class="flex flex-none flex-wrap items-center gap-1 px-3 pt-1">
+            {TASK_VIEWS
+                .iter()
+                .map(|v| {
+                    let view_label = *v;
+                    let is_active = move || store.view.get() == view_label;
+                    let class = move || {
+                        if is_active() {
+                            "rounded bg-accent-weak px-1.5 py-0.5 text-xs font-medium text-accent"
+                        } else {
+                            "rounded px-1.5 py-0.5 text-xs text-muted hover:bg-surface-hover"
+                        }
+                    };
+                    view! {
+                        <button
+                            class=class
+                            on:click=move |_| {
+                                store.view.set(view_label);
+                                store.load();
+                            }
+                        >
+                            {view_label}
+                        </button>
+                    }
+                })
+                .collect_view()}
         </div>
     }
 }
@@ -501,7 +551,7 @@ fn SidebarSessionList() -> impl IntoView {
                             <p class="px-2 py-1 text-xs text-[#dc2626]">{move || store.error.get()}</p>
                         }.into_any();
                     }
-                    let list = store.sessions.get();
+                    let list = store.visible();
                     if list.is_empty() {
                         return view! {
                             <p class="px-2 py-1 text-xs text-muted">"启动 Agent 后拉取任务，或点「＋ 新任务」"</p>
