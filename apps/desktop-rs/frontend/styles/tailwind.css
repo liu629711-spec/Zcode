@@ -4,6 +4,20 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* 代码块语言标签（render_markdown 的 data-lang 后处理配合）。 */
+.prose pre[data-lang] {
+  position: relative;
+}
+.prose pre[data-lang]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  color: #a8b0b8;
+  text-transform: lowercase;
+}
+
 /* 扫描 Leptos 源码中的 class（1:1 迁移 React 组件类名）。 */
 @source "../src";
 @source "../index.html";

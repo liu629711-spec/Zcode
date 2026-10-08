@@ -48,6 +48,9 @@ pub struct SessionInfo {
     pub updated_at: i64,
     #[serde(default)]
     pub archived_at: Option<i64>,
+    /// workspace ref（legacy-types 45-52），取 workspacePath 做文件树根。
+    #[serde(default)]
+    pub workspace: Option<Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -175,7 +178,22 @@ fn render_markdown(src: &str) -> String {
     });
     let mut out = String::new();
     pulldown_cmark::html::push_html(&mut out, parser);
-    out
+    decorate_code_blocks(out)
+}
+
+/// 代码块语言标签：把 `<pre><code class="language-x">` 的语言名挂到 pre 的
+/// data-lang 属性，由 CSS ::before 展示（不做 DOM 结构改写，避免嵌套闭合问题）。
+fn decorate_code_blocks(mut html: String) -> String {
+    let marker = "<pre><code class=\"language-";
+    loop {
+        let Some(idx) = html.find(marker) else { break };
+        let after = &html[idx + marker.len()..];
+        let Some(end) = after.find('"') else { break };
+        let lang = after[..end].to_string();
+        let replaced = format!("<pre data-lang=\"{lang}\"><code class=\"language-{lang}\"");
+        html = format!("{}{}{}", &html[..idx], replaced, &after[end..]);
+    }
+    html
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +289,16 @@ impl SessionsStore {
             .find(|s| s.session_id == session_id)
             .map(|s| s.status.clone())
     }
+
+    fn workspace_path_of(&self, session_id: &str) -> Option<String> {
+        self.sessions
+            .get_untracked()
+            .iter()
+            .find(|s| s.session_id == session_id)
+            .and_then(|s| s.workspace.as_ref())
+            .and_then(|w| w["workspacePath"].as_str())
+            .map(|p| p.to_string())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +347,10 @@ pub fn App() -> impl IntoView {
         });
         handler.forget();
     }
+
+    // 文件树滑出面板开关（对齐真实侧栏行内的 onOpenFileTree）。
+    let show_file_tree: RwSignal<bool> = RwSignal::new(false);
+    provide_context(show_file_tree);
 
     // agent 通知桥（主进程 emit `agent://notification`）：
     // state.updated → 刷新会话列表与当前会话消息。
@@ -753,6 +785,8 @@ fn SidebarSessionList() -> impl IntoView {
 fn NewTaskButton() -> impl IntoView {
     let (creating, set_creating) = signal(false);
     let (error, set_error) = signal(String::new());
+    // 可选工作区路径：留空用主目录（真实工作区选择器后续接目录对话框）。
+    let (workspace_input, set_workspace_input) = signal(String::new());
 
     let create = move |_| {
         if creating.get_untracked() {
@@ -762,11 +796,16 @@ fn NewTaskButton() -> impl IntoView {
         set_error.set(String::new());
         let trigger = expect_context::<SessionRefreshTrigger>();
         let selected = expect_context::<RwSignal<Option<String>>>();
+        let custom_workspace = workspace_input.get_untracked();
         spawn_local(async move {
-            // 主进程取真实主目录作为默认 workspace。
-            let home = match invoke_json("get_home", serde_json::json!({})).await {
-                Ok(v) => v["home"].as_str().unwrap_or(".").to_string(),
-                Err(_) => ".".to_string(),
+            // 显式输入优先，其次主进程取真实主目录。
+            let home = if custom_workspace.trim().is_empty() {
+                match invoke_json("get_home", serde_json::json!({})).await {
+                    Ok(v) => v["home"].as_str().unwrap_or(".").to_string(),
+                    Err(_) => ".".to_string(),
+                }
+            } else {
+                custom_workspace.trim().to_string()
             };
             let result = invoke_json(
                 "agent_request",
@@ -801,6 +840,12 @@ fn NewTaskButton() -> impl IntoView {
 
     view! {
         <div class="w-full">
+            <input
+                class="mb-1 w-full rounded-lg border border-border bg-panel px-2 py-1.5 text-xs outline-none focus:border-accent"
+                placeholder="工作区路径（留空用主目录）"
+                prop:value=move || workspace_input.get()
+                on:input=move |e| set_workspace_input.set(event_target_value(&e))
+            />
             <button
                 class="flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground disabled:opacity-60"
                 on:click=create
@@ -863,24 +908,236 @@ fn AgentPanel() -> impl IntoView {
 // 主工作区（#content）
 // ---------------------------------------------------------------------------
 
-/// 右侧主工作区：上方 header，下面主视图区。
+/// 右侧主工作区：上方 header，下面主视图区（对话 + 可选文件树侧板）。
 #[component]
 fn ContentPanel() -> impl IntoView {
+    let show_file_tree = expect_context::<RwSignal<bool>>();
     view! {
         <div id="content" class="flex min-w-[320px] flex-1 flex-col">
             <WorkspaceHeaderBar />
             <div class="min-h-0 flex-1 overflow-hidden">
-                <main class="flex h-full min-h-0 flex-1 flex-col bg-background">
-                    <section class="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[12px] border border-border">
+                <main class="flex h-full min-h-0 flex-1 bg-background">
+                    <section class="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-l-[12px] border border-border">
                         {move || match expect_context::<RwSignal<Option<String>>>().get() {
                             Some(id) => view! { <ChatView session_id=id /> }.into_any(),
                             None => view! { <HomeView /> }.into_any(),
                         }}
                     </section>
+                    {move || {
+                        show_file_tree.get().then(|| view! { <FileTreePanel /> }.into_any())
+                    }}
                 </main>
             </div>
         </div>
     }
+}
+
+/// 文件树侧板（导航式浏览 v1：目录逐级进入 + 文件预览）。
+/// 真实产品是 WorkspaceFileTree 树形展开 + code viewer，交互面后续对齐。
+#[component]
+fn FileTreePanel() -> impl IntoView {
+    let show_file_tree = expect_context::<RwSignal<bool>>();
+    let selected_session = expect_context::<RwSignal<Option<String>>>();
+    let store = expect_context::<SessionsStore>();
+
+    let workspace = move || {
+        selected_session
+            .get()
+            .and_then(|id| store.workspace_path_of(&id))
+    };
+
+    // 当前目录与列表（workspace 切换时重置）。
+    let cwd = RwSignal::new(None::<String>);
+    let (entries, set_entries) = signal(Vec::<FsEntry>::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal(String::new());
+    let (preview, set_preview) = signal(None::<FilePreview>);
+
+    let load_dir = Callback::new(move |dir: Option<String>| {
+        let Some(dir) = dir else { return };
+        cwd.set(Some(dir.clone()));
+        set_loading.set(true);
+        set_error.set(String::new());
+        let set_entries = set_entries.clone();
+        let set_loading = set_loading.clone();
+        let set_error = set_error.clone();
+        spawn_local(async move {
+            match invoke_json("fs_list", serde_json::json!({ "path": dir })).await {
+                Ok(v) => {
+                    let list: Vec<FsEntry> = v["entries"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .map(|e| FsEntry {
+                                    name: e["name"].as_str().unwrap_or("").to_string(),
+                                    is_dir: e["isDir"].as_bool().unwrap_or(false),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    set_entries.set(list);
+                    set_error.set(String::new());
+                }
+                Err(e) => set_error.set(e),
+            }
+            set_loading.set(false);
+        });
+    });
+
+    // 会话/面板打开时初始化根目录。
+    Effect::new(move |_| {
+        let open = show_file_tree.get();
+        if !open {
+            return;
+        }
+        let root = workspace();
+        match root {
+            Some(root) => {
+                if cwd.get_untracked().is_none() {
+                    load_dir.run(Some(root));
+                }
+            }
+            None => set_error.set("当前会话没有工作区路径".into()),
+        }
+    });
+
+    let open_file = Callback::new(move |path: String| {
+        let set_preview = set_preview.clone();
+        spawn_local(async move {
+            match invoke_json("fs_read", serde_json::json!({ "path": path })).await {
+                Ok(v) => {
+                    set_preview.set(Some(FilePreview {
+                        content: v["content"].as_str().unwrap_or("").to_string(),
+                        truncated: v["truncated"].as_bool().unwrap_or(false),
+                    }));
+                }
+                Err(e) => set_preview.set(Some(FilePreview {
+                    content: format!("读取失败: {e}"),
+                    truncated: false,
+                })),
+            }
+        });
+    });
+
+    view! {
+        <aside class="flex h-full w-[38%] min-w-[260px] max-w-[480px] flex-col overflow-hidden rounded-r-[12px] border border-l-0 border-border bg-panel">
+            <div class="flex flex-none items-center justify-between border-b border-border px-3 py-2">
+                <span class="min-w-0 flex-1 truncate text-xs text-muted">
+                    {move || cwd.get().unwrap_or_default()}
+                </span>
+                <button
+                    class="ml-2 flex-none rounded px-1.5 py-0.5 text-xs text-muted hover:bg-surface-hover"
+                    on:click=move |_| show_file_tree.set(false)
+                    title="关闭文件树"
+                >
+                    "✕"
+                </button>
+            </div>
+            <div class="flex flex-none items-center gap-2 px-3 py-1.5">
+                <button
+                    class="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-surface-hover disabled:opacity-40"
+                    disabled=move || {
+                        let Some(c) = cwd.get() else { return true };
+                        let Some(w) = workspace() else { return true };
+                        !c.starts_with(&w) || c == w
+                    }
+                    on:click=move |_| {
+                        let Some(c) = cwd.get_untracked() else { return };
+                        let Some(w) = workspace() else { return };
+                        // 回上级但不越过 workspace 根。
+                        let parent = std::path::Path::new(&c)
+                            .parent()
+                            .map(|p| p.to_string_lossy().into_owned());
+                        if let Some(p) = parent {
+                            if p.starts_with(&w) {
+                                load_dir.run(Some(p));
+                            } else {
+                                load_dir.run(Some(w));
+                            }
+                        }
+                    }
+                >
+                    "↑ 上级"
+                </button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-y-auto px-1">
+                {move || {
+                    if loading.get() {
+                        return view! { <p class="px-3 py-1 text-xs text-muted">"加载中…"</p> }.into_any();
+                    }
+                    if !error.get().is_empty() {
+                        return view! { <p class="px-3 py-1 text-xs text-[#dc2626]">{move || error.get()}</p> }.into_any();
+                    }
+                    let list = entries.get();
+                    if list.is_empty() {
+                        return view! { <p class="px-3 py-1 text-xs text-muted">"空目录"</p> }.into_any();
+                    }
+                    list.into_iter()
+                        .map(|e| {
+                            // 显示文本与 full 闭包各持一份 name。
+                            let entry_name = e.name.clone();
+                            let entry_name_for_full = e.name.clone();
+                            let is_dir = e.is_dir;
+                            let full = move || {
+                                format!(
+                                    "{}{}",
+                                    cwd.get_untracked().unwrap_or_default().trim_end_matches(['/', '\\']),
+                                    format!("/{}", entry_name_for_full)
+                                )
+                            };
+                            if is_dir {
+                                let enter = Callback::new(move |_: ()| load_dir.run(Some(full())));
+                                view! {
+                                    <button
+                                        class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-surface-hover"
+                                        on:click=move |_| enter.run(())
+                                    >
+                                        <span class="text-muted">"▸"</span>
+                                        <span class="min-w-0 flex-1 truncate">{entry_name}</span>
+                                    </button>
+                                }.into_any()
+                            } else {
+                                let open = open_file;
+                                view! {
+                                    <button
+                                        class="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-surface-hover"
+                                        on:click=move |_| open.run(full())
+                                    >
+                                        <span class="text-foreground-subtlest">"·"</span>
+                                        <span class="min-w-0 flex-1 truncate">{entry_name}</span>
+                                    </button>
+                                }.into_any()
+                            }
+                        })
+                        .collect_view()
+                        .into_any()
+                }}
+            </div>
+            {move || preview.get().map(|p| {
+                view! {
+                    <div class="flex max-h-[45%] flex-none flex-col border-t border-border">
+                        <div class="flex items-center justify-between px-3 py-1 text-xs text-muted">
+                            <span>"预览"</span>
+                            {p.truncated.then(|| view! { <span>"（超长截断）"</span> })}
+                        </div>
+                        <pre class="min-h-0 flex-1 overflow-auto bg-[#f0f1f3] p-2 text-xs leading-relaxed whitespace-pre-wrap">{p.content}</pre>
+                    </div>
+                }
+            })}
+        </aside>
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FsEntry {
+    name: String,
+    is_dir: bool,
+}
+
+#[derive(Debug, Clone)]
+struct FilePreview {
+    content: String,
+    truncated: bool,
 }
 
 /// 顶栏：显示当前会话标题与状态（全局 store 共享）。
@@ -888,6 +1145,7 @@ fn ContentPanel() -> impl IntoView {
 fn WorkspaceHeaderBar() -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
     let store = expect_context::<SessionsStore>();
+    let show_file_tree = expect_context::<RwSignal<bool>>();
     let title = move || {
         selected_session
             .get()
@@ -906,6 +1164,13 @@ fn WorkspaceHeaderBar() -> impl IntoView {
             <span class="mx-1 text-border">"|"</span>
             <span class=format!("h-2 w-2 flex-none rounded-full {}", "bg-[#9ca3af]")></span>
             <span class="min-w-0 flex-1 truncate text-sm">{title}</span>
+            <button
+                class="flex-none rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover"
+                on:click=move |_| show_file_tree.update(|v| *v = !*v)
+                title="文件树（当前会话工作区）"
+            >
+                "文件"
+            </button>
             <span class="flex-none text-xs text-muted">{move || {
                 let s = status();
                 if s.is_empty() { String::new() } else { s }

@@ -109,6 +109,70 @@ fn get_home() -> Value {
     json!({ "home": dirs_home().to_string_lossy() })
 }
 
+/// 列出目录内容（文件树数据源；直接读盘，不经 agent 协议）。
+#[tauri::command]
+fn fs_list(path: String) -> Result<Value, String> {
+    let dir = PathBuf::from(&path);
+    if !dir.is_dir() {
+        return Err(format!("不是目录: {path}"));
+    }
+    let mut entries: Vec<Value> = Vec::new();
+    let read = std::fs::read_dir(&dir).map_err(|e| format!("读取失败: {e}"))?;
+    for entry in read.flatten() {
+        let Ok(file_type) = entry.file_type() else { continue };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // 跳过隐藏项与常见噪声目录，避免树被撑爆。
+        if name.starts_with('.') {
+            continue;
+        }
+        if file_type.is_dir()
+            && matches!(name.as_str(), "node_modules" | "target" | "dist" | "__pycache__")
+        {
+            continue;
+        }
+        entries.push(json!({
+            "name": name,
+            "isDir": file_type.is_dir(),
+        }));
+    }
+    // 目录在前，同类型按名称排序。
+    entries.sort_by(|a, b| {
+        let dir_key = |v: &Value| !v["isDir"].as_bool().unwrap_or(false);
+        dir_key(a)
+            .cmp(&dir_key(b))
+            .then_with(|| {
+                a["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_lowercase()
+                    .cmp(&b["name"].as_str().unwrap_or("").to_lowercase())
+            })
+    });
+    Ok(json!({ "entries": entries }))
+}
+
+/// 读取文本文件内容（文件树点击预览；超长截断）。
+#[tauri::command]
+fn fs_read(path: String) -> Result<Value, String> {
+    let file = PathBuf::from(&path);
+    if !file.is_file() {
+        return Err(format!("不是文件: {path}"));
+    }
+    // 二进制粗筛：读前 1KB 查 NUL。
+    let bytes = std::fs::read(&file).map_err(|e| format!("读取失败: {e}"))?;
+    if bytes.iter().take(1024).any(|&b| b == 0) {
+        return Err("二进制文件暂不支持预览".into());
+    }
+    const MAX_LEN: usize = 512 * 1024;
+    let truncated = bytes.len() > MAX_LEN;
+    let content = String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_LEN)]).into_owned();
+    Ok(json!({
+        "content": content,
+        "truncated": truncated,
+        "size": bytes.len(),
+    }))
+}
+
 fn dirs_home() -> PathBuf {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -123,6 +187,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             get_home,
+            fs_list,
+            fs_read,
             agent_start,
             agent_status,
             agent_request,
