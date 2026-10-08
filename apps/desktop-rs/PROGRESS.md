@@ -125,9 +125,12 @@
      execute/read/search/todo 出专属卡，edit 待 fileSummaries（文件 chip），
      其余 fallback 兜底（未迁不隐藏）。裁剪：流式半截 JSON 预览、
      workflowRun 联接、CUA 组、入场动画。
-   - [ ] toolCall 剩余：fileSummaries（edit 文件 chip + unified diff）、
-         其余 ~50 个 renderer（按需）、CUA 组 / executeGroup / changesGroup
-         分组器（conversationAssistantWorkItems）、工作流 run 联接。
+   - [x] **fileSummaries 已迁**：`fileSummaries.rs` + `toolDiffPreview.rs`
+         （unified diff 构建含阈值回退与多文件守卫）+ types/heuristics 补齐。
+         edit 卡文件 chip / diff 计数 / patch 全通。
+   - [ ] toolCall 剩余：其余 ~50 个 renderer（按需）、CUA 组 /
+         executeGroup / changesGroup 分组器（conversationAssistantWorkItems）、
+         工作流 run 联接。
 4. 文件树剩余项：git 状态 / fileWatcher / 虚拟滚动 / 拖拽右键菜单
 5. 归档区剩余：变更统计（changeSummary）、清空全部归档按钮
 6. 富文本输入（`LexicalChatInput` 1535 行 → Rust 富文本方案待定）
@@ -135,13 +138,13 @@
 
 **待决**
 
-8. **push 40 个 commit**（等你发话）
+8. **push 41 个 commit**（等你发话）
 
 ---
 
 ## 六、验证现状
 
-- 前端 **338 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **357 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
