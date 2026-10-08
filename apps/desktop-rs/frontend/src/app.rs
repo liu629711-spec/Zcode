@@ -877,7 +877,9 @@ fn AgentPanel() -> impl IntoView {
                             .as_str()
                             .unwrap_or("未知原因")
                             .to_string();
-                        set_agent_status.set(format!("连接断开：{reason}"));
+                        set_agent_status.set(format!("连接断开：{reason}，自动重连…"));
+                        // 自动重连：agent_start 幂等（旧实例断开后重新 spawn 并握手）。
+                        let _ = invoke_json("agent_start", serde_json::json!({})).await;
                     } else {
                         set_agent_status.set("未启动".into());
                     }
