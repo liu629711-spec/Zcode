@@ -3,6 +3,7 @@
 //! Agent 运行时（apps/zcode-cli），协议只实现不改。
 
 pub mod agent;
+pub mod conversation_stream;
 pub mod protocol;
 pub mod taskdb;
 pub mod taskgroup;
@@ -415,6 +416,93 @@ async fn task_group_delete(group_id: String) -> Result<Value, String> {
     Ok(json!({ "ok": true }))
 }
 
+/// 进程内稳定的 connectionId（stdio 单管道下由 host 分配，用于重订阅替换判定）。
+///
+/// 显式传入优先（前端可自管），否则取进程级单例。
+fn resolve_connection_id(explicit: Option<String>) -> String {
+    use std::sync::OnceLock;
+    static CONNECTION_ID: OnceLock<String> = OnceLock::new();
+    explicit.unwrap_or_else(|| {
+        CONNECTION_ID
+            .get_or_init(|| format!("desktop-rs-{}", uuid::Uuid::now_v7()))
+            .clone()
+    })
+}
+
+/// 订阅会话 topic 流（逐 token 流式的入口）。
+///
+/// 真源流程：`v4/conversation/subscribe` 建立订阅 → agent 推
+/// `v4/conversation/frame` 通知 → 前端订阅通知后按 frame 增量更新。
+#[tauri::command]
+async fn conversation_subscribe(
+    state: AgentStateHandle<'_>,
+    session_id: String,
+    workspace: Option<String>,
+    connection_id: Option<String>,
+) -> Result<Value, String> {
+    let conn = resolve_connection_id(connection_id);
+    let guard = state.runtime.lock().await;
+    let rt = guard.as_ref().ok_or("agent 未启动")?;
+    let params = conversation_stream::SubscribeParams::desktop_conversation(
+        conn,
+        &session_id,
+        workspace,
+    );
+    rt.client
+        .request(
+            conversation_stream::CONVERSATION_SUBSCRIBE,
+            Some(serde_json::to_value(&params).map_err(|e| e.to_string())?),
+            agent::client::DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+}
+
+/// 取消订阅。
+#[tauri::command]
+async fn conversation_unsubscribe(
+    state: AgentStateHandle<'_>,
+    session_id: String,
+    connection_id: Option<String>,
+) -> Result<Value, String> {
+    let conn = resolve_connection_id(connection_id);
+    let guard = state.runtime.lock().await;
+    let rt = guard.as_ref().ok_or("agent 未启动")?;
+    let params = serde_json::json!({
+        "connectionId": conn,
+        "topic": conversation_stream::SubscribeParams::conversation_topic(&session_id),
+    });
+    rt.client
+        .request(
+            conversation_stream::CONVERSATION_UNSUBSCRIBE,
+            Some(params),
+            agent::client::DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+}
+
+/// 请求 resync（流断线后重新对齐；真源 conversationResync）。
+#[tauri::command]
+async fn conversation_resync(
+    state: AgentStateHandle<'_>,
+    session_id: String,
+    connection_id: Option<String>,
+) -> Result<Value, String> {
+    let conn = resolve_connection_id(connection_id);
+    let guard = state.runtime.lock().await;
+    let rt = guard.as_ref().ok_or("agent 未启动")?;
+    let params = serde_json::json!({
+        "connectionId": conn,
+        "topic": conversation_stream::SubscribeParams::conversation_topic(&session_id),
+    });
+    rt.client
+        .request(
+            conversation_stream::CONVERSATION_RESYNC,
+            Some(params),
+            agent::client::DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+}
+
 /// 当前 Unix 毫秒（真源多处用 Date.now() 落时间戳）。
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -477,6 +565,9 @@ pub fn run() {
             task_group_remove,
             task_group_delete,
             task_group_color,
+            conversation_subscribe,
+            conversation_unsubscribe,
+            conversation_resync,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");
