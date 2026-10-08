@@ -477,10 +477,16 @@ fn CommandCenter(show: RwSignal<bool>) -> impl IntoView {
 // 侧栏
 // ---------------------------------------------------------------------------
 
-/// lucide 图标内联渲染（path 数据取自 node_modules/lucide-react/dist/esm/icons，
+/// lucide 图标内联渲染（path 数据取自 node_modules/lucide-react/dist/esm/icons,
 /// 与 React 版完全同源；stroke 规则统一 lucide 默认 2px round）。
+///
+/// 部分图标含 `rect` 节点（archive-x 等），故额外接收矩形列表。
 #[component]
-pub fn Icon(paths: Vec<&'static str>, circles: Vec<(&'static str, &'static str, &'static str)>) -> impl IntoView {
+pub fn Icon(
+    paths: Vec<&'static str>,
+    circles: Vec<(&'static str, &'static str, &'static str)>,
+    #[prop(optional)] rects: Vec<(&'static str, &'static str, &'static str, &'static str)>,
+) -> impl IntoView {
     view! {
         <svg
             class="size-4 flex-none"
@@ -491,6 +497,9 @@ pub fn Icon(paths: Vec<&'static str>, circles: Vec<(&'static str, &'static str, 
             stroke-linecap="round"
             stroke-linejoin="round"
         >
+            {rects.into_iter()
+                .map(|(x, y, w, h)| view! { <rect x=x y=y width=w height=h rx="1" /> })
+                .collect_view()}
             {circles.into_iter()
                 .map(|(cx, cy, r)| view! { <circle cx=cx cy=cy r=r /> })
                 .collect_view()}
@@ -591,10 +600,20 @@ fn SidebarPanel() -> impl IntoView {
                         <div class="relative flex min-h-0 flex-1 flex-col">
                             <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
                                 <TaskViewToolbar />
-                                // 置顶区：滚动容器内、操作区下、任务区上
-                                // （真源 WorkspaceSidebar.tsx:1875-1899）。
-                                <crate::pinned::PinnedTasksSection />
-                                <SidebarSessionList />
+                                // 归档视图整块替换任务区（真源 WorkspaceSidebar.tsx:1901-1910），
+                                // 与置顶区的"并存"不同。
+                                {move || {
+                                    let store = expect_context::<SessionsStore>();
+                                    if store.view.get() == "归档" {
+                                        view! { <crate::archived::ArchivedTasksSection /> }.into_any()
+                                    } else {
+                                        view! {
+                                            <crate::pinned::PinnedTasksSection />
+                                            <SidebarSessionList />
+                                        }
+                                        .into_any()
+                                    }
+                                }}
                             </div>
                         </div>
                     </div>

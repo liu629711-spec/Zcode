@@ -206,8 +206,6 @@ pub fn list_tasks(
 ///
 /// 真源是三段式（overlay → SQLite → 事件）；Rust 侧只有持久层，
 /// 事件那一段由前端在调用成功后自行刷新列表承担。
-///
-/// 任务不存在时返回 Ok(false)——不擅自插入半截行，避免污染真源的数据。
 pub fn set_pinned(
     conn: &Connection,
     ws_path: &str,
@@ -215,13 +213,54 @@ pub fn set_pinned(
     task_id: &str,
     pinned: bool,
 ) -> Result<bool, String> {
+    update_state(conn, ws_path, ws_identity, task_id, "pinned", pinned)
+}
+
+/// 设置归档状态（真源 `zcodeTaskServiceAdapter.ts:3104-3109` unarchiveTask）。
+///
+/// 真源是三段式（overlay → SQLite → 事件）；Rust 侧只有持久层，
+/// 事件那一段由前端在调用成功后自行刷新列表承担。
+pub fn set_archived(
+    conn: &Connection,
+    ws_path: &str,
+    ws_identity: Option<&str>,
+    task_id: &str,
+    archived: bool,
+) -> Result<bool, String> {
+    update_state(conn, ws_path, ws_identity, task_id, "archived", archived)
+}
+
+/// 软删除任务（真源 `zcodeTaskServiceAdapter.ts:2920-2932` deleteTask）。
+///
+/// 真源写 `deleted = 1` 而非 `DELETE FROM`——行要留着给 deleted tombstone join
+/// （taskIndexRepo.ts:1827 `AND deleted = 1` 会读这类行），所以这里也必须是 UPDATE。
+pub fn delete_task(
+    conn: &Connection,
+    ws_path: &str,
+    ws_identity: Option<&str>,
+    task_id: &str,
+) -> Result<bool, String> {
+    update_state(conn, ws_path, ws_identity, task_id, "deleted", true)
+}
+
+/// 更新单个状态列。列名由调用方固定（不接受外部输入，避免 SQL 注入面）。
+fn update_state(
+    conn: &Connection,
+    ws_path: &str,
+    ws_identity: Option<&str>,
+    task_id: &str,
+    column: &str,
+    value: bool,
+) -> Result<bool, String> {
+    debug_assert!(
+        matches!(column, "pinned" | "archived" | "deleted"),
+        "状态列必须是白名单内的固定字面量"
+    );
     let ws_key = workspace_key(ws_path, ws_identity);
+    let sql = format!("UPDATE tasks SET {column} = ?2 WHERE workspace_key = ?1 AND task_id = ?3");
     let changed = conn
-        .execute(
-            "UPDATE tasks SET pinned = ?2 WHERE workspace_key = ?1 AND task_id = ?3",
-            rusqlite::params![ws_key, pinned as i64, task_id],
-        )
-        .map_err(|e| format!("更新置顶状态失败: {e}"))?;
+        .execute(&sql, rusqlite::params![ws_key, value as i64, task_id])
+        .map_err(|e| format!("更新{column} 失败: {e}"))?;
     Ok(changed > 0)
 }
 
@@ -304,6 +343,81 @@ mod tests {
         let archived = list_tasks(&conn, "C:/ws", None, TaskKind::Archived).unwrap();
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0].task_id, "p2");
+    }
+
+    #[test]
+    fn unarchive_moves_task_back_to_active() {
+        let conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed(&conn, &ws, "t1", 0, 1, 100);
+        assert_eq!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Archived).unwrap().len(),
+            1
+        );
+
+        assert!(set_archived(&conn, "C:/ws", None, "t1", false).unwrap());
+
+        assert!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Archived)
+                .unwrap()
+                .is_empty(),
+            "取消归档后应离开 archived 分区"
+        );
+        assert_eq!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Active).unwrap().len(),
+            1,
+            "取消归档后回到 active 分区"
+        );
+    }
+
+    #[test]
+    fn archive_and_unarchive_roundtrip() {
+        let conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed(&conn, &ws, "t1", 0, 0, 100);
+        assert!(set_archived(&conn, "C:/ws", None, "t1", true).unwrap());
+        assert_eq!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Archived).unwrap().len(),
+            1
+        );
+        assert!(set_archived(&conn, "C:/ws", None, "t1", false).unwrap());
+        assert!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Archived)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn delete_task_is_soft_delete() {
+        let conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed(&conn, &ws, "t1", 0, 1, 100);
+
+        assert!(delete_task(&conn, "C:/ws", None, "t1").unwrap());
+
+        // 行必须还在（真源靠 deleted=1 的行做 tombstone join，taskIndexRepo.ts:1827）。
+        let row_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tasks WHERE task_id = 't1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(row_count, 1, "删除必须是软删，行不能真的消失");
+
+        // 但所有分区查询都要看不到它。
+        for kind in [TaskKind::Pinned, TaskKind::Active, TaskKind::Archived] {
+            assert!(
+                list_tasks(&conn, "C:/ws", None, kind).unwrap().is_empty(),
+                "{kind:?} 分区不应暴露已删除任务"
+            );
+        }
+    }
+
+    #[test]
+    fn delete_reports_missing_task() {
+        let conn = memory_db();
+        assert!(!delete_task(&conn, "C:/ws", None, "nope").unwrap());
+        assert!(!set_archived(&conn, "C:/ws", None, "nope", true).unwrap());
     }
 
     #[test]

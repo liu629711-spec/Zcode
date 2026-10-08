@@ -303,6 +303,51 @@ async fn task_set_pinned(
     Ok(json!({ "ok": true }))
 }
 
+/// 取消归档（真源 zcodeTaskService.unarchiveTask）。
+///
+/// 对应 `WorkspaceArchivedTasksFlatSection.tsx:231-238` 行内"取消归档"按钮。
+#[tauri::command]
+async fn task_unarchive(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    task_id: String,
+) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    let changed = taskdb::set_archived(
+        &conn,
+        &workspace_path,
+        workspace_identity.as_deref(),
+        &task_id,
+        false,
+    )?;
+    if !changed {
+        return Err(format!("任务不存在或不属于该工作区: {task_id}"));
+    }
+    Ok(json!({ "ok": true }))
+}
+
+/// 软删除任务（真源 zcodeTaskService.deleteTask）。
+///
+/// 只写 `deleted = 1` 不物理删行——真源的 tombstone join 要读这类行。
+#[tauri::command]
+async fn task_delete(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    task_id: String,
+) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    let changed = taskdb::delete_task(
+        &conn,
+        &workspace_path,
+        workspace_identity.as_deref(),
+        &task_id,
+    )?;
+    if !changed {
+        return Err(format!("任务不存在或不属于该工作区: {task_id}"));
+    }
+    Ok(json!({ "ok": true }))
+}
+
 fn dirs_home() -> PathBuf {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -327,6 +372,8 @@ pub fn run() {
             agent_rows_range,
             task_list,
             task_set_pinned,
+            task_unarchive,
+            task_delete,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");

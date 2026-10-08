@@ -24,3 +24,5 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
+# live 测试要直接开副本库核对 SQL 效果（archived_live.rs）。
+rusqlite = { version = "0.37", features = ["bundled"] }

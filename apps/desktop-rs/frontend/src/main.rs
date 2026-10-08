@@ -1,6 +1,7 @@
 use leptos::mount::mount_to_body;
 
 pub mod app;
+pub mod archived;
 pub mod file_icons;
 pub mod file_tree;
 pub mod pinned;
