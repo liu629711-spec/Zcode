@@ -86,12 +86,16 @@
 1. 侧栏 dnd + 任务分组（`workspace-grouped-tasks/` 4307 行，自定义组 + 员工 roster）
    - [x] **纯逻辑层已迁**：`groupedTasks/view.rs` 1:1 翻译 `view.ts`(581) + `ids.ts`，
      真源 16 个导出函数全覆盖 + 13 个内部 helper，24 个单测。
-   - [ ] 渲染层补拖拽交互：dnd-kit 语义（drag over/leave/drop + 碰撞检测）→ Leptos 事件。
+   - [x] **join 层已迁**：`groupedTasks/join.rs`，task_ids → 完整 task（含
+     workspaceIdentity），`grouped.rs` 已改走该链路。
+   - [x] **拖拽落位决策已迁**：`groupedTasks/dnd.rs`，6 个 preview 函数 +
+     视图签名 + 7 层分发链，23 个单测。
+   - [ ] **事件适配层（需先定方案）**：dnd-kit 碰撞检测 / 拖拽源注册 / DragOverlay
+     在 Leptos 无对等物，需在「原生 HTML5 DnD」与「自实现指针事件」间选型。
+     dnd.rs 的 `DragOverSpec` 已把外部事件收敛成语义输入，适配层只需填它。
    - [ ] 卡片组件：`group-item.tsx` / `task-row.tsx` / `task-item.tsx` /
          `group-drag-overlay.tsx` / `sticky-group-header.tsx`。
-   - [ ] **join 层待补**：后端 `taskgroup::GroupedNode` 只返回 `task_ids`，
-         而 view.ts 需要完整 task 才能搬运。需把 task_ids 补成
-         `TaskListItem`（含 workspacePath/workspaceIdentity —— taskKey 依赖它）。
+   - [ ] 落库：`applyOrder`（真源把新顺序写回 `task_group_view_node_orders`）。
 2. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
 
 **后续**
@@ -104,14 +108,14 @@
 
 **待决**
 
-8. **push 24 个 commit**（等你发话）
+8. **push 27 个 commit**（等你发话）
 
 ---
 
 ## 六、验证现状
 
-- 前端 **233 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
-  流式重组、**分组视图重排 24 个**）
+- 前端 **267 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+  流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**）
 - 后端 23 测试（协议信封 4 + agent 三件套 6 + taskdb 12）+ 4 个 live 测试
   （真实 agent、真实 SQLite 库、真实库副本上的归档写操作）
 - trunk 0 错误 0 警告
