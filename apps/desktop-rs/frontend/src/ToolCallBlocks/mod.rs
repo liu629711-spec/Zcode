@@ -6,6 +6,9 @@
 //! 模块名沿用 PascalCase 是刻意的（对齐真源文件名），故豁免 snake_case 警告。
 #![allow(non_snake_case)]
 
+pub mod fileSummaryHeuristics;
+pub mod fileSummaryTypes;
+pub mod renderers;
 pub mod resolveRenderer;
 pub mod ToolLayout;
 pub mod ToolSummaryRow;

@@ -67,7 +67,7 @@ impl ToolFamily {
 /// 工具名 → family 静态表（真源 `tool-identity.ts:57-92`，30 条）。
 ///
 /// 查表大小写不敏感（真源 `TOOL_NAME_BY_LOWER`，:94-107）。
-fn family_by_lower(name: &str) -> ToolFamily {
+pub fn family_by_lower(name: &str) -> ToolFamily {
     match name.to_lowercase().as_str() {
         "read" => ToolFamily::FileRead,
         "write" | "edit" | "applypatch" => ToolFamily::FileWrite,
