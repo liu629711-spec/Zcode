@@ -41,9 +41,13 @@ use super::view::{
 /// 符号变化维护：向下拖→ `after`，向上拖 → `before`。注意它比的是
 /// `nextDeltaY` 与 `lastDragDeltaY`（增量而非绝对位置），所以是
 /// 「本次移动方向」而非「指针在目标上方还是下方」。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DragDirection {
     Before,
+    /// 默认值。真源 `dragDirectionRef` 初值就是 `"after"`
+    /// （:1399 `dragDirectionRef.current = "after"`），所以必须让 After 成为
+    /// Default——若用 Before 作零值，Rust 侧首次拖拽的落位方向会与真源相反。
+    #[default]
     After,
 }
 

@@ -17,7 +17,7 @@
 //! green/blue/purple，每种给 light + dark 两套类名。
 
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::taskdb::workspace_key;
 
@@ -427,6 +427,166 @@ pub fn delete_group(conn: &Connection, group_id: &str) -> Result<bool, String> {
     Ok(changed > 0)
 }
 
+/// 落库一次完整的分组视图顺序（真源 `applyGroupedTaskViewOrder`）。
+///
+/// 真源 `viewToOrderInput`（useGroupedTaskView.ts:539-554）把视图拆成两份数据：
+/// ```text
+/// { topLevelNodes: [...],  groups: [{ groupId, taskRefs: [...] }] }
+/// ```
+/// 前者是顶层节点（组 / 游离任务）顺序，后者是各组**内部成员**顺序。
+/// 两者都必须落库——只存顶层顺序的话，组内成员顺序会丢失。
+///
+/// ## 落库两类数据
+///
+/// 1. **顶层顺序** → `task_group_view_node_orders`，`sort_order` 为下标。
+/// 2. **组内成员顺序** → `task_group_members.sort_order`，同样用下标。
+///
+/// ## 跨组移动还要改成员关系
+///
+/// 拖拽可能把 task 从 A 组挪到 B 组（或移出到顶层）。这**不只是排序**，
+/// `task_group_members` 的 group_id 也要跟着变。漏了这一步，重启后
+/// 成员关系与落库的顺序不一致（顺序说在 B 组，成员表还在 A 组）。
+///
+/// ## 为什么全量覆盖而不是增量
+///
+/// 真源是全量提交（`applyOrder(nextView)` 传整个视图）。这里照抄：
+/// 先删掉该workspace 下所有排序记录再整体写入，避免残留旧顺序项
+/// （比如组被删了但排序记录还在，读视图时会被匹配上）。
+pub fn apply_grouped_order(
+    conn: &mut Connection,
+    ws_path: &str,
+    ws_identity: Option<&str>,
+    top_level: &[GroupedNode],
+    groups: &[(String, Vec<String>)],
+    now_ms: i64,
+) -> Result<(), String> {
+    let ws_key = workspace_key(ws_path, ws_identity);
+    let tx = conn.transaction().map_err(|e| format!("开启事务失败: {e}"))?;
+
+    // ── 1. 顶层顺序：全量替换 ──
+    // 只删当前 workspace 的记录（node_key 的第一段是 ws_key）。
+    {
+        let mut stmt = tx
+            .prepare("SELECT node_type, node_key FROM task_group_view_node_orders")
+            .map_err(|e| format!("准备清理排序失败: {e}"))?;
+        let existing: Vec<(String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| format!("读取旧排序失败: {e}"))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("读取旧排序行失败: {e}"))?;
+        for (node_type, node_key) in existing {
+            if parse_node_key(&node_key).map(|(k, _)| k) == Some(ws_key.clone()) {
+                tx.execute(
+                    "DELETE FROM task_group_view_node_orders WHERE node_type = ?1 AND node_key = ?2",
+                    rusqlite::params![node_type, node_key],
+                )
+                .map_err(|e| format!("清理旧排序失败: {e}"))?;
+            }
+        }
+    }
+
+    for (index, node) in top_level.iter().enumerate() {
+        let node_type = match node {
+            GroupedNode::Group { .. } => "group",
+            GroupedNode::Task { .. } => "task",
+        };
+        let node_key = node_sort_key(&ws_key, node);
+        tx.execute(
+            "INSERT INTO task_group_view_node_orders \
+               (node_type, node_key, sort_order, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?4)",
+            rusqlite::params![node_type, node_key, index as i64, now_ms],
+        )
+        .map_err(|e| format!("写入顶层顺序失败: {e}"))?;
+    }
+
+    // ── 2. 组内成员：改group_id + 写 sort_order ──
+    for (group_id, task_ids) in groups {
+        for (index, task_id) in task_ids.iter().enumerate() {
+            // 先脱离旧组（主键 (workspace_key, task_id)，故一条 task 只在一组）。
+            // 这一步同时覆盖「加入新组」与「退出旧组」两种情况。
+            tx.execute(
+                "UPDATE task_group_members SET group_id = ?1, sort_order = ?2, updated_at = ?3 \
+                 WHERE workspace_key = ?4 AND task_id = ?5",
+                rusqlite::params![group_id, index as i64, now_ms, ws_key, task_id],
+            )
+            .map_err(|e| format!("写入组内顺序失败: {e}"))?;
+        }
+    }
+
+    // ── 3. 清理本轮未提交组内顺序的成员行 ──
+    // 组内顺序是按组全量提交的：出现在 groups 里的 task 拿到新 sort_order，
+    // 没出现的（被拖出到顶层、或所属组本轮没提交）应把 sort_order 清空，
+    // 否则读视图时会被 ORDER BY sort_order 排进组的成员查询里
+    // （游离任务本不该出现在组的成员结果中）。
+    //
+    // **判据不能用 `group_id NOT IN (SELECT value FROM json_each(groups))`**：
+    // 1. groups 为空数组时，SQL 的 NOT IN 空集恒为 NULL（条件不成立），
+    //    所有成员的 sort_order 都清不掉；
+    // 2. 「组在列表里」不等于「该 task 在这个组的提交列表里」——用组id 做判据
+    //    会把本轮未提交组内顺序的成员错误地保留旧 sort_order。
+    // 正确判据是：本轮所有提交的 task_id 集合，不在其中的一律清空。
+    let submitted_task_ids: Vec<String> = groups
+        .iter()
+        .flat_map(|(_, task_ids)| task_ids.iter().cloned())
+        .collect();
+    tx.execute(
+        "UPDATE task_group_members SET sort_order = NULL \
+         WHERE workspace_key = ?1 AND sort_order IS NOT NULL \
+           AND task_id NOT IN (SELECT value FROM json_each(?2))",
+        rusqlite::params![ws_key, json_string_array(&submitted_task_ids)],
+    )
+    .map_err(|e| format!("清理游离成员顺序失败: {e}"))?;
+
+    tx.commit().map_err(|e| format!("提交事务失败: {e}"))
+}
+
+/// 把字符串列表拼成 `json_each` 可吃的 JSON 数组串（元素按 JSON 规则转义）。
+fn json_string_array(values: &[String]) -> String {
+    let items: Vec<String> = values.iter().map(|v| quote(v)).collect();
+    format!("[{}]", items.join(","))
+}
+
+/// 顶层节点入参（前端落库时传的形状）。
+///
+/// 只有节点身份（类型 + id），不带成员列表——成员顺序走 `GroupOrderInput`，
+/// 与真源 `viewToOrderInput` 的 `{ topLevelNodes, groups }` 两份数据对应。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum TopLevelNodeInput {
+    /// 组节点（只需 groupId 定位，标题/颜色不在本次落库范围内）。
+    #[serde(rename = "group")]
+    Group { group_id: String },
+    /// 游离任务节点。
+    #[serde(rename = "task")]
+    Task { task: String },
+}
+
+impl TopLevelNodeInput {
+    /// 转成内部视图节点（成员列表留空，排序不依赖它）。
+    pub fn into_node(self) -> GroupedNode {
+        match self {
+            TopLevelNodeInput::Group { group_id } => GroupedNode::Group {
+                group: TaskGroup {
+                    group_id,
+                    title: String::new(),
+                    color: String::new(),
+                },
+                task_ids: Vec::new(),
+            },
+            TopLevelNodeInput::Task { task } => GroupedNode::Task { task },
+        }
+    }
+}
+
+/// 组内成员顺序入参。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupOrderInput {
+    pub group_id: String,
+    pub task_ids: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -752,5 +912,252 @@ mod tests {
             matches!(view_b.nodes.first(), Some(GroupedNode::Task { task }) if task == "tb"),
             "B 工作区不该看到 A 的分组"
         );
+    }
+
+    // ── apply_grouped_order ──
+
+    fn group_node_of(id: &str) -> GroupedNode {
+        GroupedNode::Group {
+            group: TaskGroup {
+                group_id: id.into(),
+                title: id.into(),
+                color: "blue".into(),
+            },
+            task_ids: Vec::new(),
+        }
+    }
+
+    fn task_node_of(id: &str) -> GroupedNode {
+        GroupedNode::Task { task: id.into() }
+    }
+
+    fn read_orders(conn: &Connection) -> Vec<(String, i64)> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT node_key, sort_order FROM task_group_view_node_orders \
+                 ORDER BY sort_order ASC",
+            )
+            .unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .unwrap();
+        rows.map(|r| r.unwrap()).collect()
+    }
+
+    fn member_of(
+        conn: &Connection,
+        ws: &str,
+        task_id: &str,
+    ) -> Option<(String, Option<i64>)> {
+        conn.query_row(
+            "SELECT group_id, sort_order FROM task_group_members \
+             WHERE workspace_key = ?1 AND task_id = ?2",
+            rusqlite::params![ws, task_id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<i64>>(1)?)),
+        )
+        .ok()
+    }
+
+    #[test]
+    fn apply_order_persists_top_level_sequence() {
+        let mut conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed_task(&conn, &ws, "t1", 100);
+        seed_task(&conn, &ws, "t2", 200);
+
+        apply_grouped_order(
+            &mut conn,
+            "C:/ws",
+            None,
+            &[task_node_of("t2"), task_node_of("t1")],
+            &[],
+            1000,
+        )
+        .unwrap();
+
+        let orders = read_orders(&conn);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].1, 0, "t2 排第一");
+        assert_eq!(orders[1].1, 1, "t1排第二");
+        // 读回视图应与落库顺序一致。
+        let view = read_grouped_view(&conn, "C:/ws", None).unwrap();
+        assert!(matches!(&view.nodes[0], GroupedNode::Task { task } if task == "t2"));
+    }
+
+    #[test]
+    fn apply_order_persists_group_member_sequence() {
+        let mut conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed_task(&conn, &ws, "t1", 100);
+        seed_task(&conn, &ws, "t2", 200);
+        create_group(&conn, "g1", "工作", "blue", 1000).unwrap();
+        add_task_to_group(&conn, "C:/ws", None, "g1", "t1", 1000).unwrap();
+        add_task_to_group(&conn, "C:/ws", None, "g1", "t2", 1000).unwrap();
+
+        // 把 t2 排到 t1 前面。
+        apply_grouped_order(
+            &mut conn,
+            "C:/ws",
+            None,
+            &[group_node_of("g1")],
+            &[("g1".to_string(), vec!["t2".to_string(), "t1".to_string()])],
+            2000,
+        )
+        .unwrap();
+
+        assert_eq!(
+            member_of(&conn, &ws, "t2"),
+            Some(("g1".to_string(), Some(0)))
+        );
+        assert_eq!(
+            member_of(&conn, &ws, "t1"),
+            Some(("g1".to_string(), Some(1)))
+        );
+
+        // 读回视图的组内成员顺序应已生效。
+        let view = read_grouped_view(&conn, "C:/ws", None).unwrap();
+        match &view.nodes[0] {
+            GroupedNode::Group { task_ids, .. } => {
+                assert_eq!(task_ids, &["t2".to_string(), "t1".to_string()]);
+            }
+            other => panic!("期望组节点，实际 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn apply_order_moves_member_between_groups() {
+        let mut conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed_task(&conn, &ws, "t1", 100);
+        seed_task(&conn, &ws, "t2", 200);
+        create_group(&conn, "g1", "A", "red", 1000).unwrap();
+        create_group(&conn, "g2", "B", "green", 2000).unwrap();
+        add_task_to_group(&conn, "C:/ws", None, "g1", "t1", 1000).unwrap();
+
+        // t1 从 g1 拖到 g2 —— 不只是排序，group_id 也必须改。
+        apply_grouped_order(
+            &mut conn,
+            "C:/ws",
+            None,
+            &[group_node_of("g1"), group_node_of("g2")],
+            &[
+                ("g1".to_string(), vec![]),
+                ("g2".to_string(), vec!["t1".to_string()]),
+            ],
+            3000,
+        )
+        .unwrap();
+
+        assert_eq!(
+            member_of(&conn, &ws, "t1"),
+            Some(("g2".to_string(), Some(0))),
+            "成员关系应改到 g2，且组内顺序为 0"
+        );
+    }
+
+    #[test]
+    fn apply_order_replaces_previous_sequence_instead_of_appending() {
+        let mut conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed_task(&conn, &ws, "t1", 100);
+        seed_task(&conn, &ws, "t2", 200);
+
+        apply_grouped_order(
+            &mut conn,
+            "C:/ws",
+            None,
+            &[task_node_of("t1"), task_node_of("t2")],
+            &[],
+            1000,
+        )
+        .unwrap();
+        // 第二次落库：顺序颠倒。
+        apply_grouped_order(
+            &mut conn,
+            "C:/ws",
+            None,
+            &[task_node_of("t2"), task_node_of("t1")],
+            &[],
+            2000,
+        )
+        .unwrap();
+
+        let orders = read_orders(&conn);
+        assert_eq!(orders.len(), 2, "旧排序记录应被替换而非追加，否则变4 条");
+        assert_eq!(orders[0].1, 0);
+        assert_eq!(orders[1].1, 1);
+    }
+
+    #[test]
+    fn apply_order_does_not_touch_other_workspace() {
+        let mut conn = memory_db();
+        let ws_a = workspace_key("C:/a", None);
+        let ws_b = workspace_key("C:/b", None);
+        seed_task(&conn, &ws_a, "ta", 100);
+        seed_task(&conn, &ws_b, "tb", 100);
+
+        apply_grouped_order(&mut conn, "C:/a", None, &[task_node_of("ta")], &[], 1000).unwrap();
+        apply_grouped_order(&mut conn, "C:/b", None, &[task_node_of("tb")], &[], 1000).unwrap();
+
+        // 落 B 的顺序不该清掉 A 的记录。
+        let orders = read_orders(&conn);
+        assert_eq!(orders.len(), 2, "两个 workspace 的排序应共存");
+    }
+
+    #[test]
+    fn apply_order_clears_sort_order_for_loosened_tasks() {
+        let mut conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed_task(&conn, &ws, "t1", 100);
+        seed_task(&conn, &ws, "t2", 200);
+        create_group(&conn, "g1", "工作", "blue", 1000).unwrap();
+        create_group(&conn, "g2", "其他", "red", 1100).unwrap();
+        add_task_to_group(&conn, "C:/ws", None, "g1", "t1", 1000).unwrap();
+        add_task_to_group(&conn, "C:/ws", None, "g1", "t2", 1000).unwrap();
+
+        // 下一版视图：t2 被拖出到顶层，g1 只剩 t1。
+        apply_grouped_order(
+            &mut conn,
+            "C:/ws",
+            None,
+            &[task_node_of("t2"), group_node_of("g1")],
+            &[("g1".to_string(), vec!["t1".to_string()])],
+            2000,
+        )
+        .unwrap();
+
+        assert_eq!(
+            member_of(&conn, &ws, "t1").map(|(_, s)| s),
+            Some(Some(0)),
+            "仍在组内的 t1 拿到新序号 0"
+        );
+        assert_eq!(
+            member_of(&conn, &ws, "t2").map(|(_, s)| s),
+            Some(None),
+            "被拖出到顶层的 t2 应清空组内 sort_order"
+        );
+    }
+
+    #[test]
+    fn apply_order_clears_sort_order_when_groups_empty() {
+        // 回归测试：用group_id NOT IN (json_each(...)) 做判据时，groups 为空数组
+        // 会让 NOT IN 空集恒不成立，所有成员的 sort_order 都清不掉。
+        // 改用 task_id 集合判据后此场景正常。
+        let mut conn = memory_db();
+        let ws = workspace_key("C:/ws", None);
+        seed_task(&conn, &ws, "t1", 100);
+        create_group(&conn, "g1", "工作", "blue", 1000).unwrap();
+        add_task_to_group(&conn, "C:/ws", None, "g1", "t1", 1000).unwrap();
+        conn.execute(
+            "UPDATE task_group_members SET sort_order = 7 WHERE task_id = 't1'",
+            [],
+        )
+        .unwrap();
+
+        // 本轮提交的 groups 为空（视图里已无组）。
+        apply_grouped_order(&mut conn, "C:/ws", None, &[task_node_of("t1")], &[], 3000).unwrap();
+
+        let (_, sort_order) = member_of(&conn, &ws, "t1").expect("成员行仍在");
+        assert_eq!(sort_order, None, "空 groups 时也必须清空 sort_order");
     }
 }

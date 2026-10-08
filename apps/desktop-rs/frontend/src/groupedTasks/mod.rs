@@ -21,5 +21,7 @@
 #![allow(non_snake_case)]
 
 pub mod dnd;
+pub mod domEvents;
+pub mod dragRuntime;
 pub mod join;
 pub mod view;

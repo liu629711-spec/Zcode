@@ -417,6 +417,40 @@ async fn task_group_delete(group_id: String) -> Result<Value, String> {
     Ok(json!({ "ok": true }))
 }
 
+/// 落库一次拖拽后的完整顺序（真源 `applyGroupedTaskViewOrder`）。
+///
+/// 真源 `viewToOrderInput`（useGroupedTaskView.ts:539-554）提交两份数据：
+/// 顶层节点顺序 + 各组内部成员顺序。两者都写，且拖拽跨组时还要改成员关系。
+///
+/// 入参用前端 `groupedTasks::dnd` / `view` 的结构直接表达，不做隐式转换——
+/// 转换规则留在前端一处，避免前后端各写一份导致口径漂移。
+#[tauri::command]
+async fn task_group_apply_order(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    top_level: Vec<taskgroup::TopLevelNodeInput>,
+    groups: Vec<taskgroup::GroupOrderInput>,
+) -> Result<Value, String> {
+    let mut conn = taskdb::open_readwrite()?;
+    let nodes: Vec<taskgroup::GroupedNode> = top_level
+        .into_iter()
+        .map(taskgroup::TopLevelNodeInput::into_node)
+        .collect();
+    let group_orders: Vec<(String, Vec<String>)> = groups
+        .into_iter()
+        .map(|g| (g.group_id, g.task_ids))
+        .collect();
+    taskgroup::apply_grouped_order(
+        &mut conn,
+        &workspace_path,
+        workspace_identity.as_deref(),
+        &nodes,
+        &group_orders,
+        now_ms(),
+    )?;
+    Ok(json!({ "ok": true }))
+}
+
 /// 进程内稳定的 connectionId（stdio 单管道下由 host 分配，用于重订阅替换判定）。
 ///
 /// 显式传入优先（前端可自管），否则取进程级单例。
@@ -566,6 +600,7 @@ pub fn run() {
             task_group_remove,
             task_group_delete,
             task_group_color,
+            task_group_apply_order,
             conversation_subscribe,
             conversation_unsubscribe,
             conversation_resync,
