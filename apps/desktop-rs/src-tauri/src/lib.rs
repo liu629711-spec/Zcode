@@ -214,6 +214,33 @@ async fn agent_send_text(
     .await
 }
 
+/// v4 会话行分页拉取（ConversationRowView 数据源；只读、超时重发安全）。
+#[tauri::command]
+async fn agent_rows_range(
+    state: AgentStateHandle<'_>,
+    session_id: String,
+    limit: Option<i64>,
+    before_row_id: Option<i64>,
+) -> Result<Value, String> {
+    let guard = state.runtime.lock().await;
+    let rt = guard.as_ref().ok_or("agent 未启动")?;
+    let mut params = serde_json::json!({
+        "sessionId": session_id,
+        "clientMode": "desktop-continuous",
+        "limit": limit.unwrap_or(200),
+    });
+    if let Some(id) = before_row_id {
+        params["beforeRowId"] = json!(id);
+    }
+    rt.client
+        .request(
+            agent::methods::V4_CONVERSATION_ROWS_RANGE,
+            Some(params),
+            agent::client::DEFAULT_REQUEST_TIMEOUT,
+        )
+        .await
+}
+
 fn dirs_home() -> PathBuf {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -235,6 +262,7 @@ pub fn run() {
             agent_request,
             agent_send_text,
             agent_create_session_v4,
+            agent_rows_range,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");

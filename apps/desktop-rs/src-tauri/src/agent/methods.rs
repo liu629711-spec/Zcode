@@ -92,6 +92,8 @@ pub const INTERACTION_BROWSER_EXECUTE: &str = "interaction/browserExecute";
 /// V4 命令通道（zcode-protocol-v4/transport.ts V4_METHODS.command）。
 /// 上行就是普通 JSON-RPC request，params = CommandEnvelope。
 pub const V4_COMMAND: &str = "v4/command";
+/// v4 会话行分页拉取（ConversationRowView 数据源；rows 升序 + hasMore）。
+pub const V4_CONVERSATION_ROWS_RANGE: &str = "v4/conversation/rowsRange";
 
 /// 通知方法名（zcodeProtocolNotifications）。
 pub mod notifications {
