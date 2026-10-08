@@ -94,15 +94,15 @@
      `groupedTasks/domEvents.rs`（HTML5 DnD 接线），方案 = 原生 draggable。
    - [x] **顺序落库已迁**：后端 `taskgroup::apply_grouped_order` + Tauri 命令
      `task_group_apply_order`（顶层顺序 + 组内顺序 + 跨组改成员关系）。
-   - [ ] **接线到视图组件**：`dragRuntime` / `domEvents` 已有，但
-     `grouped.rs` 的 task 行与组节点还没挂上 `draggable` 与事件闭包，
-     拖拽目前还不生效。需补 `on:dragstart` / `on:dragover` / `on:drop` /
-     `on:dragend` 到 GroupedTaskRow / LooseTaskRow / GroupItem，并给组头、
-     组尾、空投放区加 `data-drop-type`。
+   - [x] **已接线到视图组件**（拖拽实际生效）：`joined_view` 信号承载视图，
+     `GroupedTaskRow` / `LooseTaskRow` / `GroupItem` 挂 draggable + 事件闭包，
+     组头 / 组尾 / 空内容区加 `data-drop-type`，drop 后落库，失败回滚。
    - [ ] 卡片组件：`group-item.tsx`(761) / `task-row.tsx`(584) / `task-item.tsx`(124) /
          `group-drag-overlay.tsx`(39) / `sticky-group-header.tsx`。
    - [ ] 拖拽预览：原生 ghost image 不可控，真源用 DragOverlay 自绘卡片。
          需要接近真源手感时再补，或改用指针事件实现。
+   - [ ] 落库失败提示目前写进 `store.error`（会替换整个列表为错误态），
+         真源用 toast 不打断列表——待补 toast 后再改。
 2. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
 
 **后续**
@@ -115,15 +115,15 @@
 
 **待决**
 
-8. **push 28 个 commit**（等你发话）
+8. **push 29 个 commit**（等你发话）
 
 ---
 
 ## 六、验证现状
 
-- 前端 **286 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **288 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
-  **拖拽运行时 12**、**DOM 接线与落库载荷 7**）
+  **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
   （见第七节 2），故另用独立 crate + 真实 SQLite 跑了 8 组落库行为验证，全通过
 - 后端原有 23 测试（协议信封 4 + agent 三件套 6 + taskdb 12）+ 4 个 live 测试
