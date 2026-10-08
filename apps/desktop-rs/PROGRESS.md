@@ -155,6 +155,10 @@
    - [x] **小卡片批量推进第五批**：read/search/execute/todo/fallback
          五卡快照提示接线（清完 notice 裁剪债）+ 问题升级卡（escalate
          从 fallback 升级为专属卡）。
+   - [x] **ToolCallBody 链第一步**：toolIdentity（343 行 + shared 工具名表
+         125 行随迁）+ codeViewer（602 行 + workspaceScope/media-preview
+         随迁，含 decodeURI 手写等价）+ toolDiffPreview 补迁
+         （extractBeforeAfter/extractStructuredDiff）。
    - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 switch-mode/skill/
          ask-question/respond-to-coordinator 等）、CUA 组
          （conversationCuaGroups 281 + cua.tsx 504 + cua-group 282）、
@@ -172,7 +176,7 @@
 
 ## 六、验证现状
 
-- 前端 **467 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **494 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
