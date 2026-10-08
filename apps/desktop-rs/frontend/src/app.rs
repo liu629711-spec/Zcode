@@ -141,14 +141,16 @@ impl ChatMessage {
 }
 
 /// 会话状态徽标配色（zcodeSessionStatusSchema 六态）。
+/// 配色语义对齐 run-status-presentation.ts 的 STATUS_DOT：
+/// running/waiting/paused 用活动色 warning（pulse），error 用 destructive，
+/// completed 用 success，idle 空环（bg-transparent + subtlest 描边）。
 fn status_dot_class(status: &str) -> &'static str {
     match status {
-        "running" => "bg-[#2563eb]",
-        "waiting" => "bg-[#d97706]",
-        "paused" => "bg-[#7c3aed]",
-        "completed" => "bg-[#16a34a]",
-        "error" => "bg-[#dc2626]",
-        _ => "bg-[#9ca3af]",
+        "running" => "bg-warning animate-pulse motion-reduce:animate-none",
+        "waiting" | "paused" => "bg-warning",
+        "error" => "bg-destructive ring-2 ring-destructive/30",
+        "completed" => "bg-success",
+        _ => "border-[1.5px] border-foreground-subtlest bg-transparent",
     }
 }
 
@@ -474,7 +476,7 @@ fn CommandCenter(show: RwSignal<bool>) -> impl IntoView {
                                         };
                                         view! {
                                             <button class=row_class on:click=move |_| open.run(sid.clone())>
-                                                <span class=format!("h-2 w-2 flex-none rounded-full {dot}")></span>
+                                                <span class=format!("size-1.5 flex-none rounded-full {dot}")></span>
                                                 <span class="min-w-0 flex-1 truncate">{title}</span>
                                                 <span class="flex-none text-[11px] text-muted">{status}</span>
                                             </button>
@@ -754,10 +756,12 @@ fn SidebarSessionList() -> impl IntoView {
                                     == Some(session_id_for_active.as_str())
                             };
                             let item_class = move || {
+                                // WorkspaceSidebarItem 行样式同构：h-8/pl-2.5/pr-1 + hover surface-hover，
+                                // 选中态 bg-selected + shadow-xl（拖拽选中的视觉）。
                                 if active() {
-                                    "flex w-full items-center gap-2 rounded-lg bg-selected px-2 py-1.5 text-left"
+                                    "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg bg-selected pl-2.5 pr-1 text-left text-foreground shadow-xl"
                                 } else {
-                                    "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-selected"
+                                    "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg pl-2.5 pr-1 text-left text-foreground hover:bg-surface-hover hover:text-foreground"
                                 }
                             };
                             view! {
@@ -765,7 +769,7 @@ fn SidebarSessionList() -> impl IntoView {
                                     class=item_class
                                     on:click=move |_| selected_session.set(Some(session_id_for_click.clone()))
                                 >
-                                    <span class=format!("h-2 w-2 flex-none rounded-full {dot}") title={status_label}></span>
+                                    <span class=format!("size-1.5 flex-none rounded-full {dot}") title={status_label}></span>
                                     <span class="min-w-0 flex-1 truncate text-sm">{title}</span>
                                     <span class="flex-none text-[11px] text-muted">{time}</span>
                                 </button>
