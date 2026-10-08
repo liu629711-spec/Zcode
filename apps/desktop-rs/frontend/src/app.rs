@@ -147,9 +147,8 @@ pub fn relative_time(ms: i64) -> String {
 /// 仅保留 markdown 结构标记（pulldown-cmark 对 Text 事件自动转义）。
 fn render_markdown(src: &str) -> String {
     use pulldown_cmark::{Event, Options, Parser};
-    let options = Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TABLES
-        | Options::ENABLE_TASKLISTS;
+    let options =
+        Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
     let parser = Parser::new_ext(src, options).map(|event| match event {
         Event::Html(h) => Event::Text(h),
         Event::InlineHtml(h) => Event::Text(h),
@@ -357,18 +356,22 @@ pub fn App() -> impl IntoView {
     provide_context(show_command_center);
     {
         let show = show_command_center;
-        let handler = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
-            if (e.meta_key() || e.ctrl_key()) && e.key() == "k" {
-                e.prevent_default();
-                show.update(|v| *v = !*v);
-            }
-            if e.key() == "Escape" {
-                show.set(false);
-            }
-        });
+        let handler =
+            Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+                if (e.meta_key() || e.ctrl_key()) && e.key() == "k" {
+                    e.prevent_default();
+                    show.update(|v| *v = !*v);
+                }
+                if e.key() == "Escape" {
+                    show.set(false);
+                }
+            });
         web_sys::window().map(|w| {
-            w.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref::<js_sys::Function>())
-                .ok();
+            w.add_event_listener_with_callback(
+                "keydown",
+                handler.as_ref().unchecked_ref::<js_sys::Function>(),
+            )
+            .ok();
         });
         handler.forget();
     }
@@ -380,6 +383,10 @@ pub fn App() -> impl IntoView {
     // 逐token 流式累积器：v4 conversation 帧只累积 row.delta，不整页重拉。
     let stream_store = crate::stream::StreamStore::new();
     provide_context(stream_store);
+
+    // 全局 toast 队列（真源 toast.tsx）。挂在 App 根部供各视图 expect_context。
+    let toast_store = crate::toast::ToastStore::default();
+    provide_context(toast_store.clone());
 
     // agent 通知桥（主进程 emit `agent://notification`）：
     // - v4/conversation/frame → 喂给流式累积器，只有结构变化才触发重拉
@@ -397,12 +404,16 @@ pub fn App() -> impl IntoView {
                 "v4/conversation/frame" => {
                     // 帧的 topic 决定归属会话；累积后仅结构变化才重拉，
                     // 纯文本增量靠 ChatView 的流式覆盖渲染（逐 token 的关键）。
-                    let Some(params) = note["params"].as_object() else { return };
+                    let Some(params) = note["params"].as_object() else {
+                        return;
+                    };
                     let topic = params
                         .get("topic")
                         .and_then(|t| t.as_str())
                         .unwrap_or_default();
-                    let Some(session_id) = topic.strip_prefix("conversation/") else { return };
+                    let Some(session_id) = topic.strip_prefix("conversation/") else {
+                        return;
+                    };
                     match stream_store.feed(session_id, &note["params"]) {
                         // 纯文本增量：不重拉，ChatView 直接读累积文本渲染。
                         crate::stream::FrameOutcome::TextDeltas { .. } => {
@@ -454,6 +465,8 @@ pub fn App() -> impl IntoView {
             <SidebarSeparator />
             <ContentPanel />
             <CommandCenter show=show_command_center />
+            // toast 浮层挂在最外层：真源 z-[9999]，须盖住所有面板。
+            <crate::toast::Toaster store=toast_store />
         </div>
     }
 }
@@ -472,9 +485,7 @@ fn CommandCenter(show: RwSignal<bool>) -> impl IntoView {
             .sessions
             .get()
             .into_iter()
-            .filter(|s| {
-                q.is_empty() || s.title.to_lowercase().contains(&q)
-            })
+            .filter(|s| q.is_empty() || s.title.to_lowercase().contains(&q))
             .take(8)
             .collect::<Vec<_>>()
     };
@@ -956,7 +967,10 @@ fn AgentPanel() -> impl IntoView {
         spawn_local(async move {
             match invoke_json("agent_start", serde_json::json!({})).await {
                 Ok(v) => {
-                    let pid = v["pid"].as_u64().map(|p| p.to_string()).unwrap_or("?".into());
+                    let pid = v["pid"]
+                        .as_u64()
+                        .map(|p| p.to_string())
+                        .unwrap_or("?".into());
                     set_agent_status.set(format!("已连接（pid {pid}）"));
                     // 启动成功后通知任务列表自动刷新。
                     trigger.0.update(|n| *n += 1);
@@ -977,13 +991,13 @@ fn AgentPanel() -> impl IntoView {
                     let running = v["running"].as_bool().unwrap_or(false);
                     let connected = v["connected"].as_bool().unwrap_or(false);
                     if running && connected {
-                        let pid = v["pid"].as_u64().map(|p| p.to_string()).unwrap_or("?".into());
+                        let pid = v["pid"]
+                            .as_u64()
+                            .map(|p| p.to_string())
+                            .unwrap_or("?".into());
                         set_agent_status.set(format!("已连接（pid {pid}）"));
                     } else if running {
-                        let reason = v["closedReason"]
-                            .as_str()
-                            .unwrap_or("未知原因")
-                            .to_string();
+                        let reason = v["closedReason"].as_str().unwrap_or("未知原因").to_string();
                         set_agent_status.set(format!("连接断开：{reason}，自动重连…"));
                         // 自动重连：agent_start 幂等（旧实例断开后重新 spawn 并握手）。
                         let _ = invoke_json("agent_start", serde_json::json!({})).await;
@@ -1038,7 +1052,6 @@ fn ContentPanel() -> impl IntoView {
         </div>
     }
 }
-
 
 /// 顶栏（WorkspaceHeader.tsx 138-228 行同构）：
 /// h-12 + [app-region:drag] 容器；task 变体 border-border/50，draft 变体 border-transparent；
@@ -1217,8 +1230,9 @@ fn ChatView(session_id: String) -> impl IntoView {
             // 显式模型选择：填了就带（会话无默认模型时 admission 必需）。
             let provider = model_provider.get_untracked();
             let mid = model_id.get_untracked();
-            let model_selection = (!provider.trim().is_empty() && !mid.trim().is_empty())
-                .then(|| serde_json::json!({ "providerId": provider.trim(), "modelId": mid.trim() }));
+            let model_selection = (!provider.trim().is_empty() && !mid.trim().is_empty()).then(
+                || serde_json::json!({ "providerId": provider.trim(), "modelId": mid.trim() }),
+            );
             let send_result = invoke_json(
                 "agent_send_text",
                 serde_json::json!({ "sessionId": sid, "text": content, "modelSelection": model_selection }),

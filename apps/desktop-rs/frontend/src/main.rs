@@ -9,6 +9,7 @@ pub mod grouped;
 pub mod groupedTasks;
 pub mod pinned;
 pub mod stream;
+pub mod toast;
 
 fn main() {
     console_error_panic_hook::set_once();

@@ -332,7 +332,6 @@ pub fn GroupedTasksView() -> impl IntoView {
                                     collapsed=collapsed
                                     runtime=drag_runtime
                                     view=joined_view
-                                    error=store.error
                                     refresh=store.refresh
                                 />
                             }
@@ -364,7 +363,6 @@ fn GroupItem(
     collapsed: RwSignal<std::collections::HashSet<String>>,
     runtime: RwSignal<DragRuntime>,
     view: RwSignal<Option<GroupedTaskView>>,
-    error: RwSignal<String>,
     refresh: RwSignal<u64>,
 ) -> impl IntoView {
     let store = expect_context::<GroupedStore>();
@@ -457,7 +455,7 @@ fn GroupItem(
                 }
                 on:drop=move |ev| {
                     on_drop(ev, runtime, view, move |committed| {
-                        commit_order(committed, view, error, refresh)
+                        commit_order(committed, view, refresh)
                     })
                 }
                 on:dragend=move |_| on_drag_end(runtime, view)
@@ -597,7 +595,7 @@ fn GroupItem(
                         }
                         on:drop=move |ev| {
                             on_drop(ev, runtime, view, move |committed| {
-                                commit_order(committed, view, error, refresh)
+                                commit_order(committed, view, refresh)
                             })
                         }
                     ></div>
@@ -615,13 +613,13 @@ fn GroupItem(
 fn persist_order(
     committed: GroupedTaskView,
     view: RwSignal<Option<GroupedTaskView>>,
-    error: RwSignal<String>,
     refresh: RwSignal<u64>,
 ) {
     // 先记下回滚点：落库失败要恢复成拖拽前的顺序。
     let rollback = view.get_untracked();
     let sessions = expect_context::<crate::app::SessionsStore>();
     let selected_session = expect_context::<RwSignal<Option<String>>>();
+    let toasts = expect_context::<crate::toast::ToastStore>();
     // workspace 路径必须取真实值：后端按 workspace_key 定位排序记录，
     // 传空串会写到一把永远匹配不上的 key 上（等于没落库）。
     let ws_path = selected_session
@@ -640,10 +638,12 @@ fn persist_order(
             }),
         )
         .await;
-        if result.is_err() {
-            // 回滚 + 重拉，对齐真源。
+        if let Err(e) = result {
+            // 回滚 + 重拉，对齐真源（useGroupedTaskView.ts:1038-1043）。
+            // 提示走 toast 而非 store.error——后者会把整个分组列表替换成
+            // 错误态，用户刚拖完就看不到列表了（真源用 toast 不打断）。
             view.set(rollback);
-            error.set("更新分组顺序失败，已回滚".into());
+            toasts.error(format!("更新分组顺序失败，已回滚：{e}"));
             refresh.update(|n| *n += 1);
         }
     });
@@ -653,11 +653,10 @@ fn persist_order(
 fn commit_order(
     committed: GroupedTaskView,
     view: RwSignal<Option<GroupedTaskView>>,
-    error: RwSignal<String>,
     refresh: RwSignal<u64>,
 ) {
     view.set(Some(committed.clone()));
-    persist_order(committed, view, error, refresh);
+    persist_order(committed, view, refresh);
 }
 
 /// 组内成员行（真源 task-row.tsx TASK_GROUP_ROW_CLASS + ROW_LINE_CLASS）。
