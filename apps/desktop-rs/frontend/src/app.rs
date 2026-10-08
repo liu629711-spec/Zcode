@@ -1410,12 +1410,21 @@ fn ChatView(session_id: String) -> impl IntoView {
                                 </div>
                             }
                             .into_any(),
-                            // Explore/Changes 分组开关关闭时不产生这两类；防御路径：
-                            // 逐行渲染（explore.rs 迁完打开开关后换成专属卡）。
                             crate::conversationWorkItems::WorkRenderItem::ExploreGroup {
-                                row_indices, ..
+                                node, ..
+                            } => view! {
+                                <div class="py-0" data-tool-call-id=node.tool_call.tool_id.clone()>
+                                    <div data-conversation-selectable="true">
+                                        <crate::ToolCallBlocks::ToolCallBlock::ToolCallBlock
+                                            node=node.clone()
+                                            context=crate::ToolCallBlocks::ToolCallBlock::ToolCallBlockContext::default()
+                                        />
+                                    </div>
+                                </div>
                             }
-                            | crate::conversationWorkItems::WorkRenderItem::ChangesGroup {
+                            .into_any(),
+                            // Changes 分组开关关闭时不产生；防御路径：逐行渲染。
+                            crate::conversationWorkItems::WorkRenderItem::ChangesGroup {
                                 row_indices, ..
                             } => row_indices
                                 .into_iter()

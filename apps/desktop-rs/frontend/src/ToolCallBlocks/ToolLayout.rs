@@ -116,6 +116,9 @@ pub struct ToolLayoutProps {
     pub summary_content_key: Option<String>,
     /// 摘要内容是否启用滚轮式轮播动画（真源 :46 animateSummaryContent）。
     pub animate_summary_content: Option<bool>,
+    /// 禁用摘要动画（真源 :47 disableSummaryContentAnimation）。
+    /// 与 `animate_summary_content` 同为 API 兼容声明——Rust 侧滚轮动画未实现。
+    pub disable_summary_content_animation: Option<bool>,
 }
 
 impl ToolLayoutProps {

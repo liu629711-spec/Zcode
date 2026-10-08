@@ -161,6 +161,24 @@ fn render_dispatch(
     use super::renderers::*;
 
     match renderer {
+        Renderer::Explore => view! {
+            <explore::ExploreToolCallBlock
+                props=explore::ExploreBlockProps {
+                    tool_id: tool_id.to_string(),
+                    child_tool_calls: children,
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    is_failed: status == "failed",
+                    title,
+                    source_label,
+                    show_icon,
+                    can_toggle: None,
+                    force_open: None,
+                }
+            />
+        }
+        .into_any(),
         Renderer::ExecuteGroup => {
             // kind 聚合类：children 逐项递归渲染（真源 execute-group.tsx:56-70）。
             let child_tool_calls: Vec<execute_group::ChildToolCall> = children

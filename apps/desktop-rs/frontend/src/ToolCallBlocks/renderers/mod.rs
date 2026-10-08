@@ -15,6 +15,7 @@ pub mod changes_group;
 pub mod edit;
 pub mod execute;
 pub mod execute_group;
+pub mod explore;
 pub mod fallback;
 pub mod read;
 pub mod search;

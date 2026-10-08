@@ -10,7 +10,7 @@
 //!
 //! | 分组 | 真源默认 | Rust 侧 | 原因 |
 //! |---|---|---|---|
-//! | explore | true | **false** | `renderers/explore.tsx`(490) 未迁，开启会无渲染器；迁完即开 |
+//! | explore | true | true | `explore.rs` 已迁（本轮） |
 //! | terminal | true | true | `execute_group.rs` 已就绪 |
 //! | changes | false | false | 照抄真源默认 |
 //!
@@ -106,8 +106,8 @@ impl Default for WorkRenderOptions {
     fn default() -> Self {
         Self {
             stage_tail_is_running: false,
-            // 真源 ENABLE_EXPLORE_TOOL_CALL_GROUPING = true；Rust 暂关（explore.rs 未迁）。
-            enable_explore_grouping: false,
+            // 真源 ENABLE_EXPLORE_TOOL_CALL_GROUPING = true（explore.rs 已迁）。
+            enable_explore_grouping: true,
             // 真源 ENABLE_TERMINAL_TOOL_CALL_GROUPING = true。
             enable_terminal_grouping: true,
             // 真源 ENABLE_CHANGES_TOOL_CALL_GROUPING = false。
@@ -794,27 +794,27 @@ mod tests {
 
     #[test]
     fn explore_grouping_disabled_stays_rows() {
-        // Rust 侧 explore 分组暂关：连续 Read 逐行（开启后应成组，见下测。
-        let rows = vec![
-            tool_row(1, "Read", "success", json!({"file_path": "a.rs"})),
-            tool_row(2, "Read", "success", json!({"file_path": "b.rs"})),
-        ];
-        let items = build_assistant_work_render_items(&rows, &WorkRenderOptions::default());
-        assert_eq!(items.len(), 2);
-    }
-
-    #[test]
-    fn explore_grouping_enabled_forms_group() {
-        // 开关打开后（explore.rs 迁完后启用）：连续 Read 成 ExploreGroup。
+        // 显式关闭 explore 分组：连续 Read 逐行。
         let rows = vec![
             tool_row(1, "Read", "success", json!({"file_path": "a.rs"})),
             tool_row(2, "Read", "success", json!({"file_path": "b.rs"})),
         ];
         let opts = WorkRenderOptions {
-            enable_explore_grouping: true,
+            enable_explore_grouping: false,
             ..Default::default()
         };
         let items = build_assistant_work_render_items(&rows, &opts);
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn explore_grouping_defaults_to_on_and_forms_group() {
+        // 真源 ENABLE_EXPLORE_TOOL_CALL_GROUPING = true：默认开启，连续 Read 成组。
+        let rows = vec![
+            tool_row(1, "Read", "success", json!({"file_path": "a.rs"})),
+            tool_row(2, "Read", "success", json!({"file_path": "b.rs"})),
+        ];
+        let items = build_assistant_work_render_items(&rows, &WorkRenderOptions::default());
         assert_eq!(items.len(), 1);
         match &items[0] {
             WorkRenderItem::ExploreGroup { key, node, .. } => {
