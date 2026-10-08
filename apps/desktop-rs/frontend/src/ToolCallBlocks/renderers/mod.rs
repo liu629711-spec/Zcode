@@ -13,6 +13,7 @@
 
 pub mod edit;
 pub mod execute;
+pub mod fallback;
 pub mod read;
 
 use leptos::prelude::*;
