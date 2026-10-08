@@ -701,25 +701,15 @@ fn TaskContextMenu(
                     {sections
                         .into_iter()
                         .flat_map(|section| section.entries)
-                        .filter(|entry| !entry.label.is_empty())
                         .map(|entry| {
                             let menu = menu;
                             let view = view;
                             let refresh = refresh;
                             let task_key = state.task_key.clone();
                             let action = entry.action;
-                            let group_id = if action == TaskMenuAction::MoveToGroup
-                                && entry.label != TaskMenuAction::MoveToGroup.label_zh()
-                            {
-                                // 子菜单的组条目：label 即组名，需要 groupId 才能 move。
-                                // build_menu 把组名放 label，这里反查 id。
-                                groups
-                                    .iter()
-                                    .find(|(_, title, _)| *title == entry.label)
-                                    .map(|(id, _, _)| id.clone())
-                            } else {
-                                None
-                            };
+                            // 组条目的 group_id 由 build_menu 显式携带
+                            //（真源 React key 传 group.id），不做 label 反查。
+                            let group_id = entry.group_id.clone();
                             view! {
                                 <button
                                     type="button"

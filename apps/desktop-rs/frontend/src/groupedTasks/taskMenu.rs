@@ -145,6 +145,11 @@ pub struct MenuEntry {
     pub disabled: bool,
     /// 禁用原因（真源透传给 `title`，悬停时可见）。
     pub disabled_reason: Option<String>,
+    /// 组条目专有：移动目标组 id。
+    ///
+    /// 真源直接用 React key 传 `group.id`；Rust 侧菜单项必须显式携带，
+    /// 否则渲染层只能按 label 反查 id——两个组同名时会移错。
+    pub group_id: Option<String>,
     /// 子菜单项（非空表示这是分组子菜单）。
     pub submenu: Vec<MenuEntry>,
 }
@@ -156,6 +161,7 @@ impl MenuEntry {
             label: action.label_zh().to_string(),
             disabled: !action.is_implemented(),
             disabled_reason: action.disabled_reason().map(|s| s.to_string()),
+            group_id: None,
             submenu: Vec::new(),
         }
     }
@@ -191,16 +197,9 @@ pub fn build_menu(
         disabled: current_group_id.is_none(),
         ..MenuEntry::new(remove)
     });
-    // 真源 :88 有 Separator：移出分组与各组之间分隔。
-    submenu.push(MenuEntry {
-        action: TaskMenuAction::MoveToGroup,
-        label: String::new(),
-        disabled: false,
-        disabled_reason: None,
-        submenu: Vec::new(),
-    });
 
     // 各组条目：当前组禁用（真源 :79），标题前带颜色标记（:81）。
+    // group_id 显式携带——渲染层按它移动，不做 label 反查。
     for (group_id, title, _color) in groups {
         let is_current = current_group_id == Some(group_id.as_str());
         submenu.push(MenuEntry {
@@ -212,6 +211,7 @@ pub fn build_menu(
             } else {
                 None
             },
+            group_id: Some(group_id.clone()),
             submenu: Vec::new(),
         });
     }
@@ -373,5 +373,26 @@ mod tests {
         let sections = build_menu(&groups, Some("g1"));
         let remove = &sections[0].entries[0];
         assert!(!remove.disabled);
+    }
+
+    #[test]
+    fn group_entries_carry_explicit_group_id() {
+        // 渲染层按 group_id 移动，不做 label 反查——两个组同名时
+        // 反查会移到先出现的那个（真源用 React key 传 id 无此问题）。
+        let groups = vec![
+            ("g1".to_string(), "同名".to_string(), "blue".to_string()),
+            ("g2".to_string(), "同名".to_string(), "red".to_string()),
+        ];
+        let sections = build_menu(&groups, None);
+        let group_entries: Vec<&MenuEntry> = sections[0]
+            .entries
+            .iter()
+            .filter(|e| e.action == TaskMenuAction::MoveToGroup && !e.label.is_empty())
+            .collect();
+        assert_eq!(group_entries.len(), 2);
+        assert_eq!(group_entries[0].group_id.as_deref(), Some("g1"));
+        assert_eq!(group_entries[1].group_id.as_deref(), Some("g2"));
+        // 同名但 id 不同——这是显式携带 id 的意义。
+        assert_ne!(group_entries[0].group_id, group_entries[1].group_id);
     }
 }
