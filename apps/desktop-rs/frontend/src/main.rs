@@ -6,6 +6,7 @@ pub mod file_icons;
 pub mod file_tree;
 pub mod grouped;
 pub mod pinned;
+pub mod stream;
 
 fn main() {
     console_error_panic_hook::set_once();

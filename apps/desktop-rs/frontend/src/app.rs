@@ -347,8 +347,13 @@ pub fn App() -> impl IntoView {
     let show_file_tree: RwSignal<bool> = RwSignal::new(false);
     provide_context(show_file_tree);
 
+    // 逐token 流式累积器：v4 conversation 帧只累积 row.delta，不整页重拉。
+    let stream_store = crate::stream::StreamStore::new();
+    provide_context(stream_store);
+
     // agent 通知桥（主进程 emit `agent://notification`）：
-    // state.updated → 刷新会话列表与当前会话消息。
+    // - v4/conversation/frame → 喂给流式累积器，只有结构变化才触发重拉
+    // - session/event / state.updated → 刷新会话列表与消息
     // 其余通知方法（遥测/存储启动等）与视图无关，忽略。
     spawn_local(async move {
         let handler = Closure::<dyn FnMut(JsValue)>::new(move |_event: JsValue| {
@@ -359,9 +364,35 @@ pub fn App() -> impl IntoView {
             let Some(note) = payload else { return };
             let method = note["method"].as_str().unwrap_or("");
             match method {
-                // 流式驱动：session/event（legacy 订阅事件流，每次 turn 事件一条）
-                // 与 v4 conversation 帧、state.updated 都即时驱动刷新。
-                "session/event" | "v4/conversation/frame" | "state.updated" => {
+                "v4/conversation/frame" => {
+                    // 帧的 topic 决定归属会话；累积后仅结构变化才重拉，
+                    // 纯文本增量靠 ChatView 的流式覆盖渲染（逐 token 的关键）。
+                    let Some(params) = note["params"].as_object() else { return };
+                    let topic = params
+                        .get("topic")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or_default();
+                    let Some(session_id) = topic.strip_prefix("conversation/") else { return };
+                    match stream_store.feed(session_id, &note["params"]) {
+                        // 纯文本增量：不重拉，ChatView 直接读累积文本渲染。
+                        crate::stream::FrameOutcome::TextDeltas { .. } => {
+                            triggers.messages.update(|n| *n += 1);
+                        }
+                        // 结构变化 / 快照：需要重拉 rowsRange 拿权威结构。
+                        crate::stream::FrameOutcome::Structural
+                        | crate::stream::FrameOutcome::Snapshot => {
+                            triggers.messages.update(|n| *n += 1);
+                            triggers.sessions.update(|n| *n += 1);
+                        }
+                        // 分片帧本轮未实现重组：退回 session 事件流兜底。
+                        crate::stream::FrameOutcome::NeedsResync => {
+                            triggers.messages.update(|n| *n += 1);
+                        }
+                        crate::stream::FrameOutcome::Ignored => {}
+                    }
+                }
+                // legacy 订阅事件流（每次 turn 事件一条）与状态变更。
+                "session/event" | "state.updated" => {
                     triggers.sessions.update(|n| *n += 1);
                     triggers.messages.update(|n| *n += 1);
                 }
@@ -1059,6 +1090,8 @@ fn ChatView(session_id: String) -> impl IntoView {
     // 三处闭包各持一份：加载、发送、生命周期跟踪。
     let sid_load = session_id.clone();
     let sid_send = session_id.clone();
+    // 消息刷新守卫专用副本（闭包捕获 prop 会move）。
+    let sid_stream = session_id.clone();
     let (messages, set_messages) = signal(Vec::<ConversationRowView>::new());
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal(String::new());
@@ -1119,13 +1152,20 @@ fn ChatView(session_id: String) -> impl IntoView {
             .await;
         });
     });
+    // 消息刷新：**纯文本增量不重拉**（否则逐 token 会被整页替换抹掉）。
+    // 通知桥已把纯文本增量标记为「累积即可」，这里只在结构变化时重拉 rowsRange。
+    let stream = expect_context::<crate::stream::StreamStore>();
     Effect::new(move |_| {
         triggers.messages.track();
-        if triggers.messages.get() > 0 {
-            load_messages.run(());
+        if triggers.messages.get() == 0 {
+            return;
         }
+        // 该会话正在流式 → 文本由累积器逐 token 渲染，不做整页重拉。
+        if stream.has_streaming(&sid_stream) {
+            return;
+        }
+        load_messages.run(());
     });
-
     // 发送：session/send → 轮询 session/messages 直至回复稳定（v1 轮询，事件流后续接入）。
     let send = move |event: leptos::ev::SubmitEvent| {
         event.prevent_default();
@@ -1385,9 +1425,21 @@ fn UserInputRowView(row: ConversationRowView) -> impl IntoView {
 /// 完成态 actions hover 显现（opacity-0 group-hover/assistant-row:opacity-100）。
 #[component]
 fn AssistantTextRowView(row: ConversationRowView) -> impl IntoView {
+    let stream = expect_context::<crate::stream::StreamStore>();
+    // sessionId 从 row 拿不到，用 selected_session（渲染行时父级已选定会话）。
+    let selected_session = expect_context::<RwSignal<Option<String>>>();
+    let session_id = selected_session.get().unwrap_or_default();
+    let row_id = row.row_id;
     let streaming = row.state == "streaming";
-    let text = row.text.clone();
-    let rendered = render_markdown(&text);
+    // ★逐 token：流式累积文本优先于 rowsRange 的静态文本。
+    // 收到 row.upserted 后累积被清空，自动回退到权威文本。
+    let static_text = row.text.clone();
+    let text = move || {
+        stream
+            .text_of(&session_id, row_id)
+            .unwrap_or_else(|| static_text.clone())
+    };
+    let rendered = move || render_markdown(&text());
     view! {
         <div class="group/assistant-row" data-row-id=row.row_id>
             <div data-conversation-selectable="true" class="w-full text-ui-base">
@@ -1409,12 +1461,24 @@ fn AssistantTextRowView(row: ConversationRowView) -> impl IntoView {
 /// 折叠披露，streaming/complete 都默认收起；streaming 且 text 空不渲染。
 #[component]
 fn ReasoningRowView(row: ConversationRowView) -> impl IntoView {
+    let stream = expect_context::<crate::stream::StreamStore>();
+    let selected_session = expect_context::<RwSignal<Option<String>>>();
+    let session_id = selected_session.get().unwrap_or_default();
+    let row_id = row.row_id;
     let streaming = row.state == "streaming";
     let duration_seconds = row
         .duration_ms
         .map(|ms| (ms / 1000).max(1))
         .map(|s| format!("{s}s"));
-    if streaming && row.text.is_empty() {
+    // reasoning 也是流式字段（path = "reasoning"），同样走累积文本优先。
+    let static_text = row.text.clone();
+    let live_text = move || {
+        stream
+            .text_of(&session_id, row_id)
+            .unwrap_or_else(|| static_text.clone())
+    };
+    // streaming 且无任何文本（含累积）时不渲染——真源同此判断。
+    if streaming && live_text().is_empty() {
         return ().into_any();
     }
     view! {
@@ -1433,7 +1497,7 @@ fn ReasoningRowView(row: ConversationRowView) -> impl IntoView {
                     }}
                 </summary>
                 <div data-conversation-selectable="true">
-                    <pre class="mt-1 max-h-48 overflow-auto rounded-lg bg-surface p-2 text-xs whitespace-pre-wrap text-muted">{row.text.clone()}</pre>
+                    <pre class="mt-1 max-h-48 overflow-auto rounded-lg bg-surface p-2 text-xs whitespace-pre-wrap text-muted">{move || live_text()}</pre>
                 </div>
             </details>
         </div>
