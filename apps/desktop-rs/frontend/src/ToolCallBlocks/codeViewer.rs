@@ -277,7 +277,7 @@ impl CodeViewerToolCall {
         }
     }
 
-    fn identity_like(&self) -> ToolIdentityLike<'_> {
+    pub fn identity_like(&self) -> ToolIdentityLike<'_> {
         ToolIdentityLike {
             tool_name: self.tool_name.as_deref(),
             kind: self.kind.as_deref(),

@@ -16,6 +16,7 @@ pub mod agentHelpers;
 pub mod agentPromptSection;
 pub mod ask_question;
 pub mod changes_group;
+pub mod codeBlock;
 pub mod edit;
 pub mod escalate;
 pub mod execute;

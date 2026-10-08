@@ -1,11 +1,35 @@
 //! 1:1 翻译 `packages/ui/src/components/ai-elements/tool.tsx` 的
-//! `ToolOutput` 组件（:128-170）。
+//! `ToolOutput`（:128-170）与 `ToolInput`（:117-127）。
 //!
 //! 通用输出回退块：Error/Result 小标 + 蒙层盒子。switch_mode 等卡的
 //! 「没有 markdown 正文」时的最小呈现。
+//!
+//! **排序注明**：真源 :117-127 —— `ToolInput` 的 JSON 用 CodeBlock
+//! （Rust 侧 v1 简化版，见 codeBlock.rs 的裁剪注明）。
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::codeBlock::CodeBlock;
+
+/// `ToolInput`（真源 :117-127）：Parameters 小标 + JSON pretty 代码块。
+#[component]
+pub fn ToolInputBlock(
+    /// `ToolPart["input"]`——工具参数。
+    input: Value,
+) -> impl IntoView {
+    let code = serde_json::to_string_pretty(&input).unwrap_or_default();
+    view! {
+        <div class="space-y-2 overflow-hidden">
+            <h4 class="font-medium tracking-wide text-muted-foreground text-ui-base uppercase">
+                "Parameters"
+            </h4>
+            <div class="max-h-60 overflow-auto rounded-md bg-muted/50">
+                <CodeBlock code=code language="json".to_string() />
+            </div>
+        </div>
+    }
+}
 
 /// `ToolOutput`（真源 :133-170）。
 ///

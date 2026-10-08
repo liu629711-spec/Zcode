@@ -7,6 +7,7 @@
 #![allow(non_snake_case)]
 
 pub mod ToolCallBlock;
+pub mod ToolCallBody;
 pub mod ToolLayout;
 pub mod ToolSnapshotFieldNotice;
 pub mod ToolSummaryRow;
@@ -19,6 +20,7 @@ pub mod renderers;
 pub mod resolveRenderer;
 pub mod toolCallRowAdapter;
 pub mod toolDiffPreview;
+pub mod toolDisplay;
 pub mod toolError;
 pub mod toolIdentity;
 pub mod toolResultDisplay;
