@@ -24,9 +24,13 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 
-use crate::app::{invoke_json, relative_time, status_dot_class, Icon};
+use crate::app::{Icon, invoke_json, relative_time, status_dot_class};
+use crate::groupedTasks::domEvents::{
+    on_drag_end, on_drag_over, on_drag_start, on_drop, track_direction, view_to_order_input,
+};
+use crate::groupedTasks::dragRuntime::DragRuntime;
 use crate::groupedTasks::join::{
-    index_sessions, join_grouped_structure, GroupedStructure, GroupedStructureNode,
+    GroupedStructure, GroupedStructureNode, index_sessions, join_grouped_structure,
 };
 use crate::groupedTasks::view::{GroupedTaskView, GroupedTaskViewNode, TaskGroup, TaskListItem};
 
@@ -200,6 +204,14 @@ pub fn GroupedTasksView() -> impl IntoView {
     let (structure, set_structure) = signal(None::<GroupedStructure>);
     let collapsed = RwSignal::new(std::collections::HashSet::<String>::new());
 
+    // join 后的完整视图。**单独用信号存**，而不是在渲染闭包里现算——
+    // 拖拽预览会就地改这个视图（真源 dragPreviewViewRef），
+    // 若每次渲染都重新 join，预览会被下一次 join 直接冲掉。
+    // `None` = 尚未 join；拖拽中该值就是预览态。
+    let joined_view: RwSignal<Option<GroupedTaskView>> = RwSignal::new(None);
+    // 拖拽运行时（begin/preview/finish/cancel 状态机）。
+    let drag_runtime: RwSignal<DragRuntime> = RwSignal::new(DragRuntime::default());
+
     let store = GroupedStore {
         refresh: RwSignal::new(0),
         error: RwSignal::new(String::new()),
@@ -263,6 +275,29 @@ pub fn GroupedTasksView() -> impl IntoView {
         });
     });
 
+    // join 必须在**另一个** Effect 里做：它依赖 sessions（会话快照），
+    // 而拉取 structure 的 Effect 拿不到最新会话数据（闭包捕获时机不同）。
+    // 单独拆开后，「会话列表刷新 → 重新 join」也能正确触发。
+    Effect::new(move |_| {
+        let Some(structure) = structure.get() else {
+            joined_view.set(None);
+            return;
+        };
+        // 真源 join：后端只给分组结构（task_ids），任务内容由客户端与
+        // sessions-index 会话 join 得到（zcodeTaskListTypes.ts 注释）。
+        let session_index = index_sessions(&sessions.join_rows());
+        let ws_path_for_join = selected_session
+            .get()
+            .and_then(|sid| sessions.workspace_path_of(&sid))
+            .unwrap_or_default();
+        joined_view.set(Some(join_grouped_structure(
+            &structure,
+            &session_index,
+            &ws_path_for_join,
+            None,
+        )));
+    });
+
     view! {
         <div class="flex min-h-0 flex-col">
             {move || {
@@ -273,31 +308,18 @@ pub fn GroupedTasksView() -> impl IntoView {
                     }
                     .into_any();
                 }
-                let Some(structure) = structure.get() else {
+                let Some(view) = joined_view.get() else {
                     return view! {
                         <p class="px-3 py-2 text-xs text-muted">"加载中…"</p>
                     }
                     .into_any();
                 };
-                if structure.nodes.is_empty() {
+                if view.nodes.is_empty() {
                     return view! {
                         <p class="px-3 py-2 text-ui-base text-foreground-subtle">"暂无任务"</p>
                     }
                     .into_any();
                 }
-                // 真源 join：后端只给分组结构（task_ids），任务内容由客户端与
-                // sessions-index 会话 join 得到。join 产物直接是 view.rs 的
-                // GroupedTaskView——拖拽重排就作用在它上面。
-                let session_index = index_sessions(&sessions.join_rows());
-                let ws_path_for_join = sessions
-                    .workspace_path_of(&selected_session.get().unwrap_or_default())
-                    .unwrap_or_default();
-                let view: GroupedTaskView = join_grouped_structure(
-                    &structure,
-                    &session_index,
-                    &ws_path_for_join,
-                    None,
-                );
 
                 view.nodes
                     .into_iter()
@@ -308,12 +330,23 @@ pub fn GroupedTasksView() -> impl IntoView {
                                     group=Group { group_id: group.group_id, title: group.title, color: group.color }
                                     tasks=tasks
                                     collapsed=collapsed
+                                    runtime=drag_runtime
+                                    view=joined_view
+                                    error=store.error
+                                    refresh=store.refresh
                                 />
                             }
                                 .into_any()
                         }
                         GroupedTaskViewNode::Task { task, .. } => {
-                            view! { <LooseTaskRow task=task /> }.into_any()
+                            view! {
+                                <LooseTaskRow
+                                    task=task
+                                    runtime=drag_runtime
+                                    view=joined_view
+                                />
+                            }
+                                .into_any()
                         }
                     })
                     .collect_view()
@@ -329,6 +362,10 @@ fn GroupItem(
     group: Group,
     tasks: Vec<TaskListItem>,
     collapsed: RwSignal<std::collections::HashSet<String>>,
+    runtime: RwSignal<DragRuntime>,
+    view: RwSignal<Option<GroupedTaskView>>,
+    error: RwSignal<String>,
+    refresh: RwSignal<u64>,
 ) -> impl IntoView {
     let store = expect_context::<GroupedStore>();
     let system = is_system_group(&group);
@@ -400,12 +437,30 @@ fn GroupItem(
         // TASK_GROUP_CONTAINER_CLASS
         <div class="relative pt-2.5 pb-0">
             // TASK_GROUP_HEADER_CLASS
+            // 组头既是拖拽源（拖 group，真源 groupDraggable :148），
+            // 也是投放区（真源 expandedGroupHeaderDroppable :171 /
+            // collapsedGroupDroppable :163 —— 两者落位效果都是「进组首位」，
+            // 故Rust侧统一用 collapsed-group 类型）。
             <div
                 role="button"
                 tabindex="0"
                 class="mb-0.5 flex h-8 cursor-pointer items-center gap-1 rounded-lg border border-transparent pl-1.5 pr-1 text-ui-base text-foreground transition-[background-color,border-color,box-shadow] hover:bg-surface-hover"
                 aria-expanded=move || !is_collapsed.get()
+                draggable="true"
+                data-group-id=group.group_id.clone()
+                data-drop-type="grouped-collapsed-group"
                 on:click=toggle
+                on:dragstart=move |ev| on_drag_start(ev, runtime, view)
+                on:dragover=move |ev| {
+                    track_direction(&ev, runtime);
+                    on_drag_over(ev, runtime.read_only(), view)
+                }
+                on:drop=move |ev| {
+                    on_drop(ev, runtime, view, move |committed| {
+                        commit_order(committed, view, error, refresh)
+                    })
+                }
+                on:dragend=move |_| on_drag_end(runtime, view)
             >
                 // 颜色标记：size-5 圆 + Hash 图标（colors.tsx TaskGroupColorMark）。
                 // 点击展开 7 色菜单（真源 DropdownMenu + RadioGroup）。
@@ -514,21 +569,104 @@ fn GroupItem(
             >
                 <div class="min-h-0 overflow-hidden">
                     // TASK_GROUP_CONTENT_CLASS + 按色系左边框
-                    <div class=format!("ml-4 border-l py-px pl-2 {border}")>
+                    // 空投放区（真源 emptyDropZone）：组展开但无成员时可拖入。
+                    <div
+                        class=format!("ml-4 border-l py-px pl-2 {border}")
+                        data-group-id=group.group_id.clone()
+                        data-drop-type="grouped-empty-drop"
+                        on:dragover=move |ev| on_drag_over(ev, runtime.read_only(), view)
+                    >
                         {tasks
                             .into_iter()
-                            .map(|task| view! { <GroupedTaskRow task=task /> })
+                            .map(|task| {
+                                view! {
+                                    <GroupedTaskRow task=task runtime=runtime view=view />
+                                }
+                            })
                             .collect_view()}
                     </div>
+                    // 组尾投放区（真源 expandedGroupFooterDroppable :179）。
+                    // 向下拖 → 出组放到组后；向上拖 → 进组末位（dnd.rs 分支）。
+                    <div
+                        class="h-1.5"
+                        data-group-id=group.group_id.clone()
+                        data-drop-type="grouped-expanded-group-footer"
+                        on:dragover=move |ev| {
+                            track_direction(&ev, runtime);
+                            on_drag_over(ev, runtime.read_only(), view)
+                        }
+                        on:drop=move |ev| {
+                            on_drop(ev, runtime, view, move |committed| {
+                                commit_order(committed, view, error, refresh)
+                            })
+                        }
+                    ></div>
                 </div>
             </div>
         </div>
     }
 }
 
+/// 落库一次拖拽后的顺序，失败时回滚本地视图（真源 `applyOrder` 的 catch 分支）。
+///
+/// 真源（useGroupedTaskView.ts:1038-1043）：
+/// 写失败 → 回滚乐观视图 → 再refresh 一次收敛到 SQLite 真相源 → 抛错上报。
+/// Rust 侧同样三步，且**必须回滚**——否则顺序只存在内存里，重启即丢。
+fn persist_order(
+    committed: GroupedTaskView,
+    view: RwSignal<Option<GroupedTaskView>>,
+    error: RwSignal<String>,
+    refresh: RwSignal<u64>,
+) {
+    // 先记下回滚点：落库失败要恢复成拖拽前的顺序。
+    let rollback = view.get_untracked();
+    let sessions = expect_context::<crate::app::SessionsStore>();
+    let selected_session = expect_context::<RwSignal<Option<String>>>();
+    // workspace 路径必须取真实值：后端按 workspace_key 定位排序记录，
+    // 传空串会写到一把永远匹配不上的 key 上（等于没落库）。
+    let ws_path = selected_session
+        .get_untracked()
+        .and_then(|sid| sessions.workspace_path_of(&sid))
+        .unwrap_or_default();
+    spawn_local(async move {
+        let payload = view_to_order_input(&committed);
+        let result = invoke_json(
+            "task_group_apply_order",
+            serde_json::json!({
+                "workspacePath": ws_path,
+                "workspaceIdentity": serde_json::Value::Null,
+                "topLevel": payload["topLevel"],
+                "groups": payload["groups"],
+            }),
+        )
+        .await;
+        if result.is_err() {
+            // 回滚 + 重拉，对齐真源。
+            view.set(rollback);
+            error.set("更新分组顺序失败，已回滚".into());
+            refresh.update(|n| *n += 1);
+        }
+    });
+}
+
+/// 拖拽落库成功的统一入口：把视图写回信号 + 触发落库。
+fn commit_order(
+    committed: GroupedTaskView,
+    view: RwSignal<Option<GroupedTaskView>>,
+    error: RwSignal<String>,
+    refresh: RwSignal<u64>,
+) {
+    view.set(Some(committed.clone()));
+    persist_order(committed, view, error, refresh);
+}
+
 /// 组内成员行（真源 task-row.tsx TASK_GROUP_ROW_CLASS + ROW_LINE_CLASS）。
 #[component]
-fn GroupedTaskRow(task: TaskListItem) -> impl IntoView {
+fn GroupedTaskRow(
+    task: TaskListItem,
+    runtime: RwSignal<DragRuntime>,
+    view: RwSignal<Option<GroupedTaskView>>,
+) -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
     let task_id = task.task_id.clone();
     let active = {
@@ -549,10 +687,24 @@ fn GroupedTaskRow(task: TaskListItem) -> impl IntoView {
     } else {
         String::new()
     };
+    let task_key = crate::groupedTasks::view::task_key_of(&task);
 
     view! {
         // TASK_GROUP_ROW_LINE_CLASS
-        <div class=class>
+        // draggable + data-* : 拖拽源 + 投放区（真源 useDraggable/useDroppable +
+        // data:{type:"grouped-task", taskKey} 的 HTML5 等价物）。
+        <div
+            class=class
+            draggable="true"
+            data-task-key=task_key.clone()
+            data-drop-type="grouped-task"
+            on:dragstart=move |ev| on_drag_start(
+                ev,
+                runtime,
+                view,
+            )
+            on:dragover=move |ev| on_drag_over(ev, runtime.read_only(), view)
+        >
             <span class="flex h-7 w-full min-w-0 items-center gap-2">
                 <button
                     class="flex h-7 w-full min-w-0 items-center gap-2 text-left"
@@ -569,7 +721,11 @@ fn GroupedTaskRow(task: TaskListItem) -> impl IntoView {
 
 /// 游离任务行（未入组，顶层节点）。
 #[component]
-fn LooseTaskRow(task: TaskListItem) -> impl IntoView {
+fn LooseTaskRow(
+    task: TaskListItem,
+    runtime: RwSignal<DragRuntime>,
+    view: RwSignal<Option<GroupedTaskView>>,
+) -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
     let task_id = task.task_id.clone();
     let active = {
@@ -584,9 +740,17 @@ fn LooseTaskRow(task: TaskListItem) -> impl IntoView {
         }
     };
     let dot = status_dot_class(&task.status).to_string();
+    let task_key = crate::groupedTasks::view::task_key_of(&task);
 
     view! {
-        <div class=class>
+        <div
+            class=class
+            draggable="true"
+            data-task-key=task_key.clone()
+            data-drop-type="grouped-task"
+            on:dragstart=move |ev| on_drag_start(ev, runtime, view)
+            on:dragover=move |ev| on_drag_over(ev, runtime.read_only(), view)
+        >
             <button
                 class="flex h-8 w-full min-w-0 items-center gap-2 text-left"
                 on:click=move |_| selected_session.set(Some(task_id.clone()))
@@ -614,11 +778,19 @@ mod tests {
     fn system_group_titles_are_localized() {
         // 真源 group-title.ts：系统分组忽略库里存的占位标题，按语言环境展示。
         assert_eq!(
-            display_title(&group(CRON_DEFAULT_GROUP_ID, CRON_PLACEHOLDER_TITLE, "gray")),
+            display_title(&group(
+                CRON_DEFAULT_GROUP_ID,
+                CRON_PLACEHOLDER_TITLE,
+                "gray"
+            )),
             "定时任务"
         );
         assert_eq!(
-            display_title(&group(OFF_PEAK_DEFAULT_GROUP_ID, OFF_PEAK_PLACEHOLDER_TITLE, "blue")),
+            display_title(&group(
+                OFF_PEAK_DEFAULT_GROUP_ID,
+                OFF_PEAK_PLACEHOLDER_TITLE,
+                "blue"
+            )),
             "闲时任务"
         );
     }
@@ -626,7 +798,11 @@ mod tests {
     #[test]
     fn system_group_detected_by_id() {
         assert!(is_system_group(&group(CRON_DEFAULT_GROUP_ID, "x", "gray")));
-        assert!(is_system_group(&group(OFF_PEAK_DEFAULT_GROUP_ID, "x", "gray")));
+        assert!(is_system_group(&group(
+            OFF_PEAK_DEFAULT_GROUP_ID,
+            "x",
+            "gray"
+        )));
         assert!(!is_system_group(&group("g-user", "我的组", "gray")));
     }
 
@@ -634,14 +810,20 @@ mod tests {
     fn normal_group_keeps_its_title() {
         assert_eq!(display_title(&group("g1", "工作", "red")), "工作");
         // 占位标题但非系统 id → 按普通组处理（id 才是权威判据）。
-        assert_eq!(display_title(&group("g-user", CRON_PLACEHOLDER_TITLE, "gray")), "定时任务");
+        assert_eq!(
+            display_title(&group("g-user", CRON_PLACEHOLDER_TITLE, "gray")),
+            "定时任务"
+        );
     }
 
     #[test]
     fn color_classes_cover_seven_colors() {
         for c in ["gray", "red", "orange", "yellow", "green", "blue", "purple"] {
             assert!(color_class(c).starts_with("bg-"), "{c} 底色类名不对");
-            assert!(border_color_class(c).starts_with("border-"), "{c} 边框类名不对");
+            assert!(
+                border_color_class(c).starts_with("border-"),
+                "{c} 边框类名不对"
+            );
         }
         // 未知颜色回落 gray。
         assert_eq!(color_class("unknown"), color_class("gray"));
@@ -740,6 +922,113 @@ mod tests {
             panic!("t2 应被提到顶层首位");
         };
         assert_eq!(first.task_id, "t2");
+    }
+
+    /// 端到端：后端 JSON → join → 拖拽状态机 → 落库载荷。
+    ///
+    /// 覆盖接线后新增的两段逻辑（`joined_view` 信号 + `DragRuntime` 状态机）
+    /// 与已有 join/view/domEvents 的衔接。接线层没有 DOM 就测不了，
+    /// 但「状态机 → 载荷」这段纯逻辑可以在这里钉住。
+    #[test]
+    fn drag_state_machine_produces_persistable_order() {
+        // 1) 后端结构：游离 t1 + 组 g1 含 t2
+        let structure = GroupedStructure {
+            nodes: vec![
+                GroupedStructureNode::Task {
+                    task_id: "t1".into(),
+                },
+                GroupedStructureNode::Group {
+                    group: TaskGroup {
+                        group_id: "g1".into(),
+                        title: "工作".into(),
+                        color: "blue".into(),
+                    },
+                    task_ids: vec!["t2".into()],
+                },
+            ],
+        };
+        let sessions = index_sessions(&[crate::groupedTasks::join::SessionRow {
+            session_id: "t1".into(),
+            title: "任务一".into(),
+            status: "idle".into(),
+            created_at: 0,
+            updated_at: 100,
+            workspace_path: "/ws".into(),
+            workspace_identity: None,
+        }]);
+        let view = join_grouped_structure(&structure, &sessions, "/ws", None);
+
+        // 2) 拖 t2（组内）到 t1 之前 —— 状态机完整跑一遍 begin→preview→finish
+        let mut rt = DragRuntime::default();
+        rt.begin(
+            crate::groupedTasks::dnd::DragSource::Task {
+                task_key: crate::groupedTasks::view::task_key("/ws", None, "t2"),
+            },
+            &view,
+        );
+        rt.direction = crate::groupedTasks::dnd::DragDirection::Before;
+        let preview = rt.preview(
+            &view,
+            Some(crate::groupedTasks::dnd::DropTarget::Task {
+                task_key: crate::groupedTasks::view::task_key("/ws", None, "t1"),
+            }),
+        );
+
+        // t2 应已升为顶层首位
+        assert!(matches!(
+            &preview.nodes[0],
+            GroupedTaskViewNode::Task { task, .. } if task.task_id == "t2"
+        ));
+
+        // 3) finish 产出待落库视图
+        let committed = rt.finish(&preview).expect("实际移动了应产出待落库视图");
+
+        // 4) 载荷：顶层顺序 t2,t1 + 组 g1 变空
+        let payload = view_to_order_input(&committed);
+        let top = payload["topLevel"].as_array().unwrap();
+        assert_eq!(top[0]["task"], "t2", "顶层顺序应反映 t2 已上移");
+        assert_eq!(top[1]["task"], "t1");
+        let groups = payload["groups"].as_array().unwrap();
+        assert_eq!(groups[0]["groupId"], "g1");
+        assert!(
+            groups[0]["taskIds"].as_array().unwrap().is_empty(),
+            "t2 已被拖出组，组内列表应为空"
+        );
+    }
+
+    #[test]
+    fn drag_with_no_movement_does_not_persist() {
+        // 真源 :1476-1484：签名没变就不落库（省一次 RPC + 避免无谓动画）。
+        let view = GroupedTaskView {
+            nodes: vec![GroupedTaskViewNode::Task {
+                task: TaskListItem {
+                    task_id: "t1".into(),
+                    title: "t1".into(),
+                    workspace_path: "/ws".into(),
+                    workspace_identity: None,
+                    created_at: 0,
+                    updated_at: 0,
+                    status: String::new(),
+                },
+                sort_order: None,
+            }],
+        };
+        let key = crate::groupedTasks::view::task_key("/ws", None, "t1");
+        let mut rt = DragRuntime::default();
+        rt.begin(
+            crate::groupedTasks::dnd::DragSource::Task {
+                task_key: key.clone(),
+            },
+            &view,
+        );
+        // 悬停回自己 → 预览不变
+        let preview = rt.preview(
+            &view,
+            Some(crate::groupedTasks::dnd::DropTarget::Task {
+                task_key: key.clone(),
+            }),
+        );
+        assert!(rt.finish(&preview).is_none(), "没有实际移动就不该落库");
     }
 
     #[test]

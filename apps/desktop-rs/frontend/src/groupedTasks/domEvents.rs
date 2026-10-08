@@ -27,7 +27,7 @@ use wasm_bindgen::JsCast;
 
 use super::dnd::{DragSource, DropTarget};
 use super::dragRuntime::DragRuntime;
-use super::view::{task_key_of, GroupedTaskView};
+use super::view::{GroupedTaskView, task_key_of};
 
 /// `data-drop-type` 的属性名。投放区元素用它声明自己是哪种落点。
 pub const DROP_TYPE_ATTR: &str = "data-drop-type";
@@ -64,7 +64,9 @@ pub fn read_drop_target(node: &web_sys::Element) -> Option<DropTarget> {
             group_id().map(|group_id| DropTarget::GroupHeader { group_id })
         }
         // 组尾（group-item.tsx:179 expandedGroupFooter）。
-        "grouped-expanded-group-footer" => group_id().map(|group_id| DropTarget::GroupFooter { group_id }),
+        "grouped-expanded-group-footer" => {
+            group_id().map(|group_id| DropTarget::GroupFooter { group_id })
+        }
         // 空组内容区（真源 emptyDropZone）。
         "grouped-empty-drop" => group_id().map(|group_id| DropTarget::EmptyGroupBody { group_id }),
         // group 本体（group-item.tsx:156 groupOver），拖 group 时用。
@@ -143,7 +145,7 @@ fn closest_drop_target(event: &web_sys::Event) -> Option<DropTarget> {
 pub fn on_drag_start(
     event: web_sys::DragEvent,
     runtime: RwSignal<DragRuntime>,
-    view: RwSignal<GroupedTaskView>,
+    view: RwSignal<Option<GroupedTaskView>>,
 ) {
     let Some(node) = event
         .current_target()
@@ -154,14 +156,20 @@ pub fn on_drag_start(
     let Some(source) = source_of_node(&node) else {
         return;
     };
+    // `None` = 视图尚未 join 就绪，此时没有可回滚的起点，不启动拖拽
+    // （真源此时同样没有 dragOriginView）。
+    let Some(current) = view.get_untracked() else {
+        return;
+    };
     let Some(transfer) = event.data_transfer() else {
         return;
     };
-    transfer.set_data(DRAG_MIME, &drag_source_payload(&source)).ok();
+    transfer
+        .set_data(DRAG_MIME, &drag_source_payload(&source))
+        .ok();
     // dnd-kit 默认行为也设effectAllowed，这里设 move 表示移动语义。
     transfer.set_effect_allowed("move");
 
-    let current = view.get_untracked();
     runtime.update(|rt| rt.begin(source, &current));
 }
 
@@ -169,12 +177,15 @@ pub fn on_drag_start(
 ///
 /// 对应真源 `onDragOver` → `applyGroupedTaskDragOverPreview`（:1384-1390）：
 /// 每次 over 到新投放区就算一次预览。
+///
+/// `runtime` 用 `ReadSignal`：本函数只读拖拽状态（方向 + active），
+/// 方向更新交给 `track_direction`（dragover 每次触发都会先调它）。
 pub fn on_drag_over(
     event: web_sys::DragEvent,
     runtime: ReadSignal<DragRuntime>,
-    view: RwSignal<GroupedTaskView>,
+    view: RwSignal<Option<GroupedTaskView>>,
 ) {
-    // 必须 preventDefault，否则 drop 不会触发。这是 HTML5 DnD 的硬性要求。
+    // 必须 prevent_default，否则 drop 不会触发。这是 HTML5 DnD 的硬性要求。
     event.prevent_default();
     let Some(transfer) = event.data_transfer() else {
         return;
@@ -187,14 +198,16 @@ pub fn on_drag_over(
     }
 
     let over = closest_drop_target(&event);
-    let current = view.get_untracked();
+    let Some(current) = view.get_untracked() else {
+        return;
+    };
     let rt = runtime.get_untracked();
     let next = rt.preview(&current, over);
     // 只在视图签名真的变了才 set，���免高频 dragover 引发无谓重渲染。
     // 判据用签名（真源 :1350-1354 同思路），而不是结构相等 —— 后者会把
     // 「仅title/status 变化」也当成结构变化。
     if !super::dnd::is_same_view(&next, &current) {
-        view.set(next);
+        view.set(Some(next));
     }
 }
 
@@ -204,11 +217,13 @@ pub fn on_drag_over(
 pub fn on_drop(
     event: web_sys::DragEvent,
     runtime: RwSignal<DragRuntime>,
-    view: RwSignal<GroupedTaskView>,
+    view: RwSignal<Option<GroupedTaskView>>,
     on_commit: impl Fn(GroupedTaskView),
 ) {
     event.prevent_default();
-    let next = view.get_untracked();
+    let Some(next) = view.get_untracked() else {
+        return;
+    };
     // Signal::update 返回 ()，不能拿闭包的返回值。先在本地副本上算出
     // finish 的结果，再把「已结束」的状态写回 signal。
     let mut rt = runtime.get_untracked();
@@ -216,7 +231,7 @@ pub fn on_drop(
     runtime.set(rt);
     if let Some(committed) = committed {
         on_commit(committed.clone());
-        view.set(committed);
+        view.set(Some(committed));
     }
 }
 
@@ -226,19 +241,17 @@ pub fn on_drop(
 /// - 未 drop（取消/Esc）触发：`cancel` 交还原点视图供回滚。
 ///
 /// 对应真源 `handleGroupedTaskDragCancel`（:1403-1424）。
-pub fn on_drag_end(
-    runtime: RwSignal<DragRuntime>,
-    view: RwSignal<GroupedTaskView>,
-) {
+pub fn on_drag_end(runtime: RwSignal<DragRuntime>, view: RwSignal<Option<GroupedTaskView>>) {
     // 若 on_drop 已处理（active 为空），这里直接返回。
     let mut rt = runtime.get_untracked();
     let restored = rt.cancel();
     runtime.set(rt);
+    // `cancel()` 只在「拖拽已开始但未被 drop 结束」时返回原点视图：
+    // - 正常 drop：on_drop 已调 finish()，origin_view 被 take 走 → restored 为 None，
+    //   这里什么都不做（幂等）；
+    // - 取消 / Esc / 拖出窗口：origin_view 还在 → restored 为 Some，回滚预览。
     if let Some(restored) = restored {
-        //没 drop 成功才需要回滚到原点。
-        if !runtime.get_untracked().is_dragging() {
-            view.set(restored);
-        }
+        view.set(Some(restored));
     }
 }
 
@@ -318,10 +331,7 @@ mod tests {
         };
         let payload = drag_source_payload(&src);
         // NUL 分隔符不能破坏 split_once(':')。
-        assert_eq!(
-            payload.split_once(':').map(|(_, v)| v),
-            Some("/ws\u{0}t1")
-        );
+        assert_eq!(payload.split_once(':').map(|(_, v)| v), Some("/ws\u{0}t1"));
     }
 
     #[test]
