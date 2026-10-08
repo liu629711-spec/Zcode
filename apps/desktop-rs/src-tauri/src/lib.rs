@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod conversation_stream;
+pub mod wire;
 pub mod protocol;
 pub mod taskdb;
 pub mod taskgroup;

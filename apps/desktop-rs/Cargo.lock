@@ -5259,6 +5259,8 @@ dependencies = [
 name = "zcode-desktop-rs"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "crc32fast",
  "rusqlite",
  "serde",
  "serde_json",

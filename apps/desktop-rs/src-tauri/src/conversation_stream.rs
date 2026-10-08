@@ -133,11 +133,23 @@ pub struct WireFrame {
     /// kind=complete 时承载逻辑帧。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub frame: Option<TopicFrame>,
-    /// kind=fragment 时承载碎片载荷（本模块不重组，故不建模）。
+    /// kind=fragment 时承载碎片载荷。重组逻辑在 `crate::wire`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fragment_index: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fragment_count: Option<u32>,
+    /// 完整逻辑帧的字节数（重组时做长度校验，真源 wire-assembler.ts:406-423）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logical_bytes: Option<usize>,
+    /// CRC-32/IEEE 校验和，真源是 8 位小写 hex 串。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum_value: Option<String>,
+    /// fragment 的 base64 载荷（标准字母表）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_base64: Option<String>,
+    /// 投递种类；consumer 禁止按 RPC 时序猜测（真源 wire.ts:8）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_kind: Option<crate::wire::DeliveryKind>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

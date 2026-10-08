@@ -21,6 +21,10 @@ uuid = { version = "1", features = ["v4", "v7"] }
 # 本地任务索引库（~/.zcode/v2/tasks-index.sqlite，真源用 node:sqlite）。
 # bundled 特性把 SQLite 源码编进来，不依赖系统 sqlite 动态库。
 rusqlite = { version = "0.37", features = ["bundled"] }
+# wire 分片重组：CRC-32/IEEE 校验 + 标准 base64 解码
+# （真源 wire-binary.ts 用标准 CRC-32/IEEE + 严格标准字母表 base64）。
+crc32fast = "1"
+base64 = "0.22"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
