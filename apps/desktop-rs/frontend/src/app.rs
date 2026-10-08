@@ -467,7 +467,7 @@ fn CommandCenter(show: RwSignal<bool>) -> impl IntoView {
                                         };
                                         let row_class = move || {
                                             if is_active() {
-                                                "flex w-full items-center gap-2 rounded-lg bg-accent-weak px-3 py-2 text-left text-sm"
+                                                "flex w-full items-center gap-2 rounded-lg bg-selected px-3 py-2 text-left text-sm"
                                             } else {
                                                 "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-surface-hover"
                                             }
@@ -662,7 +662,7 @@ fn TaskViewToolbar() -> impl IntoView {
                     let is_active = move || store.view.get() == view_label;
                     let class = move || {
                         if is_active() {
-                            "rounded bg-accent-weak px-1.5 py-0.5 text-xs font-medium text-accent"
+                            "rounded bg-selected px-1.5 py-0.5 text-xs font-medium text-foreground"
                         } else {
                             "rounded px-1.5 py-0.5 text-xs text-muted hover:bg-surface-hover"
                         }
@@ -717,7 +717,7 @@ fn SidebarSessionList() -> impl IntoView {
             <div class="flex items-center justify-between px-3 pb-1">
                 <span class="text-xs font-medium text-muted">"任务"</span>
                 <button
-                    class="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-accent-weak"
+                    class="rounded px-1.5 py-0.5 text-xs text-muted hover:bg-selected"
                     on:click=move |_| store.load()
                     disabled=move || store.loading.get()
                     title="从 Agent 拉取 session/list"
@@ -755,9 +755,9 @@ fn SidebarSessionList() -> impl IntoView {
                             };
                             let item_class = move || {
                                 if active() {
-                                    "flex w-full items-center gap-2 rounded-lg bg-accent-weak px-2 py-1.5 text-left"
+                                    "flex w-full items-center gap-2 rounded-lg bg-selected px-2 py-1.5 text-left"
                                 } else {
-                                    "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-accent-weak"
+                                    "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-selected"
                                 }
                             };
                             view! {
@@ -834,13 +834,13 @@ fn NewTaskButton() -> impl IntoView {
     view! {
         <div class="w-full">
             <input
-                class="mb-1 w-full rounded-lg border border-border bg-panel px-2 py-1.5 text-xs outline-none focus:border-accent"
+                class="mb-1 w-full rounded-lg border border-border bg-panel px-2 py-1.5 text-xs outline-none focus:border-border-hover"
                 placeholder="工作区路径（留空用主目录）"
                 prop:value=move || workspace_input.get()
                 on:input=move |e| set_workspace_input.set(event_target_value(&e))
             />
             <button
-                class="flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground disabled:opacity-60"
+                class="group flex w-full h-8 items-center justify-start gap-2 rounded-lg pl-2.5 pr-2.5 hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-60"
                 on:click=create
                 disabled=move || creating.get()
             >
@@ -914,7 +914,7 @@ fn AgentPanel() -> impl IntoView {
                 <span>Agent 桥</span>
             </div>
             <div class="flex flex-col gap-1.5">
-                <button class="rounded-lg bg-accent px-2 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-60" on:click=start disabled=move || busy.get()>
+                <button class="rounded-lg bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-60" on:click=start disabled=move || busy.get()>
                     {move || if busy.get() { "启动中…" } else { "启动 Agent" }}
                 </button>
                 <p class="break-all leading-relaxed text-muted">{move || agent_status.get()}</p>
@@ -1396,7 +1396,7 @@ fn ChatView(session_id: String) -> impl IntoView {
                 on:submit=send
             >
                 <textarea
-                    class="min-h-[40px] flex-1 resize-none rounded-lg border border-border bg-panel px-3 py-2 text-sm outline-none focus:border-accent"
+                    class="min-h-[40px] flex-1 resize-none rounded-lg border border-border bg-panel px-3 py-2 text-sm outline-none focus:border-border-hover"
                     placeholder="输入消息，Enter 发送（Shift+Enter 换行）"
                     rows="2"
                     prop:value=move || draft.get()
@@ -1414,7 +1414,7 @@ fn ChatView(session_id: String) -> impl IntoView {
                 ></textarea>
                 <button
                     type="submit"
-                    class="rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-foreground disabled:opacity-60"
+                    class="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
                     disabled=move || sending.get()
                 >
                     {move || if sending.get() { "回复中…" } else { "发送" }}
@@ -1428,7 +1428,7 @@ fn ChatView(session_id: String) -> impl IntoView {
 fn MessageBubble(msg: ChatMessage) -> impl IntoView {
     let is_user = msg.role == "user";
     let bubble_class = if is_user {
-        "ml-auto max-w-[80%] rounded-2xl rounded-br-sm bg-accent px-3.5 py-2 text-sm text-accent-foreground"
+        "ml-auto max-w-[80%] rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground"
     } else {
         "mr-auto max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-panel px-3.5 py-2 text-sm"
     };

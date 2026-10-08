@@ -1,8 +1,16 @@
-/* Tailwind 4 CSS-first 入口。
-   主题变量（--color-background 等）对齐 packages/ui 的 themeStyles 体系，
-   保证 bg-background / border-border 等语义 token 与现有 UI 一致。 */
-@import "tailwindcss";
-@plugin "@tailwindcss/typography";
+/*
+ * 桌面端（Leptos）样式入口。
+ *
+ * 语义 token 与皮肤体系完全复用 packages/ui/src/styles.css（真源）：
+ * - shadcn 语义 token（bg-background/border-border/bg-popover...）与 React 版同值
+ * - 四套设计皮肤（claude/openai/notion/linear，data-design-style 切换）
+ * - 平台 variant（platform-*-desktop）
+ * 之前自造的 --color-panel/--color-accent-weak 等 token 已废弃——类名一律用真源体系。
+ *
+ * 注意：styles.css 自带 @import "tailwindcss" source(".")（扫描 React UI 包），
+ * 这里再补 @source 扫描 Leptos 源码，两边的类名都进编译。
+ */
+@import "../../../../packages/ui/src/styles.css";
 
 /* 代码块语言标签（render_markdown 的 data-lang 后处理配合）。 */
 .prose pre[data-lang] {
@@ -21,20 +29,3 @@
 /* 扫描 Leptos 源码中的 class（1:1 迁移 React 组件类名）。 */
 @source "../src";
 @source "../index.html";
-
-@theme {
-  --color-background: #f6f7f9;
-  --color-foreground: #1f2328;
-  --color-panel: #ffffff;
-  --color-border: #e3e6ea;
-  --color-muted: #6a737d;
-  --color-accent: #2563eb;
-  --color-accent-weak: #e8f0fe;
-  --color-accent-foreground: #ffffff;
-  /* 对齐 packages/ui 设计系统语义 token（themeStyles）。
-     精确值随主题系统迁移对齐，当前为浅色近似。 */
-  --color-surface-hover: #f0f1f3;
-  --color-selected: #e8f0fe;
-  --color-foreground-subtlest: #a8b0b8;
-  --radius-workspace-panel: 12px;
-}
