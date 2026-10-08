@@ -24,6 +24,7 @@
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::DataTransfer;
 
 use super::dnd::{DragSource, DropTarget};
 use super::dragRuntime::DragRuntime;
@@ -138,6 +139,177 @@ fn closest_drop_target(event: &web_sys::Event) -> Option<DropTarget> {
     None
 }
 
+/// 自定义拖拽预览的标记属性（dragend 时按它找到并移除）。
+pub const PREVIEW_MARK_ATTR: &str = "data-drag-preview";
+
+/// 构建自定义拖拽预览元素并 `setDragImage`。
+///
+/// HTML5 DnD 的默认 ghost image 是**整行元素的截图**，含选中态背景与
+/// hover 按钮，观感差且不可控。真源用 dnd-kit `DragOverlay` 自绘卡片
+/// （group-drag-overlay.tsx / task-row.tsx 的 dragOverlay 分支）。
+///
+/// 原生等价物：`dataTransfer.setDragImage(el, x, y)`——el 必须已插入文档
+/// 且可见（不能 display:none），故挂 body 后定位到屏幕外（top:-9999px）。
+/// `dragend` 时按 [`PREVIEW_MARK_ATTR`] 清理（`remove_drag_preview`）。
+///
+/// 预览样式对齐真源 overlay：
+/// - task：行纯展示版（状态点 + 标题 + 时间），task-row.tsx:287 注释
+///   「DragOverlay 高频渲染时只返回纯展示节点」；
+/// - group：组头复刻（颜色标 + 标题 + 数量徽章），group-drag-overlay.tsx:25-34，
+///   `cursor-grabbing` + `shadow-lg`。
+fn attach_drag_preview(
+    transfer: &web_sys::DataTransfer,
+    source: &DragSource,
+    view: &GroupedTaskView,
+) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let preview = match source {
+        DragSource::Task { task_key } => {
+            // 从视图里找任务数据（标题 / 状态 / 时间）。
+            let task = find_task_in_view(view, task_key);
+            build_task_preview(&document, task)
+        }
+        DragSource::Group { group_id } => {
+            let group = find_group_in_view(view, group_id);
+            build_group_preview(&document, group)
+        }
+    };
+    preview.set_attribute(PREVIEW_MARK_ATTR, "true").ok();
+    // 屏幕外但保持渲染（display:none 的元素 setDragImage 无效）。
+    // 用 set_attribute 一次写入而非 style() 对象——leptos prelude 的
+    // trait 与 web_sys::Element::style 同名，会产生方法解析歧义。
+    preview
+        .set_attribute(
+            "style",
+            "position:fixed;top:-9999px;left:-9999px;pointer-events:none",
+        )
+        .ok();
+    document.body().unwrap().append_child(&preview).ok();
+    // 指针居中（偏移取近似半宽半高；精确值需量元素尺寸，不值得）。
+    DataTransfer::set_drag_image(&transfer, &preview, 60, 14);
+}
+
+/// dragend 时移除预览元素（drop 成功与取消都要清理）。
+pub fn remove_drag_preview() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    // 完整路径调用：leptos prelude 的 trait 会遮蔽 Document 的同名方法。
+    if let Ok(nodes) =
+        web_sys::Document::query_selector_all(&document, &format!("[{PREVIEW_MARK_ATTR}]"))
+    {
+        for i in 0..nodes.length() {
+            if let Some(node) = nodes.get(i) {
+                let _ = node.parent_element().map(|p| p.remove_child(&node));
+            }
+        }
+    }
+}
+
+/// 在视图中查找任务（预览渲染用）。
+fn find_task_in_view<'a>(
+    view: &'a GroupedTaskView,
+    task_key: &str,
+) -> Option<&'a super::view::TaskListItem> {
+    for node in &view.nodes {
+        match node {
+            super::view::GroupedTaskViewNode::Task { task, .. } => {
+                if super::view::task_key_of(task) == task_key {
+                    return Some(task);
+                }
+            }
+            super::view::GroupedTaskViewNode::Group { tasks, .. } => {
+                for task in tasks {
+                    if super::view::task_key_of(task) == task_key {
+                        return Some(task);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 在视图中查找组（预览渲染用）。
+fn find_group_in_view<'a>(
+    view: &'a GroupedTaskView,
+    group_id: &str,
+) -> Option<(&'a super::view::TaskGroup, usize)> {
+    for node in &view.nodes {
+        if let super::view::GroupedTaskViewNode::Group { group, tasks, .. } = node {
+            if group.group_id == group_id {
+                return Some((group, tasks.len()));
+            }
+        }
+    }
+    None
+}
+
+/// 构建 task 行预览（纯展示版：状态点 + 标题 + 时间）。
+fn build_task_preview(
+    document: &web_sys::Document,
+    task: Option<&super::view::TaskListItem>,
+) -> web_sys::Element {
+    let el = document.create_element("div").expect("create preview div");
+    let (dot_class, title, time) = match task {
+        Some(t) => (
+            crate::app::status_dot_class(&t.status).to_string(),
+            t.title.clone(),
+            crate::app::relative_time(t.updated_at),
+        ),
+        // 视图未命中（理论上不该发生）给占位，不让预览凭空消失。
+        None => (
+            "bg-foreground-subtle".to_string(),
+            "…".into(),
+            String::new(),
+        ),
+    };
+    el.set_class_name(
+        "flex h-8 w-64 items-center gap-2 rounded-lg border border-border bg-background pl-2.5 pr-1 text-sm text-foreground shadow-lg",
+    );
+    el.set_inner_html(&format!(
+        "<span class=\"size-1.5 flex-none rounded-full {dot_class}\"></span>\
+         <span class=\"min-w-0 flex-1 truncate\">{}</span>\
+         <span class=\"flex-none text-xs text-foreground-subtlest\">{}</span>",
+        escape_html(&title),
+        escape_html(&time),
+    ));
+    el
+}
+
+/// 构建组头预览（真源 GroupDragOverlay：颜色标 + 标题 + 数量徽章）。
+fn build_group_preview(
+    document: &web_sys::Document,
+    group: Option<(&super::view::TaskGroup, usize)>,
+) -> web_sys::Element {
+    let el = document.create_element("div").expect("create preview div");
+    let (color, title, count) = match group {
+        Some((g, n)) => (g.color.clone(), g.title.clone(), n),
+        None => ("gray".to_string(), "…".into(), 0),
+    };
+    el.set_class_name(
+        "flex h-8 w-48 items-center gap-1 rounded-lg border border-border bg-background pl-1.5 pr-1 text-ui-base text-foreground shadow-lg",
+    );
+    el.set_inner_html(&format!(
+        "<span class=\"size-2.5 flex-none rounded-full {}\"></span>\
+         <span class=\"min-w-0 flex-1 truncate px-1\">{}</span>\
+         <span class=\"inline-flex min-w-5 flex-none items-center justify-center rounded-full bg-tag/50 px-1.5 py-0.5 text-xs font-medium leading-none text-foreground-subtle\">{count}</span>",
+        crate::groupedTasks::view::color_class(&color),
+        escape_html(&title),
+    ));
+    el
+}
+
+/// 简单 HTML 转义（标题是用户可控文本，直接 innerHTML 会注入）。
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// 组装 `on:dragstart` 的处理闭包。
 ///
 /// 真源 `useDraggable` 的 data 是 `{ type, taskKey|groupId }`（task-row.tsx:379）；
@@ -169,6 +341,9 @@ pub fn on_drag_start(
         .ok();
     // dnd-kit 默认行为也设effectAllowed，这里设 move 表示移动语义。
     transfer.set_effect_allowed("move");
+
+    // 自定义拖拽预览（真源 DragOverlay 自绘卡片的原生等价物）。
+    attach_drag_preview(&transfer, &source, &current);
 
     runtime.update(|rt| rt.begin(source, &current));
 }
@@ -242,6 +417,8 @@ pub fn on_drop(
 ///
 /// 对应真源 `handleGroupedTaskDragCancel`（:1403-1424）。
 pub fn on_drag_end(runtime: RwSignal<DragRuntime>, view: RwSignal<Option<GroupedTaskView>>) {
+    // 预览元素无论 drop 成功与否都要清理（挂 body 屏幕外，泄漏会堆积）。
+    remove_drag_preview();
     // 若 on_drop 已处理（active 为空），这里直接返回。
     let mut rt = runtime.get_untracked();
     let restored = rt.cancel();

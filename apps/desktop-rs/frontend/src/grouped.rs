@@ -33,7 +33,9 @@ use crate::groupedTasks::join::{
     GroupedStructure, GroupedStructureNode, index_sessions, join_grouped_structure,
 };
 use crate::groupedTasks::taskMenu::TaskMenuAction;
-use crate::groupedTasks::view::{GroupedTaskView, GroupedTaskViewNode, TaskGroup, TaskListItem};
+use crate::groupedTasks::view::{
+    GroupedTaskView, GroupedTaskViewNode, TaskGroup, TaskListItem, color_class,
+};
 use crate::taskTitle::TaskTitleOverflowText;
 
 /// 真源 `zcode-task-types.ts:46,49` 系统分组 id。
@@ -124,22 +126,6 @@ fn icon_message_plus() -> impl IntoView {
             ]
             circles=vec![]
         />
-    }
-}
-
-/// 颜色底/字类名（真源 types.ts TASK_GROUP_COLOR_CLASS）。
-///
-/// Rust 侧后端已提供同一份映射（taskgroup::color_classes），此处保持一致，
-/// 避免前后端两处维护。
-fn color_class(color: &str) -> &'static str {
-    match color {
-        "red" => "bg-rose-300 text-rose-900 dark:bg-rose-400/32 dark:text-rose-50",
-        "orange" => "bg-orange-300 text-orange-900 dark:bg-orange-400/32 dark:text-orange-50",
-        "yellow" => "bg-amber-300 text-amber-900 dark:bg-amber-300/32 dark:text-amber-50",
-        "green" => "bg-emerald-300 text-emerald-900 dark:bg-emerald-400/32 dark:text-emerald-50",
-        "blue" => "bg-sky-300 text-sky-900 dark:bg-sky-400/32 dark:text-sky-50",
-        "purple" => "bg-violet-300 text-violet-900 dark:bg-violet-400/32 dark:text-violet-50",
-        _ => "bg-zinc-300 text-zinc-800 dark:bg-zinc-400/32 dark:text-zinc-100",
     }
 }
 

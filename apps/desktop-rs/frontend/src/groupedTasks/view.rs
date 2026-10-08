@@ -939,6 +939,23 @@ pub fn task_key_of(task: &TaskListItem) -> String {
     )
 }
 
+/// 颜色底/字类名（真源 types.ts `TASK_GROUP_COLOR_CLASS`，7 色 + gray 兜底）。
+///
+/// 放这里而不是渲染层：组头（grouped.rs）与拖拽预览（domEvents.rs）都要用，
+/// 与后端 `taskgroup::color_classes` 保持同一份映射（前后端各一份是
+/// 不同二进制的现实约束，各自内部必须只有一份）。
+pub fn color_class(color: &str) -> &'static str {
+    match color {
+        "red" => "bg-rose-300 text-rose-900 dark:bg-rose-400/32 dark:text-rose-50",
+        "orange" => "bg-orange-300 text-orange-900 dark:bg-orange-400/32 dark:text-orange-50",
+        "yellow" => "bg-amber-300 text-amber-900 dark:bg-amber-300/32 dark:text-amber-50",
+        "green" => "bg-emerald-300 text-emerald-900 dark:bg-emerald-400/32 dark:text-emerald-50",
+        "blue" => "bg-sky-300 text-sky-900 dark:bg-sky-400/32 dark:text-sky-50",
+        "purple" => "bg-violet-300 text-violet-900 dark:bg-violet-400/32 dark:text-violet-50",
+        _ => "bg-zinc-300 text-zinc-800 dark:bg-zinc-400/32 dark:text-zinc-100",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

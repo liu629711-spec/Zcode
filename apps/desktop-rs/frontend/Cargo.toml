@@ -14,7 +14,7 @@ leptos_meta = "0.8"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["HtmlFormElement", "Window", "Element", "HtmlElement", "Storage", "DragEvent", "DataTransfer"] }
+web-sys = { version = "0.3", features = ["HtmlFormElement", "Window", "Element", "HtmlElement", "Storage", "DragEvent", "DataTransfer", "NodeList", "Document"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde-wasm-bindgen = "0.6"
