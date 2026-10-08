@@ -2,8 +2,12 @@
 /dist/
 # Tauri 构建期生成的 schema
 src-tauri/gen/
-# Tailwind 构建产物（由 npm run css:build 生成，不入库）
-frontend/static/
+# Tailwind 构建产物（由 npm run css:build 生成，不入库）。
+# static/ 下有两类内容，规则要分开写：
+#   - app.css：Tailwind 编译产物，随依赖变化，不入库；
+#   - vendor/、material-icons/：随源码提交的静态资源（图标/高亮库），必须入库。
+frontend/static/app.css
+frontend/static/vendor/
 
 # 临时日志
 *.log

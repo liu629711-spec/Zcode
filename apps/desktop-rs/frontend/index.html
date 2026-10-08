@@ -6,6 +6,13 @@
     <link data-trunk rel="rust" />
     <link data-trunk rel="css" href="static/app.css" />
     <link data-trunk rel="css" href="styles.css" />
+    <!--
+      文件图标目录整体拷贝到 dist 根：Leptos 侧图标路径是运行时字符串
+      （file_icons::icon_src → "/material-icons/xxx.svg"），trunk 无法静态分析到，
+      必须用 copy-dir 显式声明。真源靠 vite public/ 自动拷贝。
+      该 link 会被 trunk 从产物 HTML 中移除，不产生实际 DOM。
+    -->
+    <link data-trunk rel="copy-dir" href="static/material-icons" />
     <script data-trunk rel="js" src="static/vendor/hljs.js"></script>
     <link data-trunk rel="css" href="static/vendor/hljs.css" />
     <title>ZCode</title>

@@ -110,19 +110,25 @@ fn get_home() -> Value {
 }
 
 /// 列出目录内容（文件树数据源；直接读盘，不经 agent 协议）。
+///
+/// 对齐真源 `fileService.readdir({ includeHidden })`（useWorkspaceFileTreeData.ts:222-225）：
+/// 返回**完整 path**，树形展开靠 path 前缀匹配定位父目录，因此不能只给文件名。
+/// 噪声目录（node_modules/target 等）仍在此处过滤——真源靠 gitignore 索引过滤，
+/// Rust 侧暂未接 gitService，用固定黑名单等价。
 #[tauri::command]
-fn fs_list(path: String) -> Result<Value, String> {
+fn fs_list(path: String, include_hidden: Option<bool>) -> Result<Value, String> {
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(format!("不是目录: {path}"));
     }
+    let include_hidden = include_hidden.unwrap_or(true);
     let mut entries: Vec<Value> = Vec::new();
     let read = std::fs::read_dir(&dir).map_err(|e| format!("读取失败: {e}"))?;
     for entry in read.flatten() {
         let Ok(file_type) = entry.file_type() else { continue };
         let name = entry.file_name().to_string_lossy().into_owned();
-        // 跳过隐藏项与常见噪声目录，避免树被撑爆。
-        if name.starts_with('.') {
+        // 跳过隐藏项（点开头），除非显式要求包含。
+        if !include_hidden && name.starts_with('.') {
             continue;
         }
         if file_type.is_dir()
@@ -132,7 +138,9 @@ fn fs_list(path: String) -> Result<Value, String> {
         }
         entries.push(json!({
             "name": name,
+            "path": entry.path().to_string_lossy(),
             "isDir": file_type.is_dir(),
+            "isSymbolicLink": file_type.is_symlink(),
         }));
     }
     // 目录在前，同类型按名称排序。

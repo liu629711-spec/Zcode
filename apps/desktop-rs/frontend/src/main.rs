@@ -1,6 +1,8 @@
 use leptos::mount::mount_to_body;
 
-mod app;
+pub mod app;
+pub mod file_icons;
+pub mod file_tree;
 
 fn main() {
     console_error_panic_hook::set_once();
