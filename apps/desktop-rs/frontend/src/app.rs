@@ -121,7 +121,7 @@ pub struct ConversationRowView {
 /// 配色语义对齐 run-status-presentation.ts 的 STATUS_DOT：
 /// running/waiting/paused 用活动色 warning（pulse），error 用 destructive，
 /// completed 用 success，idle 空环（bg-transparent + subtlest 描边）。
-fn status_dot_class(status: &str) -> &'static str {
+pub fn status_dot_class(status: &str) -> &'static str {
     match status {
         "running" => "bg-warning animate-pulse motion-reduce:animate-none",
         "waiting" | "paused" => "bg-warning",
@@ -131,7 +131,7 @@ fn status_dot_class(status: &str) -> &'static str {
     }
 }
 
-fn relative_time(ms: i64) -> String {
+pub fn relative_time(ms: i64) -> String {
     let now = js_sys::Date::now() as i64;
     let diff = (now - ms).max(0) / 1000;
     match diff {
@@ -591,6 +591,9 @@ fn SidebarPanel() -> impl IntoView {
                         <div class="relative flex min-h-0 flex-1 flex-col">
                             <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
                                 <TaskViewToolbar />
+                                // 置顶区：滚动容器内、操作区下、任务区上
+                                // （真源 WorkspaceSidebar.tsx:1875-1899）。
+                                <crate::pinned::PinnedTasksSection />
                                 <SidebarSessionList />
                             </div>
                         </div>

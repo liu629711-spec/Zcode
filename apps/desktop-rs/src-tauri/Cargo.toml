@@ -18,6 +18,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["process", "io-util", "sync", "time", "macros", "rt-multi-thread", "fs"] }
 uuid = { version = "1", features = ["v4", "v7"] }
+# 本地任务索引库（~/.zcode/v2/tasks-index.sqlite，真源用 node:sqlite）。
+# bundled 特性把 SQLite 源码编进来，不依赖系统 sqlite 动态库。
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }

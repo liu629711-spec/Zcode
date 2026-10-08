@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod protocol;
+pub mod taskdb;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -249,6 +250,59 @@ async fn agent_rows_range(
         .await
 }
 
+// ---------------------------------------------------------------------------
+// 任务索引库 commands（置顶/归档分区）
+//
+// 数据源是本地 SQLite（~/.zcode/v2/tasks-index.sqlite），不走 agent 协议——
+// 真源的 pinned/archived 同样只存在 node 侧的库里，agent 无感知。
+// ---------------------------------------------------------------------------
+
+/// 按分区查询任务（kind = pinned | archived | active）。
+#[tauri::command]
+async fn task_list(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    kind: String,
+) -> Result<Value, String> {
+    let kind = taskdb::TaskKind::parse(&kind).ok_or(format!("未知任务分区: {kind}"))?;
+    let Some(conn) = taskdb::open_readonly()? else {
+        // 库还没建（全新安装）：返回空列表，上层按"无置顶"处理。
+        return Ok(json!({ "tasks": [] }));
+    };
+    let tasks = taskdb::list_tasks(
+        &conn,
+        &workspace_path,
+        workspace_identity.as_deref(),
+        kind,
+    )?;
+    Ok(json!({ "tasks": tasks }))
+}
+
+/// 设置置顶状态。
+///
+/// 真源做了乐观更新 + 失败回滚（WorkspacePinnedTasksSection.tsx:271-337），
+/// 回滚逻辑在渲染层；主进程只保证"要么写入成功、要么报错"。
+#[tauri::command]
+async fn task_set_pinned(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    task_id: String,
+    pinned: bool,
+) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    let changed = taskdb::set_pinned(
+        &conn,
+        &workspace_path,
+        workspace_identity.as_deref(),
+        &task_id,
+        pinned,
+    )?;
+    if !changed {
+        return Err(format!("任务不存在或不属于该工作区: {task_id}"));
+    }
+    Ok(json!({ "ok": true }))
+}
+
 fn dirs_home() -> PathBuf {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -271,6 +325,8 @@ pub fn run() {
             agent_send_text,
             agent_create_session_v4,
             agent_rows_range,
+            task_list,
+            task_set_pinned,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");
