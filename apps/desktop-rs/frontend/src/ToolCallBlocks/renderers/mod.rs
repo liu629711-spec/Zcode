@@ -14,6 +14,7 @@
 pub mod agent;
 pub mod agentHelpers;
 pub mod agentPromptSection;
+pub mod ask_question;
 pub mod changes_group;
 pub mod edit;
 pub mod execute;

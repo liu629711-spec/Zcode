@@ -346,6 +346,24 @@ fn render_dispatch(
             />
         }
         .into_any(),
+        Renderer::AskQuestion => view! {
+            <ask_question::AskQuestionToolCallBlock
+                props=ask_question::AskQuestionBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    output,
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                }
+            />
+        }
+        .into_any(),
         Renderer::Skill => view! {
             <skill::SkillToolCallBlock
                 props=skill::SkillBlockProps {
