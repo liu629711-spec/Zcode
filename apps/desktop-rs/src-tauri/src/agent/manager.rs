@@ -107,18 +107,68 @@ fn client_id() -> &'static str {
     CLIENT_ID.get_or_init(|| format!("desktop-rs-{}", uuid::Uuid::new_v4()))
 }
 
+/// v4 createSession：桌面新会话的实际创建路径（对齐真实产品桌面链路）。
+/// workspaceId 口径：identity 优先，否则 workspacePath（launchWorkspaceId.ts 68-70）。
+/// ack.result（type=createSession）携带新 sessionId；无 firstInput 即空会话。
+pub async fn create_session_v4(
+    runtime: &AgentRuntime,
+    workspace_path: &str,
+) -> Result<String, String> {
+    if !runtime.is_connected().await {
+        return Err("agent 未连接".into());
+    }
+    let envelope = serde_json::json!({
+        "commandId": uuid::Uuid::now_v7().to_string(),
+        "clientId": client_id(),
+        "sessionId": null,
+        "type": "createSession",
+        "payload": { "workspaceId": workspace_path },
+        "issuedAt": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+    });
+    let ack = runtime
+        .client
+        .request(methods::V4_COMMAND, Some(envelope), std::time::Duration::from_secs(60))
+        .await?;
+    let status = ack["status"].as_str().unwrap_or("unknown").to_string();
+    if status != "accepted" && status != "duplicate" {
+        return Err(format!(
+            "v4 createSession 被拒绝（{status}）: {}",
+            ack["message"].as_str().unwrap_or("")
+        ));
+    }
+    ack["result"]["sessionId"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| "v4 createSession ack 缺 result.sessionId".into())
+}
+
 /// 构造 sendText CommandEnvelope（测试与主路径共用）。
-pub fn build_send_text_envelope(session_id: &str, text: &str) -> Value {
+pub fn build_send_text_envelope(
+    session_id: &str,
+    text: &str,
+    model_selection: Option<(&str, &str)>,
+) -> Value {
+    let mut payload = serde_json::json!({
+        "text": text,
+        "requestedDelivery": "startNow",
+    });
+    // 会话无默认模型时 admission 要求显式 provider-qualified 选择。
+    if let Some((provider_id, model_id)) = model_selection {
+        payload["modelSelection"] = serde_json::json!({
+            "providerId": provider_id,
+            "modelId": model_id,
+        });
+    }
     serde_json::json!({
         // uuid v7（RFC 9562）：时间有序，与 renderer/host 工厂同构。
         "commandId": uuid::Uuid::now_v7().to_string(),
         "clientId": client_id(),
         "sessionId": session_id,
         "type": "sendText",
-        "payload": {
-            "text": text,
-            "requestedDelivery": "startNow",
-        },
+        "payload": payload,
         "issuedAt": std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -133,6 +183,7 @@ pub async fn send_text(
     runtime: &AgentRuntime,
     session_id: &str,
     text: &str,
+    model_selection: Option<(&str, &str)>,
 ) -> Result<Value, String> {
     if !runtime.is_connected().await {
         return Err("agent 未连接".into());
@@ -141,7 +192,7 @@ pub async fn send_text(
         .client
         .request(
             methods::V4_COMMAND,
-            Some(build_send_text_envelope(session_id, text)),
+            Some(build_send_text_envelope(session_id, text, model_selection)),
             std::time::Duration::from_secs(60),
         )
         .await?;

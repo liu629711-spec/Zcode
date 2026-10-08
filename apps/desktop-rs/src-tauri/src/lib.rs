@@ -173,16 +173,45 @@ fn fs_read(path: String) -> Result<Value, String> {
     }))
 }
 
+/// v4 createSession：新会话走 v4 主路径（外键约束要求会话在 v4 表登记）。
+#[tauri::command]
+async fn agent_create_session_v4(
+    state: AgentStateHandle<'_>,
+    workspace: Option<String>,
+) -> Result<Value, String> {
+    let guard = state.runtime.lock().await;
+    let rt = guard.as_ref().ok_or("agent 未启动")?;
+    let workspace = workspace
+        .map(PathBuf::from)
+        .unwrap_or_else(dirs_home);
+    let session_id =
+        manager::create_session_v4(rt, &workspace.to_string_lossy()).await?;
+    Ok(json!({ "sessionId": session_id }))
+}
+
 /// v4 sendText 主路径：构造 CommandEnvelope 经 `v4/command` 提交。
+/// model_selection 可选（会话有默认模型时省略）。
 #[tauri::command]
 async fn agent_send_text(
     state: AgentStateHandle<'_>,
     session_id: String,
     text: String,
+    model_selection: Option<Value>,
 ) -> Result<Value, String> {
     let guard = state.runtime.lock().await;
     let rt = guard.as_ref().ok_or("agent 未启动")?;
-    manager::send_text(rt, &session_id, &text).await
+    let selection = model_selection.and_then(|m| {
+        let provider = m["providerId"].as_str()?;
+        let model = m["modelId"].as_str()?;
+        Some((provider.to_string(), model.to_string()))
+    });
+    manager::send_text(
+        rt,
+        &session_id,
+        &text,
+        selection.as_ref().map(|(p, m)| (p.as_str(), m.as_str())),
+    )
+    .await
 }
 
 fn dirs_home() -> PathBuf {
@@ -205,6 +234,7 @@ pub fn run() {
             agent_status,
             agent_request,
             agent_send_text,
+            agent_create_session_v4,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");

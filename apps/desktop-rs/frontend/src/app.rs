@@ -807,29 +807,22 @@ fn NewTaskButton() -> impl IntoView {
             } else {
                 custom_workspace.trim().to_string()
             };
+            // v4 createSession 主路径（v4 会话表登记，sendText 外键依赖此）。
             let result = invoke_json(
-                "agent_request",
-                serde_json::json!({
-                    "method": "session/create",
-                    "params": {
-                        "workspace": { "workspacePath": home, "workspaceKey": home }
-                    }
-                }),
+                "agent_create_session_v4",
+                serde_json::json!({ "workspace": home }),
             )
             .await;
             match result {
                 Ok(v) => {
-                    let session_id = v["session"]["sessionId"]
-                        .as_str()
-                        .or_else(|| v["sessionId"].as_str())
-                        .map(|s| s.to_string());
+                    let session_id = v["sessionId"].as_str().map(|s| s.to_string());
                     match session_id {
                         Some(id) => {
                             // 刷新列表并直接选中新会话。
                             trigger.0.update(|n| *n += 1);
                             selected.set(Some(id));
                         }
-                        None => set_error.set("session/create 未返回 sessionId".into()),
+                        None => set_error.set("v4 createSession 未返回 sessionId".into()),
                     }
                 }
                 Err(e) => set_error.set(format!("创建失败: {e}")),

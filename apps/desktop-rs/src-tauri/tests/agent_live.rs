@@ -87,56 +87,58 @@ async fn live_agent_conversation_loop() {
         .await
         .expect("capabilities 握手");
 
-    // 2. 创建会话：workspace ref 指向隔离目录。
+    // 2. 创建会话：v4 createSession 主路径（workspaceId = workspacePath）。
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_else(|_| ".".into());
-    let create_result = client
-        .request(
-            methods::SESSION_CREATE,
-            Some(serde_json::json!({
-                "workspace": {
-                    "workspacePath": home,
-                    "workspaceKey": home,
-                }
-            })),
-            Duration::from_secs(60),
-        )
+    let envelope = serde_json::json!({
+        "commandId": uuid::Uuid::now_v7().to_string(),
+        "clientId": "desktop-rs-live-test",
+        "sessionId": null,
+        "type": "createSession",
+        "payload": { "workspaceId": home },
+        "issuedAt": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+    });
+    let create_ack = client
+        .request(methods::V4_COMMAND, Some(envelope), Duration::from_secs(60))
         .await
-        .expect("session/create");
-    let session_id = create_result["session"]["sessionId"]
+        .expect("v4 createSession");
+    assert_eq!(
+        create_ack["status"].as_str().unwrap_or("unknown"),
+        "accepted",
+        "v4 createSession 应被接受: {create_ack}"
+    );
+    let session_id = create_ack["result"]["sessionId"]
         .as_str()
-        .or_else(|| create_result["sessionId"].as_str())
-        .expect("session/create 应返回 sessionId")
+        .expect("v4 createSession ack 应带 result.sessionId")
         .to_string();
-    eprintln!("[live] session created: {session_id}");
+    eprintln!("[live] session created (v4): {session_id}");
 
     // 3. 发送消息：v4 sendText 主路径（CommandEnvelope 经 v4/command）。
     let envelope = zcode_desktop_rs_lib::agent::manager::build_send_text_envelope(
         &session_id,
         "协议桥自检消息：请勿回复实质内容。",
+        Some(("zcode", "test-model")),
     );
     let ack = client
         .request(methods::V4_COMMAND, Some(envelope), Duration::from_secs(60))
         .await
         .expect("v4 sendText");
+    let status = ack["status"].as_str().unwrap_or("unknown").to_string();
     eprintln!(
-        "[live] v4 ack: {}",
+        "[live] v4 sendText ack: status={status} reasonCode={:?} message={:?}",
+        ack["reasonCode"].as_str(),
+        ack["message"].as_str()
+    );
+    // v4 会话 + v4 sendText 应真正 accepted（FOREIGN KEY 问题已由 createSession 修复）。
+    assert_eq!(
+        status, "accepted",
+        "v4 sendText 应被接受: {}",
         serde_json::to_string_pretty(&ack).unwrap_or_default()
     );
-    // 已知边界：无 LLM key 的隔离环境可能 failed（模型不可用），协议链路仍验证。
-    let status = ack["status"].as_str().unwrap_or("unknown");
-    assert!(
-        matches!(status, "accepted" | "duplicate" | "failed"),
-        "v4 sendText 应返回结构化 ack，实际: {status}"
-    );
-    if status == "failed" {
-        eprintln!(
-            "[live] ack failed（无 LLM key 隔离环境的预期边界）: reasonCode={:?} message={:?}",
-            ack["reasonCode"].as_str(),
-            ack["message"].as_str()
-        );
-    }
 
     // 4. 拉取消息 + 通知诊断。
     // 已知边界：测试环境隔离了 ZCODE_DATA_BASE_DIR（无 LLM key），后台 turn 可能
