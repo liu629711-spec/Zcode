@@ -1315,11 +1315,33 @@ fn ChatView(session_id: String) -> impl IntoView {
         });
     };
 
-    // 消息变化后滚到底部。
+    // 消息变化后滚到底部并做代码高亮（window.hljsLib 由 vendor/hljs.js 提供）。
     Effect::new(move |_| {
         messages.track();
         if let Some(el) = scroll_box.get() {
             el.set_scroll_top(el.scroll_height());
+            // hljs 后处理：只处理未高亮过的 code 块（data-highlighted 防重复）。
+            let nodes = js_sys::Reflect::get(el.as_ref(), &"querySelectorAll".into())
+                .and_then(|f| f.dyn_into::<js_sys::Function>())
+                .and_then(|f| f.call1(el.as_ref(), &"pre code:not([data-highlighted])".into()));
+            if let Ok(nodes) = nodes {
+                let length = js_sys::Reflect::get(&nodes, &"length".into())
+                    .ok()
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0) as u32;
+                let highlight = js_sys::Reflect::get(&window_hljs(), &"highlightElement".into())
+                    .and_then(|f| f.dyn_into::<js_sys::Function>());
+                for i in 0..length {
+                    if let Ok(node) = js_sys::Reflect::get(&nodes, &i.into()) {
+                        if let Ok(elem) = node.dyn_into::<web_sys::Element>() {
+                            elem.set_attribute("data-highlighted", "yes").ok();
+                            if let Ok(f) = &highlight {
+                                let _ = f.call1(&JsValue::NULL, &elem);
+                            }
+                        }
+                    }
+                }
+            }
         }
     });
 
@@ -1420,6 +1442,13 @@ fn MessageBubble(msg: ChatMessage) -> impl IntoView {
             })}
         </div>
     }
+}
+
+/// 取 vendor/hljs.js 暴露的全局 hljsLib（不存在时返回 NULL）。
+fn window_hljs() -> JsValue {
+    web_sys::window()
+        .map(|w| js_sys::Reflect::get(&w, &"hljsLib".into()).unwrap_or(JsValue::NULL))
+        .unwrap_or(JsValue::NULL)
 }
 
 /// 浏览器环境的轻量等待（不引入 tokio runtime 依赖 wasm 侧）。
