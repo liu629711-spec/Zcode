@@ -17,6 +17,7 @@ pub mod agentPromptSection;
 pub mod ask_question;
 pub mod changes_group;
 pub mod edit;
+pub mod escalate;
 pub mod execute;
 pub mod execute_group;
 pub mod explore;

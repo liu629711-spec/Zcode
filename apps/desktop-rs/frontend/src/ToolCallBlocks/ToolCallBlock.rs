@@ -294,6 +294,24 @@ fn render_dispatch(
             }
             .into_any()
         }
+        Renderer::Escalate => view! {
+            <escalate::EscalateToolCallBlock
+                props=escalate::EscalateBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    output,
+                    status: Some(status),
+                    is_running,
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
         Renderer::Edit => {
             // kind_source 携带完整输入输出（edit.rs 的操作类型判定用）。
             let kind_source = super::fileSummaryTypes::EditKindSource {
