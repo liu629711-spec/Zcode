@@ -100,8 +100,57 @@ pub async fn forward_request(
     runtime.client.request(method, params, timeout).await
 }
 
-/// 应用退出时的进程树清理（同步版）。
-///
+/// 进程内稳定 clientId（对齐 zcodeV4HostCommand.ts 的 hostV4ClientId：
+/// host 重启 = 新提交端，幂等表以 commandId 为键不受影响）。
+fn client_id() -> &'static str {
+    static CLIENT_ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CLIENT_ID.get_or_init(|| format!("desktop-rs-{}", uuid::Uuid::new_v4()))
+}
+
+/// v4 sendText 主路径（对齐 zcodeAgentService.ts 5173 的提交方式）：
+/// JSON-RPC request `v4/command`，params = CommandEnvelope。
+/// payload 按 zcode-protocol-v4/command.ts 96 行 sendText schema 构造。
+pub async fn send_text(
+    runtime: &AgentRuntime,
+    session_id: &str,
+    text: &str,
+) -> Result<Value, String> {
+    if !runtime.is_connected().await {
+        return Err("agent 未连接".into());
+    }
+    let envelope = serde_json::json!({
+        // uuid v7（RFC 9562）：时间有序，与 renderer/host 工厂同构。
+        "commandId": uuid::Uuid::now_v7().to_string(),
+        "clientId": client_id(),
+        "sessionId": session_id,
+        "type": "sendText",
+        "payload": {
+            "text": text,
+            "requestedDelivery": "startNow",
+        },
+        "issuedAt": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+    });
+    let ack = runtime
+        .client
+        .request(methods::V4_COMMAND, Some(envelope), std::time::Duration::from_secs(60))
+        .await?;
+    // CommandAck（command.ts 524-538）：accepted/duplicate 视为提交成功，
+    // rejected/stale/failed 带原因上抛。
+    let status = ack["status"].as_str().unwrap_or("unknown").to_string();
+    match status.as_str() {
+        "accepted" | "duplicate" => Ok(ack),
+        other => Err(format!(
+            "v4 命令被拒绝（{}）: {}",
+            other,
+            ack["message"].as_str().unwrap_or("")
+        )),
+    }
+}
+
+/// 应用退出时的进程树清理（同步版）。///
 /// 对应 zcodeStdioTransport.disposeAndWait 的最终兜底层：Windows 下 agent wrapper
 /// 会拉起 runtime/MCP 子进程，只 kill 父进程会残留后代，必须 taskkill 整棵树。
 /// 优雅路径（stdin EOF + 宽限等待）在 GUI 退出钩子里时间不足，直接强杀树——

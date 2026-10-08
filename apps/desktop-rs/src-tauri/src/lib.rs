@@ -173,6 +173,18 @@ fn fs_read(path: String) -> Result<Value, String> {
     }))
 }
 
+/// v4 sendText 主路径：构造 CommandEnvelope 经 `v4/command` 提交。
+#[tauri::command]
+async fn agent_send_text(
+    state: AgentStateHandle<'_>,
+    session_id: String,
+    text: String,
+) -> Result<Value, String> {
+    let guard = state.runtime.lock().await;
+    let rt = guard.as_ref().ok_or("agent 未启动")?;
+    manager::send_text(rt, &session_id, &text).await
+}
+
 fn dirs_home() -> PathBuf {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
@@ -192,6 +204,7 @@ pub fn run() {
             agent_start,
             agent_status,
             agent_request,
+            agent_send_text,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");

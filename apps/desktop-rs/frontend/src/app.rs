@@ -1268,12 +1268,10 @@ fn ChatView(session_id: String) -> impl IntoView {
         let set_sending = set_sending.clone();
         let set_error = set_error.clone();
         spawn_local(async move {
+            // v4 sendText 主路径（CommandEnvelope 由主进程构造经 v4/command 提交）。
             let send_result = invoke_json(
-                "agent_request",
-                serde_json::json!({
-                    "method": "session/send",
-                    "params": { "sessionId": sid, "content": content }
-                }),
+                "agent_send_text",
+                serde_json::json!({ "sessionId": sid, "text": content }),
             )
             .await;
 

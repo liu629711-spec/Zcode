@@ -89,6 +89,10 @@ pub const INTERACTION_REQUEST_OFFICIAL_MCP_AUTH_HEADERS: &str =
 pub const INTERACTION_BROWSER_LIST: &str = "interaction/browserList";
 pub const INTERACTION_BROWSER_EXECUTE: &str = "interaction/browserExecute";
 
+/// V4 命令通道（zcode-protocol-v4/transport.ts V4_METHODS.command）。
+/// 上行就是普通 JSON-RPC request，params = CommandEnvelope。
+pub const V4_COMMAND: &str = "v4/command";
+
 /// 通知方法名（zcodeProtocolNotifications）。
 pub mod notifications {
     pub const STORAGE_STARTUP: &str = "startup/storageState";
