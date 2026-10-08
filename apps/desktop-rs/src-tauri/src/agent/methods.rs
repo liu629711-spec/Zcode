@@ -35,8 +35,7 @@ pub const PROVIDER_UPDATE_ACCOUNT_CONFIG: &str = "provider/updateAccountConfig";
 pub const WORKSPACE_UPDATE_INTERACTION_PREFERENCES: &str = "workspace/updateInteractionPreferences";
 pub const WORKSPACE_UPDATE_MODEL_IO_PREFERENCES: &str = "workspace/updateModelIoPreferences";
 pub const WORKSPACE_UPDATE_OFF_PEAK_TOOL_POLICY: &str = "workspace/updateOffPeakToolPolicy";
-pub const WORKSPACE_UPDATE_DYNAMIC_WORKFLOW_POLICY: &str =
-    "workspace/updateDynamicWorkflowPolicy";
+pub const WORKSPACE_UPDATE_DYNAMIC_WORKFLOW_POLICY: &str = "workspace/updateDynamicWorkflowPolicy";
 pub const WORKSPACE_GENERATE_TEXT: &str = "workspace/generateText";
 pub const WORKSPACE_CANCEL_GENERATE_TEXT: &str = "workspace/cancelGenerateText";
 pub const PROVIDER_TEST_MODEL_CONNECTIVITY: &str = "provider/testModelConnectivity";

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::agent::client::AgentClient;
 use crate::agent::command::resolve_agent_command;
@@ -41,16 +41,13 @@ impl AgentRuntime {
 /// 启动 agent：解析命令 → spawn → 建客户端。
 /// 启动后立即发 `runtime/capabilities` 做握手验证，失败则视为启动失败并回收进程。
 pub async fn start_agent(workspace: PathBuf) -> Result<Arc<AgentRuntime>, String> {
-    let command = resolve_agent_command(&workspace)
-        .ok_or_else(|| "未找到 ZCode agent 启动命令（缺 zcode-cli dist 或 tsx 入口）".to_string())?;
+    let command = resolve_agent_command(&workspace).ok_or_else(|| {
+        "未找到 ZCode agent 启动命令（缺 zcode-cli dist 或 tsx 入口）".to_string()
+    })?;
 
-    let transport = StdioTransport::spawn(
-        &command.program,
-        &command.args,
-        &command.cwd,
-        &command.env,
-    )
-    .map_err(|e| format!("spawn agent 失败: {e}"))?;
+    let transport =
+        StdioTransport::spawn(&command.program, &command.args, &command.cwd, &command.env)
+            .map_err(|e| format!("spawn agent 失败: {e}"))?;
 
     let pid = transport.pid();
     // AgentClient::start 已返回 Arc 包装，直接使用。
@@ -67,11 +64,13 @@ pub async fn start_agent(workspace: PathBuf) -> Result<Arc<AgentRuntime>, String
 
     // 握手验证：runtime/capabilities。
     let capabilities = client
-        .request(methods::RUNTIME_CAPABILITIES, None, std::time::Duration::from_secs(30))
+        .request(
+            methods::RUNTIME_CAPABILITIES,
+            None,
+            std::time::Duration::from_secs(30),
+        )
         .await
-        .map_err(|e| {
-            format!("capabilities 握手失败（agent pid={pid:?}）: {e}")
-        })?;
+        .map_err(|e| format!("capabilities 握手失败（agent pid={pid:?}）: {e}"))?;
 
     let connected = capabilities.get("protocol").is_some() || capabilities.is_object();
     if !connected {
@@ -130,7 +129,11 @@ pub async fn create_session_v4(
     });
     let ack = runtime
         .client
-        .request(methods::V4_COMMAND, Some(envelope), std::time::Duration::from_secs(60))
+        .request(
+            methods::V4_COMMAND,
+            Some(envelope),
+            std::time::Duration::from_secs(60),
+        )
         .await?;
     let status = ack["status"].as_str().unwrap_or("unknown").to_string();
     if status != "accepted" && status != "duplicate" {

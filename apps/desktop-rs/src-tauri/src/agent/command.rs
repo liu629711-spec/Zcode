@@ -46,9 +46,7 @@ pub fn resolve_agent_command(workspace_path: &Path) -> Option<AgentCommand> {
                 .and_then(|raw| {
                     serde_json::from_str::<Vec<String>>(&raw)
                         .ok()
-                        .or_else(|| {
-                            serde_json::from_str::<Vec<String>>(&raw).ok()
-                        })
+                        .or_else(|| serde_json::from_str::<Vec<String>>(&raw).ok())
                 })
                 .unwrap_or_else(|| vec!["app-server".into(), "--stdio".into()]);
             let cwd = std::env::var("ZCODE_AGENT_SERVER_CWD")
@@ -68,9 +66,7 @@ pub fn resolve_agent_command(workspace_path: &Path) -> Option<AgentCommand> {
     // 从当前 exe 位置向上找 monorepo 根。开发态 exe 位于
     // <repo>/apps/desktop-rs/target/debug/，向上 4 级即仓库根。
     let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-    if let Some(entrypoint) =
-        find_upward(&exe_dir, "apps/zcode-cli/packages/cli/dist/zcode.cjs")
-    {
+    if let Some(entrypoint) = find_upward(&exe_dir, "apps/zcode-cli/packages/cli/dist/zcode.cjs") {
         return Some(AgentCommand {
             program: "node".into(),
             args: vec![

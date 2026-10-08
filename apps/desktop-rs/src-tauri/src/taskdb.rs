@@ -220,7 +220,10 @@ pub fn list_tasks(
 ) -> Result<Vec<TaskRow>, String> {
     let ws_key = workspace_key(ws_path, ws_identity);
     let (filter, order) = match kind {
-        TaskKind::Pinned => ("pinned = 1 AND archived = 0", "updated_at DESC, created_at DESC"),
+        TaskKind::Pinned => (
+            "pinned = 1 AND archived = 0",
+            "updated_at DESC, created_at DESC",
+        ),
         TaskKind::Archived => ("archived = 1", "updated_at DESC, created_at DESC"),
         TaskKind::Active => (
             "pinned = 0 AND archived = 0",
@@ -232,7 +235,9 @@ pub fn list_tasks(
          WHERE workspace_key = ?1 AND deleted = 0 AND {filter} \
          ORDER BY {order}"
     );
-    let mut stmt = conn.prepare(&sql).map_err(|e| format!("准备查询失败: {e}"))?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("准备查询失败: {e}"))?;
     let rows = stmt
         .query_map([ws_key], row_to_task)
         .map_err(|e| format!("执行查询失败: {e}"))?;
@@ -317,14 +322,26 @@ mod tests {
             "INSERT INTO tasks (workspace_key, workspace_path, task_id, title, \
              task_status, created_at, updated_at, pinned, archived) \
              VALUES (?1, ?2, ?3, ?4, 'idle', 0, ?5, ?6, ?7)",
-            rusqlite::params![ws, "C:/ws", task_id, format!("任务 {task_id}"), updated, pinned, archived],
+            rusqlite::params![
+                ws,
+                "C:/ws",
+                task_id,
+                format!("任务 {task_id}"),
+                updated,
+                pinned,
+                archived
+            ],
         )
         .unwrap();
     }
 
     #[test]
     fn workspace_key_prefers_identity() {
-        assert_eq!(workspace_key("C:/ws", Some("  ")), "C:/ws", "空白 identity 回退路径");
+        assert_eq!(
+            workspace_key("C:/ws", Some("  ")),
+            "C:/ws",
+            "空白 identity 回退路径"
+        );
         assert_eq!(workspace_key("C:/ws", None), "C:/ws");
         assert_eq!(workspace_key("C:/ws", Some("remote-1")), "remote-1");
     }
@@ -389,7 +406,9 @@ mod tests {
         let ws = workspace_key("C:/ws", None);
         seed(&conn, &ws, "t1", 0, 1, 100);
         assert_eq!(
-            list_tasks(&conn, "C:/ws", None, TaskKind::Archived).unwrap().len(),
+            list_tasks(&conn, "C:/ws", None, TaskKind::Archived)
+                .unwrap()
+                .len(),
             1
         );
 
@@ -402,7 +421,9 @@ mod tests {
             "取消归档后应离开 archived 分区"
         );
         assert_eq!(
-            list_tasks(&conn, "C:/ws", None, TaskKind::Active).unwrap().len(),
+            list_tasks(&conn, "C:/ws", None, TaskKind::Active)
+                .unwrap()
+                .len(),
             1,
             "取消归档后回到 active 分区"
         );
@@ -415,7 +436,9 @@ mod tests {
         seed(&conn, &ws, "t1", 0, 0, 100);
         assert!(set_archived(&conn, "C:/ws", None, "t1", true).unwrap());
         assert_eq!(
-            list_tasks(&conn, "C:/ws", None, TaskKind::Archived).unwrap().len(),
+            list_tasks(&conn, "C:/ws", None, TaskKind::Archived)
+                .unwrap()
+                .len(),
             1
         );
         assert!(set_archived(&conn, "C:/ws", None, "t1", false).unwrap());
@@ -479,7 +502,11 @@ mod tests {
         conn.execute("UPDATE tasks SET deleted = 1 WHERE task_id = 'gone'", [])
             .unwrap();
 
-        assert!(list_tasks(&conn, "C:/ws", None, TaskKind::Pinned).unwrap().is_empty());
+        assert!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Pinned)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -507,8 +534,17 @@ mod tests {
 
         // 取消置顶 → 从pinned 分区消失，回到 active。
         assert!(set_pinned(&conn, "C:/ws", None, "t1", false).unwrap());
-        assert!(list_tasks(&conn, "C:/ws", None, TaskKind::Pinned).unwrap().is_empty());
-        assert_eq!(list_tasks(&conn, "C:/ws", None, TaskKind::Active).unwrap().len(), 1);
+        assert!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Pinned)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            list_tasks(&conn, "C:/ws", None, TaskKind::Active)
+                .unwrap()
+                .len(),
+            1
+        );
 
         // 不存在的任务不插入、返回 false。
         assert!(!set_pinned(&conn, "C:/ws", None, "nope", true).unwrap());

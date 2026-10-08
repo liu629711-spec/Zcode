@@ -4,11 +4,11 @@
 //! request 配对模型；通知通过通道供上层（后续的会话管理器）消费。
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::protocol::{ProtocolMessage, ProtocolRequest, RequestId};
 
@@ -25,7 +25,11 @@ impl AgentClient {
     /// 启动客户端：spawn agent 并接管消息分发循环。
     pub fn start(
         transport: super::transport::StdioTransport,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<crate::protocol::ProtocolNotification>, mpsc::UnboundedReceiver<String>) {
+    ) -> (
+        Arc<Self>,
+        mpsc::UnboundedReceiver<crate::protocol::ProtocolNotification>,
+        mpsc::UnboundedReceiver<String>,
+    ) {
         let mut transport = transport;
         let inbound = transport.take_inbound_rx();
         let closed_rx = transport.take_closed_rx();

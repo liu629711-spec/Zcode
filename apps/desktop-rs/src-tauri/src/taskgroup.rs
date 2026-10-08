@@ -22,9 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::taskdb::workspace_key;
 
 /// 分组颜色（真源 `TASK_GROUP_COLORS`，types.ts:3-12）。
-pub const GROUP_COLORS: [&str; 7] = [
-    "gray", "red", "orange", "yellow", "green", "blue", "purple",
-];
+pub const GROUP_COLORS: [&str; 7] = ["gray", "red", "orange", "yellow", "green", "blue", "purple"];
 
 /// 颜色 → 类名（真源 `TASK_GROUP_COLOR_CLASS`，types.ts:14-22）。
 ///
@@ -322,7 +320,11 @@ pub fn create_group(
     color: &str,
     now_ms: i64,
 ) -> Result<TaskGroup, String> {
-    let color = if GROUP_COLORS.contains(&color) { color } else { "gray" };
+    let color = if GROUP_COLORS.contains(&color) {
+        color
+    } else {
+        "gray"
+    };
     conn.execute(
         "INSERT INTO task_groups (group_id, title, color, created_at, updated_at) \
          VALUES (?1, ?2, ?3, ?4, ?4)",
@@ -343,7 +345,11 @@ pub fn change_group_color(
     color: &str,
     now_ms: i64,
 ) -> Result<bool, String> {
-    let color = if GROUP_COLORS.contains(&color) { color } else { "gray" };
+    let color = if GROUP_COLORS.contains(&color) {
+        color
+    } else {
+        "gray"
+    };
     let changed = conn
         .execute(
             "UPDATE task_groups SET color = ?2, updated_at = ?3 WHERE group_id = ?1",
@@ -382,14 +388,7 @@ pub fn add_task_to_group(
          VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?6, ?6) \
          ON CONFLICT(workspace_key, task_id) DO UPDATE SET \
            group_id = excluded.group_id, updated_at = excluded.updated_at",
-        rusqlite::params![
-            group_id,
-            ws_key,
-            ws_path,
-            ws_identity,
-            task_id,
-            now_ms
-        ],
+        rusqlite::params![group_id, ws_key, ws_path, ws_identity, task_id, now_ms],
     )
     .map_err(|e| format!("加入分组失败: {e}"))?;
     Ok(true)
@@ -421,8 +420,11 @@ pub fn delete_group(conn: &Connection, group_id: &str) -> Result<bool, String> {
         .map_err(|e| format!("删除分组失败: {e}"))?;
     if changed > 0 {
         // 级联删成员（部分 SQLite 构建默认不开 foreign_keys，显式兜底）。
-        conn.execute("DELETE FROM task_group_members WHERE group_id = ?1", [group_id])
-            .map_err(|e| format!("清理组成员失败: {e}"))?;
+        conn.execute(
+            "DELETE FROM task_group_members WHERE group_id = ?1",
+            [group_id],
+        )
+        .map_err(|e| format!("清理组成员失败: {e}"))?;
     }
     Ok(changed > 0)
 }
@@ -461,7 +463,9 @@ pub fn apply_grouped_order(
     now_ms: i64,
 ) -> Result<(), String> {
     let ws_key = workspace_key(ws_path, ws_identity);
-    let tx = conn.transaction().map_err(|e| format!("开启事务失败: {e}"))?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("开启事务失败: {e}"))?;
 
     // ── 1. 顶层顺序：全量替换 ──
     // 只删当前 workspace 的记录（node_key 的第一段是 ws_key）。
@@ -944,11 +948,7 @@ mod tests {
         rows.map(|r| r.unwrap()).collect()
     }
 
-    fn member_of(
-        conn: &Connection,
-        ws: &str,
-        task_id: &str,
-    ) -> Option<(String, Option<i64>)> {
+    fn member_of(conn: &Connection, ws: &str, task_id: &str) -> Option<(String, Option<i64>)> {
         conn.query_row(
             "SELECT group_id, sort_order FROM task_group_members \
              WHERE workspace_key = ?1 AND task_id = ?2",

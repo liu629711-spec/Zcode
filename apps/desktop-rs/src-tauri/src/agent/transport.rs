@@ -16,12 +16,8 @@ use crate::protocol::ProtocolMessage;
 /// 传输层关闭原因（对应 TS 的 ZCodeProtocolTransportClosedEvent）。
 #[derive(Debug, Clone)]
 pub enum TransportClosed {
-    Exited {
-        code: Option<i32>,
-    },
-    Reason {
-        reason: String,
-    },
+    Exited { code: Option<i32> },
+    Reason { reason: String },
 }
 
 pub struct StdioTransport {
@@ -166,7 +162,10 @@ impl StdioTransport {
 
     pub fn send(&self, message: ProtocolMessage) -> std::io::Result<()> {
         self.outbound_tx.send(message).map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::BrokenPipe, "agent stdio transport closed")
+            std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "agent stdio transport closed",
+            )
         })
     }
 
@@ -217,13 +216,9 @@ rl.on("line", (line) => {
 });
 "#;
         let dir = std::env::temp_dir();
-        let mut transport = StdioTransport::spawn(
-            "node",
-            &["-e".to_string(), script.to_string()],
-            &dir,
-            &[],
-        )
-        .expect("spawn mock agent");
+        let mut transport =
+            StdioTransport::spawn("node", &["-e".to_string(), script.to_string()], &dir, &[])
+                .expect("spawn mock agent");
 
         transport
             .send(ProtocolMessage::Request(ProtocolRequest {
