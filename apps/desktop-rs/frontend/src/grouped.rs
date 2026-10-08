@@ -607,6 +607,7 @@ fn GroupItem(
                                         runtime=runtime
                                         view=view
                                         menu=menu
+                                        refresh=refresh
                                         current_group_id=Some(group.group_id.clone())
                                     />
                                 }
@@ -632,6 +633,93 @@ fn GroupItem(
                 </div>
             </div>
         </div>
+    }
+}
+
+/// 任务行的 hover 快捷按钮（真源 task-row.tsx:476-500 + task-row-action-button.tsx）。
+///
+/// 真源三个按钮：文件树（`canOpenFileTree` 条件）、移到顶部、关闭。
+/// Rust 侧现状：
+/// - 文件树：依赖 `onOpenFileTree` 回调（未迁），**整个条件不渲染**（真源也是
+///   条件渲染，不是禁用）；
+/// - 移到顶部：可用，走 `move_task_to_top_by_menu` + 落库（与拖拽/菜单同通道）；
+/// - 关闭：依赖会话关闭能力（后端无 task_close 命令），**渲染但禁用**——
+///   与右键菜单同策略：不隐藏，title 说明原因。
+///
+/// 关键交互（真源 task-row-action-button.tsx:26-31）：`onMouseDown/onPointerDown`
+/// 必须 `prevent_default + stop_propagation`——否则按按钮会触发行拖拽
+/// （行是 draggable 的，mousedown 是拖拽起点）。
+#[component]
+fn TaskRowHoverActions(
+    task_key: String,
+    view: RwSignal<Option<GroupedTaskView>>,
+    refresh: RwSignal<u64>,
+) -> impl IntoView {
+    // hover 显示：真源用 React state（taskRowHovered / taskRowFocusWithin）。
+    // Rust 侧用 CSS group-hover 即可达成同样效果（行已有 hover 类），
+    // 无需额外信号——少一份状态少一份同步负担。
+    view! {
+        <span class="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+            // 移到顶部（真源 :482-489，ArrowUpToLine 图标）。
+            {
+                let key_for_move = task_key.clone();
+                let key_for_close = task_key.clone();
+                view! {
+                    <button
+                        type="button"
+                        class="flex size-6 flex-none items-center justify-center rounded text-foreground-subtle hover:bg-hover hover:text-foreground"
+                        title="移动到顶部"
+                        aria-label="移动到顶部"
+                        on:mousedown=move |ev| {
+                            ev.prevent_default();
+                            ev.stop_propagation();
+                        }
+                        on:click=move |ev| {
+                            ev.stop_propagation();
+                            if let Some(current) = view.get_untracked() {
+                                let next = crate::groupedTasks::view::move_task_to_top_by_menu(
+                                    &current,
+                                    &key_for_move,
+                                );
+                                if !crate::groupedTasks::dnd::is_same_view(&next, &current) {
+                                    commit_order(next, view, refresh);
+                                }
+                            }
+                        }
+                    >
+                        // lucide ArrowUpToLine（真源 import 自 lucide-react）。
+                        <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 3h14"/>
+                            <path d="m18 13-6-6-6 6"/>
+                            <path d="M12 7v14"/>
+                        </svg>
+                    </button>
+                    // 关闭（真源 :490-498，X 图标）。后端无 task_close 命令，
+                    // 渲染但禁用（同右键菜单策略：不隐藏）。
+                    <button
+                        type="button"
+                        class="flex size-6 flex-none cursor-not-allowed items-center justify-center rounded text-foreground-subtlest"
+                        title="功能尚未迁移"
+                        aria-label="关闭"
+                        disabled=true
+                        on:mousedown=move |ev| {
+                            ev.prevent_default();
+                            ev.stop_propagation();
+                        }
+                        on:click=move |ev| {
+                            // disabled 按钮不触发 click，此分支仅作防御。
+                            ev.stop_propagation();
+                            let _ = &key_for_close;
+                        }
+                    >
+                        <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M18 6 6 18"/>
+                            <path d="m6 6 12 12"/>
+                        </svg>
+                    </button>
+                }
+            }
+        </span>
     }
 }
 
@@ -833,6 +921,7 @@ fn GroupedTaskRow(
     runtime: RwSignal<DragRuntime>,
     view: RwSignal<Option<GroupedTaskView>>,
     menu: MenuSignal,
+    refresh: RwSignal<u64>,
     current_group_id: Option<String>,
 ) -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
@@ -843,10 +932,11 @@ fn GroupedTaskRow(
     };
     let class = move || {
         // TASK_GROUP_ROW_CLASS 的 hover 分支；选中态沿用侧栏会话行的 bg-selected。
+        // group 前缀：hover 按钮区的 group-hover:flex 依赖它（真源 group/task-row :410）。
         if active() {
-            "flex min-h-7 w-full min-w-0 flex-col justify-center rounded-lg border border-transparent bg-selected pl-2.5 pr-1 text-left text-ui-base"
+            "group flex min-h-7 w-full min-w-0 flex-col justify-center rounded-lg border border-transparent bg-selected pl-2.5 pr-1 text-left text-ui-base"
         } else {
-            "flex min-h-7 w-full min-w-0 flex-col justify-center rounded-lg border border-transparent pl-2.5 pr-1 text-left text-ui-base transition-[background-color,border-color,color,opacity] hover:bg-surface-hover"
+            "group flex min-h-7 w-full min-w-0 flex-col justify-center rounded-lg border border-transparent pl-2.5 pr-1 text-left text-ui-base transition-[background-color,border-color,color,opacity] hover:bg-surface-hover"
         }
     };
     let dot = status_dot_class(&task.status).to_string();
@@ -857,6 +947,8 @@ fn GroupedTaskRow(
     };
     let task_key = crate::groupedTasks::view::task_key_of(&task);
     let menu_task_key = task_key.clone();
+    // hover 按钮区的 move 会吃掉一份，右键菜单闭包单独留一份。
+    let ctxmenu_task_key = task_key.clone();
     let menu_group = current_group_id.clone();
 
     view! {
@@ -881,7 +973,7 @@ fn GroupedTaskRow(
                 menu.set(Some(MenuState {
                     x: ev.client_x() as f64,
                     y: ev.client_y() as f64,
-                    task_key: menu_task_key.clone(),
+                    task_key: ctxmenu_task_key.clone(),
                     current_group_id: menu_group.clone(),
                 }));
             }
@@ -898,6 +990,13 @@ fn GroupedTaskRow(
                     />
                     <span class="flex-none text-foreground-subtlest">{time.clone()}</span>
                 </button>
+                // hover 快捷操作（真源 task-row.tsx:476-500 shouldMountHoverActions）。
+                // Rust 侧无 pendingInteraction/mobile 状态，条件简化为行 hover。
+                <TaskRowHoverActions
+                    task_key=menu_task_key
+                    view=view
+                    refresh=refresh
+                />
             </span>
         </div>
     }
@@ -918,10 +1017,11 @@ fn LooseTaskRow(
         move || selected_session.get().as_deref() == Some(task_id.as_str())
     };
     let class = move || {
+        // group 前缀：hover 按钮区的 group-hover:flex 依赖它。
         if active() {
-            "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg bg-selected pl-2.5 pr-1 text-left text-foreground shadow-xl"
+            "group flex h-8 w-full min-w-0 items-center gap-2 rounded-lg bg-selected pl-2.5 pr-1 text-left text-foreground shadow-xl"
         } else {
-            "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg pl-2.5 pr-1 text-left text-foreground hover:bg-surface-hover"
+            "group flex h-8 w-full min-w-0 items-center gap-2 rounded-lg pl-2.5 pr-1 text-left text-foreground hover:bg-surface-hover"
         }
     };
     let dot = status_dot_class(&task.status).to_string();
