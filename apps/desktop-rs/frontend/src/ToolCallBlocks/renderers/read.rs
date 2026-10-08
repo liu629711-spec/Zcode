@@ -116,15 +116,13 @@ pub fn read_metadata_from_raw(raw: &Value) -> ReadMetadata {
         };
     }
     let raw_input = raw.get("rawInput").filter(|v| is_plain_record(v));
-    let direct_path = raw_input.and_then(|r| {
-        read_string_field(r, &["filePath", "file_path", "path", "filename"])
-    });
-    let direct_type = raw_input
-        .and_then(|r| read_string_field(r, &["type", "fileType", "entryType"]));
+    let direct_path = raw_input
+        .and_then(|r| read_string_field(r, &["filePath", "file_path", "path", "filename"]));
+    let direct_type =
+        raw_input.and_then(|r| read_string_field(r, &["type", "fileType", "entryType"]));
 
     let raw_output = raw.get("rawOutput").filter(|v| is_plain_record(v));
-    let output_text =
-        raw_output.and_then(|r| read_string_field(r, &["output", "text", "content"]));
+    let output_text = raw_output.and_then(|r| read_string_field(r, &["output", "text", "content"]));
 
     // ① rawOutput 的 <path>/<type> 标签优先。
     if let Some(text) = output_text.as_deref() {
@@ -183,11 +181,9 @@ pub fn read_metadata_from_value(value: &Value) -> ReadMetadata {
     }
     ReadMetadata {
         path: read_string_field(value, &["filePath", "file_path", "path", "filename"]),
-        entry_type: normalize_entry_type(read_string_field(
-            value,
-            &["type", "fileType", "entryType"],
-        )
-        .as_deref()),
+        entry_type: normalize_entry_type(
+            read_string_field(value, &["type", "fileType", "entryType"]).as_deref(),
+        ),
     }
 }
 
@@ -196,13 +192,15 @@ pub fn read_metadata_from_value(value: &Value) -> ReadMetadata {
 // ---------------------------------------------------------------------------
 
 /// `createReadSummary`（真源 :138-150）。
-pub fn create_read_summary(path: &str, file_name: Option<&str>, entry_type: EntryType) -> ReadSummary {
+pub fn create_read_summary(
+    path: &str,
+    file_name: Option<&str>,
+    entry_type: EntryType,
+) -> ReadSummary {
     let derived_name = crate::ToolCallBlocks::renderers::get_path_leaf(path).to_string();
     ReadSummary {
         path: path.to_string(),
-        file_name: file_name
-            .map(|s| s.to_string())
-            .unwrap_or(derived_name),
+        file_name: file_name.map(|s| s.to_string()).unwrap_or(derived_name),
         file_path: Some(crate::ToolCallBlocks::renderers::get_path_leaf(path).to_string()),
         // 目录用 folder 图标，文件按扩展名解析（真源 :147）。
         file_icon_src: if entry_type == EntryType::Directory {
@@ -230,7 +228,8 @@ pub fn build_read_summary(input: &Value, raw: &Value) -> Option<ReadSummary> {
                 .filter(|s| !s.is_empty())
                 .map(|s| s.trim_end_matches('/').to_string());
             for item in parsed {
-                if !is_plain_record(item) || item.get("type").and_then(|v| v.as_str()) != Some("read")
+                if !is_plain_record(item)
+                    || item.get("type").and_then(|v| v.as_str()) != Some("read")
                 {
                     continue;
                 }
@@ -332,14 +331,14 @@ pub fn ReadToolCallBlock(props: ReadBlockProps) -> impl IntoView {
 
     // primaryText：有summary 用 chip，否则退回 title/kind/固定文案（真源 :273-281）。
     // chip 以**数据**形式传给 ToolLayout（View 类型非 Send，不能放进 Arc 传递）。
-    let chip_data = summary.as_ref().map(|s| {
-        crate::ToolCallBlocks::ToolLayout::FileChipData {
+    let chip_data = summary
+        .as_ref()
+        .map(|s| crate::ToolCallBlocks::ToolLayout::FileChipData {
             path: s.path.clone(),
             file_name: s.file_name.clone(),
             icon_src: s.file_icon_src.clone(),
             clickable: can_open_preview,
-        }
-    });
+        });
 
     let fallback_text = props
         .title
@@ -457,7 +456,11 @@ mod tests {
             "大写标签也要命中"
         );
         assert_eq!(extract_tagged_value("no tag here", "path"), None);
-        assert_eq!(extract_tagged_value("<path>  </path>", "path"), None, "空内容返回 None");
+        assert_eq!(
+            extract_tagged_value("<path>  </path>", "path"),
+            None,
+            "空内容返回 None"
+        );
     }
 
     #[test]
@@ -470,7 +473,11 @@ mod tests {
         });
         let meta = read_metadata_from_raw(&raw);
         assert_eq!(meta.path.as_deref(), Some("/a/dir"));
-        assert_eq!(meta.entry_type, EntryType::Directory, "目录类型应从 output 标签读到");
+        assert_eq!(
+            meta.entry_type,
+            EntryType::Directory,
+            "目录类型应从 output 标签读到"
+        );
     }
 
     #[test]
@@ -503,7 +510,10 @@ mod tests {
             "parsed_cmd": [{ "type": "read", "path": "src/main.rs" }]
         });
         let s = build_read_summary(&input, &json!({})).unwrap();
-        assert_eq!(s.path, "/work/dir/src/main.rs", "相对路径要拼 cwd（尾部斜杠已裁）");
+        assert_eq!(
+            s.path, "/work/dir/src/main.rs",
+            "相对路径要拼 cwd（尾部斜杠已裁）"
+        );
         assert_eq!(s.file_name, "main.rs");
         assert_eq!(s.entry_type, EntryType::File);
     }
@@ -561,6 +571,10 @@ mod tests {
         let s = create_read_summary("/a/dir", None, EntryType::Directory);
         assert!(s.file_icon_src.contains("folder"));
         let f = create_read_summary("/a/b.rs", None, EntryType::File);
-        assert!(f.file_icon_src.contains("rust"), "文件按扩展名解析：{}", f.file_icon_src);
+        assert!(
+            f.file_icon_src.contains("rust"),
+            "文件按扩展名解析：{}",
+            f.file_icon_src
+        );
     }
 }

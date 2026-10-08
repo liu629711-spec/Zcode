@@ -66,8 +66,8 @@ pub fn resolve_responsive_file_chip_count(
         return 0;
     }
     // 全部 chip 放得下 → 全显。
-    let all_chips_width: f64 = chip_widths.iter().sum::<f64>()
-        + gap * (chip_widths.len().saturating_sub(1)) as f64;
+    let all_chips_width: f64 =
+        chip_widths.iter().sum::<f64>() + gap * (chip_widths.len().saturating_sub(1)) as f64;
     if all_chips_width <= available_width {
         return chip_widths.len();
     }
@@ -105,7 +105,9 @@ pub struct ChildToolCall {
 ///
 /// 用显示路径（`getFileDisplayPath` 归一 + 反斜杠转正斜杠）作 key，
 /// 同一文件的多次变更只留**首次出现**的那条。
-pub fn dedupe_files(entries: &[(ChildToolCall, Vec<RawToolCallFileSummary>)]) -> Vec<RawToolCallFileSummary> {
+pub fn dedupe_files(
+    entries: &[(ChildToolCall, Vec<RawToolCallFileSummary>)],
+) -> Vec<RawToolCallFileSummary> {
     let mut unique: Vec<(String, RawToolCallFileSummary)> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (_child, summaries) in entries {
@@ -148,10 +150,7 @@ pub fn latest_child_with_files<'a>(
 
 /// `actionText`（真源 :191-203）：最新子项的动作标签（**固定按运行态取**，
 /// 真源 :200 第三个参数传 `true`）。
-pub fn action_text(
-    summaries: &[RawToolCallFileSummary],
-    child: &ChildToolCall,
-) -> Option<String> {
+pub fn action_text(summaries: &[RawToolCallFileSummary], child: &ChildToolCall) -> Option<String> {
     if summaries.is_empty() {
         return None;
     }
@@ -498,11 +497,22 @@ mod tests {
     #[test]
     fn summary_content_key_switches_on_running() {
         // 真源 :307
-        let running = summary_content_key("t1", true, Some("c1"), Some("正在编辑"), Some("/a.rs"), &[]);
-        assert!(running.starts_with("changes:t1:c1"), "运行态含最新子项：{running}");
+        let running =
+            summary_content_key("t1", true, Some("c1"), Some("正在编辑"), Some("/a.rs"), &[]);
+        assert!(
+            running.starts_with("changes:t1:c1"),
+            "运行态含最新子项：{running}"
+        );
         assert!(running.contains("/a.rs"));
 
-        let done = summary_content_key("t1", false, None, None, None, &[file("/a.rs"), file("/b.rs")]);
+        let done = summary_content_key(
+            "t1",
+            false,
+            None,
+            None,
+            None,
+            &[file("/a.rs"), file("/b.rs")],
+        );
         assert_eq!(done, "changes:t1:/a.rs|/b.rs", "完成态用文件路径串");
     }
 }

@@ -207,7 +207,11 @@ mod tests {
         } else {
             props.status_label.clone()
         };
-        let status_label = if is_failed { props.status_label.clone() } else { None };
+        let status_label = if is_failed {
+            props.status_label.clone()
+        } else {
+            None
+        };
         assert_eq!(secondary, None, "失败时 secondaryText 让位");
         assert_eq!(status_label.as_deref(), Some("执行失败"));
     }
@@ -244,9 +248,7 @@ mod tests {
     #[test]
     fn raw_fallback_shown_only_without_inline_preview() {
         // 真源 :51 —— !hasInlinePreview && !hideRawFallback 才追加 raw JSON。
-        let show = |has_inline_preview: bool, hide_raw: bool| {
-            !has_inline_preview && !hide_raw
-        };
+        let show = |has_inline_preview: bool, hide_raw: bool| !has_inline_preview && !hide_raw;
         assert!(show(false, false), "无 inlinePreview 且未禁用 → 显示");
         assert!(!show(true, false), "有 inlinePreview → 不显示");
         assert!(!show(false, true), "显式禁用 → 不显示");

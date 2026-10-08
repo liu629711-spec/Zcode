@@ -39,11 +39,7 @@ pub fn is_todo_plan_tool_name(value: &str) -> bool {
     let lower = text.to_lowercase();
     // 手工实现正则：找 todo[_\s-]*(read|write) 或 update[_\s-]*plan，
     // 且前后是边界或分隔符。
-    for (name, kw) in [
-        ("todo", "read"),
-        ("todo", "write"),
-        ("update", "plan"),
-    ] {
+    for (name, kw) in [("todo", "read"), ("todo", "write"), ("update", "plan")] {
         // 枚举名字与关键字之间的分隔符组合（零个或多个 [_\s-]）。
         let seps = ["", "_", " ", "-"];
         for s1 in seps {
@@ -470,7 +466,10 @@ mod tests {
             "update-plan",
             "UpdatePlan",
         ] {
-            assert!(is_todo_plan_tool_name(name), "{name} 应被识别为 todo 计划工具");
+            assert!(
+                is_todo_plan_tool_name(name),
+                "{name} 应被识别为 todo 计划工具"
+            );
         }
     }
 
@@ -492,7 +491,11 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(steps.len(), 3);
-        assert_eq!(steps[0].status, PlanStepStatus::InProgress, "第一项是进行中");
+        assert_eq!(
+            steps[0].status,
+            PlanStepStatus::InProgress,
+            "第一项是进行中"
+        );
         assert_eq!(steps[1].status, PlanStepStatus::Pending);
         // id 用标题（:31）
         assert_eq!(steps[0].id, "第一步");
@@ -624,9 +627,21 @@ mod tests {
     fn summarize_plan_three_level_fallback() {
         // 真源 :46-49 —— in_progress → 第一个未完成 → 最后一个
         let steps = vec![
-            PlanStep { id: "1".into(), title: "已完成".into(), status: PlanStepStatus::Completed },
-            PlanStep { id: "2".into(), title: "进行中".into(), status: PlanStepStatus::InProgress },
-            PlanStep { id: "3".into(), title: "待办".into(), status: PlanStepStatus::Pending },
+            PlanStep {
+                id: "1".into(),
+                title: "已完成".into(),
+                status: PlanStepStatus::Completed,
+            },
+            PlanStep {
+                id: "2".into(),
+                title: "进行中".into(),
+                status: PlanStepStatus::InProgress,
+            },
+            PlanStep {
+                id: "3".into(),
+                title: "待办".into(),
+                status: PlanStepStatus::Pending,
+            },
         ];
         let s = summarize_plan(&steps);
         assert_eq!(s.completed_count, 1);
@@ -635,8 +650,16 @@ mod tests {
 
         // 无in_progress → 第一个未完成
         let steps2 = vec![
-            PlanStep { id: "1".into(), title: "已完成".into(), status: PlanStepStatus::Completed },
-            PlanStep { id: "2".into(), title: "待办".into(), status: PlanStepStatus::Pending },
+            PlanStep {
+                id: "1".into(),
+                title: "已完成".into(),
+                status: PlanStepStatus::Completed,
+            },
+            PlanStep {
+                id: "2".into(),
+                title: "待办".into(),
+                status: PlanStepStatus::Pending,
+            },
         ];
         assert_eq!(
             summarize_plan(&steps2).active_title.as_deref(),
@@ -645,8 +668,16 @@ mod tests {
 
         // 全完成 → 最后一个
         let steps3 = vec![
-            PlanStep { id: "1".into(), title: "A".into(), status: PlanStepStatus::Completed },
-            PlanStep { id: "2".into(), title: "B".into(), status: PlanStepStatus::Completed },
+            PlanStep {
+                id: "1".into(),
+                title: "A".into(),
+                status: PlanStepStatus::Completed,
+            },
+            PlanStep {
+                id: "2".into(),
+                title: "B".into(),
+                status: PlanStepStatus::Completed,
+            },
         ];
         assert_eq!(summarize_plan(&steps3).active_title.as_deref(), Some("B"));
 
@@ -657,7 +688,11 @@ mod tests {
     #[test]
     fn secondary_text_is_progress_ratio() {
         // 真源 :52 —— `{completed}/{total}`
-        let s = PlanSummary { completed_count: 2, total: 5, active_title: None };
+        let s = PlanSummary {
+            completed_count: 2,
+            total: 5,
+            active_title: None,
+        };
         assert_eq!(plan_secondary_text(&s), "2/5");
     }
 
@@ -673,6 +708,9 @@ mod tests {
     fn in_progress_icon_is_static_arrow() {
         // 真源 :38-39 注释 —— 用静态箭头避免与加载动画语义混淆
         assert_eq!(status_icon_glyph(PlanStepStatus::InProgress), "→");
-        assert_eq!(todo_status_icon_class(PlanStepStatus::Completed), "size-3.5 flex-none text-success");
+        assert_eq!(
+            todo_status_icon_class(PlanStepStatus::Completed),
+            "size-3.5 flex-none text-success"
+        );
     }
 }

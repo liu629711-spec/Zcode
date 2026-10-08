@@ -276,16 +276,187 @@ pub fn read_changes_sources(raw: &Value) -> ChangesSources {
     }
 }
 
-/// `normalizeSingleFilePatch`（真源 :60-64 一带）：单文件 patch 可能是字符串或
-/// `{ patch: string }` 对象，统一取出字符串。
-pub fn normalize_single_file_patch(value: &Value) -> Option<String> {
-    if let Some(s) = value.as_str() {
-        return Some(s.to_string());
+/// `readStringField`（真源 :16-28）：按候选键顺序取第一个非空字符串。
+pub fn read_string_field(value: &Value, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(candidate) = value.get(*key).and_then(|v| v.as_str()) {
+            if !candidate.trim().is_empty() {
+                return Some(candidate.to_string());
+            }
+        }
     }
-    value
-        .get("patch")
-        .and_then(|p| p.as_str())
-        .map(|s| s.to_string())
+    None
+}
+
+/// 文件展示描述符（真源 `FileDisplayDescriptor`，fileDisplay.tsx:117-135 的返回）。
+///
+/// **裁剪注明**：真源的 `filePath` 是 `relativePath + fileName` 的组装结果
+/// （依赖 `defaultFileDisplayBasePath` 全局状态做 base 剥离）。桌面端 v1 无该
+/// 全局基准，`file_path` 直接给原路径——残留绝对路径前缀（若有）属已知差异。
+pub struct FileDisplayDescriptor {
+    pub file_name: String,
+    pub file_path: Option<String>,
+    pub file_icon_src: String,
+}
+
+/// `resolveFileDisplayDescriptor`（真源 fileDisplay.tsx:117-135，无 options 路径）。
+pub fn resolve_file_display_descriptor(file_path: &str) -> FileDisplayDescriptor {
+    let file_name = super::renderers::get_path_leaf(file_path).to_string();
+    let icon = crate::file_icons::resolve_icon_name(&file_name);
+    FileDisplayDescriptor {
+        file_icon_src: crate::file_icons::icon_src(&icon),
+        file_name,
+        file_path: (!file_path.is_empty()).then(|| file_path.to_string()),
+    }
+}
+
+/// `readUnifiedDiffField`（真源 :30-37）：从 change 对象取 unified diff 文本。
+pub fn read_unified_diff_field(value: &Value) -> Option<String> {
+    if !is_plain_record(value) {
+        return None;
+    }
+    read_string_field(value, &["unified_diff", "unifiedDiff", "patch", "diff"])
+}
+
+/// `readRawToolCallInput`（真源 :82-91）：优先 `rawInput`，回退 `input`。
+///
+/// 真源注释：ZCode protocol 的 permission/request payload 按 schema 把工具参数
+/// 放在 `input`，旧 UI 只读 `rawInput` 时 Write/Edit 会退化成整段 JSON 展示。
+pub fn read_raw_tool_call_input(raw: &Value) -> Value {
+    if !is_plain_record(raw) {
+        return Value::Null;
+    }
+    if let Some(v) = raw.get("rawInput") {
+        if !v.is_null() {
+            return v.clone();
+        }
+    }
+    raw.get("input").cloned().unwrap_or(Value::Null)
+}
+
+/// `readStructuredDiffBlock`（真源 :96-113）：`{type:"diff", newText, path?, oldText?}` 块。
+pub struct StructuredDiffBlock {
+    pub path: Option<String>,
+    pub old_text: String,
+    pub new_text: String,
+}
+
+pub fn read_structured_diff_block(value: &Value) -> Option<StructuredDiffBlock> {
+    if !is_plain_record(value) {
+        return None;
+    }
+    if value.get("type").and_then(|t| t.as_str()) != Some("diff") {
+        return None;
+    }
+    let new_text = value.get("newText").and_then(|v| v.as_str())?;
+    Some(StructuredDiffBlock {
+        path: value
+            .get("path")
+            .and_then(|v| v.as_str())
+            .filter(|p| !p.trim().is_empty())
+            .map(|p| p.to_string()),
+        // oldText 非字符串时：null → ""，其他类型 → String() 强转（真源 :106-111）。
+        old_text: match value.get("oldText") {
+            Some(Value::String(s)) => s.clone(),
+            None | Some(Value::Null) => String::new(),
+            Some(other) => other.to_string(),
+        },
+        new_text: new_text.to_string(),
+    })
+}
+
+/// `readRawToolCallChanges`（真源 :115-133）的三路 changes。
+pub struct RawToolCallChanges {
+    pub direct: Option<Value>,
+    pub raw_input: Option<Value>,
+    pub raw_output: Option<Value>,
+}
+
+pub fn read_raw_tool_call_changes(raw: &Value) -> RawToolCallChanges {
+    if !is_plain_record(raw) {
+        return RawToolCallChanges {
+            direct: None,
+            raw_input: None,
+            raw_output: None,
+        };
+    }
+    let raw_input_source = read_raw_tool_call_input(raw);
+    let raw_input = raw_input_source.is_object().then_some(raw_input_source);
+    let raw_output = raw.get("rawOutput").filter(|v| is_plain_record(v)).cloned();
+    RawToolCallChanges {
+        direct: raw.get("changes").filter(|v| is_plain_record(v)).cloned(),
+        raw_input: raw_input
+            .as_ref()
+            .and_then(|r| r.get("changes"))
+            .filter(|v| is_plain_record(v))
+            .cloned(),
+        raw_output: raw_output
+            .as_ref()
+            .and_then(|r| r.get("changes"))
+            .filter(|v| is_plain_record(v))
+            .cloned(),
+    }
+}
+
+/// `normalizeSingleFilePatch`（真源 :38-84）：
+/// 提取出的 patch 文本做单文件化净化——多段 diff 拒收、`@@` 片段补文件头。
+///
+/// 关键分支（真源注释逐条对应）：
+/// - 多文件 patch 丢弃（:46-52）：PatchDiff 只能解析单文件，直接渲染会让
+///   「点击文件名查看变更」失败；
+/// - 有 `---/+++` 头原样返回（:54-56）；
+/// - 只有 `@@` hunk 片段：按首个 hunk 的行数判定新建/删除，补 `/dev/null`
+///   头（:58-70）——大整文件新增按普通 change 解析会把页面拖死；
+/// - 其余（如 apply_patch 原文）原样返回，不强补头（:72-76）。
+pub fn normalize_single_file_patch(patch: Option<&str>, file_label: &str) -> Option<String> {
+    let patch = patch?;
+    let trimmed = patch.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if crate::ToolCallBlocks::toolDiffPreview::count_patch_file_diffs(trimmed) > 1 {
+        return None;
+    }
+
+    let has_file_header = trimmed.lines().any(|l| l.starts_with("--- "));
+    let has_plus_header = trimmed.lines().any(|l| l.starts_with("+++ "));
+    if has_file_header && has_plus_header {
+        return Some(trimmed.to_string());
+    }
+
+    if trimmed.starts_with("@@ ") {
+        // 首个 hunk 头：`@@ -old[,n] +new[,m] @@`。
+        let (deleted_count, added_count) = parse_first_hunk_counts(trimmed).unwrap_or((1, 1));
+        let left = if deleted_count == 0 && added_count > 0 {
+            "--- /dev/null".to_string()
+        } else {
+            format!("--- a/{file_label}")
+        };
+        let right = if added_count == 0 && deleted_count > 0 {
+            "+++ /dev/null".to_string()
+        } else {
+            format!("+++ b/{file_label}")
+        };
+        return Some(format!("{left}\n{right}\n{trimmed}"));
+    }
+
+    Some(trimmed.to_string())
+}
+
+/// 首个 hunk 头的行数（真源 :64-66 `firstHeader` 捕获组的语义）。
+fn parse_first_hunk_counts(patch: &str) -> Option<(usize, usize)> {
+    let first_line = patch.lines().next()?;
+    let rest = first_line.strip_prefix("@@ -")?;
+    let (old_part, rest) = rest.split_once(" +")?;
+    let new_part = rest.split(" @@").next()?;
+    let count_of = |part: &str| -> Option<usize> {
+        match part.split_once(',') {
+            Some((_, n)) => n.trim().parse().ok(),
+            None => Some(1),
+        }
+    };
+    Some((count_of(old_part)?, count_of(new_part)?))
 }
 
 /// `computeLineChangeStat`（真源 `packages/shared/src/lineChangeStat.ts:20`）：
@@ -345,18 +516,36 @@ mod tests {
     #[test]
     fn file_action_labels_map_to_operations() {
         // 真源 :137 + inferEditOperation 的基础映射
-        assert_eq!(FileActionLabel::Created.to_operation(), EditOperationKind::Write);
-        assert_eq!(FileActionLabel::Edited.to_operation(), EditOperationKind::Edit);
-        assert_eq!(FileActionLabel::Deleted.to_operation(), EditOperationKind::Delete);
+        assert_eq!(
+            FileActionLabel::Created.to_operation(),
+            EditOperationKind::Write
+        );
+        assert_eq!(
+            FileActionLabel::Edited.to_operation(),
+            EditOperationKind::Edit
+        );
+        assert_eq!(
+            FileActionLabel::Deleted.to_operation(),
+            EditOperationKind::Delete
+        );
         assert_eq!(FileActionLabel::parse("nope"), None);
     }
 
     #[test]
     fn edit_kind_label_ids_match_source() {
         // 真源 :314-321
-        assert_eq!(EditKindLabelId::Writing.as_str(), "chat.toolCall.edit.writing");
-        assert_eq!(EditKindLabelId::KindWrite.as_str(), "chat.toolCall.kind.write");
-        assert_eq!(EditKindLabelId::KindDelete.as_str(), "chat.toolCall.kind.delete");
+        assert_eq!(
+            EditKindLabelId::Writing.as_str(),
+            "chat.toolCall.edit.writing"
+        );
+        assert_eq!(
+            EditKindLabelId::KindWrite.as_str(),
+            "chat.toolCall.kind.write"
+        );
+        assert_eq!(
+            EditKindLabelId::KindDelete.as_str(),
+            "chat.toolCall.kind.delete"
+        );
         // 运行态变体判定。
         assert!(EditKindLabelId::Writing.is_running_variant());
         assert!(!EditKindLabelId::KindWrite.is_running_variant());
@@ -410,18 +599,50 @@ mod tests {
     }
 
     #[test]
-    fn normalize_patch_accepts_both_shapes() {
-        // patch 可能是字符串或 { patch: string }。
+    fn normalize_patch_hunk_only_gets_headers() {
+        // 只有 @@ 片段（无 ---/+++ 头）：补文件头（真源 :58-70）。
+        let hunk = "@@ -1,1 +1,2 @@\n a\n+b";
         assert_eq!(
-            normalize_single_file_patch(&json!("diff --git a/x b/x")).as_deref(),
-            Some("diff --git a/x b/x")
+            normalize_single_file_patch(Some(hunk), "f.rs").as_deref(),
+            Some("--- a/f.rs\n+++ b/f.rs\n@@ -1,1 +1,2 @@\n a\n+b")
         );
+        // 纯新增（deleted=0）→ 左头 /dev/null。
+        let add_only = "@@ -0,0 +1,2 @@\n+x\n+y";
         assert_eq!(
-            normalize_single_file_patch(&json!({ "patch": "P" })).as_deref(),
-            Some("P")
+            normalize_single_file_patch(Some(add_only), "new.rs").as_deref(),
+            Some("--- /dev/null\n+++ b/new.rs\n@@ -0,0 +1,2 @@\n+x\n+y")
         );
-        assert_eq!(normalize_single_file_patch(&json!(null)), None);
-        assert_eq!(normalize_single_file_patch(&json!(42)), None);
+        // 纯删除（added=0）→ 右头 /dev/null。
+        let del_only = "@@ -1,2 +0,0 @@\n-x\n-y";
+        assert_eq!(
+            normalize_single_file_patch(Some(del_only), "old.rs").as_deref(),
+            Some("--- a/old.rs\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-x\n-y")
+        );
+    }
+
+    #[test]
+    fn normalize_patch_rejects_multi_file_patch() {
+        // 多文件 patch 丢弃（真源 :46-52：PatchDiff 只能解析单文件）。
+        let multi = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-a\n+b\ndiff --git a/y b/y\n--- a/y\n+++ b/y\n@@ -1,1 +1,1 @@\n-c\n+d";
+        assert_eq!(normalize_single_file_patch(Some(multi), "x"), None);
+    }
+
+    #[test]
+    fn normalize_patch_passthrough_and_empty() {
+        // 有 ---/+++ 头：原样返回。
+        let with_headers = "--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-a\n+b";
+        assert_eq!(
+            normalize_single_file_patch(Some(with_headers), "x").as_deref(),
+            Some(with_headers)
+        );
+        // 非标准内容（apply_patch 原文）：原样，不强补头（真源 :72-76）。
+        assert_eq!(
+            normalize_single_file_patch(Some("*** Begin Patch\n"), "x").as_deref(),
+            Some("*** Begin Patch")
+        );
+        // 空/None。
+        assert_eq!(normalize_single_file_patch(None, "x"), None);
+        assert_eq!(normalize_single_file_patch(Some("   "), "x"), None);
     }
 
     #[test]
@@ -432,7 +653,13 @@ mod tests {
         assert_eq!(stat.removed, 1);
         // 完全相同 → 无变更。
         let stat = compute_line_change_stat("a\nb", "a\nb");
-        assert_eq!(stat, ChangeStat { added: 0, removed: 0 });
+        assert_eq!(
+            stat,
+            ChangeStat {
+                added: 0,
+                removed: 0
+            }
+        );
         // 空 → 全增。
         let stat = compute_line_change_stat("", "a\nb");
         assert_eq!(stat.added, 2);

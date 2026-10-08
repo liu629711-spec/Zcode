@@ -11,7 +11,8 @@
 //! 行号注释均指真源文件。
 
 use super::fileSummaryTypes::{EditKindSource, EditOperationKind};
-use super::resolveRenderer::{family_by_lower, ToolFamily};
+use super::resolveRenderer::{ToolFamily, family_by_lower};
+use serde_json::Value;
 
 /// `hasWritableToolSemantic`（真源 :21-29）：工具本身是否是「写文件」类。
 ///
@@ -67,7 +68,9 @@ fn infer_edit_operation_from_text(value: &str) -> Option<EditOperationKind> {
         return None;
     }
     // 真源 :45 delete|deleted|remove|removed|erase|erased|unlink|destroy|rm
-    for kw in ["delete", "deleted", "remove", "removed", "erase", "erased", "unlink", "destroy", "rm"] {
+    for kw in [
+        "delete", "deleted", "remove", "removed", "erase", "erased", "unlink", "destroy", "rm",
+    ] {
         if contains_word(&text, kw) {
             return Some(EditOperationKind::Delete);
         }
@@ -80,8 +83,8 @@ fn infer_edit_operation_from_text(value: &str) -> Option<EditOperationKind> {
     }
     // 真源 :53 write|wrote|written|create|creating|created|add|added|save|saved|new
     for kw in [
-        "write", "wrote", "written", "create", "creating", "created", "add", "added", "save", "saved",
-        "new",
+        "write", "wrote", "written", "create", "creating", "created", "add", "added", "save",
+        "saved", "new",
     ] {
         if contains_word(&text, kw) {
             return Some(EditOperationKind::Write);
@@ -89,8 +92,19 @@ fn infer_edit_operation_from_text(value: &str) -> Option<EditOperationKind> {
     }
     // 真源 :57-63 edit|editing|edited|modify|modifying|modified|change|changed|patch|replace|replaced|fix|fixed
     for kw in [
-        "edit", "editing", "edited", "modify", "modifying", "modified", "change", "changed", "patch",
-        "replace", "replaced", "fix", "fixed",
+        "edit",
+        "editing",
+        "edited",
+        "modify",
+        "modifying",
+        "modified",
+        "change",
+        "changed",
+        "patch",
+        "replace",
+        "replaced",
+        "fix",
+        "fixed",
     ] {
         if contains_word(&text, kw) {
             return Some(EditOperationKind::Edit);
@@ -121,8 +135,21 @@ fn read_edit_operation_candidates(source: &EditKindSource) -> Vec<String> {
     push(source.kind.as_ref());
     if let Some(input) = source.input.as_ref() {
         if super::fileSummaryTypes::is_plain_record(input) {
-            for key in ["description", "action", "operation", "mode", "title", "kind"] {
-                push(input.get(key).and_then(|v| v.as_str()).map(|s| s.to_string()).as_ref());
+            for key in [
+                "description",
+                "action",
+                "operation",
+                "mode",
+                "title",
+                "kind",
+            ] {
+                push(
+                    input
+                        .get(key)
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .as_ref(),
+                );
             }
         }
     }
@@ -148,9 +175,15 @@ pub fn infer_edit_operation(
 
     // ── operationKinds 全同判定（:353-371）──
     if !operation_kinds.is_empty() {
-        let all_write = operation_kinds.iter().all(|k| *k == EditOperationKind::Write);
-        let all_update = operation_kinds.iter().all(|k| *k == EditOperationKind::Update);
-        let all_delete = operation_kinds.iter().all(|k| *k == EditOperationKind::Delete);
+        let all_write = operation_kinds
+            .iter()
+            .all(|k| *k == EditOperationKind::Write);
+        let all_update = operation_kinds
+            .iter()
+            .all(|k| *k == EditOperationKind::Update);
+        let all_delete = operation_kinds
+            .iter()
+            .all(|k| *k == EditOperationKind::Delete);
         if all_write {
             return Some(EditOperationKind::Write);
         }
@@ -191,6 +224,193 @@ pub fn infer_edit_operation(
     None
 }
 
+// ---------------------------------------------------------------------------
+// fallback 摘要构建（真源 :149-307）
+// ---------------------------------------------------------------------------
+
+use super::fileSummaryTypes::{read_raw_tool_call_input, read_string_field};
+
+/// 候选值列表（真源三处 `for (const value of [...])` 的公共形状）：
+/// input → output → rawInput → raw.rawOutput（before/after 额外含 raw 本身）。
+fn candidate_values(source: &EditKindSource, include_raw: bool) -> Vec<Value> {
+    let mut values = vec![
+        source.input.clone().unwrap_or(serde_json::Value::Null),
+        source.output.clone().unwrap_or(serde_json::Value::Null),
+        source
+            .raw
+            .as_ref()
+            .map(read_raw_tool_call_input)
+            .unwrap_or(serde_json::Value::Null),
+        source
+            .raw
+            .as_ref()
+            .and_then(|r| r.get("rawOutput"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null),
+    ];
+    if include_raw {
+        values.push(source.raw.clone().unwrap_or(serde_json::Value::Null));
+    }
+    values
+}
+
+/// `readToolCallPathCandidate`（真源 :149-177）。
+fn read_tool_call_path_candidate(source: Option<&EditKindSource>) -> Option<String> {
+    let source = source?;
+    for value in candidate_values(source, false) {
+        if !value.is_object() {
+            continue;
+        }
+        if let Some(path) = read_string_field(
+            &value,
+            &[
+                "path",
+                "filePath",
+                "file_path",
+                "targetPath",
+                "target_path",
+                "filename",
+                "file",
+            ],
+        ) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// `readToolCallContentCandidate`（真源 :181-212）。
+fn read_tool_call_content_candidate(source: Option<&EditKindSource>) -> Option<String> {
+    let source = source?;
+    for value in candidate_values(source, false) {
+        if !value.is_object() {
+            continue;
+        }
+        if let Some(content) = read_string_field(
+            &value,
+            &[
+                "content",
+                "newText",
+                "new_text",
+                "newString",
+                "new_string",
+                "text",
+                "fileContent",
+                "file_content",
+                "contents",
+                "code",
+            ],
+        ) {
+            return Some(content);
+        }
+    }
+    None
+}
+
+/// `readToolCallBeforeAfterCandidate`（真源 :216-257）。
+fn read_tool_call_before_after_candidate(
+    source: Option<&EditKindSource>,
+) -> Option<(String, String)> {
+    let source = source?;
+    for value in candidate_values(source, true) {
+        if !value.is_object() {
+            continue;
+        }
+        let old_text = read_string_field(
+            &value,
+            &[
+                "oldText",
+                "old_string",
+                "oldString",
+                "before",
+                "old_content",
+                "oldContent",
+            ],
+        );
+        let new_text = read_string_field(
+            &value,
+            &[
+                "newText",
+                "new_string",
+                "newString",
+                "after",
+                "new_content",
+                "newContent",
+                "content",
+            ],
+        );
+        if let (Some(old), Some(new)) = (old_text, new_text) {
+            return Some((old, new));
+        }
+    }
+    None
+}
+
+/// `buildFallbackRawToolCallFileSummary`（真源 :259-307）：
+/// 启发式没有结构化 changes 时，用路径 + 内容/前后文候选兜出一张文件摘要。
+///
+/// 三道门控（真源同序）：
+/// 1. 无路径 → 空；
+/// 2. **读类工具语义 → 空**（否则 read 也会被漏成编辑卡）；
+/// 3. 非写类语义 → 空（与 hasWritableToolSemantic 同源）。
+pub fn build_fallback_raw_tool_call_file_summary(
+    source: Option<&EditKindSource>,
+) -> Vec<super::fileSummaryTypes::RawToolCallFileSummary> {
+    let Some(path) = read_tool_call_path_candidate(source) else {
+        return Vec::new();
+    };
+    if has_read_like_tool_semantic(source) {
+        return Vec::new();
+    }
+    if !has_writable_tool_semantic(source) {
+        return Vec::new();
+    }
+    let inferred = source.and_then(|s| infer_edit_operation(&[], &[], Some(s)));
+    let Some(operation) = inferred else {
+        return Vec::new();
+    };
+
+    let descriptor = super::fileSummaryTypes::resolve_file_display_descriptor(&path);
+    use super::fileSummaryTypes::FileActionLabel;
+    let action = match operation {
+        EditOperationKind::Write => FileActionLabel::Created,
+        EditOperationKind::Delete => FileActionLabel::Deleted,
+        _ => FileActionLabel::Edited,
+    };
+    let content = read_tool_call_content_candidate(source);
+    let before_after = read_tool_call_before_after_candidate(source);
+    let label = super::renderers::get_path_leaf(&path).to_string();
+
+    use super::fileSummaryTypes::compute_line_change_stat;
+    let change_stat = match action {
+        FileActionLabel::Created => content.as_deref().map(|c| compute_line_change_stat("", c)),
+        FileActionLabel::Deleted => content.as_deref().map(|c| compute_line_change_stat(c, "")),
+        FileActionLabel::Edited => before_after
+            .as_ref()
+            .map(|(o, n)| compute_line_change_stat(o, n)),
+    };
+    let patch = match action {
+        FileActionLabel::Created => content
+            .as_deref()
+            .map(|c| super::toolDiffPreview::build_unified_diff("", c, &label)),
+        FileActionLabel::Edited => before_after
+            .as_ref()
+            .map(|(o, n)| super::toolDiffPreview::build_unified_diff(o, n, &label)),
+        FileActionLabel::Deleted => None,
+    };
+
+    vec![super::fileSummaryTypes::RawToolCallFileSummary {
+        path,
+        action_label: action.as_str().to_string(),
+        operation_kind: operation.as_str().to_string(),
+        file_name: descriptor.file_name,
+        file_path: descriptor.file_path,
+        file_icon_src: descriptor.file_icon_src,
+        change_stat,
+        patch,
+    }]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,17 +431,29 @@ mod tests {
     fn operation_kinds_all_same_determine_result() {
         // 真源 :353-371
         let w = vec![EditOperationKind::Write, EditOperationKind::Write];
-        assert_eq!(infer_edit_operation(&w, &[], None), Some(EditOperationKind::Write));
+        assert_eq!(
+            infer_edit_operation(&w, &[], None),
+            Some(EditOperationKind::Write)
+        );
 
         let u = vec![EditOperationKind::Update, EditOperationKind::Update];
-        assert_eq!(infer_edit_operation(&u, &[], None), Some(EditOperationKind::Update));
+        assert_eq!(
+            infer_edit_operation(&u, &[], None),
+            Some(EditOperationKind::Update)
+        );
 
         let d = vec![EditOperationKind::Delete, EditOperationKind::Delete];
-        assert_eq!(infer_edit_operation(&d, &[], None), Some(EditOperationKind::Delete));
+        assert_eq!(
+            infer_edit_operation(&d, &[], None),
+            Some(EditOperationKind::Delete)
+        );
 
         // 混合 → edit。
         let mixed = vec![EditOperationKind::Write, EditOperationKind::Edit];
-        assert_eq!(infer_edit_operation(&mixed, &[], None), Some(EditOperationKind::Edit));
+        assert_eq!(
+            infer_edit_operation(&mixed, &[], None),
+            Some(EditOperationKind::Edit)
+        );
     }
 
     #[test]

@@ -72,7 +72,9 @@ pub fn build_edit_code_viewer_source(summary: &RawToolCallFileSummary) -> CodeVi
 /// 真源注释（:70-72）：edit 摘要层已能从 rawFileSummaries 拿到单文件 patch，
 /// 但展开区之前只认 displayModel.inlinePreview，导致卡片自动展开后看不到 diff。
 /// 这里把 patch 直接转成 content 里的 diff 块，避免 ToolCallBody 再次抢走这份预览。
-pub fn build_edit_inline_preview(summary: Option<&RawToolCallFileSummary>) -> Option<CodeViewerSource> {
+pub fn build_edit_inline_preview(
+    summary: Option<&RawToolCallFileSummary>,
+) -> Option<CodeViewerSource> {
     let s = summary?;
     if s.patch.as_deref().is_none_or(str::is_empty) {
         return None;
@@ -85,15 +87,15 @@ pub fn build_edit_inline_preview(summary: Option<&RawToolCallFileSummary>) -> Op
 
 /// `totalChangeStat`（真源 :124-141）：所有文件的增删累加。
 pub fn total_change_stat(summaries: &[RawToolCallFileSummary]) -> ChangeStat {
-    summaries.iter().fold(ChangeStat::default(), |acc, s| {
-        match s.change_stat {
+    summaries
+        .iter()
+        .fold(ChangeStat::default(), |acc, s| match s.change_stat {
             Some(stat) => ChangeStat {
                 added: acc.added + stat.added,
                 removed: acc.removed + stat.removed,
             },
             None => acc,
-        }
-    })
+        })
 }
 
 /// `expandedPrimaryText` 的文案（真源 :170-183 + zh-CN.ts:4861）。
@@ -174,14 +176,14 @@ pub fn EditToolCallBlock(props: EditBlockProps) -> impl IntoView {
     // primaryText：多文件时是文件 chip 串（真源 :107-119）。
     // ToolLayout 的 primary_file_chip 只支持单文件 chip，多文件走展开态文案，
     // 这里把首个 chip 作为主文本载体（完整多文件 chip 串在展开区呈现）。
-    let chip = summaries.first().map(|s| {
-        crate::ToolCallBlocks::ToolLayout::FileChipData {
+    let chip = summaries
+        .first()
+        .map(|s| crate::ToolCallBlocks::ToolLayout::FileChipData {
             path: s.path.clone(),
             file_name: s.file_name.clone(),
             icon_src: s.file_icon_src.clone(),
             clickable: true,
-        }
-    });
+        });
 
     // secondaryText：单文件时显示路径（真源 :120-127）。
     let secondary_text = if summaries.len() == 1 {
@@ -193,10 +195,15 @@ pub fn EditToolCallBlock(props: EditBlockProps) -> impl IntoView {
     // diff 计数（真源 :142-146），office 模式不显示（:322）。
     let total_stat = total_change_stat(&summaries);
     let show_diff = !props.is_office_mode
-        && crate::ToolCallBlocks::renderers::diff_count_view(Some((total_stat.added, total_stat.removed)))
-            .is_some();
-    let diff_view =
-        crate::ToolCallBlocks::renderers::diff_count_view(Some((total_stat.added, total_stat.removed)));
+        && crate::ToolCallBlocks::renderers::diff_count_view(Some((
+            total_stat.added,
+            total_stat.removed,
+        )))
+        .is_some();
+    let diff_view = crate::ToolCallBlocks::renderers::diff_count_view(Some((
+        total_stat.added,
+        total_stat.removed,
+    )));
 
     let kind_label = kind_label_text(&edit_kind_label(&props));
     let expanded_primary = expanded_primary_text(summaries.len());
@@ -255,7 +262,11 @@ pub fn EditToolCallBlock(props: EditBlockProps) -> impl IntoView {
 mod tests {
     use super::*;
 
-    fn summary(path: &str, patch: Option<&str>, stat: Option<(u32, u32)>) -> RawToolCallFileSummary {
+    fn summary(
+        path: &str,
+        patch: Option<&str>,
+        stat: Option<(u32, u32)>,
+    ) -> RawToolCallFileSummary {
         RawToolCallFileSummary {
             path: path.into(),
             action_label: "Edited".into(),
@@ -271,8 +282,12 @@ mod tests {
     #[test]
     fn raw_failed_detection() {
         // 真源 :35-43
-        assert!(is_raw_tool_call_failed(&serde_json::json!({ "status": "failed" })));
-        assert!(!is_raw_tool_call_failed(&serde_json::json!({ "status": "completed" })));
+        assert!(is_raw_tool_call_failed(
+            &serde_json::json!({ "status": "failed" })
+        ));
+        assert!(!is_raw_tool_call_failed(
+            &serde_json::json!({ "status": "completed" })
+        ));
         assert!(!is_raw_tool_call_failed(&serde_json::json!([])));
         assert!(!is_raw_tool_call_failed(&serde_json::json!(null)));
     }
@@ -323,7 +338,13 @@ mod tests {
         assert_eq!(total.added, 5);
         assert_eq!(total.removed, 5);
         // 空列表。
-        assert_eq!(total_change_stat(&[]), ChangeStat { added: 0, removed: 0 });
+        assert_eq!(
+            total_change_stat(&[]),
+            ChangeStat {
+                added: 0,
+                removed: 0
+            }
+        );
     }
 
     #[test]

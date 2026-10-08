@@ -57,7 +57,10 @@ pub struct ToolSummaryRowProps {
 /// 空串与 null 都不算内容。
 fn has_summary_content(props: &ToolSummaryRowProps) -> bool {
     props.primary_text.as_deref().is_some_and(|s| !s.is_empty())
-        || props.secondary_text.as_deref().is_some_and(|s| !s.is_empty())
+        || props
+            .secondary_text
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
         || props.diff_count.as_deref().is_some_and(|s| !s.is_empty())
         || props.status_node.as_deref().is_some_and(|s| !s.is_empty())
 }

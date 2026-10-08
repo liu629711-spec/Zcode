@@ -195,13 +195,14 @@ fn render_dispatch(
                 output: Some(output.clone()),
                 raw: Some(raw.clone()),
             };
+            // 文件摘要：display 结构化事实 → content diff 块 → changes → 启发式兜底。
+            let file_summaries =
+                super::fileSummaries::read_raw_tool_call_file_summaries(&raw, Some(&kind_source));
             view! {
                 <edit::EditToolCallBlock
                     props=edit::EditBlockProps {
                         tool_id: tool_id.to_string(),
-                        // fileSummaries（真源 readRawToolCallFileSummaries）未迁，
-                        // v1 暂空——edit 卡有标题/状态/diff 兜底，文件 chip 后补。
-                        raw_file_summaries: Vec::new(),
+                        raw_file_summaries: file_summaries,
                         // 失败判定（真源 :91-92）：failed 态或有失败正文。
                         is_failed: status == "failed" || error_text.is_some(),
                         is_running,

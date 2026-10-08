@@ -11,9 +11,9 @@
 //! - `getEditKindLabelMessageId`（:128-150）：编辑类 kindLabel 的 i18n id
 //! - `renderJoinedFileChips`（:152-175）：多文件 chip 拼接（逗号分隔）
 
+pub mod changes_group;
 pub mod edit;
 pub mod execute;
-pub mod changes_group;
 pub mod execute_group;
 pub mod fallback;
 pub mod read;
@@ -23,7 +23,9 @@ pub mod todo;
 use leptos::prelude::*;
 
 use crate::ToolCallBlocks::fileSummaryHeuristics::infer_edit_operation;
-use crate::ToolCallBlocks::fileSummaryTypes::{EditKindSource, EditOperationKind, RawToolCallFileSummary};
+use crate::ToolCallBlocks::fileSummaryTypes::{
+    EditKindSource, EditOperationKind, RawToolCallFileSummary,
+};
 use crate::file_icons::{icon_src, resolve_icon_name};
 
 // ---------------------------------------------------------------------------
@@ -103,8 +105,10 @@ pub fn get_path_leaf(path: &str) -> &str {
 }
 
 /// chip 的类名。clickable 分支多`hover:underline`。
-const CHIP_BASE: &str = "inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle";
-const CHIP_CLICKABLE: &str = "inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle hover:underline";
+const CHIP_BASE: &str =
+    "inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle";
+const CHIP_CLICKABLE: &str =
+    "inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle hover:underline";
 
 /// 文件 chip 组件（真源 :75-105）。
 #[component]
@@ -221,8 +225,10 @@ pub fn RenderJoinedFileChips(summaries: Vec<RawToolCallFileSummary>) -> impl Int
         .into_iter()
         .enumerate()
         .map(|(index, summary)| {
-            let comma = (index > 0).then(|| view! {
-                <span class="mx-1 text-foreground-subtlest">{","}</span>
+            let comma = (index > 0).then(|| {
+                view! {
+                    <span class="mx-1 text-foreground-subtlest">{","}</span>
+                }
             });
             let chip = view! { <RenderFileChip summary=summary clickable=false /> };
             view! {
@@ -260,8 +266,20 @@ mod tests {
         // 真源 :20-22 —— 增删都 ≤0 返回 null。
         assert_eq!(diff_count_view(None), None);
         assert_eq!(diff_count_view(Some((0, 0))), None);
-        assert_eq!(diff_count_view(Some((0, 3))), Some(DiffCountView { added: 0, removed: 3 }));
-        assert_eq!(diff_count_view(Some((2, 0))), Some(DiffCountView { added: 2, removed: 0 }));
+        assert_eq!(
+            diff_count_view(Some((0, 3))),
+            Some(DiffCountView {
+                added: 0,
+                removed: 3
+            })
+        );
+        assert_eq!(
+            diff_count_view(Some((2, 0))),
+            Some(DiffCountView {
+                added: 2,
+                removed: 0
+            })
+        );
     }
 
     #[test]
@@ -271,7 +289,10 @@ mod tests {
         assert!(DIFF_COUNT_ROW_CLASS.contains("tabular-nums"));
         assert!(DIFF_COUNT_ROW_CLASS.contains("whitespace-nowrap"));
         assert_eq!(DIFF_ADDED_CLASS, "inline-flex items-center text-diff-added");
-        assert_eq!(DIFF_REMOVED_CLASS, "inline-flex items-center text-diff-removed");
+        assert_eq!(
+            DIFF_REMOVED_CLASS,
+            "inline-flex items-center text-diff-removed"
+        );
     }
 
     #[test]
@@ -306,7 +327,7 @@ mod tests {
     #[test]
     fn edit_kind_label_switches_on_running() {
         // 真源 :136-148。
-            let write = vec![EditOperationKind::Write];
+        let write = vec![EditOperationKind::Write];
         assert_eq!(
             get_edit_kind_label_id(&write, &[], false, None),
             "chat.toolCall.kind.write"
@@ -342,8 +363,10 @@ mod tests {
     fn components_render_without_panic() {
         let items = vec![summary("a/one.ts"), summary("b/two.ts")];
         let _joined = view! { <RenderJoinedFileChips summaries=items /> };
-        let _chip_static = view! { <RenderFileChip summary=summary("src/main.rs") clickable=false /> };
-        let _chip_clickable = view! { <RenderFileChip summary=summary("src/main.rs") clickable=true /> };
+        let _chip_static =
+            view! { <RenderFileChip summary=summary("src/main.rs") clickable=false /> };
+        let _chip_clickable =
+            view! { <RenderFileChip summary=summary("src/main.rs") clickable=true /> };
         // 真源 :111-113 —— 空路径返回 null。
         let _empty = view! { <RenderFilePath path=None /> };
         let _empty_str = view! { <RenderFilePath path=Some(String::new()) /> };

@@ -79,8 +79,12 @@ pub fn family_by_lower(name: &str) -> ToolFamily {
         "askuserquestion" => ToolFamily::AskUserQuestion,
         "sendmessage" | "respondtocoordinator" => ToolFamily::Message,
         "taskoutput" | "taskstop" => ToolFamily::TaskControl,
-        "js" | "js_reset" | "js_add_node_module_dir" | "mcp__node_repl__js"
-        | "mcp__node_repl__js_reset" | "mcp__node_repl__js_add_node_module_dir" => ToolFamily::NodeRepl,
+        "js"
+        | "js_reset"
+        | "js_add_node_module_dir"
+        | "mcp__node_repl__js"
+        | "mcp__node_repl__js_reset"
+        | "mcp__node_repl__js_add_node_module_dir" => ToolFamily::NodeRepl,
         "agent" | "task" => ToolFamily::Agent,
         "skill" => ToolFamily::Skill,
         "createworkflow" | "amendworkflow" | "submit_result" => ToolFamily::Workflow,
@@ -215,12 +219,7 @@ pub fn collect_tool_names(tool_name: &str, kind: &str, title: &str, raw: &Value)
 }
 
 /// `isCuaToolCall`（真源 `cua.tsx:332-336`）：四个名字里任一命中 CUA 工具名集合。
-pub fn is_cua_tool_call(
-    tool_name: &str,
-    kind: &str,
-    title: &str,
-    raw: &Value,
-) -> bool {
+pub fn is_cua_tool_call(tool_name: &str, kind: &str, title: &str, raw: &Value) -> bool {
     collect_tool_names(tool_name, kind, title, raw)
         .iter()
         .any(|n| is_cua_tool_name(n))
@@ -423,7 +422,9 @@ mod tests {
         // 真源 cuaPermissionAction.ts:7-16 —— 两种命名空间都要命中。
         assert!(is_cua_tool_name("computer-use"));
         assert!(is_cua_tool_name("mcp__computer-use__click"));
-        assert!(is_cua_tool_name("mcp__plugin_zcode-cua_computer-use__screenshot"));
+        assert!(is_cua_tool_name(
+            "mcp__plugin_zcode-cua_computer-use__screenshot"
+        ));
         assert!(is_cua_tool_name("COMPUTER_USE"), "下划线归一为连字符");
         // 不会误判 android-emulator / browser-use。
         assert!(!is_cua_tool_name("android-emulator"));
@@ -437,8 +438,18 @@ mod tests {
         // raw 里的工具名也要能命中。
         let raw = json!({ "toolName": "mcp__computer-use__click" });
         assert!(is_cua_tool_call("Unknown", "Unknown", "", &raw));
-        assert!(is_cua_tool_call("Unknown", "computer-use", "", &empty_raw()));
-        assert!(is_cua_tool_call("Unknown", "Unknown", "computer-use", &empty_raw()));
+        assert!(is_cua_tool_call(
+            "Unknown",
+            "computer-use",
+            "",
+            &empty_raw()
+        ));
+        assert!(is_cua_tool_call(
+            "Unknown",
+            "Unknown",
+            "computer-use",
+            &empty_raw()
+        ));
         // 无 CUA 特征时不误判。
         assert!(!is_cua_tool_call("Bash", "shell", "", &empty_raw()));
     }

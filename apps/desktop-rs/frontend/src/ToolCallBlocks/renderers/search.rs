@@ -145,7 +145,11 @@ pub fn SearchToolCallBlock(props: SearchBlockProps) -> impl IntoView {
     });
 
     let is_failed = props.status.as_deref() == Some("failed");
-    let status_tooltip = if is_failed { props.error_text.clone() } else { None };
+    let status_tooltip = if is_failed {
+        props.error_text.clone()
+    } else {
+        None
+    };
 
     view! {
         <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
@@ -217,11 +221,23 @@ mod tests {
         // 真源 :47-59 —— pattern > query > path
         for t in ["search", "grep", "glob"] {
             let input = json!({ "parsed_cmd": [{ "type": t, "pattern": "TODO" }] });
-            assert_eq!(get_search_primary_text(&input), "查找 TODO", "{t} 应取 pattern");
+            assert_eq!(
+                get_search_primary_text(&input),
+                "查找 TODO",
+                "{t} 应取 pattern"
+            );
             let input2 = json!({ "parsed_cmd": [{ "type": t, "query": "FIXME" }] });
-            assert_eq!(get_search_primary_text(&input2), "查找 FIXME", "{t} 应取 query");
+            assert_eq!(
+                get_search_primary_text(&input2),
+                "查找 FIXME",
+                "{t} 应取 query"
+            );
             let input3 = json!({ "parsed_cmd": [{ "type": t, "path": "src" }] });
-            assert_eq!(get_search_primary_text(&input3), "查找 src", "{t} 应取 path");
+            assert_eq!(
+                get_search_primary_text(&input3),
+                "查找 src",
+                "{t} 应取 path"
+            );
             // pattern 优先于 query
             let input4 = json!({ "parsed_cmd": [{ "type": t, "pattern": "A", "query": "B" }] });
             assert_eq!(get_search_primary_text(&input4), "查找 A");

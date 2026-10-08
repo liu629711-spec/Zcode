@@ -205,10 +205,7 @@ pub fn get_execute_content_parts(input: &Value) -> ExecuteContentParts {
 ///
 /// 匹配 `^(/bin/)?(zsh|bash|sh) -lc <命令>`，返回命令部分。
 pub fn strip_shell_prefix(text: &str) -> Option<String> {
-    let rest = text
-        .strip_prefix("/bin/")
-        .unwrap_or(text)
-        .trim_start();
+    let rest = text.strip_prefix("/bin/").unwrap_or(text).trim_start();
     let rest = ["zsh", "bash", "sh"]
         .iter()
         .find_map(|shell| rest.strip_prefix(shell))?
@@ -356,16 +353,17 @@ pub fn ExecuteToolCallBlock(props: ExecuteBlockProps) -> impl IntoView {
     let final_result = resolve_result_text(display_output, result_text, raw_output_text);
 
     let failure_visible_text = if props.status.as_deref() == Some("failed") {
-        props
-            .error_text
-            .clone()
-            .or_else(|| final_result.clone())
+        props.error_text.clone().or_else(|| final_result.clone())
     } else {
         None
     };
 
     // kindLabel：运行态「正在执行」，否则「终端」（真源 :339-343）。
-    let kind_label = if props.is_running { "正在执行" } else { "终端" };
+    let kind_label = if props.is_running {
+        "正在执行"
+    } else {
+        "终端"
+    };
 
     let status_tooltip = if props.is_office_mode {
         None
@@ -430,7 +428,13 @@ mod tests {
     #[test]
     fn shell_prefix_is_stripped() {
         // 真源 :110-112 正则 `^(?:\/bin\/)?(zsh|bash|sh)\s+-lc\s+...`
-        for prefix in ["zsh -lc ", "bash -lc ", "sh -lc ", "/bin/zsh -lc ", "/bin/bash -lc "] {
+        for prefix in [
+            "zsh -lc ",
+            "bash -lc ",
+            "sh -lc ",
+            "/bin/zsh -lc ",
+            "/bin/bash -lc ",
+        ] {
             let text = format!("{prefix}echo hello");
             assert_eq!(
                 strip_shell_prefix(&text).as_deref(),
@@ -463,7 +467,10 @@ mod tests {
         );
         // 无 -lc → 全部拼接。
         let input2 = json!(["ls", "-la"]);
-        assert_eq!(get_execute_secondary_text(&input2).as_deref(), Some("ls -la"));
+        assert_eq!(
+            get_execute_secondary_text(&input2).as_deref(),
+            Some("ls -la")
+        );
         // 空数组 → None。
         assert_eq!(get_execute_secondary_text(&json!([])), None);
     }
@@ -504,7 +511,9 @@ mod tests {
         // 真源 :162-187 —— parsed_cmd 里的 cmd/command/script。
         let input = json!({ "parsed_cmd": [{ "cmd": "git status" }] });
         assert_eq!(
-            get_execute_content_parts(&input).execution_command.as_deref(),
+            get_execute_content_parts(&input)
+                .execution_command
+                .as_deref(),
             Some("git status")
         );
     }
@@ -536,8 +545,14 @@ mod tests {
             Some("A\nB")
         );
         // 数字/布尔转字符串。
-        assert_eq!(extract_execute_result_text(&json!(42)).as_deref(), Some("42"));
-        assert_eq!(extract_execute_result_text(&json!(true)).as_deref(), Some("true"));
+        assert_eq!(
+            extract_execute_result_text(&json!(42)).as_deref(),
+            Some("42")
+        );
+        assert_eq!(
+            extract_execute_result_text(&json!(true)).as_deref(),
+            Some("true")
+        );
         // null → None。
         assert_eq!(extract_execute_result_text(&json!(null)), None);
     }
@@ -553,7 +568,10 @@ mod tests {
             resolve_result_text(None, Some("O".into()), Some("R".into())).as_deref(),
             Some("O")
         );
-        assert_eq!(resolve_result_text(None, None, Some("R".into())).as_deref(), Some("R"));
+        assert_eq!(
+            resolve_result_text(None, None, Some("R".into())).as_deref(),
+            Some("R")
+        );
         assert_eq!(resolve_result_text(None, None, None), None);
     }
 

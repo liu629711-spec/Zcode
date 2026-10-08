@@ -426,7 +426,6 @@ pub fn ToolLayoutComponent(
     let icon_cls = "shrink-0 text-foreground-subtlest";
     // 来源药丸（ToolSummaryRow.tsx:92）。
     let source_label_cls = "shrink-0 rounded border border-border bg-background-alt px-1.5 py-0.5 text-ui-xs leading-none text-foreground-subtlest";
-    
 
     view! {
         // ── :305-358 Collapsible 外壳 ──
@@ -613,10 +612,7 @@ fn FailureCopyButton(copied: RwSignal<bool>) -> impl IntoView {
 async fn sleep_js(ms: u64) {
     let promise = js_sys::Promise::new(&mut |resolve, _reject| {
         if let Some(w) = web_sys::window() {
-            let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(
-                &resolve,
-                ms as i32,
-            );
+            let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms as i32);
         }
     });
     let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
@@ -693,7 +689,11 @@ mod tests {
             is_running: Some(true),
             ..base_props("t1")
         };
-        assert!(running.kind_label_class().contains("animated-gradient-text"));
+        assert!(
+            running
+                .kind_label_class()
+                .contains("animated-gradient-text")
+        );
         let done = base_props("t1");
         assert!(!done.kind_label_class().contains("animated-gradient-text"));
         assert!(done.kind_label_class().contains("text-foreground-subtlest"));
@@ -777,7 +777,10 @@ mod tests {
             status_label: Some("执行中".into()),
             ..base_props("t1")
         };
-        assert!(!none_flag.should_show_status_label(), "两个 flag 都没开时不显示");
+        assert!(
+            !none_flag.should_show_status_label(),
+            "两个 flag 都没开时不显示"
+        );
 
         let show = ToolLayoutProps {
             status_label: Some("执行中".into()),
@@ -797,7 +800,10 @@ mod tests {
             show_status_label: Some(true),
             ..base_props("t1")
         };
-        assert!(!null_label.should_show_status_label(), "statusLabel 为 null 时不显示");
+        assert!(
+            !null_label.should_show_status_label(),
+            "statusLabel 为 null 时不显示"
+        );
     }
 
     #[test]

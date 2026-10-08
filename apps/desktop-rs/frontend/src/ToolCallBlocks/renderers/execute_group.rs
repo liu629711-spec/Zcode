@@ -286,7 +286,10 @@ mod tests {
         // 真源 :90-95 —— 运行中带 latestChild，完成态用 done。
         let running =
             summary_content_key("t1", true, Some("c1"), Some("正在执行"), Some("ls"), "S");
-        assert!(running.starts_with("execute:t1:c1"), "运行态 key 含 latestChild：{running}");
+        assert!(
+            running.starts_with("execute:t1:c1"),
+            "运行态 key 含 latestChild：{running}"
+        );
         assert!(running.contains("正在执行"));
         assert!(running.contains("ls"));
 
@@ -298,6 +301,9 @@ mod tests {
     fn summary_content_key_uses_done_when_no_child() {
         // 运行中但没有子命令 → 走 done 分支（真源 `isRunning && latestChild` 才用运行态 key）。
         let key = summary_content_key("t1", true, None, None, None, "S");
-        assert!(key.starts_with("execute:t1:done:"), "无子命令时用 done：{key}");
+        assert!(
+            key.starts_with("execute:t1:done:"),
+            "无子命令时用 done：{key}"
+        );
     }
 }
