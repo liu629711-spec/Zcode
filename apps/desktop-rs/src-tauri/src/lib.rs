@@ -353,6 +353,17 @@ async fn task_group_create(
     Ok(json!(group))
 }
 
+/// 更新分组颜色。
+#[tauri::command]
+async fn task_group_color(group_id: String, color: String) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    let changed = taskgroup::change_group_color(&conn, &group_id, &color, now_ms())?;
+    if !changed {
+        return Err(format!("分组不存在: {group_id}"));
+    }
+    Ok(json!({ "ok": true }))
+}
+
 /// 把任务移入分组。
 #[tauri::command]
 async fn task_group_add(
@@ -465,6 +476,7 @@ pub fn run() {
             task_group_add,
             task_group_remove,
             task_group_delete,
+            task_group_color,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");

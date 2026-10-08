@@ -336,6 +336,23 @@ pub fn create_group(
     })
 }
 
+/// 更新分组颜色（真源 `changeTaskGroupColor`）。
+pub fn change_group_color(
+    conn: &Connection,
+    group_id: &str,
+    color: &str,
+    now_ms: i64,
+) -> Result<bool, String> {
+    let color = if GROUP_COLORS.contains(&color) { color } else { "gray" };
+    let changed = conn
+        .execute(
+            "UPDATE task_groups SET color = ?2, updated_at = ?3 WHERE group_id = ?1",
+            rusqlite::params![group_id, color, now_ms],
+        )
+        .map_err(|e| format!("更新分组颜色失败: {e}"))?;
+    Ok(changed > 0)
+}
+
 /// 把任务移入分组（真源 `addTaskToGroup`）。
 ///
 /// 主键 `(workspace_key, task_id)` 意味着一任务只能在一组；重复调用会覆盖旧组归属。
@@ -644,6 +661,65 @@ mod tests {
         let conn = memory_db();
         let g = create_group(&conn, "g1", "标题", "不存在", 1).unwrap();
         assert_eq!(g.color, "gray", "未知颜色应回落 gray");
+    }
+
+    #[test]
+    fn group_color_change_updates_and_normalizes() {
+        let conn = memory_db();
+        create_group(&conn, "g1", "A", "red", 1000).unwrap();
+
+        assert!(change_group_color(&conn, "g1", "blue", 2000).unwrap());
+        let color: String = conn
+            .query_row(
+                "SELECT color FROM task_groups WHERE group_id = 'g1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(color, "blue");
+
+        // 未知颜色回落 gray（与 create_group 同一口径）。
+        assert!(change_group_color(&conn, "g1", "chartreuse", 3000).unwrap());
+        let color: String = conn
+            .query_row(
+                "SELECT color FROM task_groups WHERE group_id = 'g1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(color, "gray");
+
+        // 不存在的组返回 false。
+        assert!(!change_group_color(&conn, "nope", "red", 4000).unwrap());
+    }
+
+    /// 跨端契约：前端 `GroupedNode` 按这个 JSON 形态反序列化。
+    /// `rename_all="camelCase"` 只转换**已存在的驼峰字段**，不会把 task_ids
+    /// 变成 taskIds——tag 值会小写成 group/task，但字段名保持 snake。
+    #[test]
+    fn grouped_node_serializes_with_stable_wire_shape() {
+        let node = GroupedNode::Group {
+            group: TaskGroup {
+                group_id: "g1".into(),
+                title: "工作".into(),
+                color: "blue".into(),
+            },
+            task_ids: vec!["t1".into()],
+        };
+        let json = serde_json::to_value(&node).unwrap();
+        assert_eq!(json["type"], "group");
+        assert_eq!(json["group"]["groupId"], "g1", "结构体字段走 camelCase");
+        assert_eq!(json["group"]["title"], "工作");
+        assert!(
+            json.get("task_ids").is_some(),
+            "字段名保持 snake_case（rename_all 不改 snake），前端按此解析"
+        );
+        assert!(json.get("taskIds").is_none());
+
+        let loose = GroupedNode::Task { task: "t3".into() };
+        let json = serde_json::to_value(&loose).unwrap();
+        assert_eq!(json["type"], "task");
+        assert_eq!(json["task"], "t3");
     }
 
     #[test]

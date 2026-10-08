@@ -201,11 +201,20 @@ pub struct SessionsStore {
 }
 
 /// 任务视图定义。归档视图走 includeArchived 通道单独拉取。
-const TASK_VIEWS: [&str; 5] = ["全部", "进行中", "已完成", "出错", "归档"];
+/// 侧栏任务视图（真源 `WorkspaceSidebar.tsx:203` SidebarTaskViewMode：
+/// "grouped" | "workspace" | "timeline" | "archived" | "agents"）。
+///
+/// 标签显示用中文，语义与真源枚举一一对应——不自造"分组"这类真源没有的名字。
+const TASK_VIEWS: [&str; 5] = ["分组", "工作区", "时间线", "归档", "智能体"];
+
+/// 视图 → SessionsStore.view 的中文标签（store内部按标签过滤）。
+const VIEW_GROUPED: &str = "分组";
+const VIEW_WORKSPACE: &str = "工作区";
+const VIEW_ARCHIVED: &str = "归档";
 
 impl SessionsStore {
     fn load(&self) {
-        let include_archived = self.view.get_untracked() == "归档";
+        let include_archived = self.view.get_untracked() == VIEW_ARCHIVED;
         self.loading.set(true);
         self.error.set(String::new());
         let store = *self;
@@ -240,15 +249,17 @@ impl SessionsStore {
 
     /// 按当前视图过滤会话（归档视图已在 load 时过滤）。
     fn visible(&self) -> Vec<SessionInfo> {
-        let view = self.view.get();
+        // 分组视图的数据源是任务索引库（GroupedTasksView 自己拉），
+        // 这里返回空即可——会话列表不在该视图渲染。
+        if self.view.get() == VIEW_GROUPED {
+            return Vec::new();
+        }
         self.sessions
             .get()
             .into_iter()
-            .filter(|s| match view {
-                "进行中" => matches!(s.status.as_str(), "running" | "waiting" | "paused"),
-                "已完成" => matches!(s.status.as_str(), "completed" | "idle"),
-                "出错" => s.status == "error",
-                _ => true,
+            .filter(|s| {
+                // 「工作区」视图排除出错任务（真源 workspace 视图口径）。
+                self.view.get() != VIEW_WORKSPACE || s.status != "error"
             })
             .collect()
     }
@@ -277,6 +288,11 @@ impl SessionsStore {
             .and_then(|s| s.workspace.as_ref())
             .and_then(|w| w["workspacePath"].as_str())
             .map(|p| p.to_string())
+    }
+
+    /// 全部会话快照（分组视图要 join 任务标题/状态，真源走 sessions-index join）。
+    pub fn all(&self) -> Vec<SessionInfo> {
+        self.sessions.get_untracked()
     }
 }
 
@@ -600,12 +616,16 @@ fn SidebarPanel() -> impl IntoView {
                         <div class="relative flex min-h-0 flex-1 flex-col">
                             <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
                                 <TaskViewToolbar />
-                                // 归档视图整块替换任务区（真源 WorkspaceSidebar.tsx:1901-1910），
-                                // 与置顶区的"并存"不同。
+                                // 各视图整块替换任务区（真源 WorkspaceSidebar.tsx:1901-1940
+                                // 的 archived / grouped / timeline 分支结构）：
+                                // 归档→归档区、分组→分组视图、其余→置顶区+会话列表。
                                 {move || {
                                     let store = expect_context::<SessionsStore>();
-                                    if store.view.get() == "归档" {
+                                    let view = store.view.get();
+                                    if view == VIEW_ARCHIVED {
                                         view! { <crate::archived::ArchivedTasksSection /> }.into_any()
+                                    } else if view == VIEW_GROUPED {
+                                        view! { <crate::grouped::GroupedTasksView /> }.into_any()
                                     } else {
                                         view! {
                                             <crate::pinned::PinnedTasksSection />
