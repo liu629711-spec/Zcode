@@ -11,6 +11,9 @@
 //! - `getEditKindLabelMessageId`（:128-150）：编辑类 kindLabel 的 i18n id
 //! - `renderJoinedFileChips`（:152-175）：多文件 chip 拼接（逗号分隔）
 
+pub mod agent;
+pub mod agentHelpers;
+pub mod agentPromptSection;
 pub mod changes_group;
 pub mod edit;
 pub mod execute;
@@ -19,6 +22,7 @@ pub mod explore;
 pub mod fallback;
 pub mod read;
 pub mod search;
+pub mod subagentColors;
 pub mod todo;
 
 use leptos::prelude::*;

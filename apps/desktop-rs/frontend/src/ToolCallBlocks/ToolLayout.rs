@@ -89,6 +89,8 @@ pub struct ToolLayoutProps {
     pub expanded_kind_label: Option<String>,
     pub kind_detail: Option<String>,
     pub expanded_kind_detail: Option<String>,
+    /// kindDetail 的自定义节点（真源 ReactNode）。优先于 `kind_detail` 文本。
+    pub kind_detail_view: Option<ChildrenFn>,
     pub source_label: Option<String>,
     pub primary_text: Option<String>,
     /// 主文本的「文件 chip」形态（真源 primaryText 是 ReactNode，read 卡传
@@ -290,6 +292,9 @@ pub fn ToolLayoutComponent(
     // 之后再读就报borrow of moved value。真源不存在这个问题（props 是解构后的常量）。
     let props_kind_label = props.summary_kind_label(props.force_open());
     let props_kind_detail = props.summary_kind_detail(props.force_open());
+    // kind_detail 的自定义节点（真源 kindDetail 是 ReactNode，Agent 卡传带色
+    // 子代理名 span）。与 primary_text_view 同模式：ChildrenFn 可克隆复用。
+    let props_kind_detail_view = props.kind_detail_view.clone();
     let props_primary_text = props.summary_primary_text(props.force_open());
     let props_secondary_text = props.summary_secondary_text(props.force_open());
     let props_title = props.summary_title(props.force_open());
@@ -460,6 +465,8 @@ pub fn ToolLayoutComponent(
                 {kind_detail.clone().map(|d| view! {
                     <span class="min-w-0 shrink-0">{d}</span>
                 })}
+                // kindDetail 的自定义节点优先（真源 ReactNode；Agent 卡带色名）。
+                {props_kind_detail_view.clone().map(|f| f())}
                 {props_source_label.clone().map(|s| view! {
                     <span class=source_label_cls>{s}</span>
                 })}

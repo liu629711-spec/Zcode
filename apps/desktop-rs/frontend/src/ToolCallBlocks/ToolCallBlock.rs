@@ -33,6 +33,9 @@ pub struct ToolCallBlockContext {
     pub suppress_source_label: bool,
     /// 是否显示工具图标（真源 :79 `showIcon`；分组 children 传 false）。
     pub show_icon: bool,
+    /// runtime 权威的子代理类型（真源 `authoritativeAgentType`，:99；
+    /// AgentToolCall 配对时从 subagentRow 注入——已投影的类型优先于流式半截 input）。
+    pub authoritative_agent_type: Option<String>,
 }
 
 impl Default for ToolCallBlockContext {
@@ -43,6 +46,7 @@ impl Default for ToolCallBlockContext {
             suppress_source_label: false,
             // 真源默认 showIcon = true（:79）。
             show_icon: true,
+            authoritative_agent_type: None,
         }
     }
 }
@@ -131,6 +135,8 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
                 show_icon,
                 is_office_mode,
                 children,
+                tc.clone(),
+                context.authoritative_agent_type.clone(),
             )}
         </div>
     }
@@ -157,10 +163,30 @@ fn render_dispatch(
     is_office_mode: bool,
     // 子工具节点（分组聚合卡展开时递归渲染；叶子行恒空）。
     children: Vec<LegacyToolCallNode>,
+    // 原始 legacy 载荷（Agent 卡 helpers 取值链用；重建会丢 content 桥接等字段）。
+    legacy: LegacyToolCall,
+    // runtime 权威的子代理类型（AgentToolCall 配对注入）。
+    authoritative_agent_type: Option<String>,
 ) -> AnyView {
     use super::renderers::*;
 
     match renderer {
+        Renderer::Agent => view! {
+            <agent::AgentToolCallBlock
+                props=agent::AgentBlockProps {
+                    tool_id: tool_id.to_string(),
+                    legacy: legacy.clone(),
+                    child_tool_calls: children,
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    is_failed: status == "failed",
+                    authoritative_agent_type: authoritative_agent_type.clone(),
+                    show_icon,
+                }
+            />
+        }
+        .into_any(),
         Renderer::Explore => view! {
             <explore::ExploreToolCallBlock
                 props=explore::ExploreBlockProps {
@@ -360,6 +386,7 @@ mod tests {
             show_todo_tool_calls: true,
             suppress_source_label: false,
             show_icon: true,
+            authoritative_agent_type: None,
         }
     }
 

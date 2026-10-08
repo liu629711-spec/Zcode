@@ -130,6 +130,12 @@ pub struct ConversationRowView {
     /// subagent 行的父工具调用 id（Agent 工具行配对用；真源 SubagentRow.parentToolCallId）。
     #[serde(default)]
     pub parent_tool_call_id: Option<String>,
+    /// subagent 行的子代理类型（配对时作 authoritativeAgentType 注入 Agent 卡）。
+    #[serde(default)]
+    pub subagent_type: Option<String>,
+    /// subagent 行的子会话 id（打开右侧 tab 用；Rust 侧未迁会话视图，暂存）。
+    #[serde(default)]
+    pub child_session_id: Option<String>,
     /// artifact 行
     #[serde(default)]
     pub display_name: Option<String>,
@@ -167,7 +173,7 @@ pub fn relative_time(ms: i64) -> String {
 /// markdown → HTML（模型回复渲染）。
 /// 安全处理：模型输出不可信，原始 HTML 事件一律转义为文本，
 /// 仅保留 markdown 结构标记（pulldown-cmark 对 Text 事件自动转义）。
-fn render_markdown(src: &str) -> String {
+pub fn render_markdown(src: &str) -> String {
     use pulldown_cmark::{Event, Options, Parser};
     let options =
         Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
@@ -1431,11 +1437,33 @@ fn ChatView(session_id: String) -> impl IntoView {
                                 .map(|i| view! { <ConversationRow row=list[i].clone() /> }.into_any())
                                 .collect_view()
                                 .into_any(),
-                            // Agent 卡（agent.tsx）未迁：v1 渲染 Agent 工具行本身，
-                            // subagent 行已被配对抑制。
+                            // Agent 卡（agent.tsx 已迁）：从配对的 subagent 行取
+                            // authoritativeAgentType（真源 ConversationAgentToolCallRow:93）。
                             crate::conversationWorkItems::WorkRenderItem::AgentToolCall {
-                                row_index, ..
-                            } => view! { <ConversationRow row=list[row_index].clone() /> }.into_any(),
+                                row_index,
+                                subagent_row_index,
+                                ..
+                            } => {
+                                let authoritative = list
+                                    .get(subagent_row_index)
+                                    .and_then(|sub| sub.subagent_type.clone());
+                                view! {
+                                    <div class="py-0" data-row-id=list[row_index].row_id>
+                                        <div data-conversation-selectable="true">
+                                            <crate::ToolCallBlocks::ToolCallBlock::ToolCallBlock
+                                                node=crate::ToolCallBlocks::toolCallRowAdapter::tool_call_row_to_legacy_node(
+                                                    &row_to_legacy_json(&list[row_index]),
+                                                )
+                                                context=crate::ToolCallBlocks::ToolCallBlock::ToolCallBlockContext {
+                                                    authoritative_agent_type: authoritative,
+                                                    ..Default::default()
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                }
+                                .into_any()
+                            }
                         })
                         .collect_view()
                         .into_any()
@@ -1648,14 +1676,11 @@ fn ReasoningRowView(row: ConversationRowView) -> impl IntoView {
     .into_any()
 }
 
-/// toolCall 行（真源 ConversationRowView.tsx:1894-2010 的接线形态）：
-/// 行 → toolCallRowAdapter → ToolCallBlock（按工具身份分流到专属卡/fallback）。
-/// 工具行去掉纵向内边距（py-0），间距由组容器统一给（同真源注释）。
-#[component]
-fn ToolCallRowView(row: ConversationRowView) -> impl IntoView {
-    // 重组 adapter 需要的行载荷（toolCallRowAdapter.rs 按宽容协议逐字段取）。
-    let row_json = serde_json::json!({
-        "kind": "toolCall",
+/// 把 `ConversationRowView` 重组成 adapter 需要的行 JSON
+/// （toolCallRowAdapter.rs 按宽容协议逐字段取）。
+fn row_to_legacy_json(row: &ConversationRowView) -> Value {
+    serde_json::json!({
+        "kind": row.kind,
         "rowId": row.row_id,
         "toolCallId": row.tool_call_id.clone().unwrap_or_default(),
         "toolName": row.tool_name.clone(),
@@ -1667,7 +1692,15 @@ fn ToolCallRowView(row: ConversationRowView) -> impl IntoView {
         "cuaApp": row.cua_app.clone(),
         "startedAt": row.started_at.clone(),
         "error": row.error.clone(),
-    });
+    })
+}
+
+/// toolCall 行（真源 ConversationRowView.tsx:1894-2010 的接线形态）：
+/// 行 → toolCallRowAdapter → ToolCallBlock（按工具身份分流到专属卡/fallback）。
+/// 工具行去掉纵向内边距（py-0），间距由组容器统一给（同真源注释）。
+#[component]
+fn ToolCallRowView(row: ConversationRowView) -> impl IntoView {
+    let row_json = row_to_legacy_json(&row);
     let node = crate::ToolCallBlocks::toolCallRowAdapter::tool_call_row_to_legacy_node(&row_json);
     view! {
         <div class="py-0" data-row-id=row.row_id>

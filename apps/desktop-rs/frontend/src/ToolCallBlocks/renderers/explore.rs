@@ -396,10 +396,10 @@ pub fn ExploreToolCallBlock(props: ExploreBlockProps) -> impl IntoView {
     // 折叠态主文本视图（消费型闭包，重建多次）。
     let primary_view_source = collapsed.clone();
     let primary_view: Option<ChildrenFn> = primary_view_source
-        .map(|c| std::sync::Arc::new(move || collapsed_primary_view(&c)) as ChildrenFn);
+        .map(|c| std::sync::Arc::new(move || explore_summary_primary_view(&c)) as ChildrenFn);
     let secondary_view_source = collapsed.clone();
     let secondary_view: Option<ChildrenFn> = secondary_view_source
-        .map(|c| std::sync::Arc::new(move || collapsed_secondary_view(&c)) as ChildrenFn);
+        .map(|c| std::sync::Arc::new(move || explore_summary_secondary_view(&c)) as ChildrenFn);
 
     let summary_content_key = collapsed
         .as_ref()
@@ -503,7 +503,10 @@ pub fn ExploreToolCallBlock(props: ExploreBlockProps) -> impl IntoView {
 }
 
 /// 折叠态主文本节点：按内容形态组装（真源 `primaryText` 的 ReactNode 等价）。
-fn collapsed_primary_view(summary: &ExploreChildSummary) -> AnyView {
+///
+/// 公开供 agent.rs 复用（Agent 卡的折叠态实时摘要与 explore 同款——
+/// 真源 agent.tsx:256 直接调用 `getLatestExploreChildSummaryFromChildren`）。
+pub fn explore_summary_primary_view(summary: &ExploreChildSummary) -> AnyView {
     let label_prefix = summary.action_kind_label.map(|label| {
         view! { <span class="shrink-0 text-foreground-subtle">{label}</span> }
     });
@@ -573,8 +576,8 @@ fn collapsed_primary_view(summary: &ExploreChildSummary) -> AnyView {
     }
 }
 
-/// 折叠态次文本节点（真源 `secondaryText`）。
-fn collapsed_secondary_view(summary: &ExploreChildSummary) -> AnyView {
+/// 折叠态次文本节点（真源 `secondaryText`）。公开供 agent.rs 复用。
+pub fn explore_summary_secondary_view(summary: &ExploreChildSummary) -> AnyView {
     match &summary.content {
         ExploreChildContent::Read { file_path, .. } => match file_path {
             Some(p) if !p.is_empty() => {
