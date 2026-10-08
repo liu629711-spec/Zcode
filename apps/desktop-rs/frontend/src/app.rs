@@ -881,6 +881,32 @@ fn AgentPanel() -> impl IntoView {
         });
     };
 
+    // 连接状态轮询：agent 进程退出/崩溃时自动反映（重连按钮化体验）。
+    {
+        let set_agent_status = set_agent_status.clone();
+        spawn_local(async move {
+            loop {
+                browser_wait(5000).await;
+                if let Ok(v) = invoke_json("agent_status", serde_json::json!({})).await {
+                    let running = v["running"].as_bool().unwrap_or(false);
+                    let connected = v["connected"].as_bool().unwrap_or(false);
+                    if running && connected {
+                        let pid = v["pid"].as_u64().map(|p| p.to_string()).unwrap_or("?".into());
+                        set_agent_status.set(format!("已连接（pid {pid}）"));
+                    } else if running {
+                        let reason = v["closedReason"]
+                            .as_str()
+                            .unwrap_or("未知原因")
+                            .to_string();
+                        set_agent_status.set(format!("连接断开：{reason}"));
+                    } else {
+                        set_agent_status.set("未启动".into());
+                    }
+                }
+            }
+        });
+    }
+
     view! {
         <div class="border-t border-border p-3 text-xs">
             <div class="mb-2 flex items-center gap-1.5 text-muted">
