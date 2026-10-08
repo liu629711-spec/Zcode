@@ -1142,7 +1142,9 @@ struct FilePreview {
     truncated: bool,
 }
 
-/// 顶栏：显示当前会话标题与状态（全局 store 共享）。
+/// 顶栏（WorkspaceHeader.tsx 138-228 行同构）：
+/// h-12 + [app-region:drag] 容器；task 变体 border-border/50，draft 变体 border-transparent；
+/// 左侧标题区 + 右侧动作区（文件树开关；终端/侧面板切换按视图迁移节奏补齐）。
 #[component]
 fn WorkspaceHeaderBar() -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
@@ -1152,7 +1154,7 @@ fn WorkspaceHeaderBar() -> impl IntoView {
         selected_session
             .get()
             .and_then(|id| store.title_of(&id))
-            .unwrap_or_else(|| "未选择任务".into())
+            .unwrap_or_else(|| "新对话".into())
     };
     let status = move || {
         selected_session
@@ -1160,23 +1162,41 @@ fn WorkspaceHeaderBar() -> impl IntoView {
             .and_then(|id| store.status_of(&id))
             .unwrap_or_default()
     };
+    // variant：有选中会话 = task，无 = draft（draft 无左边框）。
+    let variant_is_task = move || selected_session.get().is_some();
     view! {
-        <header class="flex h-11 flex-none items-center gap-2 border-b border-border bg-panel px-3">
-            <span class="text-sm font-semibold">"ZCode 桌面端（Rust）"</span>
-            <span class="mx-1 text-border">"|"</span>
-            <span class=format!("h-2 w-2 flex-none rounded-full {}", "bg-[#9ca3af]")></span>
-            <span class="min-w-0 flex-1 truncate text-sm">{title}</span>
-            <button
-                class="flex-none rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover"
-                on:click=move |_| show_file_tree.update(|v| *v = !*v)
-                title="文件树（当前会话工作区）"
-            >
-                "文件"
-            </button>
-            <span class="flex-none text-xs text-muted">{move || {
-                let s = status();
-                if s.is_empty() { String::new() } else { s }
-            }}</span>
+        <header class="relative flex w-full flex-none border-b h-12"
+            class:border-border=variant_is_task
+            class:border-transparent=move || !variant_is_task()
+        >
+            <div class="flex h-12 min-w-0 flex-1 items-center justify-between gap-2 overflow-hidden p-2">
+                // 左侧标题区（task 变体）。
+                {move || {
+                    if variant_is_task() {
+                        view! {
+                            <div class="flex min-w-0 items-center gap-2">
+                                <span class="min-w-0 truncate text-sm font-semibold text-foreground">{title}</span>
+                                <span class="flex-none text-ui-xs text-muted">{move || {
+                                    let s = status();
+                                    if s.is_empty() { String::new() } else { s }
+                                }}</span>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! { <div class="min-w-0 flex-1" aria-hidden="true"></div> }.into_any()
+                    }
+                }}
+                // 右侧动作区。
+                <div class="flex flex-none items-center gap-1">
+                    <button
+                        class="rounded px-2 py-1 text-xs text-muted hover:bg-surface-hover hover:text-foreground"
+                        on:click=move |_| show_file_tree.update(|v| *v = !*v)
+                        title="文件树（当前会话工作区）"
+                    >
+                        "文件"
+                    </button>
+                </div>
+            </div>
         </header>
     }
 }
