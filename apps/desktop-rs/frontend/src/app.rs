@@ -96,10 +96,29 @@ pub struct ConversationRowView {
     /// toolCall 行
     #[serde(default)]
     pub tool_name: Option<String>,
+    /// 工具调用协议 id（ToolCallBlock 的 data-tool-call-id / 渲染分流键）。
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
+    /// 工具入参的 JSON 投影（agent 已解析时随行给出；流式中可能缺席）。
+    #[serde(default)]
+    pub input: Option<Value>,
+    /// 工具入参的原始文本（流式半截也在）。
     #[serde(default)]
     pub input_text: Option<String>,
+    /// 工具输出（{ text, display?, truncated? } 的宽松视图）。
+    #[serde(default)]
+    pub output: Option<Value>,
+    /// 顶层装饰载荷（旧 Node REPL 图片通道；CUA 展示在 output.display）。
+    #[serde(default)]
+    pub display: Option<Value>,
+    /// CUA 工具的应用身份（{ pid, name, bundleId? }）。
+    #[serde(default)]
+    pub cua_app: Option<Value>,
+    /// 运行起始时刻（毫秒时间戳）。
+    #[serde(default)]
+    pub started_at: Option<Value>,
     #[serde(default)]
     pub error: Option<Value>,
     /// userInput 行：引擎尾注起点（正文 = text[..epilogueStart]）
@@ -1549,48 +1568,34 @@ fn ReasoningRowView(row: ConversationRowView) -> impl IntoView {
     .into_any()
 }
 
-/// toolCall 行（ToolCallRowView 1894 行的 v1 摘要形态）：
-/// 工具名 + 状态徽标 + 输入摘要；ToolCallBlock 按工具类型的专属卡后续迁移。
+/// toolCall 行（真源 ConversationRowView.tsx:1894-2010 的接线形态）：
+/// 行 → toolCallRowAdapter → ToolCallBlock（按工具身份分流到专属卡/fallback）。
 /// 工具行去掉纵向内边距（py-0），间距由组容器统一给（同真源注释）。
 #[component]
 fn ToolCallRowView(row: ConversationRowView) -> impl IntoView {
-    let status = row.status.clone().unwrap_or_else(|| "running".into());
-    let status_class = match status.as_str() {
-        "success" => "bg-success",
-        "error" => "bg-destructive",
-        "running" | "inputStreaming" => "bg-warning animate-pulse motion-reduce:animate-none",
-        _ => "border-[1.5px] border-foreground-subtlest bg-transparent",
-    };
-    let input_summary = row
-        .input_text
-        .clone()
-        .map(|t| {
-            let t = t.trim().to_string();
-            // JSON 入参美化（单行折叠）；非 JSON 原样。
-            let pretty = serde_json::from_str::<Value>(&t)
-                .ok()
-                .and_then(|v| serde_json::to_string_pretty(&v).ok())
-                .unwrap_or(t.clone());
-            let flat = pretty.replace('\u{a}', " ⏎ ");
-            if flat.chars().count() > 160 {
-                format!("{}…", flat.chars().take(160).collect::<String>())
-            } else {
-                flat
-            }
-        })
-        .unwrap_or_default();
+    // 重组 adapter 需要的行载荷（toolCallRowAdapter.rs 按宽容协议逐字段取）。
+    let row_json = serde_json::json!({
+        "kind": "toolCall",
+        "rowId": row.row_id,
+        "toolCallId": row.tool_call_id.clone().unwrap_or_default(),
+        "toolName": row.tool_name.clone(),
+        "status": row.status.clone().unwrap_or_else(|| "inputStreaming".into()),
+        "inputText": row.input_text.clone().unwrap_or_default(),
+        "input": row.input.clone(),
+        "output": row.output.clone(),
+        "display": row.display.clone(),
+        "cuaApp": row.cua_app.clone(),
+        "startedAt": row.started_at.clone(),
+        "error": row.error.clone(),
+    });
+    let node = crate::ToolCallBlocks::toolCallRowAdapter::tool_call_row_to_legacy_node(&row_json);
     view! {
         <div class="py-0" data-row-id=row.row_id>
-            <div data-conversation-selectable="true" class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-                <span class=format!("size-1.5 flex-none rounded-full {status_class}")></span>
-                <span class="flex-none text-ui-base font-medium text-foreground">
-                    {row.tool_name.clone().unwrap_or_default()}
-                </span>
-                <span class="min-w-0 flex-1 truncate text-ui-sm text-muted">{input_summary}</span>
-                {row.error.as_ref().map(|e| {
-                    let msg = e["message"].as_str().unwrap_or("error").to_string();
-                    view! { <span class="flex-none text-ui-sm text-destructive">{msg}</span> }
-                })}
+            <div data-conversation-selectable="true">
+                <crate::ToolCallBlocks::ToolCallBlock::ToolCallBlock
+                    node=node
+                    context=crate::ToolCallBlocks::ToolCallBlock::ToolCallBlockContext::default()
+                />
             </div>
         </div>
     }
