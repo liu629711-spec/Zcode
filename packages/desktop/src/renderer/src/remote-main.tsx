@@ -44,6 +44,9 @@ async function boot(): Promise<void> {
     {
       onClose: () => {
         renderBoot("与电脑的连接已断开（服务可能已停止），回桌面重新开服务后再扫。");
+        // 就绪后 #boot 被 CSS 永久隐藏（body.zcode-remote-ready），断线提示直接写进去等于没人看得见：
+        // 用户只看到一片空白、没有任何解释。这里把就绪标记摘掉让启动层重新显示消息。
+        document.body.classList.remove("zcode-remote-ready");
       },
     },
   );

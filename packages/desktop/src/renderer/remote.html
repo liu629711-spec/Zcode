@@ -31,7 +31,10 @@
         justify-content: center;
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 14px;
-        color: #a89f92;
+        /* 断线时这层会被重新显示，必须自带不透明底与主题文字色，否则消息叠在应用内容上读不出来；
+           启动阶段 styles.css 还没加载，var() 落到括号里的启动屏配色。 */
+        background: var(--color-background, #26221e);
+        color: var(--color-foreground, #a89f92);
         text-align: center;
         padding: 24px;
         white-space: pre-wrap;
@@ -48,7 +51,9 @@
         justify-content: center;
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 14px;
-        color: #a89f92;
+        /* 这层在应用已就绪后仍挂在界面上（打开工作区等待），必须跟主题 token：
+           写死的浅灰在浅色主题下只有 2.3:1，等于又一处"看不见的字"。 */
+        color: var(--color-foreground-subtle, #a89f92);
       }
     </style>
   </head>
