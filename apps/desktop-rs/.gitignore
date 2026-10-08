@@ -9,5 +9,10 @@ src-tauri/gen/
 frontend/static/app.css
 frontend/static/vendor/
 
+# 本机专用 cargo 配置（linker 绝对路径因机器而异），不入库。
+# 需要它是因为本机 PATH 里 llvm-mingw 抢在 WinLibs 前面，会导致 -lgcc 链接失败。
+# 各机请自行生成本文件，模板见文件内注释。
+.cargo/
+
 # 临时日志
 *.log
