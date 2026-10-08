@@ -17,6 +17,7 @@ pub mod execute_group;
 pub mod fallback;
 pub mod read;
 pub mod search;
+pub mod todo;
 
 use leptos::prelude::*;
 
