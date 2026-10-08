@@ -32,6 +32,7 @@ use crate::groupedTasks::dragRuntime::DragRuntime;
 use crate::groupedTasks::join::{
     GroupedStructure, GroupedStructureNode, index_sessions, join_grouped_structure,
 };
+use crate::groupedTasks::taskMenu::TaskMenuAction;
 use crate::groupedTasks::view::{GroupedTaskView, GroupedTaskViewNode, TaskGroup, TaskListItem};
 use crate::taskTitle::TaskTitleOverflowText;
 
@@ -196,6 +197,21 @@ pub struct GroupedStore {
     error: RwSignal<String>,
 }
 
+/// 右键菜单的打开状态（真源 `contextMenuOpen` + Radix 的锚点坐标）。
+#[derive(Debug, Clone, PartialEq)]
+struct MenuState {
+    /// 菜单弹出位置（视口坐标，fixed 定位）。
+    x: f64,
+    y: f64,
+    /// 目标任务的 taskKey（view.rs 的查找键）。
+    task_key: String,
+    /// 目标任务当前所在组；`None` = 顶层游离任务。
+    current_group_id: Option<String>,
+}
+
+/// 右键菜单打开时的目标信息，由行组件写入、根组件渲染。
+type MenuSignal = RwSignal<Option<MenuState>>;
+
 #[component]
 pub fn GroupedTasksView() -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
@@ -212,6 +228,9 @@ pub fn GroupedTasksView() -> impl IntoView {
     let joined_view: RwSignal<Option<GroupedTaskView>> = RwSignal::new(None);
     // 拖拽运行时（begin/preview/finish/cancel 状态机）。
     let drag_runtime: RwSignal<DragRuntime> = RwSignal::new(DragRuntime::default());
+    // 右键菜单状态（None = 关闭）。行组件写入，根组件统一渲染。
+    let menu: MenuSignal = RwSignal::new(None);
+    provide_context(menu);
 
     let store = GroupedStore {
         refresh: RwSignal::new(0),
@@ -301,8 +320,7 @@ pub fn GroupedTasksView() -> impl IntoView {
 
     view! {
         <div class="flex min-h-0 flex-col">
-            {move || {
-                let err = store.error.get();
+            {move || {                let err = store.error.get();
                 if !err.is_empty() {
                     return view! {
                         <p class="px-3 py-2 text-xs text-[#dc2626]">{err}</p>
@@ -333,6 +351,7 @@ pub fn GroupedTasksView() -> impl IntoView {
                                     collapsed=collapsed
                                     runtime=drag_runtime
                                     view=joined_view
+                                    menu=menu
                                     refresh=store.refresh
                                 />
                             }
@@ -344,6 +363,7 @@ pub fn GroupedTasksView() -> impl IntoView {
                                     task=task
                                     runtime=drag_runtime
                                     view=joined_view
+                                    menu=menu
                                 />
                             }
                                 .into_any()
@@ -352,6 +372,8 @@ pub fn GroupedTasksView() -> impl IntoView {
                     .collect_view()
                     .into_any()
             }}
+            // 右键菜单浮层（真源 ContextMenu 的 Rust 版，挂在根层统一管理）。
+            <TaskContextMenu menu=menu view=joined_view refresh=store.refresh />
         </div>
     }
 }
@@ -364,6 +386,7 @@ fn GroupItem(
     collapsed: RwSignal<std::collections::HashSet<String>>,
     runtime: RwSignal<DragRuntime>,
     view: RwSignal<Option<GroupedTaskView>>,
+    menu: MenuSignal,
     refresh: RwSignal<u64>,
 ) -> impl IntoView {
     let store = expect_context::<GroupedStore>();
@@ -579,7 +602,13 @@ fn GroupItem(
                             .into_iter()
                             .map(|task| {
                                 view! {
-                                    <GroupedTaskRow task=task runtime=runtime view=view />
+                                    <GroupedTaskRow
+                                        task=task
+                                        runtime=runtime
+                                        view=view
+                                        menu=menu
+                                        current_group_id=Some(group.group_id.clone())
+                                    />
                                 }
                             })
                             .collect_view()}
@@ -603,6 +632,153 @@ fn GroupItem(
                 </div>
             </div>
         </div>
+    }
+}
+
+/// 右键菜单浮层（真源 `GroupedTaskContextMenuContent`，task-context-menu-content.tsx）。
+///
+/// 结构与文案来自 `taskMenu::build_menu`（已 1:1 对齐真源 13 项）。
+/// 已实现的三项执行走 view.rs 的菜单移动算法 + `persist_order` 落库；
+/// 未实现项按真源 `disabledReason` 机制渲染为禁用。
+///
+/// 交互（替代 Radix ContextMenu）：
+/// - 行组件 `on:contextmenu` 写入 [`MenuState`]（含锚点坐标）；
+/// - 本组件渲染全屏透明遮罩，**点击任意处关闭**（含菜单项自身）；
+/// - `on:contextmenu` 在遮罩上也 prevent_default，避免浏览器原生菜单穿透。
+#[component]
+fn TaskContextMenu(
+    menu: MenuSignal,
+    view: RwSignal<Option<GroupedTaskView>>,
+    refresh: RwSignal<u64>,
+) -> impl IntoView {
+    view! {
+        {move || {
+            let Some(state) = menu.get() else {
+                return None;
+            };
+            let Some(view_data) = view.get_untracked() else {
+                menu.set(None);
+                return None;
+            };
+
+            // 按 taskKey 查当前组（真源 :65-79 的 currentGroupId 来源）。
+            let current_group_id = state.current_group_id.clone();
+            // 可选分组列表：从视图里取全部组（真源 groups: TaskGroupMenuItem[]）。
+            let groups: Vec<(String, String, String)> = view_data
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    GroupedTaskViewNode::Group { group, .. } => Some((
+                        group.group_id.clone(),
+                        group.title.clone(),
+                        group.color.clone(),
+                    )),
+                    GroupedTaskViewNode::Task { .. } => None,
+                })
+                .collect();
+
+            let sections = crate::groupedTasks::taskMenu::build_menu(
+                &groups,
+                current_group_id.as_deref(),
+            );
+
+            Some(view! {
+                // 全屏遮罩：点击任意处关闭菜单。
+                <div
+                    class="fixed inset-0 z-[9990]"
+                    on:click=move |_| menu.set(None)
+                    on:contextmenu=move |ev| {
+                        ev.prevent_default();
+                        menu.set(None);
+                    }
+                ></div>
+                // 菜单本体（真源 ContextMenuContent className="w-56"）。
+                <div
+                    class="fixed z-[9991] w-56 rounded-lg border border-border bg-panel p-1 shadow-lg"
+                    style=format!("left:{}px; top:{}px;", state.x, state.y)
+                    on:click=move |ev| ev.stop_propagation()
+                >
+                    {sections
+                        .into_iter()
+                        .flat_map(|section| section.entries)
+                        .filter(|entry| !entry.label.is_empty())
+                        .map(|entry| {
+                            let menu = menu;
+                            let view = view;
+                            let refresh = refresh;
+                            let task_key = state.task_key.clone();
+                            let action = entry.action;
+                            let group_id = if action == TaskMenuAction::MoveToGroup
+                                && entry.label != TaskMenuAction::MoveToGroup.label_zh()
+                            {
+                                // 子菜单的组条目：label 即组名，需要 groupId 才能 move。
+                                // build_menu 把组名放 label，这里反查 id。
+                                groups
+                                    .iter()
+                                    .find(|(_, title, _)| *title == entry.label)
+                                    .map(|(id, _, _)| id.clone())
+                            } else {
+                                None
+                            };
+                            view! {
+                                <button
+                                    type="button"
+                                    class=move || {
+                                        let base = "flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs";
+                                        if entry.disabled {
+                                            format!("{base} cursor-not-allowed text-foreground-subtlest")
+                                        } else {
+                                            format!("{base} text-foreground hover:bg-surface-hover")
+                                        }
+                                    }
+                                    title=entry.disabled_reason.clone().unwrap_or_default()
+                                    disabled=entry.disabled
+                                    on:click=move |ev| {
+                                        ev.stop_propagation();
+                                        menu.set(None);
+                                        if entry.disabled {
+                                            return;
+                                        }
+                                        // 菜单移动走 view.rs 的算法 + 落库
+                                        //（与拖拽共用 commit_order 通道）。
+                                        if let Some(current) = view.get_untracked() {
+                                            let next = match action {
+                                                TaskMenuAction::MoveToGroup => {
+                                                    crate::groupedTasks::view::move_task_by_menu(
+                                                        &current,
+                                                        &task_key,
+                                                        group_id.as_deref(),
+                                                    )
+                                                }
+                                                TaskMenuAction::RemoveFromGroup => {
+                                                    crate::groupedTasks::view::move_task_by_menu(
+                                                        &current,
+                                                        &task_key,
+                                                        None,
+                                                    )
+                                                }
+                                                TaskMenuAction::MoveToTop => {
+                                                    crate::groupedTasks::view::move_task_to_top_by_menu(
+                                                        &current,
+                                                        &task_key,
+                                                    )
+                                                }
+                                                _ => current.clone(),
+                                            };
+                                            if !crate::groupedTasks::dnd::is_same_view(&next, &current) {
+                                                commit_order(next, view, refresh);
+                                            }
+                                        }
+                                    }
+                                >
+                                    {entry.label}
+                                </button>
+                            }
+                        })
+                        .collect_view()}
+                </div>
+            })
+        }}
     }
 }
 
@@ -666,6 +842,8 @@ fn GroupedTaskRow(
     task: TaskListItem,
     runtime: RwSignal<DragRuntime>,
     view: RwSignal<Option<GroupedTaskView>>,
+    menu: MenuSignal,
+    current_group_id: Option<String>,
 ) -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
     let task_id = task.task_id.clone();
@@ -688,6 +866,8 @@ fn GroupedTaskRow(
         String::new()
     };
     let task_key = crate::groupedTasks::view::task_key_of(&task);
+    let menu_task_key = task_key.clone();
+    let menu_group = current_group_id.clone();
 
     view! {
         // TASK_GROUP_ROW_LINE_CLASS
@@ -704,6 +884,17 @@ fn GroupedTaskRow(
                 view,
             )
             on:dragover=move |ev| on_drag_over(ev, runtime.read_only(), view)
+            // 右键菜单（真源 ContextMenuTrigger 包裹整行，:517）。
+            on:contextmenu=move |ev| {
+                ev.prevent_default();
+                ev.stop_propagation();
+                menu.set(Some(MenuState {
+                    x: ev.client_x() as f64,
+                    y: ev.client_y() as f64,
+                    task_key: menu_task_key.clone(),
+                    current_group_id: menu_group.clone(),
+                }));
+            }
         >
             <span class="flex h-7 w-full min-w-0 items-center gap-2">
                 <button
@@ -728,6 +919,7 @@ fn LooseTaskRow(
     task: TaskListItem,
     runtime: RwSignal<DragRuntime>,
     view: RwSignal<Option<GroupedTaskView>>,
+    menu: MenuSignal,
 ) -> impl IntoView {
     let selected_session = expect_context::<RwSignal<Option<String>>>();
     let task_id = task.task_id.clone();
@@ -744,6 +936,7 @@ fn LooseTaskRow(
     };
     let dot = status_dot_class(&task.status).to_string();
     let task_key = crate::groupedTasks::view::task_key_of(&task);
+    let menu_task_key = task_key.clone();
 
     view! {
         <div
@@ -753,6 +946,17 @@ fn LooseTaskRow(
             data-drop-type="grouped-task"
             on:dragstart=move |ev| on_drag_start(ev, runtime, view)
             on:dragover=move |ev| on_drag_over(ev, runtime.read_only(), view)
+            // 顶层游离任务：不在任何组里（真源 currentGroupId === undefined）。
+            on:contextmenu=move |ev| {
+                ev.prevent_default();
+                ev.stop_propagation();
+                menu.set(Some(MenuState {
+                    x: ev.client_x() as f64,
+                    y: ev.client_y() as f64,
+                    task_key: menu_task_key.clone(),
+                    current_group_id: None,
+                }));
+            }
         >
             <button
                 class="flex h-8 w-full min-w-0 items-center gap-2 text-left"
