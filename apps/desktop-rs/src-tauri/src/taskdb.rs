@@ -76,8 +76,8 @@ pub fn open_readwrite() -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// 建表（照抄真源 schema-v1.ts 的 tasks 表，其他表按需再加）。
-fn ensure_schema(conn: &Connection) -> Result<(), String> {
+/// 建表（照抄真源 schema-v1.ts 的 tasks + 分组四表）。
+pub fn ensure_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS tasks (
@@ -106,6 +106,44 @@ fn ensure_schema(conn: &Connection) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS idx_tasks_workspace_pinned_updated
           ON tasks (workspace_key, pinned, updated_at DESC)
           WHERE deleted = 0;
+
+        -- 分组四表（真源 schema-v1.ts:35-73）。真实库里已存在，CREATE IF NOT EXISTS 不会动它们。
+        CREATE TABLE IF NOT EXISTS task_groups (
+          group_id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          color TEXT NOT NULL DEFAULT 'gray',
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS task_group_members (
+          group_id TEXT NOT NULL,
+          workspace_key TEXT NOT NULL,
+          workspace_path TEXT NOT NULL,
+          workspace_identity TEXT,
+          task_id TEXT NOT NULL,
+          sort_order INTEGER,
+          added_at INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (workspace_key, task_id),
+          FOREIGN KEY (group_id) REFERENCES task_groups(group_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_group_members_group_order
+          ON task_group_members (group_id, sort_order, added_at);
+        CREATE TABLE IF NOT EXISTS task_group_view_node_orders (
+          node_type TEXT NOT NULL,
+          node_key TEXT NOT NULL,
+          sort_order INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (node_type, node_key)
+        );
+        CREATE TABLE IF NOT EXISTS task_group_workspace_bootstraps (
+          workspace_key TEXT PRIMARY KEY,
+          group_id TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
         "#,
     )
     .map_err(|e| format!("建表失败: {e}"))

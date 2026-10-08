@@ -5,6 +5,7 @@
 pub mod agent;
 pub mod protocol;
 pub mod taskdb;
+pub mod taskgroup;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -326,6 +327,91 @@ async fn task_unarchive(
     Ok(json!({ "ok": true }))
 }
 
+/// 读某工作区的分组视图（真源 `queryGroupedTaskViewStructure`）。
+#[tauri::command]
+async fn task_grouped_view(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+) -> Result<Value, String> {
+    let Some(conn) = taskdb::open_readonly()? else {
+        return Ok(json!({ "nodes": [] }));
+    };
+    let view = taskgroup::read_grouped_view(&conn, &workspace_path, workspace_identity.as_deref())?;
+    Ok(json!(view))
+}
+
+/// 创建分组。
+#[tauri::command]
+async fn task_group_create(
+    group_id: String,
+    title: String,
+    color: String,
+) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    let now = now_ms();
+    let group = taskgroup::create_group(&conn, &group_id, &title, &color, now)?;
+    Ok(json!(group))
+}
+
+/// 把任务移入分组。
+#[tauri::command]
+async fn task_group_add(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    group_id: String,
+    task_id: String,
+) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    taskgroup::add_task_to_group(
+        &conn,
+        &workspace_path,
+        workspace_identity.as_deref(),
+        &group_id,
+        &task_id,
+        now_ms(),
+    )?;
+    Ok(json!({ "ok": true }))
+}
+
+/// 移出分组。
+#[tauri::command]
+async fn task_group_remove(
+    workspace_path: String,
+    workspace_identity: Option<String>,
+    task_id: String,
+) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    let changed = taskgroup::remove_task_from_group(
+        &conn,
+        &workspace_path,
+        workspace_identity.as_deref(),
+        &task_id,
+    )?;
+    if !changed {
+        return Err(format!("任务不在任何分组中: {task_id}"));
+    }
+    Ok(json!({ "ok": true }))
+}
+
+/// 删除分组（连带清成员）。
+#[tauri::command]
+async fn task_group_delete(group_id: String) -> Result<Value, String> {
+    let conn = taskdb::open_readwrite()?;
+    let changed = taskgroup::delete_group(&conn, &group_id)?;
+    if !changed {
+        return Err(format!("分组不存在: {group_id}"));
+    }
+    Ok(json!({ "ok": true }))
+}
+
+/// 当前 Unix 毫秒（真源多处用 Date.now() 落时间戳）。
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// 软删除任务（真源 zcodeTaskService.deleteTask）。
 ///
 /// 只写 `deleted = 1` 不物理删行——真源的 tombstone join 要读这类行。
@@ -374,6 +460,11 @@ pub fn run() {
             task_set_pinned,
             task_unarchive,
             task_delete,
+            task_grouped_view,
+            task_group_create,
+            task_group_add,
+            task_group_remove,
+            task_group_delete,
         ])
         .build(tauri::generate_context!())
         .expect("ZCode 桌面端启动失败");

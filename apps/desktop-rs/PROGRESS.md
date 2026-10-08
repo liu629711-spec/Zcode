@@ -1,8 +1,8 @@
 # Rust 重构进度盘点
 
-盘点时间：2026-10-08 17:10
+盘点时间：2026-10-08 17:25
 分支：`product/rust-frontend`（自 `product/first-batch` 切出，工作树干净）
-提交：22 个 commit，**全部未 push**
+提交：23 个 commit，**全部未 push**
 
 ---
 
@@ -56,14 +56,14 @@
 - **v4 主路径打通**：`v4/conversation/rowsRange` 数据源 + `v4/command`（createSession/sendText）
 - 断线自动重连、进程树清理（taskkill /T /F）
 
-### 3. 存储层（本轮新增）
+### 3. 存储层
 - `rusqlite`(bundled) 直读 `~/.zcode/v2/tasks-index.sqlite`
 - 分区查询 SQL 照抄真源（pinned/archived/active 互斥）
-- pinned 置顶、archived 归档通道已通
+- pinned 置顶、archived 归档、unarchive 取消归档、软删除通道全通
 
-### 4. UI 组件（已迁 8 块）
-侧栏骨架 / 新任务按钮 / 会话行 / 五视图切换 / 置顶区 / 命令中心(⌘K) /
-树形文件树 + 代码预览 / 顶栏 / 对话区（markdown + 行视图 + toolCall 卡）
+### 4. UI 组件（已迁 9 块）
+侧栏骨架 / 新任务按钮 / 会话行 / 五视图切换 / **置顶区** / **归档区** /
+命令中心(⌘K) / 树形文件树 + 代码预览 / 顶栏 / 对话区（markdown + 行视图 + toolCall 卡）
 
 ---
 
@@ -83,25 +83,26 @@
 ## 五、剩余工作（按优先级）
 
 **下一批**
-1. 归档区 UI（数据通道已通，照 `WorkspaceArchivedTasksSection` 翻译）
-2. 侧栏 dnd + 任务分组（`workspace-grouped-tasks/` 4307 行，自定义组 + 员工 roster）
-3. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
+1. 侧栏 dnd + 任务分组（`workspace-grouped-tasks/` 4307 行，自定义组 + 员工 roster）
+2. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
 
 **后续**
 
-4. toolCall 专属卡（`ToolCallBlocks/` 15345 行，按 execute/read/edit 分流）
-5. 文件树剩余项：git 状态 / fileWatcher / 虚拟滚动 / 拖拽右键菜单
+3. toolCall 专属卡（`ToolCallBlocks/` 15345 行，按 execute/read/edit 分流）
+4. 文件树剩余项：git 状态 / fileWatcher / 虚拟滚动 / 拖拽右键菜单
+5. 归档区剩余：变更统计（changeSummary）、清空全部归档按钮
 6. 富文本输入（`LexicalChatInput` 1535 行 → Rust 富文本方案待定）
-7. 设置页 / 资产库 / onboarding 等独立大区（55万+6 万行）
+7. 设置页 / 资产库 / onboarding 等独立大区（55 万+6 万行）
 
 **待决**
 
-8. **push 22 个 commit**（等你发话）
+8. **push 23 个 commit**（等你发话）
 
 ---
 
 ## 六、验证现状
 
-- 后端 18 测试（协议信封 4 + agent 三件套 6 + taskdb 8）+ 3 个 live 测试（真实 agent、真实 SQLite 库）
-- 前端 20 测试（文件树 flatten/compact、图标解析、置顶区）
+- 后端 23 测试（协议信封 4 + agent 三件套 6 + taskdb 12）+ 4 个 live 测试
+  （真实 agent、真实 SQLite 库、真实库副本上的归档写操作）
+- 前端 25 测试（文件树 flatten/compact、图标解析、置顶区、归档区）
 - trunk 0 错误 0 警告
