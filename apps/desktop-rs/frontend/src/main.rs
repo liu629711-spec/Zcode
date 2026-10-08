@@ -9,6 +9,7 @@ pub mod grouped;
 pub mod groupedTasks;
 pub mod pinned;
 pub mod stream;
+pub mod taskTitle;
 pub mod toast;
 
 fn main() {

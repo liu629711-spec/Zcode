@@ -197,3 +197,36 @@ body {
   font-family: Consolas, monospace;
   font-size: 13px;
 }
+
+/* ── 任务标题走马灯（真源 TaskTitleOverflowText.tsx 的 Web Animations 替代）──
+   真源用 Web Animations API 逐帧改 mask 偏移；Rust 侧用 CSS animation，
+   距离/时长由 JS 实测后写进 --marquee-distance / --marquee-duration
+   （对应真源 :61-64 的 nextDistance / nextDuration 计算）。
+   关键帧值与真源 MARQUEE_MASK_LEADING/TRAILING 的两端渐隐一致。 */
+@keyframes task-title-marquee {
+  0% {
+    transform: translateX(0);
+    mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+  }
+  50% {
+    transform: translateX(calc(-1 * var(--marquee-distance)));
+    mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+  }
+  100% {
+    transform: translateX(0);
+    mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, black 1.5rem, black calc(100% - 1.5rem), transparent 100%);
+  }
+}
+
+.task-title-marquee {
+  animation: task-title-marquee var(--marquee-duration, 6s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-title-marquee {
+    animation: none;
+  }
+}

@@ -33,6 +33,7 @@ use crate::groupedTasks::join::{
     GroupedStructure, GroupedStructureNode, index_sessions, join_grouped_structure,
 };
 use crate::groupedTasks::view::{GroupedTaskView, GroupedTaskViewNode, TaskGroup, TaskListItem};
+use crate::taskTitle::TaskTitleOverflowText;
 
 /// 真源 `zcode-task-types.ts:46,49` 系统分组 id。
 const CRON_DEFAULT_GROUP_ID: &str = "zcode-default-group-cron";
@@ -710,7 +711,10 @@ fn GroupedTaskRow(
                     on:click=move |_| selected_session.set(Some(task_id.clone()))
                 >
                     <span class=format!("size-1.5 flex-none rounded-full {dot}")></span>
-                    <span class="min-w-0 flex-1 truncate text-foreground">{task.title.clone()}</span>
+                    <TaskTitleOverflowText
+                        class="text-foreground"
+                        children=task.title.clone()
+                    />
                     <span class="flex-none text-foreground-subtlest">{time.clone()}</span>
                 </button>
             </span>
@@ -755,7 +759,7 @@ fn LooseTaskRow(
                 on:click=move |_| selected_session.set(Some(task_id.clone()))
             >
                 <span class=format!("size-1.5 flex-none rounded-full {dot}")></span>
-                <span class="min-w-0 flex-1 truncate text-sm">{task.title.clone()}</span>
+                <TaskTitleOverflowText class="text-sm" children=task.title.clone() />
             </button>
         </div>
     }
