@@ -1207,6 +1207,11 @@ fn ChatView(session_id: String) -> impl IntoView {
     let (error, set_error) = signal(String::new());
     let (draft, set_draft) = signal(String::new());
     let (sending, set_sending) = signal(false);
+    // 模型选择（自由输入版；真实 provider 清单接入后换下拉）。
+    // localStorage key: zcode-model-provider / zcode-model-id。
+    let (model_provider, set_model_provider) = signal(read_ls("zcode-model-provider"));
+    let (model_id, set_model_id) = signal(read_ls("zcode-model-id"));
+    let (show_model, set_show_model) = signal(false);
 
     let scroll_box = NodeRef::<html::Div>::new();
 
@@ -1282,9 +1287,14 @@ fn ChatView(session_id: String) -> impl IntoView {
         let set_error = set_error.clone();
         spawn_local(async move {
             // v4 sendText 主路径（CommandEnvelope 由主进程构造经 v4/command 提交）。
+            // 显式模型选择：填了就带（会话无默认模型时 admission 必需）。
+            let provider = model_provider.get_untracked();
+            let mid = model_id.get_untracked();
+            let model_selection = (!provider.trim().is_empty() && !mid.trim().is_empty())
+                .then(|| serde_json::json!({ "providerId": provider.trim(), "modelId": mid.trim() }));
             let send_result = invoke_json(
                 "agent_send_text",
-                serde_json::json!({ "sessionId": sid, "text": content }),
+                serde_json::json!({ "sessionId": sid, "text": content, "modelSelection": model_selection }),
             )
             .await;
 
@@ -1390,6 +1400,40 @@ fn ChatView(session_id: String) -> impl IntoView {
                         .collect_view()
                         .into_any()
                 }}
+            </div>
+            <div class="flex-none border-t border-border px-3 pt-2">
+                <button
+                    class="text-xs text-muted hover:text-foreground"
+                    on:click=move |_| set_show_model.update(|v| *v = !*v)
+                >
+                    {move || if show_model.get() { "▾ 模型" } else { "▸ 模型" }}
+                </button>
+                {show_model.get().then(|| {
+                    view! {
+                        <div class="mt-1 flex items-center gap-2 pb-1">
+                            <input
+                                class="w-40 rounded-lg border border-border bg-panel px-2 py-1 text-xs outline-none focus:border-border-hover"
+                                placeholder="providerId（如 zcode）"
+                                prop:value=move || model_provider.get()
+                                on:input=move |e| {
+                                    let v = event_target_value(&e);
+                                    set_ls("zcode-model-provider", &v);
+                                    set_model_provider.set(v);
+                                }
+                            />
+                            <input
+                                class="w-52 rounded-lg border border-border bg-panel px-2 py-1 text-xs outline-none focus:border-border-hover"
+                                placeholder="modelId"
+                                prop:value=move || model_id.get()
+                                on:input=move |e| {
+                                    let v = event_target_value(&e);
+                                    set_ls("zcode-model-id", &v);
+                                    set_model_id.set(v);
+                                }
+                            />
+                        </div>
+                    }
+                })}
             </div>
             <form
                 class="flex flex-none items-end gap-2 border-t border-border p-3"
@@ -1557,10 +1601,16 @@ fn ToolCallRowView(row: ConversationRowView) -> impl IntoView {
         .clone()
         .map(|t| {
             let t = t.trim().to_string();
-            if t.chars().count() > 120 {
-                format!("{}…", t.chars().take(120).collect::<String>())
+            // JSON 入参美化（单行折叠）；非 JSON 原样。
+            let pretty = serde_json::from_str::<Value>(&t)
+                .ok()
+                .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                .unwrap_or(t.clone());
+            let flat = pretty.replace('\u{a}', " ⏎ ");
+            if flat.chars().count() > 160 {
+                format!("{}…", flat.chars().take(160).collect::<String>())
             } else {
-                t
+                flat
             }
         })
         .unwrap_or_default();
@@ -1612,6 +1662,21 @@ fn ArtifactRowView(row: ConversationRowView) -> impl IntoView {
                 </div>
             </div>
         </div>
+    }
+}
+
+/// localStorage 读写（模型选择等前端偏好）。
+fn read_ls(key: &str) -> String {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|ls| ls.get_item(key).ok())
+        .flatten()
+        .unwrap_or_default()
+}
+
+fn set_ls(key: &str, value: &str) {
+    if let Some(ls) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = ls.set_item(key, value);
     }
 }
 
