@@ -1,0 +1,9 @@
+/target/
+/dist/
+# Tauri 构建期生成的 schema
+src-tauri/gen/
+# Tailwind 构建产物（由 npm run css:build 生成，不入库）
+frontend/static/
+
+# 临时日志
+*.log

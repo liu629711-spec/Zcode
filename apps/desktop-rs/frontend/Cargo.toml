@@ -1,0 +1,21 @@
+[package]
+name = "zcode-desktop-frontend"
+version = "0.1.0"
+edition = "2024"
+description = "ZCode 桌面端前端（Leptos/WASM）"
+
+[[bin]]
+name = "frontend"
+path = "src/main.rs"
+
+[dependencies]
+leptos = { version = "0.8", features = ["csr"] }
+leptos_meta = "0.8"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["HtmlFormElement", "Window", "Element", "HtmlElement"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-wasm-bindgen = "0.6"
+console_error_panic_hook = "0.1"

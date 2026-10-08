@@ -1,0 +1,25 @@
+/* Tailwind 4 CSS-first 入口。
+   主题变量（--color-background 等）对齐 packages/ui 的 themeStyles 体系，
+   保证 bg-background / border-border 等语义 token 与现有 UI 一致。 */
+@import "tailwindcss";
+
+/* 扫描 Leptos 源码中的 class（1:1 迁移 React 组件类名）。 */
+@source "../src";
+@source "../index.html";
+
+@theme {
+  --color-background: #f6f7f9;
+  --color-foreground: #1f2328;
+  --color-panel: #ffffff;
+  --color-border: #e3e6ea;
+  --color-muted: #6a737d;
+  --color-accent: #2563eb;
+  --color-accent-weak: #e8f0fe;
+  --color-accent-foreground: #ffffff;
+  /* 对齐 packages/ui 设计系统语义 token（themeStyles）。
+     精确值随主题系统迁移对齐，当前为浅色近似。 */
+  --color-surface-hover: #f0f1f3;
+  --color-selected: #e8f0fe;
+  --color-foreground-subtlest: #a8b0b8;
+  --radius-workspace-panel: 12px;
+}

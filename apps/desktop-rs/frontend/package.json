@@ -1,0 +1,12 @@
+{
+  "name": "zcode-desktop-frontend-css",
+  "private": true,
+  "description": "Leptos 前端的 Tailwind 构建入口（版本与根 workspace tailwindcss 对齐）",
+  "scripts": {
+    "css:build": "tailwindcss -i ./styles/tailwind.css -o ./static/app.css --minify",
+    "css:watch": "tailwindcss -i ./styles/tailwind.css -o ./static/app.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.2.2"
+  }
+}

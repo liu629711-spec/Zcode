@@ -1,0 +1,6 @@
+[build]
+dist = "dist"
+
+[serve]
+port = 1420
+addresses = ["127.0.0.1"]
