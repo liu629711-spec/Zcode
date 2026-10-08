@@ -152,6 +152,9 @@
          正式迁移（清 7 卡裁剪债）+ 询问协调卡（respond-to-coordinator）/
          计划引导卡（plan-guidance）/ 目标卡（goal）；workspace 启用
          serde_json preserve_order 对齐 Node 键序。
+   - [x] **小卡片批量推进第五批**：read/search/execute/todo/fallback
+         五卡快照提示接线（清完 notice 裁剪债）+ 问题升级卡（escalate
+         从 fallback 升级为专属卡）。
    - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 switch-mode/skill/
          ask-question/respond-to-coordinator 等）、CUA 组
          （conversationCuaGroups 281 + cua.tsx 504 + cua-group 282）、
@@ -169,7 +172,7 @@
 
 ## 六、验证现状
 
-- 前端 **463 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **467 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
