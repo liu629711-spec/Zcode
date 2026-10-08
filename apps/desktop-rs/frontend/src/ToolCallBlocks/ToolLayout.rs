@@ -52,11 +52,20 @@ fn open_state_set(key: &str, open: bool) {
     }
 }
 
+/// 文件 chip 的数据（对应真源 read 卡传给 primaryText 的 ReadFileChip 节点）。
+#[derive(Clone, Default)]
+pub struct FileChipData {
+    pub path: String,
+    pub file_name: String,
+    pub icon_src: String,
+    pub clickable: bool,
+}
+
 /// ToolLayout 的 props（真源 `ToolLayoutProps`，:22-65）。
 ///
 /// 全部按真源字段名与默认值；`Option<T>` 对应真源的可选 props，
 /// `#[serde(default)]` 语义在 Rust 侧用 `Default` trait 表达。
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ToolLayoutProps {
     pub tool_id: String,
     pub persist_open_key: Option<String>,
@@ -82,6 +91,11 @@ pub struct ToolLayoutProps {
     pub expanded_kind_detail: Option<String>,
     pub source_label: Option<String>,
     pub primary_text: Option<String>,
+    /// 主文本的「文件 chip」形态（真源 primaryText 是 ReactNode，read 卡传
+    /// ReadFileChip 节点）。**不能直接传 view**——Leptos 的 View 类型非 Send，
+    /// 放进 Arc 跨闭包传递会编译失败。故传数据（路径+ 文件名 + 图标 + 是否可点），
+    /// 由 ToolLayout 内部渲染 chip。
+    pub primary_file_chip: Option<FileChipData>,
     pub expanded_primary_text: Option<String>,
     pub secondary_text: Option<String>,
     pub expanded_secondary_text: Option<String>,
@@ -273,6 +287,7 @@ pub fn ToolLayoutComponent(
     let props_status_tooltip = props.status_tooltip.clone();
     let props_source_label = props.source_label.clone();
     let props_diff_count = props.diff_count;
+    let props_primary_file_chip = props.primary_file_chip.clone();
 
     // ── :105-114 状态初始化 ──
     // 真源这些值都来自 props 解构（:67-99 已是常量），Effect 闭包里直接用不会有问题；
@@ -438,6 +453,21 @@ pub fn ToolLayoutComponent(
                 })}
                 // SummaryContent（ToolSummaryRow.tsx:140-161）
                 <span class="tool-summary-content min-w-0 flex max-w-full items-center gap-2 text-foreground-subtlest">
+                    // 真源 primaryText 是 ReactNode：给文件 chip 时渲染 chip，
+                    // 否则退化成纯文本。
+                    {props_primary_file_chip.clone().map(|chip| view! {
+                        <span
+                            class=if chip.clickable {
+                                "inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-foreground-subtle hover:underline"
+                            } else {
+                                "inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle"
+                            }
+                            title=chip.path.clone()
+                        >
+                            <img src=chip.icon_src class="size-4 flex-none" alt="" />
+                            <span class="min-w-0 truncate">{chip.file_name.clone()}</span>
+                        </span>
+                    })}
                     {primary_text.map(|p| view! {
                         <span class="min-w-0 truncate">{p}</span>
                     })}

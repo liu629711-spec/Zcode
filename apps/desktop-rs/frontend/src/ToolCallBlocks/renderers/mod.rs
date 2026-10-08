@@ -1,19 +1,22 @@
-//! 1:1 翻译 `packages/ui/src/ToolCallBlocks/renderers.tsx`（175 行）。
+//! 1:1 翻译 `packages/ui/src/ToolCallBlocks/renderers.tsx`（175 行）+ `renderers/` 子目录。
 //!
-//! 五个渲染/判定函数，全部照抄：
+//! 真源里 `renderers.tsx` 与 `renderers/` 目录并存（TS 允许），Rust 不允许同名
+//! `renderers.rs` + `renderers/` 并存，故本文件承载 `renderers.tsx` 的内容，
+//! 子目录 `renderers/` 承载各 renderer 卡片。
+//!
+//! 本文件内容：
 //! - `renderDiffCount`（:14-59）：diff 计数，两数都 ≤0 时返回 null
 //! - `renderFileChip`（:61-107）：文件 chip，可点击/静态两个分支
 //! - `renderFilePath`（:109-126）：次要路径，窄屏隐藏
 //! - `getEditKindLabelMessageId`（:128-150）：编辑类 kindLabel 的 i18n id
 //! - `renderJoinedFileChips`（:152-175）：多文件 chip 拼接（逗号分隔）
-//!
-//! 依赖 `RawToolCallFileSummary`（fileSummaryTypes.ts:135-144）与
-//! `inferEditOperation`（fileSummaries.ts），二者在各自文件里翻译，此处用 use 引用。
+
+pub mod read;
 
 use leptos::prelude::*;
 
-use super::fileSummaryHeuristics::infer_edit_operation;
-use super::fileSummaryTypes::{EditKindSource, EditOperationKind, RawToolCallFileSummary};
+use crate::ToolCallBlocks::fileSummaryHeuristics::infer_edit_operation;
+use crate::ToolCallBlocks::fileSummaryTypes::{EditKindSource, EditOperationKind, RawToolCallFileSummary};
 use crate::file_icons::{icon_src, resolve_icon_name};
 
 // ---------------------------------------------------------------------------
