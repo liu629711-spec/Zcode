@@ -70,3 +70,7 @@ packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
 out-remote-web/
+# 本机 ZCode 工作区状态：dev 日志 + 动态工作流草稿/运行记录，内容随时可再生产；
+# 各子目录自带 .gitignore(*) 只挡得住自己的内容，根目录这份挡住 dev 日志这类散件，
+# 免得 git add -A 把它们扫进索引。
+/.zcode/
