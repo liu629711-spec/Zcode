@@ -90,12 +90,19 @@
      workspaceIdentity），`grouped.rs` 已改走该链路。
    - [x] **拖拽落位决策已迁**：`groupedTasks/dnd.rs`，6 个 preview 函数 +
      视图签名 + 7 层分发链，23 个单测。
-   - [ ] **事件适配层（需先定方案）**：dnd-kit 碰撞检测 / 拖拽源注册 / DragOverlay
-     在 Leptos 无对等物，需在「原生 HTML5 DnD」与「自实现指针事件」间选型。
-     dnd.rs 的 `DragOverSpec` 已把外部事件收敛成语义输入，适配层只需填它。
-   - [ ] 卡片组件：`group-item.tsx` / `task-row.tsx` / `task-item.tsx` /
-         `group-drag-overlay.tsx` / `sticky-group-header.tsx`。
-   - [ ] 落库：`applyOrder`（真源把新顺序写回 `task_group_view_node_orders`）。
+   - [x] **事件适配层已迁**：`groupedTasks/dragRuntime.rs`（状态机）+
+     `groupedTasks/domEvents.rs`（HTML5 DnD 接线），方案 = 原生 draggable。
+   - [x] **顺序落库已迁**：后端 `taskgroup::apply_grouped_order` + Tauri 命令
+     `task_group_apply_order`（顶层顺序 + 组内顺序 + 跨组改成员关系）。
+   - [ ] **接线到视图组件**：`dragRuntime` / `domEvents` 已有，但
+     `grouped.rs` 的 task 行与组节点还没挂上 `draggable` 与事件闭包，
+     拖拽目前还不生效。需补 `on:dragstart` / `on:dragover` / `on:drop` /
+     `on:dragend` 到 GroupedTaskRow / LooseTaskRow / GroupItem，并给组头、
+     组尾、空投放区加 `data-drop-type`。
+   - [ ] 卡片组件：`group-item.tsx`(761) / `task-row.tsx`(584) / `task-item.tsx`(124) /
+         `group-drag-overlay.tsx`(39) / `sticky-group-header.tsx`。
+   - [ ] 拖拽预览：原生 ghost image 不可控，真源用 DragOverlay 自绘卡片。
+         需要接近真源手感时再补，或改用指针事件实现。
 2. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
 
 **后续**
@@ -108,16 +115,19 @@
 
 **待决**
 
-8. **push 27 个 commit**（等你发话）
+8. **push 28 个 commit**（等你发话）
 
 ---
 
 ## 六、验证现状
 
-- 前端 **267 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
-  流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**）
-- 后端 23 测试（协议信封 4 + agent 三件套 6 + taskdb 12）+ 4 个 live 测试
-  （真实 agent、真实 SQLite 库、真实库副本上的归档写操作）
+- 前端 **286 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+  流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
+  **拖拽运行时 12**、**DOM 接线与落库载荷 7**）
+- 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
+  （见第七节 2），故另用独立 crate + 真实 SQLite 跑了 8 组落库行为验证，全通过
+- 后端原有 23 测试（协议信封 4 + agent 三件套 6 + taskdb 12）+ 4 个 live 测试
+  （待环境修复后运行）
 - trunk 0 错误 0 警告
 
 ---
