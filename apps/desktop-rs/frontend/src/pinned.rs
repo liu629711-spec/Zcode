@@ -44,6 +44,8 @@ pub struct PinnedTask {
 pub struct PinnedStore {
     tasks: RwSignal<Vec<PinnedTask>>,
     error: RwSignal<String>,
+    /// 递增即触发重拉（乐观更新失败后回滚用，对齐真源的 refresh 收敛）。
+    refresh: RwSignal<u64>,
 }
 
 fn icon_pin() -> impl IntoView {
@@ -74,11 +76,13 @@ pub fn PinnedTasksSection() -> impl IntoView {
     let pinned_store = PinnedStore {
         tasks: RwSignal::new(Vec::new()),
         error: RwSignal::new(String::new()),
+        refresh: RwSignal::new(0),
     };
     provide_context(pinned_store);
 
-    // 会话切换 → 重拉该 workspace 的置顶列表。
+    // 会话切换 / 乐观更新失败回滚 → 重拉该 workspace 的置顶列表。
     Effect::new(move |_| {
+        let _ = pinned_store.refresh.get();
         let Some(session_id) = selected_session.get() else {
             pinned_store.tasks.set(Vec::new());
             return;
@@ -185,8 +189,8 @@ fn PinnedTaskRow(task: PinnedTask) -> impl IntoView {
         }
     };
 
-    // 取消置顶：先乐观移出列表（真源 WorkspacePinnedTasksSection.tsx:271-293 先移动后 RPC），
-    // 失败再回滚。真源另有 toast 提示，这里用行内错误兜底。
+    // 取消置顶：先乐观移出列表（真源 WorkspacePinnedTasksSection.tsx:271-293 先移动后RPC），
+    // 失败再回滚 + toast 提示（真源用 toast，不打断列表）。
     let unpin = {
         let task_id = task_id.clone();
         let ws_path = ws_path.clone();
@@ -196,6 +200,7 @@ fn PinnedTaskRow(task: PinnedTask) -> impl IntoView {
             let ws_path = ws_path.clone();
             let ws_identity = ws_identity.clone();
             let pinned = pinned_store;
+            let toasts = expect_context::<crate::toast::ToastStore>();
             spawn_local(async move {
                 match invoke_json(
                     "task_set_pinned",
@@ -211,7 +216,11 @@ fn PinnedTaskRow(task: PinnedTask) -> impl IntoView {
                     Ok(_) => pinned.tasks.update(|list| {
                         list.retain(|t| t.task_id != task_id);
                     }),
-                    Err(e) => pinned.error.set(format!("更新置顶状态失败: {e}")),
+                    Err(e) => {
+                        toasts.error(format!("更新置顶状态失败: {e}"));
+                        // 回滚：重新拉取置顶列表收敛到 SQLite 真相源。
+                        pinned.refresh.update(|n| *n += 1);
+                    }
                 }
             });
         }
