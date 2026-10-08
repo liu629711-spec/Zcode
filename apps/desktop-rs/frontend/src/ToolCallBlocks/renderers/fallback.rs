@@ -10,12 +10,18 @@
 //!   失败时状态词「独占」状态位，不与 secondaryText 重复
 //! - 展开区末尾追加 **raw JSON 兜底**（:51-55）：无 inlinePreview 且未禁用时，
 //!   把整个 toolCall 序列化展示（`JSON.stringify(toolCall, null, 2)`）
+//! - **已接线**：快照提示（:55-64，renderContent 内、raw 兜底块之前；
+//!   ToolCallBody 未迁）
 //! - `summaryOnly` 时 kindLabel 为 null（:93）——纯摘要模式下不显示类别
 //!
 //! 行号注释均指真源文件。
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 /// `FALLBACK_TOOL_ICON`（真源 :12）——WrenchIcon。
 pub const FALLBACK_TOOL_ICON_CLASS: &str = "size-4 flex-none text-foreground-subtle";
@@ -42,6 +48,8 @@ pub fn build_kind_label(kind: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct FallbackBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub kind: String,
     pub title: Option<String>,
     pub status: Option<String>,
@@ -119,6 +127,11 @@ pub fn FallbackToolCallBlock(props: FallbackBlockProps) -> impl IntoView {
         None
     };
 
+    // 快照提示（真源 :55-64 —— renderContent 内，raw 兜底块之前）。
+    let notice_refs = props.snapshot_refs.clone();
+    let notice_tool_id = props.tool_id.clone();
+    let notice_cb = props.on_load_full_tool_call_fields.clone();
+
     view! {
         <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
             props=crate::ToolCallBlocks::ToolLayout::ToolLayoutProps {
@@ -153,10 +166,19 @@ pub fn FallbackToolCallBlock(props: FallbackBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=Some(std::sync::Arc::new(move || {
-                // 真源 :52-55 —— raw JSON 兜底块。
-                raw_json.clone().map(|json| {
-                    view! { <pre class=RAW_FALLBACK_CLASS>{json}</pre> }
-                })
+                // 真源 :47-58 —— ToolCallBody（未迁）→ 快照提示 → raw JSON 兜底块。
+                view! {
+                    <ToolSnapshotFieldNoticeComponent
+                        props=ToolSnapshotFieldNoticeProps {
+                            refs: notice_refs.clone(),
+                            tool_id: notice_tool_id.clone(),
+                            on_load_full_tool_call_fields: notice_cb.clone(),
+                        }
+                    />
+                    {raw_json.clone().map(|json| {
+                        view! { <pre class=RAW_FALLBACK_CLASS>{json}</pre> }
+                    })}
+                }
                 .into_any()
             }))
         />
@@ -198,6 +220,8 @@ mod tests {
             summary_only: false,
             summary_text_override: None,
             kind_label_override: None,
+            snapshot_refs: Vec::new(),
+            on_load_full_tool_call_fields: None,
         };
         let is_failed = props.status.as_deref() == Some("failed");
         assert!(is_failed);
@@ -235,6 +259,8 @@ mod tests {
             summary_only: true,
             summary_text_override: Some("摘要文本".into()),
             kind_label_override: Some("覆盖类别".into()),
+            snapshot_refs: Vec::new(),
+            on_load_full_tool_call_fields: None,
         };
         // summary_only 优先于 kind_label_override。
         let resolved = if props.summary_only {

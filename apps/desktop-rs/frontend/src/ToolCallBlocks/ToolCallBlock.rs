@@ -264,6 +264,8 @@ fn render_dispatch(
                     source_label,
                     show_icon,
                     is_office_mode,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -285,6 +287,8 @@ fn render_dispatch(
                         source_label,
                         show_icon,
                         summary,
+                        snapshot_refs: legacy.snapshot_refs.clone(),
+                        on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                     }
                 />
             }
@@ -337,6 +341,8 @@ fn render_dispatch(
                     source_label,
                     show_icon,
                     kind_label_override: None,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -355,6 +361,8 @@ fn render_dispatch(
                     error_text,
                     source_label,
                     show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }
@@ -557,6 +565,8 @@ fn render_dispatch(
                     summary_only: false,
                     summary_text_override: None,
                     kind_label_override: None,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                 }
             />
         }

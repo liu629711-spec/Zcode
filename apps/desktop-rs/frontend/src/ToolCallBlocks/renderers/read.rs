@@ -5,6 +5,7 @@
 //!   与 execute/edit 的默认行为不同
 //! - `prioritizePrimaryText`（:294）——窄屏优先保文件 chip
 //! - `content={null}`（:299）—— 没有折叠主体
+//! - **已接线**：快照提示（:302-311，refs 空/回调缺省时不渲染）
 //! - 主体是 `ToolSummaryRow` 里的一段自定义渲染（ReadFileChip），不是纯文本
 //!
 //! 路径来源有**三级兜底**（真源 :152-206注释与代码）：
@@ -17,6 +18,10 @@
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 use std::sync::Arc;
 
 use crate::ToolCallBlocks::fileSummaryTypes::is_plain_record;
@@ -301,6 +306,8 @@ pub const READ_CHIP_STATIC_CLASS: &str =
 #[derive(Debug, Clone)]
 pub struct ReadBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub input: Value,
     pub raw: Value,
     pub title: Option<String>,
@@ -399,6 +406,14 @@ pub fn ReadToolCallBlock(props: ReadBlockProps) -> impl IntoView {
             }))
             // 真源 :299 —— content={null}，read 卡无折叠主体。
             render_content=None
+        />
+        // 真源 :302-311 —— 快照提示（Fragment 尾部）。
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }

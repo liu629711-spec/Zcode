@@ -7,6 +7,7 @@
 //! - `secondaryText` 收起态用 **font-sans**（:290），展开后的完整命令仍用
 //!   font-mono 便于阅读复制技术内容（真源 :291-293 注释）
 //! - 输出优先级（:274-283）：`raw.display.output` > `output` > `raw.rawOutput`
+//! - **已接线**：快照提示（:368-377，Fragment 尾部；办公模式不渲染）
 //!
 //! 入参形态有 **5 种**（`getExecuteContentParts`，:98-190），都要兼容：
 //! 字符串（可能带 `zsh -lc ` 前缀）、字符串数组、{command}/{cmd}/{script} 递归、
@@ -16,6 +17,10 @@
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use crate::ToolCallBlocks::fileSummaryTypes::is_plain_record;
 
@@ -289,6 +294,8 @@ pub fn resolve_result_text(
 #[derive(Debug, Clone)]
 pub struct ExecuteBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub input: Value,
     pub output: Value,
     pub raw: Value,
@@ -371,6 +378,12 @@ pub fn ExecuteToolCallBlock(props: ExecuteBlockProps) -> impl IntoView {
         failure_visible_text.clone()
     };
 
+    // 快照提示（真源 :368-377 —— Fragment 尾部；办公模式不渲染）。
+    let notice_refs = props.snapshot_refs.clone();
+    let notice_tool_id = props.tool_id.clone();
+    let notice_cb = props.on_load_full_tool_call_fields.clone();
+    let show_snapshot_notice = !props.is_office_mode;
+
     view! {
         <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
             props=crate::ToolCallBlocks::ToolLayout::ToolLayoutProps {
@@ -417,6 +430,15 @@ pub fn ExecuteToolCallBlock(props: ExecuteBlockProps) -> impl IntoView {
                 .into_any()
             }))
         />
+        {show_snapshot_notice.then(|| view! {
+            <ToolSnapshotFieldNoticeComponent
+                props=ToolSnapshotFieldNoticeProps {
+                    refs: notice_refs.clone(),
+                    tool_id: notice_tool_id.clone(),
+                    on_load_full_tool_call_fields: notice_cb.clone(),
+                }
+            />
+        })}
     }
 }
 

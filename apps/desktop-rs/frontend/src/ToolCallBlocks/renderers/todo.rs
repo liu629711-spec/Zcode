@@ -10,6 +10,8 @@
 //!   in_progress 用 **静态箭头**（真源 :38-39 注释：工具输出里的 running 状态会
 //!   长时间留在页面上，用静态箭头避免和加载动画语义混在一起）；pending 用空心圆
 //! - 文本类名三态（:16-20）：pending 最浅 / in_progress 最亮 / completed **删除线**
+//! - **已接线**：快照提示（:88-97 plan 分支 / :110-119 兜底分支；
+//!   兜底分支的 ToolCallBody 未迁，当前仅 plan 分支渲染）
 //!
 //! plan 提取（tool-plan-adapter.ts）：
 //! - 工具名门控（:4-5 正则 `(?:^|[_\s-])(?:todo[_\s-]*(?:read|write)|update[_\s-]*plan)(?:$|[_\s-])`）
@@ -22,6 +24,10 @@
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 // ---------------------------------------------------------------------------
 // tool-plan-adapter.ts
@@ -328,6 +334,8 @@ pub fn plan_secondary_text(summary: &PlanSummary) -> String {
 #[derive(Debug, Clone)]
 pub struct TodoBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub title: Option<String>,
     pub kind: Option<String>,
     pub input: Value,
@@ -381,6 +389,11 @@ pub fn TodoToolCallBlock(props: TodoBlockProps) -> impl IntoView {
 
     let is_failed = props.status.as_deref() == Some("failed");
 
+    // 快照提示（真源 :88-97 —— plan 分支展开区尾部）。
+    let notice_refs = props.snapshot_refs.clone();
+    let notice_tool_id = props.tool_id.clone();
+    let notice_cb = props.on_load_full_tool_call_fields.clone();
+
     view! {
         <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
             props=crate::ToolCallBlocks::ToolLayout::ToolLayoutProps {
@@ -419,13 +432,21 @@ pub fn TodoToolCallBlock(props: TodoBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=Some(std::sync::Arc::new(move || {
-                // 真源 :84 —— 有计划时列表，无计划时走 ToolCallBody 兜底。
+                // 真源 :84 —— 有计划时列表，无计划时走 ToolCallBody 兜底
+                //（ToolCallBody 未迁，无计划分支暂不渲染）。
                 plan_rows
                     .clone()
                     .map(|rows| {
                         view! {
                             <div class="space-y-1 rounded-xl bg-surface px-3 py-2">
                                 {rows}
+                                <ToolSnapshotFieldNoticeComponent
+                                    props=ToolSnapshotFieldNoticeProps {
+                                        refs: notice_refs.clone(),
+                                        tool_id: notice_tool_id.clone(),
+                                        on_load_full_tool_call_fields: notice_cb.clone(),
+                                    }
+                                />
                             </div>
                         }
                     })

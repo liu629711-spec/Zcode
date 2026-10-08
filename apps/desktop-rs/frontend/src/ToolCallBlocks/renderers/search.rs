@@ -6,6 +6,7 @@
 //!   「search 的主文本直接拼成一句完整摘要，不再拆 secondaryText；
 //!   这样能避免 title 干扰，也更适合列表/目录查询这类操作」
 //! - `content={null}`（:113）—— 无折叠主体
+//! - **已接线**：快照提示（:123-132，refs 空/回调缺省时不渲染）
 //! - `primaryText` 包一层 `<span className="truncate">`（:86）
 //!
 //! 查询词来源有多级（真源 :29-73），其中 url/prompt 的顺序有讲究：
@@ -16,6 +17,10 @@
 
 use leptos::prelude::*;
 use serde_json::Value;
+
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
 
 use crate::ToolCallBlocks::fileSummaryTypes::is_plain_record;
 
@@ -118,6 +123,8 @@ pub fn get_search_primary_text(input: &Value) -> String {
 #[derive(Debug, Clone)]
 pub struct SearchBlockProps {
     pub tool_id: String,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
     pub input: Value,
     pub status: Option<String>,
     pub is_running: bool,
@@ -182,6 +189,14 @@ pub fn SearchToolCallBlock(props: SearchBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=None
+        />
+        // 真源 :123-132 —— 快照提示（Fragment 尾部）。
+        <ToolSnapshotFieldNoticeComponent
+            props=ToolSnapshotFieldNoticeProps {
+                refs: props.snapshot_refs.clone(),
+                tool_id: props.tool_id.clone(),
+                on_load_full_tool_call_fields: props.on_load_full_tool_call_fields.clone(),
+            }
         />
     }
 }
