@@ -19,9 +19,12 @@
 use leptos::prelude::*;
 use serde_json::Value;
 
+use super::super::ToolCallBody::ToolCallBody;
 use super::super::ToolSnapshotFieldNotice::{
     SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
 };
+use super::super::toolCallRowAdapter::LegacyToolCall;
+use super::super::toolDisplay::ToolDisplayModel;
 
 /// `FALLBACK_TOOL_ICON`（真源 :12）——WrenchIcon。
 pub const FALLBACK_TOOL_ICON_CLASS: &str = "size-4 flex-none text-foreground-subtle";
@@ -68,6 +71,9 @@ pub struct FallbackBlockProps {
     /// 纯摘要模式（:17）——kindLabel 为 null、primaryText 用覆盖值。
     pub summary_only: bool,
     /// 摘要文本覆盖（:18）。
+    pub legacy: LegacyToolCall,
+    pub display_model: ToolDisplayModel,
+    pub workspace_path: String,
     pub summary_text_override: Option<String>,
     /// kindLabel 覆盖（真源 :93 `context.kindLabelOverride`）。
     pub kind_label_override: Option<String>,
@@ -131,6 +137,10 @@ pub fn FallbackToolCallBlock(props: FallbackBlockProps) -> impl IntoView {
     let notice_refs = props.snapshot_refs.clone();
     let notice_tool_id = props.tool_id.clone();
     let notice_cb = props.on_load_full_tool_call_fields.clone();
+    // ToolCallBody 入参（真源 :47-52）。
+    let legacy = props.legacy.clone();
+    let display_model = props.display_model.clone();
+    let workspace_path = props.workspace_path.clone();
 
     view! {
         <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
@@ -166,8 +176,15 @@ pub fn FallbackToolCallBlock(props: FallbackBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=Some(std::sync::Arc::new(move || {
-                // 真源 :47-58 —— ToolCallBody（未迁）→ 快照提示 → raw JSON 兜底块。
+                // 真源 :47-58 —— ToolCallBody → 快照提示 → raw JSON 兜底块。
                 view! {
+                    <ToolCallBody
+                        display_model=display_model.clone()
+                        inline_preview_override=None
+                        tool_call=legacy.clone()
+                        workspace_path=workspace_path.clone()
+                        child_tool_list=None
+                    />
                     <ToolSnapshotFieldNoticeComponent
                         props=ToolSnapshotFieldNoticeProps {
                             refs: notice_refs.clone(),
@@ -222,6 +239,33 @@ mod tests {
             kind_label_override: None,
             snapshot_refs: Vec::new(),
             on_load_full_tool_call_fields: None,
+            legacy: crate::ToolCallBlocks::toolCallRowAdapter::LegacyToolCall {
+                tool_id: "t1".into(),
+                tool_name: None,
+                kind: String::new(),
+                title: None,
+                input: None,
+                status: String::new(),
+                v4_status: String::new(),
+                output: None,
+                content: None,
+                error: None,
+                raw: Value::Null,
+                started_at: None,
+                snapshot_refs: Vec::new(),
+                thought: None,
+            },
+            display_model: crate::ToolCallBlocks::toolDisplay::ToolDisplayModel {
+                inline_preview: crate::ToolCallBlocks::toolDisplay::ToolInlinePreview::None,
+                plan_result: None,
+                viewer_source: None,
+                viewer_label_id: crate::ToolCallBlocks::toolDisplay::ViewerLabelId::ViewCode,
+                show_summary_file_link: false,
+                show_input: false,
+                show_output: false,
+                show_kind: false,
+            },
+            workspace_path: String::new(),
         };
         let is_failed = props.status.as_deref() == Some("failed");
         assert!(is_failed);
@@ -261,6 +305,33 @@ mod tests {
             kind_label_override: Some("覆盖类别".into()),
             snapshot_refs: Vec::new(),
             on_load_full_tool_call_fields: None,
+            legacy: crate::ToolCallBlocks::toolCallRowAdapter::LegacyToolCall {
+                tool_id: "t1".into(),
+                tool_name: None,
+                kind: String::new(),
+                title: None,
+                input: None,
+                status: String::new(),
+                v4_status: String::new(),
+                output: None,
+                content: None,
+                error: None,
+                raw: Value::Null,
+                started_at: None,
+                snapshot_refs: Vec::new(),
+                thought: None,
+            },
+            display_model: crate::ToolCallBlocks::toolDisplay::ToolDisplayModel {
+                inline_preview: crate::ToolCallBlocks::toolDisplay::ToolInlinePreview::None,
+                plan_result: None,
+                viewer_source: None,
+                viewer_label_id: crate::ToolCallBlocks::toolDisplay::ViewerLabelId::ViewCode,
+                show_summary_file_link: false,
+                show_input: false,
+                show_output: false,
+                show_kind: false,
+            },
+            workspace_path: String::new(),
         };
         // summary_only 优先于 kind_label_override。
         let resolved = if props.summary_only {

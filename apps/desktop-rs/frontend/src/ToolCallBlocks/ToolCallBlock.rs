@@ -325,6 +325,15 @@ fn render_dispatch(
             // 文件摘要：display 结构化事实 → content diff 块 → changes → 启发式兜底。
             let file_summaries =
                 super::fileSummaries::read_raw_tool_call_file_summaries(&raw, Some(&kind_source));
+            // 展示模型（真源 context.displayModel 由 ToolCallBlocks 组装）——
+            // edit 展开区的 ToolCallBody 与每个文件块共用同一份。
+            let code_viewer_tc = super::codeViewer::CodeViewerToolCall::from_legacy(&legacy);
+            let display_model = super::toolDisplay::build_tool_display_model(
+                &code_viewer_tc,
+                legacy.error.as_deref(),
+                &status,
+                &workspace_path,
+            );
             view! {
                 <edit::EditToolCallBlock
                     props=edit::EditBlockProps {
@@ -341,6 +350,14 @@ fn render_dispatch(
                         source_label,
                         show_icon,
                         is_office_mode,
+                        legacy: legacy.clone(),
+                        display_model,
+                        child_tool_calls: children,
+                        workspace_path: workspace_path.clone(),
+                        theme: None,
+                        prefers_dark: false,
+                        snapshot_refs: legacy.snapshot_refs.clone(),
+                        on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
                     }
                 />
             }
@@ -365,7 +382,14 @@ fn render_dispatch(
             />
         }
         .into_any(),
-        Renderer::Todo => view! {
+        Renderer::Todo => {
+            let display_model = super::toolDisplay::build_tool_display_model(
+                &super::codeViewer::CodeViewerToolCall::from_legacy(&legacy),
+                legacy.error.as_deref(),
+                &status,
+                &workspace_path,
+            );
+            view! {
             <todo::TodoToolCallBlock
                 props=todo::TodoBlockProps {
                     tool_id: tool_id.to_string(),
@@ -381,10 +405,14 @@ fn render_dispatch(
                     show_icon,
                     snapshot_refs: legacy.snapshot_refs.clone(),
                     on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                    legacy: legacy.clone(),
+                    display_model,
+                    workspace_path: workspace_path.clone(),
                 }
             />
+            }
+            .into_any()
         }
-        .into_any(),
         Renderer::AskQuestion => view! {
             <ask_question::AskQuestionToolCallBlock
                 props=ask_question::AskQuestionBlockProps {
@@ -565,7 +593,14 @@ fn render_dispatch(
         // 行级上下文不会命中的聚合类（changesGroup/executeGroup/cuaGroup 走
         // conversationAssistantWorkItems 分组器，未迁）；其余未迁 renderer 统一
         // 走 fallback 兜底卡——**未迁不隐藏**，标题/状态/错误仍可见。
-        _ => view! {
+        _ => {
+            let display_model = super::toolDisplay::build_tool_display_model(
+                &super::codeViewer::CodeViewerToolCall::from_legacy(&legacy),
+                legacy.error.as_deref(),
+                &status,
+                &workspace_path,
+            );
+            view! {
             <fallback::FallbackToolCallBlock
                 props=fallback::FallbackBlockProps {
                     tool_id: tool_id.to_string(),
@@ -585,10 +620,14 @@ fn render_dispatch(
                     kind_label_override: None,
                     snapshot_refs: legacy.snapshot_refs.clone(),
                     on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                    legacy: legacy.clone(),
+                    display_model,
+                    workspace_path: workspace_path.clone(),
                 }
             />
+            }
+            .into_any()
         }
-        .into_any(),
     }
 }
 

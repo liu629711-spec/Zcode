@@ -15,6 +15,16 @@
 use leptos::prelude::*;
 use serde_json::Value;
 
+use super::super::ToolCallBody::ToolCallBody;
+use super::super::ToolSnapshotFieldNotice::{
+    SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
+};
+use super::super::codeViewer::{CodeViewerWorkspaceScope, PatchCodeViewerSource};
+use super::super::fileDisplay::get_file_display_path;
+use super::super::toolCallRowAdapter::{LegacyToolCall, LegacyToolCallNode};
+use super::super::toolDisplay::{ToolDisplayModel, ToolInlinePreview};
+use super::editInlineDiffContent::{EditInlineDiffContentComponent, EditInlineDiffContentProps};
+
 use crate::ToolCallBlocks::fileSummaryTypes::{
     ChangeStat, EditKindSource, EditOperationKind, RawToolCallFileSummary,
 };
@@ -122,6 +132,19 @@ pub struct EditBlockProps {
     pub source_label: Option<String>,
     pub show_icon: bool,
     pub is_office_mode: bool,
+    /// 工具调用本体（展开区 ToolCallBody 消费 input/output/error/kind）。
+    pub legacy: LegacyToolCall,
+    /// 展示模型（真源 `context.displayModel`）。
+    pub display_model: ToolDisplayModel,
+    /// 子工具列表（真源 `context.childToolList`；v4 行没有子树，恒空）。
+    pub child_tool_calls: Vec<LegacyToolCallNode>,
+    pub workspace_path: String,
+    /// 应用主题（内联 diff 高亮口径）。
+    pub theme: Option<String>,
+    /// system 主题下的 OS 明暗偏好。
+    pub prefers_dark: bool,
+    pub snapshot_refs: Vec<SnapshotFieldRef>,
+    pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
 }
 
 /// `kindLabel` 的解析（真源 :142-157）。
@@ -158,6 +181,186 @@ fn kind_label_text(id: &str) -> &'static str {
         "chat.toolCall.kind.delete" => "删除",
         _ => "编辑",
     }
+}
+
+/// 本文件的简化 `CodeViewerSource`（上方既有）→ codeViewer 模块的 patch 源
+/// （EditInlineDiffContent 消费的形态）。
+fn edit_patch_source(summary: &RawToolCallFileSummary) -> Option<PatchCodeViewerSource> {
+    match build_edit_code_viewer_source(summary) {
+        CodeViewerSource::Patch { title, path, patch } => Some(PatchCodeViewerSource {
+            scope: CodeViewerWorkspaceScope::default(),
+            title,
+            path: Some(path),
+            patch,
+        }),
+        CodeViewerSource::File { .. } => None,
+    }
+}
+
+/// `EditFileSummaryBlock` 的 props（真源 :341-462 的形参子集）。
+#[derive(Debug, Clone)]
+pub struct EditFileSummaryBlockProps {
+    pub summary: RawToolCallFileSummary,
+    pub is_running: bool,
+    pub status_label: String,
+    pub error_text: Option<String>,
+    pub tool_id: String,
+    pub is_failed: bool,
+    pub show_icon: bool,
+    pub source_label: Option<String>,
+    pub display_model: ToolDisplayModel,
+    pub legacy: LegacyToolCall,
+    pub child_tool_calls: Vec<LegacyToolCallNode>,
+    pub workspace_path: String,
+    pub theme: Option<String>,
+    pub prefers_dark: bool,
+}
+
+/// `EditFileSummaryBlock`（真源 :341-475）——多文件 edit 的单个文件块。
+///
+/// 真源注释（:454-455）：多文件 edit 的每个子文件都有自己的 diff content，
+/// 必须允许单独展开查看（EDIT_CHILD_LAYOUT）。
+#[component]
+pub fn EditFileSummaryBlockComponent(props: EditFileSummaryBlockProps) -> impl IntoView {
+    let kind_label = kind_label_text(&crate::ToolCallBlocks::renderers::get_edit_kind_label_id(
+        &[props.summary.operation()],
+        &[props.summary.action_label.as_str()],
+        props.is_running,
+        None,
+    ));
+    let patch_source = edit_patch_source(&props.summary);
+    let title = get_file_display_path(
+        props
+            .summary
+            .file_path
+            .as_deref()
+            .unwrap_or(props.summary.path.as_str()),
+        Some(&props.workspace_path),
+    );
+    let status_tooltip = if props.is_failed {
+        props.error_text.clone()
+    } else {
+        None
+    };
+    let diff_view = crate::ToolCallBlocks::renderers::diff_count_view(
+        props.summary.change_stat.map(|s| (s.added, s.removed)),
+    );
+    let file_path = props.summary.file_path.clone();
+
+    let legacy = props.legacy.clone();
+    let display_model = props.display_model.clone();
+    let workspace_path = props.workspace_path.clone();
+    let patch_for_preview = patch_source.clone();
+    let theme = props.theme.clone();
+    let prefers_dark = props.prefers_dark;
+    let child_tool_calls = props.child_tool_calls.clone();
+    let patch_override = patch_source.as_ref().map(|_| ToolInlinePreview::None);
+    let render_content = move || {
+        let inline_diff = patch_for_preview.clone().map(|preview| {
+            view! {
+                <EditInlineDiffContentComponent
+                    props=EditInlineDiffContentProps {
+                        preview,
+                        theme: theme.clone(),
+                        prefers_dark,
+                        code_preview_settings: Default::default(),
+                    }
+                />
+            }
+        });
+        view! {
+            <div class="space-y-3">
+                {inline_diff}
+                <ToolCallBody
+                    display_model=display_model.clone()
+                    inline_preview_override=patch_override.clone()
+                    tool_call=legacy.clone()
+                    workspace_path=workspace_path.clone()
+                    child_tool_list=child_render(&child_tool_calls)
+                />
+            </div>
+        }
+        .into_any()
+    };
+
+    view! {
+        <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
+            props=crate::ToolCallBlocks::ToolLayout::ToolLayoutProps {
+                tool_id: props.tool_id.clone(),
+                icon: None,
+                show_icon: Some(props.show_icon),
+                can_toggle: Some(EDIT_LAYOUT_CAN_TOGGLE),
+                force_open: Some(EDIT_LAYOUT_FORCE_OPEN),
+                kind_label: Some(kind_label.to_string()),
+                source_label: props.source_label.clone(),
+                primary_text: None,
+                primary_file_chip: Some(crate::ToolCallBlocks::ToolLayout::FileChipData {
+                    path: props.summary.path.clone(),
+                    file_name: props.summary.file_name.clone(),
+                    icon_src: props.summary.file_icon_src.clone(),
+                    // 真源 :392 —— clickable = Boolean(onOpenCodeViewer)，Rust 侧无
+                    // 码查看器回调通道 → 恒静态 chip。
+                    clickable: false,
+                }),
+                prioritize_primary_text: Some(true),
+                secondary_text: None,
+                secondary_text_view: Some(std::sync::Arc::new(move || {
+                    view! {
+                        <crate::ToolCallBlocks::renderers::RenderFilePath path=file_path.clone() />
+                    }
+                    .into_any()
+                })),
+                diff_count: diff_view.map(|v| (v.added, v.removed)),
+                status_label: Some(props.status_label.clone()),
+                status_tooltip,
+                show_failure_status: Some(props.is_failed),
+                is_running: Some(props.is_running),
+                title: Some(title),
+                ..Default::default()
+            }
+            icon_view=Some(std::sync::Arc::new(|| {
+                view! {
+                    <span class=EDIT_TOOL_ICON_CLASS>
+                        <crate::app::Icon
+                            paths=vec![
+                                "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",
+                                "m15 5 4 4",
+                            ]
+                            circles=vec![]
+                        />
+                    </span>
+                }
+                .into_any()
+            }))
+            render_content=Some(std::sync::Arc::new(render_content))
+        />
+    }
+}
+
+/// 子工具列表 → `childToolList` 节点（真源由 ToolCallBlocks 组装传入）。
+fn child_render(children: &[LegacyToolCallNode]) -> Option<ChildrenFn> {
+    if children.is_empty() {
+        return None;
+    }
+    let nodes = children.to_vec();
+    Some(std::sync::Arc::new(move || {
+        nodes
+            .iter()
+            .map(|node| {
+                let tool_id = node.tool_call.tool_id.clone();
+                view! {
+                    <div class="min-w-0" data-tool-id=tool_id>
+                        <crate::ToolCallBlocks::ToolCallBlock::ToolCallBlock
+                            node=node.clone()
+                            context=crate::ToolCallBlocks::ToolCallBlock::ToolCallBlockContext::default()
+                        />
+                    </div>
+                }
+                .into_any()
+            })
+            .collect_view()
+            .into_any()
+    }))
 }
 
 /// EditToolCallBlock 的主体（真源 :85-338）。
@@ -214,6 +417,119 @@ pub fn EditToolCallBlock(props: EditBlockProps) -> impl IntoView {
         None
     };
 
+    // ── renderContent 三态（真源 :188-284）──
+    // 闭包捕获：move 闭包不能直接读 props（所有权），全部提前绑定。
+    let legacy = props.legacy.clone();
+    let display_model = props.display_model.clone();
+    let workspace_path = props.workspace_path.clone();
+    let child_tool_calls = props.child_tool_calls.clone();
+    let theme = props.theme.clone();
+    let prefers_dark = props.prefers_dark;
+    let notice_refs = props.snapshot_refs.clone();
+    let tool_id_base = props.tool_id.clone();
+    let notice_cb = props.on_load_full_tool_call_fields.clone();
+    let is_running = props.is_running;
+    let is_failed = props.is_failed;
+    let error_text = props.error_text.clone();
+    let source_label = props.source_label.clone();
+    let status_label_for_children = effective_status_label.clone().unwrap_or_default();
+    // 真源 :285 —— 只有恰好单文件时才构造内联预览（多文件走子块）。
+    let single_file_patch = (summaries.len() == 1)
+        .then(|| summaries.first().and_then(edit_patch_source))
+        .flatten();
+    // 真源 :277-279 —— patch 存在时给 ToolCallBody 传 {type:"none"}，
+    // 避免 ToolCallBody 再次抢走这份预览。
+    let single_file_patch_override = single_file_patch.as_ref().map(|_| ToolInlinePreview::None);
+
+    let render_content = move || {
+        let notice = view! {
+            <ToolSnapshotFieldNoticeComponent
+                props=ToolSnapshotFieldNoticeProps {
+                    refs: notice_refs.clone(),
+                    tool_id: tool_id_base.clone(),
+                    on_load_full_tool_call_fields: notice_cb.clone(),
+                }
+            />
+        };
+        if summaries.is_empty() {
+            // ① 无摘要 → ToolCallBody 兜底（失败编辑）+ 快照提示。
+            view! {
+                <ToolCallBody
+                    display_model=display_model.clone()
+                    inline_preview_override=None
+                    tool_call=legacy.clone()
+                    workspace_path=workspace_path.clone()
+                    child_tool_list=child_render(&child_tool_calls)
+                />
+                {notice}
+            }
+            .into_any()
+        } else if has_multiple_files {
+            // ② 多文件 → 缩进容器逐文件拆块（每块自带 diff content，
+            // 可单独展开）+ 快照提示。
+            let summary_items = summaries
+                .iter()
+                .enumerate()
+                .map(|(index, summary)| {
+                    let block_props = EditFileSummaryBlockProps {
+                        summary: summary.clone(),
+                        is_running,
+                        status_label: status_label_for_children.clone(),
+                        error_text: error_text.clone(),
+                        // 真源 :224 —— 子块 toolId 带 index 后缀。
+                        tool_id: format!("{tool_id_base}:{index}"),
+                        is_failed,
+                        // 真源 :232 —— 子块不重复显示图标。
+                        show_icon: false,
+                        source_label: source_label.clone(),
+                        display_model: display_model.clone(),
+                        legacy: legacy.clone(),
+                        child_tool_calls: child_tool_calls.clone(),
+                        workspace_path: workspace_path.clone(),
+                        theme: theme.clone(),
+                        prefers_dark,
+                    };
+                    view! { <EditFileSummaryBlockComponent props=block_props /> }.into_any()
+                })
+                .collect_view();
+            view! {
+                <div class="ml-2 space-y-2 border-border border-l pl-3.5 border-border">
+                    {summary_items}
+                    {notice}
+                </div>
+            }
+            .into_any()
+        } else {
+            // ③ 单文件 → 内联 diff + ToolCallBody + 快照提示。
+            let inline_diff = single_file_patch.clone().map(|preview| {
+                view! {
+                    <EditInlineDiffContentComponent
+                        props=EditInlineDiffContentProps {
+                            preview,
+                            theme: theme.clone(),
+                            prefers_dark,
+                            code_preview_settings: Default::default(),
+                        }
+                    />
+                }
+            });
+            view! {
+                <div class="space-y-3">
+                    {inline_diff}
+                    <ToolCallBody
+                        display_model=display_model.clone()
+                        inline_preview_override=single_file_patch_override.clone()
+                        tool_call=legacy.clone()
+                        workspace_path=workspace_path.clone()
+                        child_tool_list=child_render(&child_tool_calls)
+                    />
+                    {notice}
+                </div>
+            }
+            .into_any()
+        }
+    };
+
     view! {
         <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
             props=crate::ToolCallBlocks::ToolLayout::ToolLayoutProps {
@@ -253,7 +569,7 @@ pub fn EditToolCallBlock(props: EditBlockProps) -> impl IntoView {
                     </span>
                 }.into_any()
             }))
-            render_content=None
+            render_content=Some(std::sync::Arc::new(render_content))
         />
     }
 }

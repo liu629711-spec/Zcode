@@ -28,10 +28,11 @@ use super::toolDisplay::{ToolDisplayModel, ToolInlinePreview};
 #[component]
 pub fn ToolCallBody(
     /// `childToolList`：有值时整体替换 body（真源 :45-47 的 `??` 短路）。
-    #[prop(optional)]
+    // Option 类型在 Leptos 里本就 optional——**不要**加 #[prop(optional)]：
+    // 那会把 prop 类型解包成 T（调用点传 Option 会类型不匹配）。
     child_tool_list: Option<ChildrenFn>,
     display_model: ToolDisplayModel,
-    #[prop(optional)] inline_preview_override: Option<ToolInlinePreview>,
+    inline_preview_override: Option<ToolInlinePreview>,
     tool_call: LegacyToolCall,
     workspace_path: String,
 ) -> AnyView {

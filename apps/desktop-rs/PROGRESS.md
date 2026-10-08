@@ -161,6 +161,11 @@
          （extractBeforeAfter/extractStructuredDiff）。
    - [x] **ToolCallBody 链第二步**：toolDisplay（335 行，8 策略表）+
          ToolCallBody（204 行）+ CodeBlock v1 简化版 + ToolInput。
+   - [x] **ToolCallBody 链第三步（收官）**：patchDiffPreview 预览行链 +
+         codePreviewSettings/Preferences + lightweightDiffPreview（187 行）+
+         EditInlineDiffContent 简化版 + fileDisplay 路径链 + **edit
+         renderContent 三态完整迁移（含 3 处 notice 与 EditFileSummaryBlock）**
+         + todo/fallback 的 ToolCallBody 兜底分支。
    - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 switch-mode/skill/
          ask-question/respond-to-coordinator 等）、CUA 组
          （conversationCuaGroups 281 + cua.tsx 504 + cua-group 282）、
@@ -178,7 +183,7 @@
 
 ## 六、验证现状
 
-- 前端 **501 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **515 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**

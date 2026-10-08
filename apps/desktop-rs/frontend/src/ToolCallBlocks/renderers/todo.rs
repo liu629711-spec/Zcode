@@ -25,9 +25,12 @@
 use leptos::prelude::*;
 use serde_json::Value;
 
+use super::super::ToolCallBody::ToolCallBody;
 use super::super::ToolSnapshotFieldNotice::{
     SnapshotFieldRef, ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
 };
+use super::super::toolCallRowAdapter::LegacyToolCall;
+use super::super::toolDisplay::ToolDisplayModel;
 
 // ---------------------------------------------------------------------------
 // tool-plan-adapter.ts
@@ -346,6 +349,9 @@ pub struct TodoBlockProps {
     pub error_text: Option<String>,
     pub source_label: Option<String>,
     pub show_icon: bool,
+    pub legacy: LegacyToolCall,
+    pub display_model: ToolDisplayModel,
+    pub workspace_path: String,
 }
 
 /// TodoToolCallBlock 的主体（真源 :48-154）。
@@ -393,6 +399,10 @@ pub fn TodoToolCallBlock(props: TodoBlockProps) -> impl IntoView {
     let notice_refs = props.snapshot_refs.clone();
     let notice_tool_id = props.tool_id.clone();
     let notice_cb = props.on_load_full_tool_call_fields.clone();
+    // 无计划兜底分支（真源 :98-119）的 ToolCallBody 入参。
+    let legacy = props.legacy.clone();
+    let display_model = props.display_model.clone();
+    let workspace_path = props.workspace_path.clone();
 
     view! {
         <crate::ToolCallBlocks::ToolLayout::ToolLayoutComponent
@@ -432,25 +442,44 @@ pub fn TodoToolCallBlock(props: TodoBlockProps) -> impl IntoView {
                 .into_any()
             }))
             render_content=Some(std::sync::Arc::new(move || {
-                // 真源 :84 —— 有计划时列表，无计划时走 ToolCallBody 兜底
-                //（ToolCallBody 未迁，无计划分支暂不渲染）。
-                plan_rows
-                    .clone()
-                    .map(|rows| {
-                        view! {
-                            <div class="space-y-1 rounded-xl bg-surface px-3 py-2">
-                                {rows}
-                                <ToolSnapshotFieldNoticeComponent
-                                    props=ToolSnapshotFieldNoticeProps {
-                                        refs: notice_refs.clone(),
-                                        tool_id: notice_tool_id.clone(),
-                                        on_load_full_tool_call_fields: notice_cb.clone(),
-                                    }
-                                />
-                            </div>
-                        }
-                    })
-                    .into_any()
+                // 真源 :74-124 —— 有计划时列计划（notice 在列表容器内）；
+                // 无计划时 ToolCallBody 兜底 + 独立 notice。
+                let has_plan = plan_rows.is_some();
+                let plan_view = plan_rows.clone().map(|rows| {
+                    view! {
+                        <div class="space-y-1 rounded-xl bg-surface px-3 py-2">
+                            {rows}
+                            <ToolSnapshotFieldNoticeComponent
+                                props=ToolSnapshotFieldNoticeProps {
+                                    refs: notice_refs.clone(),
+                                    tool_id: notice_tool_id.clone(),
+                                    on_load_full_tool_call_fields: notice_cb.clone(),
+                                }
+                            />
+                        </div>
+                    }
+                });
+                view! {
+                    {plan_view}
+                    // Option::None 不渲染——has_plan 时不显示兜底分支。
+                    {has_plan.then(|| view! {
+                        <ToolCallBody
+                            display_model=display_model.clone()
+                            inline_preview_override=None
+                            tool_call=legacy.clone()
+                            workspace_path=workspace_path.clone()
+                            child_tool_list=None
+                        />
+                        <ToolSnapshotFieldNoticeComponent
+                            props=ToolSnapshotFieldNoticeProps {
+                                refs: notice_refs.clone(),
+                                tool_id: notice_tool_id.clone(),
+                                on_load_full_tool_call_fields: notice_cb.clone(),
+                            }
+                        />
+                    })}
+                }
+                .into_any()
             }))
         />
     }
