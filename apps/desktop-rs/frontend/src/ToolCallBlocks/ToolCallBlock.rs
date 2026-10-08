@@ -137,6 +137,7 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
                 children,
                 tc.clone(),
                 context.authoritative_agent_type.clone(),
+                context.workspace_path.clone(),
             )}
         </div>
     }
@@ -167,6 +168,8 @@ fn render_dispatch(
     legacy: LegacyToolCall,
     // runtime 权威的子代理类型（AgentToolCall 配对注入）。
     authoritative_agent_type: Option<String>,
+    // 工作区路径（switch_mode 的 planFilePath 相对路径解析用）。
+    workspace_path: String,
 ) -> AnyView {
     use super::renderers::*;
 
@@ -338,6 +341,42 @@ fn render_dispatch(
                     status_label: Some(status_label),
                     error_text,
                     source_label,
+                    show_icon,
+                }
+            />
+        }
+        .into_any(),
+        Renderer::Skill => view! {
+            <skill::SkillToolCallBlock
+                props=skill::SkillBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    output,
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    error_text,
+                    title,
+                    status_label: Some(status_label),
+                    source_label,
+                    show_icon,
+                }
+            />
+        }
+        .into_any(),
+        Renderer::SwitchMode => view! {
+            <switch_mode::SwitchModeToolCallBlock
+                props=switch_mode::SwitchModeBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    // inputText 未随 legacy 载荷传递（adapter 只留长度提示）——
+                    // 完整 plan 走 input/output/raw 路径覆盖；流式半截场景
+                    // 由 raw.content 兜底，v1 传空串。
+                    input_text: String::new(),
+                    output,
+                    raw,
+                    error_text,
+                    workspace_path,
                     show_icon,
                 }
             />

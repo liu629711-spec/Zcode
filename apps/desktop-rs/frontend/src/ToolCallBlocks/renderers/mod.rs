@@ -20,13 +20,17 @@ pub mod execute;
 pub mod execute_group;
 pub mod explore;
 pub mod fallback;
+pub mod planToolCall;
 pub mod read;
 pub mod search;
 pub mod send_message;
+pub mod skill;
 pub mod subagentColors;
+pub mod switch_mode;
 pub mod task_output;
 pub mod task_stop;
 pub mod todo;
+pub mod toolOutput;
 
 use leptos::prelude::*;
 
