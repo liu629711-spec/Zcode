@@ -84,6 +84,14 @@
 
 **下一批**
 1. 侧栏 dnd + 任务分组（`workspace-grouped-tasks/` 4307 行，自定义组 + 员工 roster）
+   - [x] **纯逻辑层已迁**：`groupedTasks/view.rs` 1:1 翻译 `view.ts`(581) + `ids.ts`，
+     真源 16 个导出函数全覆盖 + 13 个内部 helper，24 个单测。
+   - [ ] 渲染层补拖拽交互：dnd-kit 语义（drag over/leave/drop + 碰撞检测）→ Leptos 事件。
+   - [ ] 卡片组件：`group-item.tsx` / `task-row.tsx` / `task-item.tsx` /
+         `group-drag-overlay.tsx` / `sticky-group-header.tsx`。
+   - [ ] **join 层待补**：后端 `taskgroup::GroupedNode` 只返回 `task_ids`，
+         而 view.ts 需要完整 task 才能搬运。需把 task_ids 补成
+         `TaskListItem`（含 workspacePath/workspaceIdentity —— taskKey 依赖它）。
 2. 逐 token 流式（v4 gateway 订阅 + wire reassembly，当前是准流式）
 
 **后续**
@@ -96,13 +104,52 @@
 
 **待决**
 
-8. **push 23 个 commit**（等你发话）
+8. **push 24 个 commit**（等你发话）
 
 ---
 
 ## 六、验证现状
 
+- 前端 **233 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+  流式重组、**分组视图重排 24 个**）
 - 后端 23 测试（协议信封 4 + agent 三件套 6 + taskdb 12）+ 4 个 live 测试
   （真实 agent、真实 SQLite 库、真实库副本上的归档写操作）
-- 前端 25 测试（文件树 flatten/compact、图标解析、置顶区、归档区）
 - trunk 0 错误 0 警告
+
+---
+
+## 七、本机环境坑（Windows + GNU 工具链）
+
+### 1. linker 必须显式指定 WinLibs（已修）
+
+PATH 里 **llvm-mingw 排在 WinLibs 前面**，`x86_64-w64-mingw32-gcc` 会被解析到
+llvm-mingw 的 clang wrapper，它找不到 libgcc，导致**任何** build script 链接失败：
+
+```
+lld: error: unable to find library -lgcc
+lld: error: unable to find library -lgcc_eh
+```
+
+已生成 `apps/desktop-rs/.cargo/config.toml` 写死 WinLibs 的 gcc/ar。
+该文件含机器相关绝对路径，**已 gitignore**，各机需自行生成（模板见文件内注释）。
+
+### 2. 后端 lib 测试在本机跑不起来（预先存在，非本轮引入）
+
+`cargo test -p zcode-desktop-rs --lib`链接阶段报：
+
+```
+export ordinal too large: 99619
+```
+
+原因：`src-tauri` 的 `crate-type = ["staticlib","cdylib","rlib"]`，
+Tauri 的 Windows cdylib 导出符号量超过 MinGW ld 的 65535 ordinal 上限。
+加 `--lib`（只取 rlib 测试目标）可绕过链接；但**运行时仍崩**：
+
+```
+exit code: 0xc0000139, STATUS_ENTRYPOINT_NOT_FOUND
+```
+
+诊断为 `WebView2Loader.dll` 静态导入 +本机版本不匹配，进程加载即失败。
+
+已用 `git stash` 验证：移除本轮全部改动后同样崩溃，**与重构无关**，
+属环境问题。待决：本机装匹配的 WebView2Loader runtime，或改用 msvc 工具链。
