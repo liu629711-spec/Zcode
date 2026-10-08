@@ -343,6 +343,59 @@ fn render_dispatch(
             />
         }
         .into_any(),
+        Renderer::TaskStop => view! {
+            <task_stop::TaskStopToolCallBlock
+                props=task_stop::TaskStopBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    output,
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                }
+            />
+        }
+        .into_any(),
+        Renderer::TaskOutput => view! {
+            <task_output::TaskOutputToolCallBlock
+                props=task_output::TaskOutputBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                }
+            />
+        }
+        .into_any(),
+        Renderer::SendMessage => view! {
+            <send_message::SendMessageToolCallBlock
+                props=send_message::SendMessageBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    output,
+                    raw,
+                    status: Some(status),
+                    is_running,
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                }
+            />
+        }
+        .into_any(),
+        // RespondToCoordinator 是独立卡（respond-to-coordinator.tsx，ReplyIcon +
+        // queued 状态词）——未迁，落 fallback，不借用 SendMessage 的形态。
         // 行级上下文不会命中的聚合类（changesGroup/executeGroup/cuaGroup 走
         // conversationAssistantWorkItems 分组器，未迁）；其余未迁 renderer 统一
         // 走 fallback 兜底卡——**未迁不隐藏**，标题/状态/错误仍可见。

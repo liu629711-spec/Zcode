@@ -18,4 +18,5 @@ pub mod resolveRenderer;
 pub mod toolCallRowAdapter;
 pub mod toolDiffPreview;
 pub mod toolError;
+pub mod toolResultDisplay;
 pub mod toolStatus;

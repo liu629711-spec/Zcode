@@ -22,7 +22,10 @@ pub mod explore;
 pub mod fallback;
 pub mod read;
 pub mod search;
+pub mod send_message;
 pub mod subagentColors;
+pub mod task_output;
+pub mod task_stop;
 pub mod todo;
 
 use leptos::prelude::*;
