@@ -2,6 +2,7 @@
    主题变量（--color-background 等）对齐 packages/ui 的 themeStyles 体系，
    保证 bg-background / border-border 等语义 token 与现有 UI 一致。 */
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 /* 扫描 Leptos 源码中的 class（1:1 迁移 React 组件类名）。 */
 @source "../src";

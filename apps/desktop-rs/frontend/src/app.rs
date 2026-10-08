@@ -160,6 +160,24 @@ fn relative_time(ms: i64) -> String {
     }
 }
 
+/// markdown → HTML（模型回复渲染）。
+/// 安全处理：模型输出不可信，原始 HTML 事件一律转义为文本，
+/// 仅保留 markdown 结构标记（pulldown-cmark 对 Text 事件自动转义）。
+fn render_markdown(src: &str) -> String {
+    use pulldown_cmark::{Event, Options, Parser};
+    let options = Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TABLES
+        | Options::ENABLE_TASKLISTS;
+    let parser = Parser::new_ext(src, options).map(|event| match event {
+        Event::Html(h) => Event::Text(h),
+        Event::InlineHtml(h) => Event::Text(h),
+        other => other,
+    });
+    let mut out = String::new();
+    pulldown_cmark::html::push_html(&mut out, parser);
+    out
+}
+
 // ---------------------------------------------------------------------------
 // 全局状态（context）
 // ---------------------------------------------------------------------------
@@ -993,9 +1011,20 @@ fn MessageBubble(msg: ChatMessage) -> impl IntoView {
             }}
             <div class=bubble_class>
                 {if msg.text.is_empty() && !other.is_empty() {
-                    format!("[{}]", other.join(", "))
+                    view! { <span>{format!("[{}]", other.join(", "))}</span> }.into_any()
+                } else if is_user {
+                    // 用户输入保持纯文本（所见即所输）。
+                    view! { <span>{msg.text.clone()}</span> }.into_any()
                 } else {
-                    msg.text.clone()
+                    // 助手回复走 markdown 结构化渲染。
+                    let rendered = render_markdown(&msg.text);
+                    view! {
+                        <div
+                            class="prose prose-sm max-w-none dark:prose-invert prose-pre:bg-[#f0f1f3] prose-pre:text-foreground prose-code:before:content-[''] prose-code:after:content-['']"
+                            inner_html=rendered
+                        ></div>
+                    }
+                    .into_any()
                 }}
             </div>
             {(!other.is_empty() && !msg.text.is_empty()).then(|| {
