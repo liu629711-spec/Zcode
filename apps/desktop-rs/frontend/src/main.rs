@@ -8,6 +8,7 @@ pub mod grouped;
 pub mod pinned;
 pub mod stream;
 pub mod tool_identity;
+pub mod tool_layout;
 pub mod tool_status;
 
 fn main() {
