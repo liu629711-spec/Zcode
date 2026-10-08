@@ -108,6 +108,10 @@ pub struct ToolLayoutProps {
     pub diff_count: Option<(u32, u32)>,
     /// 展开后隐藏次文本（:44）。
     pub summary_content_separator: Option<String>,
+    /// 摘要内容的 key（真源 :45summaryContentKey）——变化时重置滚轮动画。
+    pub summary_content_key: Option<String>,
+    /// 摘要内容是否启用滚轮式轮播动画（真源 :46 animateSummaryContent）。
+    pub animate_summary_content: Option<bool>,
 }
 
 impl ToolLayoutProps {

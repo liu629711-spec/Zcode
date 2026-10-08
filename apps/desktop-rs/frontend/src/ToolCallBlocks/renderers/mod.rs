@@ -13,8 +13,10 @@
 
 pub mod edit;
 pub mod execute;
+pub mod execute_group;
 pub mod fallback;
 pub mod read;
+pub mod search;
 
 use leptos::prelude::*;
 
