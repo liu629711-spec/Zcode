@@ -117,6 +117,20 @@ async fn live_agent_conversation_loop() {
         .to_string();
     eprintln!("[live] session created (v4): {session_id}");
 
+    // 2.5 订阅会话事件流（准流式：frame 通知驱动前端刷新）。
+    let _sub = client
+        .request(
+            methods::SESSION_SUBSCRIBE,
+            Some(serde_json::json!({
+                "sessionId": session_id,
+                "deliveryKind": "desktop-continuous",
+                "includeSnapshot": false
+            })),
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("session/subscribe");
+
     // 3. 发送消息：v4 sendText 主路径（CommandEnvelope 经 v4/command）。
     let envelope = zcode_desktop_rs_lib::agent::manager::build_send_text_envelope(
         &session_id,

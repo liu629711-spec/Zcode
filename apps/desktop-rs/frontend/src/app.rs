@@ -341,7 +341,9 @@ pub fn App() -> impl IntoView {
             let Some(note) = payload else { return };
             let method = note["method"].as_str().unwrap_or("");
             match method {
-                "state.updated" => {
+                // 流式驱动：session/event（legacy 订阅事件流，每次 turn 事件一条）
+                // 与 v4 conversation 帧、state.updated 都即时驱动刷新。
+                "session/event" | "v4/conversation/frame" | "state.updated" => {
                     triggers.sessions.update(|n| *n += 1);
                     triggers.messages.update(|n| *n += 1);
                 }
@@ -1234,11 +1236,26 @@ fn ChatView(session_id: String) -> impl IntoView {
         });
     });
 
-    // 选中即加载；agent state.updated 通知驱动自动刷新。
+    // 选中即加载 + 订阅会话事件流（state.updated/frame 通知由此驱动准流式刷新）。
     let triggers = expect_context::<DataRefreshTriggers>();
     Effect::new(move |_| {
         let _ = &session_id;
         load_messages.run(());
+        let sid = session_id.clone();
+        spawn_local(async move {
+            let _ = invoke_json(
+                "agent_request",
+                serde_json::json!({
+                    "method": "session/subscribe",
+                    "params": {
+                        "sessionId": sid,
+                        "deliveryKind": "desktop-continuous",
+                        "includeSnapshot": false
+                    }
+                }),
+            )
+            .await;
+        });
     });
     Effect::new(move |_| {
         triggers.messages.track();
