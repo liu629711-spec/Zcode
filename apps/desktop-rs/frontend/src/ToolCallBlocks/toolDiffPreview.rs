@@ -8,6 +8,8 @@
 //! 的调用点不带 options（`buildUnifiedDiff(old, new, label)`），走的是全量路径。
 //! 迁移 Git 面板的「变更附近 N 行」视图时需补上。
 
+use serde_json::Value;
+
 /// LCS 表单元上限（真源 :3 `MAX_DIFF_LCS_CELLS = 60_000`）。
 /// 超过则走锚点回退，避免大文件在建表上卡死主线程。
 const MAX_DIFF_LCS_CELLS: usize = 60_000;
@@ -403,8 +405,154 @@ pub fn count_patch_file_diffs(patch: &str) -> usize {
     file_count.max(1)
 }
 
+// ---------------------------------------------------------------------------
+// 预览源提取（真源 :10-82）——codeViewer.ts 消费。
+// ---------------------------------------------------------------------------
+
+/// `isRecord`（真源 :10-12）——**注意**：此处宽松（不排除数组），
+/// 与文件其他处的严格 record 判断不同，照抄。
+fn is_record(value: &Value) -> bool {
+    matches!(value, Value::Object(_) | Value::Array(_))
+}
+
+/// `findStringField`（真源 :14-27）：返回**原值**（不 trim）。
+fn find_string_field(value: &Value, keys: &[&str]) -> Option<String> {
+    if !is_record(value) {
+        return None;
+    }
+    for key in keys {
+        if let Some(candidate) = value.get(*key).and_then(|v| v.as_str()) {
+            if !candidate.trim().is_empty() {
+                return Some(candidate.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// `extractBeforeAfter` 的返回（真源 :29 内联类型）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BeforeAfter {
+    pub before: String,
+    pub after: String,
+}
+
+/// `extractBeforeAfter`（真源 :29-41）。
+pub fn extract_before_after(value: &Value) -> Option<BeforeAfter> {
+    if !is_record(value) {
+        return None;
+    }
+    let before = find_string_field(value, &["before", "old_string", "oldText", "oldContent"]);
+    let after = find_string_field(value, &["after", "new_string", "newText", "newContent"]);
+    if let (Some(before), Some(after)) = (before, after) {
+        return Some(BeforeAfter { before, after });
+    }
+    None
+}
+
+/// `extractStructuredDiff` 的返回（真源 :62-64 内联类型）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructuredDiff {
+    pub path: Option<String>,
+    pub old_text: String,
+    pub new_text: String,
+}
+
+/// `extractStructuredDiffBlock`（真源 :43-60）。
+fn extract_structured_diff_block(value: &Value) -> Option<StructuredDiff> {
+    if !is_record(value) || value.get("type").and_then(|v| v.as_str()) != Some("diff") {
+        return None;
+    }
+    let new_text = value.get("newText").and_then(|v| v.as_str())?;
+    let path = value
+        .get("path")
+        .and_then(|v| v.as_str())
+        .filter(|p| !p.trim().is_empty())
+        .map(str::to_string);
+    // 真源 :52-58 —— string 原值；null/undefined → ""；其余走 `String(value)`
+    // （Rust 侧以 serde_json Display 近似，对象形态在现实中不可达）。
+    let old_text = match value.get("oldText") {
+        Some(Value::String(s)) => s.clone(),
+        None | Some(Value::Null) => String::new(),
+        Some(other) => other.to_string(),
+    };
+    Some(StructuredDiff {
+        path,
+        old_text,
+        new_text: new_text.to_string(),
+    })
+}
+
+/// `extractStructuredDiff`（真源 :62-82）：直接值优先，否则内容数组逐项。
+pub fn extract_structured_diff(value: &Value) -> Option<StructuredDiff> {
+    if let Some(direct) = extract_structured_diff_block(value) {
+        return Some(direct);
+    }
+    if !is_record(value) {
+        return None;
+    }
+    let Some(content) = value.get("content").and_then(|v| v.as_array()) else {
+        return None;
+    };
+    for item in content {
+        if let Some(diff) = extract_structured_diff_block(item) {
+            return Some(diff);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn extract_before_after_variants() {
+        // 主键对。
+        let ba = extract_before_after(&json!({"before": "a", "after": "b"})).unwrap();
+        assert_eq!((ba.before.as_str(), ba.after.as_str()), ("a", "b"));
+        // 别名对（old_string/new_string——Edit 工具形态）。
+        let ba = extract_before_after(&json!({"old_string": "x", "new_string": "y"})).unwrap();
+        assert_eq!((ba.before.as_str(), ba.after.as_str()), ("x", "y"));
+        // 只给一半 → None。
+        assert_eq!(extract_before_after(&json!({"before": "a"})), None);
+        // 空白值跳过（trim 判空）。
+        assert_eq!(
+            extract_before_after(&json!({"before": "  ", "after": "b"})),
+            None
+        );
+        // 非 record → None。
+        assert_eq!(extract_before_after(&json!("str")), None);
+    }
+
+    #[test]
+    fn extract_structured_diff_direct_and_content_blocks() {
+        // 直接块。
+        let diff = extract_structured_diff(&json!({
+            "type": "diff", "path": "a.rs", "oldText": "old", "newText": "new"
+        }))
+        .unwrap();
+        assert_eq!(diff.path.as_deref(), Some("a.rs"));
+        assert_eq!(diff.old_text, "old");
+        assert_eq!(diff.new_text, "new");
+        // content 数组里找块。
+        let diff = extract_structured_diff(&json!({
+            "content": [{"type": "text", "text": "x"}, {"type": "diff", "newText": "n"}]
+        }))
+        .unwrap();
+        assert_eq!(diff.path, None);
+        assert_eq!(diff.old_text, "", "缺 oldText → 空串");
+        // 无 diff 块 → None。
+        assert_eq!(
+            extract_structured_diff(&json!({"content": [{"type": "text"}]})),
+            None
+        );
+        // path 空白 → None。
+        let diff = extract_structured_diff(&json!({"type": "diff", "path": "  ", "newText": "n"}))
+            .unwrap();
+        assert_eq!(diff.path, None);
+    }
+
     use super::*;
 
     #[test]
