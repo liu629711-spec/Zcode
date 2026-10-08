@@ -149,7 +149,6 @@ pub fn icon_src(icon_name: &str) -> String {
     format!("/material-icons/{icon_name}.svg")
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::resolve_icon_name;

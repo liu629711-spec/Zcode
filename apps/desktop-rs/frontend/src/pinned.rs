@@ -18,7 +18,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 
-use crate::app::{invoke_json, Icon};
+use crate::app::{Icon, invoke_json};
 
 /// 折叠阈值（真源 `WorkspacePinnedTasksSection.tsx:96` collapsedLimit = 20）。
 const COLLAPSED_LIMIT: usize = 20;
@@ -178,9 +178,7 @@ fn PinnedTaskRow(task: PinnedTask) -> impl IntoView {
     let ws_identity = task.workspace_identity.clone();
 
     let active_id = task_id.clone();
-    let active = move || {
-        selected_session.get().as_deref() == Some(active_id.as_str())
-    };
+    let active = move || selected_session.get().as_deref() == Some(active_id.as_str());
     let item_class = move || {
         if active() {
             "group flex h-8 w-full min-w-0 items-center gap-2 rounded-lg bg-selected pl-2.5 pr-1 text-left text-foreground shadow-xl"

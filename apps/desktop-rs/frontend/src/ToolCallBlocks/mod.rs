@@ -9,6 +9,7 @@
 pub mod ToolCallBlock;
 pub mod ToolLayout;
 pub mod ToolSummaryRow;
+pub mod exploreToolCall;
 pub mod fileSummaries;
 pub mod fileSummaryHeuristics;
 pub mod fileSummaryTypes;

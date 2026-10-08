@@ -30,9 +30,9 @@
 //! 顺序改了就可能命中不同的分支。
 
 use super::view::{
+    DragOver, GroupedTaskView, GroupedTaskViewNode, InsertPosition,
     move_group_around_top_level_node, move_task_over_task, move_task_to_group_end,
-    move_task_to_group_start, move_task_to_root_around_group, task_key_of, DragOver,
-    GroupedTaskView, GroupedTaskViewNode, InsertPosition,
+    move_task_to_group_start, move_task_to_root_around_group, task_key_of,
 };
 
 /// 拖拽方向（真源 `GroupedTaskDragDirectionPosition`）。
@@ -161,12 +161,9 @@ pub fn preview_task_over_group_header(
         return view.clone();
     };
     match spec.direction {
-        DragDirection::Before => move_task_to_root_around_group(
-            view,
-            task_key,
-            group_id,
-            InsertPosition::Before,
-        ),
+        DragDirection::Before => {
+            move_task_to_root_around_group(view, task_key, group_id, InsertPosition::Before)
+        }
         DragDirection::After => move_task_to_group_start(view, task_key, group_id),
     }
 }
@@ -186,12 +183,9 @@ pub fn preview_task_over_group_footer(
     };
     match spec.direction {
         DragDirection::Before => move_task_to_group_end(view, task_key, group_id),
-        DragDirection::After => move_task_to_root_around_group(
-            view,
-            task_key,
-            group_id,
-            InsertPosition::After,
-        ),
+        DragDirection::After => {
+            move_task_to_root_around_group(view, task_key, group_id, InsertPosition::After)
+        }
     }
 }
 
@@ -216,12 +210,15 @@ pub fn preview_task_over_empty_drop_zone(
 /// 真源 :307的 `activeGroupId === overGroupId` 短路是必需的——view.rs 的
 /// `moveGroupAroundTopLevelNode` 也做了同样判断，但真源在分发层就挡住，
 /// 避免无谓进入重排。
-pub fn preview_group_over_group(
-    view: &GroupedTaskView,
-    spec: &DragOverSpec,
-) -> GroupedTaskView {
-    let (DragSource::Group { group_id: active_group_id }, Some(DropTarget::Group { group_id: over_group_id })) =
-        (&spec.active, &spec.over)
+pub fn preview_group_over_group(view: &GroupedTaskView, spec: &DragOverSpec) -> GroupedTaskView {
+    let (
+        DragSource::Group {
+            group_id: active_group_id,
+        },
+        Some(DropTarget::Group {
+            group_id: over_group_id,
+        }),
+    ) = (&spec.active, &spec.over)
     else {
         return view.clone();
     };
@@ -242,12 +239,13 @@ pub fn preview_group_over_group(
 ///
 /// 落位由 view.rs 内部决定：over 是组内 task 时归一化为所属 group，
 /// 避免 content 区域不触发 group over group（view.rs :441-443 注释）。
-pub fn preview_group_over_task(
-    view: &GroupedTaskView,
-    spec: &DragOverSpec,
-) -> GroupedTaskView {
-    let (DragSource::Group { group_id: active_group_id }, Some(DropTarget::Task { task_key })) =
-        (&spec.active, &spec.over)
+pub fn preview_group_over_task(view: &GroupedTaskView, spec: &DragOverSpec) -> GroupedTaskView {
+    let (
+        DragSource::Group {
+            group_id: active_group_id,
+        },
+        Some(DropTarget::Task { task_key }),
+    ) = (&spec.active, &spec.over)
     else {
         return view.clone();
     };
@@ -265,10 +263,7 @@ pub fn preview_group_over_task(
 ///
 /// 复用 view.rs 的 `moveTaskOverTask`——这也是 view.rs :335 那条
 /// 「先移除再重新定位」注释真正生效的地方。
-pub fn preview_task_over_task(
-    view: &GroupedTaskView,
-    spec: &DragOverSpec,
-) -> GroupedTaskView {
+pub fn preview_task_over_task(view: &GroupedTaskView, spec: &DragOverSpec) -> GroupedTaskView {
     let (DragSource::Task { task_key: active }, Some(DropTarget::Task { task_key: over })) =
         (&spec.active, &spec.over)
     else {
@@ -291,10 +286,9 @@ pub fn apply_drag_over_preview(view: &GroupedTaskView, spec: &DragOverSpec) -> G
     }
 
     let next_view = match &spec.active {
-        DragSource::Group { .. } => preview_group_over_task(
-            &preview_group_over_group(view, spec),
-            spec,
-        ),
+        DragSource::Group { .. } => {
+            preview_group_over_task(&preview_group_over_group(view, spec), spec)
+        }
         DragSource::Task { .. } => preview_task_over_task(
             &preview_task_over_empty_drop_zone(
                 &preview_task_over_group_footer(
@@ -379,7 +373,11 @@ mod tests {
                 GroupedTaskViewNode::Group { group, tasks, .. } => format!(
                     "{}[{}]",
                     group.group_id,
-                    tasks.iter().map(|t| t.task_id.clone()).collect::<Vec<_>>().join(",")
+                    tasks
+                        .iter()
+                        .map(|t| t.task_id.clone())
+                        .collect::<Vec<_>>()
+                        .join(",")
                 ),
             })
             .collect::<Vec<_>>()
@@ -391,9 +389,7 @@ mod tests {
     }
 
     fn task_source(id: &str) -> DragSource {
-        DragSource::Task {
-            task_key: key(id),
-        }
+        DragSource::Task { task_key: key(id) }
     }
 
     fn group_source(id: &str) -> DragSource {
@@ -402,7 +398,11 @@ mod tests {
         }
     }
 
-    fn spec(active: DragSource, over: Option<DropTarget>, direction: DragDirection) -> DragOverSpec {
+    fn spec(
+        active: DragSource,
+        over: Option<DropTarget>,
+        direction: DragDirection,
+    ) -> DragOverSpec {
         DragOverSpec {
             active,
             over,
@@ -592,10 +592,7 @@ mod tests {
     #[test]
     fn task_over_empty_group_body_enters_group() {
         let view = GroupedTaskView {
-            nodes: vec![
-                task_node(task("/ws", "t1")),
-                group_node("g1", vec![]),
-            ],
+            nodes: vec![task_node(task("/ws", "t1")), group_node("g1", vec![])],
         };
         let next = apply_drag_over_preview(
             &view,
@@ -658,10 +655,7 @@ mod tests {
     #[test]
     fn group_over_itself_is_noop() {
         let view = GroupedTaskView {
-            nodes: vec![
-                group_node("g1", vec![]),
-                group_node("g2", vec![]),
-            ],
+            nodes: vec![group_node("g1", vec![]), group_node("g2", vec![])],
         };
         let next = apply_drag_over_preview(
             &view,
@@ -746,7 +740,8 @@ mod tests {
     fn no_over_target_is_noop() {
         // 真源 :1319：拖出所有投放区 → 直接返回。
         let view = sample();
-        let next = apply_drag_over_preview(&view, &spec(task_source("t1"), None, DragDirection::After));
+        let next =
+            apply_drag_over_preview(&view, &spec(task_source("t1"), None, DragDirection::After));
         assert_eq!(shape(&next), shape(&view));
     }
 

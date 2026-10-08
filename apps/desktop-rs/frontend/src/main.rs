@@ -3,6 +3,7 @@ use leptos::mount::mount_to_body;
 pub mod ToolCallBlocks;
 pub mod app;
 pub mod archived;
+pub mod conversationWorkItems;
 pub mod file_icons;
 pub mod file_tree;
 pub mod grouped;

@@ -23,7 +23,7 @@
 //! 事件翻译只负责「把 DOM 事件里的 taskKey/groupId 抽出来填进 `DragOverSpec`」，
 //! 任何业务判断都不在这里——那些都在 dnd.rs 里，已被 23 个测试覆盖。
 
-use super::dnd::{apply_drag_over_preview, DragDirection, DragOverSpec, DragSource, DropTarget};
+use super::dnd::{DragDirection, DragOverSpec, DragSource, DropTarget, apply_drag_over_preview};
 use super::view::GroupedTaskView;
 
 /// 拖拽运行时状态（对应真源的 `activeDragTaskKey` / `activeDragGroupId` 等 ref）。
@@ -181,7 +181,11 @@ mod tests {
                 GroupedTaskViewNode::Group { group, tasks, .. } => format!(
                     "{}[{}]",
                     group.group_id,
-                    tasks.iter().map(|t| t.task_id.clone()).collect::<Vec<_>>().join(",")
+                    tasks
+                        .iter()
+                        .map(|t| t.task_id.clone())
+                        .collect::<Vec<_>>()
+                        .join(",")
                 ),
             })
             .collect::<Vec<_>>()
@@ -209,7 +213,12 @@ mod tests {
         let rt = DragRuntime::default();
         let view = sample();
         assert_eq!(
-            shape(&rt.preview(&view, Some(DropTarget::Task { task_key: key("t1") }))),
+            shape(&rt.preview(
+                &view,
+                Some(DropTarget::Task {
+                    task_key: key("t1")
+                })
+            )),
             shape(&view)
         );
     }

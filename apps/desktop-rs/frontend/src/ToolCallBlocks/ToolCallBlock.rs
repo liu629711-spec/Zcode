@@ -23,7 +23,7 @@ use super::toolStatus::{
 
 /// 编排层的宿主上下文（真源 `ConversationRowRenderContext` 中 ToolCallBlock
 /// 实际消费的子集）。
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ToolCallBlockContext {
     /// 工作区路径（display model / 文件解析用；v4 行自包含，v1 透传给 fallback）。
     pub workspace_path: String,
@@ -31,6 +31,20 @@ pub struct ToolCallBlockContext {
     pub show_todo_tool_calls: bool,
     /// 子代理来源标签抑制（嵌套卡沿用父级设置；v4 行无子树，v1 恒 false）。
     pub suppress_source_label: bool,
+    /// 是否显示工具图标（真源 :79 `showIcon`；分组 children 传 false）。
+    pub show_icon: bool,
+}
+
+impl Default for ToolCallBlockContext {
+    fn default() -> Self {
+        Self {
+            workspace_path: String::new(),
+            show_todo_tool_calls: true,
+            suppress_source_label: false,
+            // 真源默认 showIcon = true（:79）。
+            show_icon: true,
+        }
+    }
 }
 
 /// 「todo family 且宿主不显示」的早退判定（真源 :366-368）。
@@ -89,8 +103,9 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
         return ().into_any();
     }
 
-    let show_icon = true;
+    let show_icon = context.show_icon;
     let is_office_mode = false;
+    let children = node.child_tool_calls.clone();
 
     view! {
         <div
@@ -115,6 +130,7 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
                 source_label,
                 show_icon,
                 is_office_mode,
+                children,
             )}
         </div>
     }
@@ -139,10 +155,39 @@ fn render_dispatch(
     source_label: Option<String>,
     show_icon: bool,
     is_office_mode: bool,
+    // 子工具节点（分组聚合卡展开时递归渲染；叶子行恒空）。
+    children: Vec<LegacyToolCallNode>,
 ) -> AnyView {
     use super::renderers::*;
 
     match renderer {
+        Renderer::ExecuteGroup => {
+            // kind 聚合类：children 逐项递归渲染（真源 execute-group.tsx:56-70）。
+            let child_tool_calls: Vec<execute_group::ChildToolCall> = children
+                .into_iter()
+                .map(|child| execute_group::ChildToolCall {
+                    tool_id: child.tool_call.tool_id.clone(),
+                    input: child.tool_call.input.clone().unwrap_or(Value::Null),
+                    status: child.tool_call.status.clone(),
+                    node: child,
+                })
+                .collect();
+            view! {
+                <execute_group::ExecuteGroupToolCallBlock
+                    props=execute_group::ExecuteGroupProps {
+                        tool_id: tool_id.to_string(),
+                        title,
+                        child_tool_calls,
+                        is_running,
+                        status_label: Some(status_label),
+                        is_office_mode,
+                        can_toggle: None,
+                        force_open: None,
+                    }
+                />
+            }
+            .into_any()
+        }
         Renderer::Execute => view! {
             <execute::ExecuteToolCallBlock
                 props=execute::ExecuteBlockProps {
@@ -296,6 +341,7 @@ mod tests {
             workspace_path: String::new(),
             show_todo_tool_calls: true,
             suppress_source_label: false,
+            show_icon: true,
         }
     }
 

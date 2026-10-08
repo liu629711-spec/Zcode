@@ -24,7 +24,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::{Deserialize, Serialize};
 
-use crate::app::{invoke_json, relative_time, Icon};
+use crate::app::{Icon, invoke_json, relative_time};
 
 /// 折叠阈值（真源 :65 collapsedLimit = 20）。
 const COLLAPSED_LIMIT: usize = 20;
@@ -294,9 +294,7 @@ fn ArchivedTaskRow(task: ArchivedTask) -> impl IntoView {
     let time = relative_time(task.updated_at);
 
     let active_id = task_id.clone();
-    let active = move || {
-        selected_session.get().as_deref() == Some(active_id.as_str())
-    };
+    let active = move || selected_session.get().as_deref() == Some(active_id.as_str());
     let item_class = move || {
         // 真源 :155-158 rounded-lg px-2.5 py-2 + 选中 bg-selected。
         if active() {

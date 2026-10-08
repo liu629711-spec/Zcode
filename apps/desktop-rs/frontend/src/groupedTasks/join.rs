@@ -188,7 +188,10 @@ pub fn join_grouped_structure(
 /// join 结果中未命中的 task_id 列表。
 ///
 /// 用途：UI 决定是否提示「有 N 个任务未加载」；也便于测试断言 join 覆盖率。
-pub fn unjoined_task_ids(structure: &GroupedStructure, sessions: &HashMap<String, SessionRow>) -> Vec<String> {
+pub fn unjoined_task_ids(
+    structure: &GroupedStructure,
+    sessions: &HashMap<String, SessionRow>,
+) -> Vec<String> {
     let mut missing: Vec<String> = Vec::new();
     for node in &structure.nodes {
         match node {
@@ -215,12 +218,7 @@ use std::collections::HashMap;
 mod tests {
     use super::*;
 
-    fn session(
-        id: &str,
-        title: &str,
-        ws_path: &str,
-        ws_identity: Option<&str>,
-    ) -> SessionRow {
+    fn session(id: &str, title: &str, ws_path: &str, ws_identity: Option<&str>) -> SessionRow {
         SessionRow {
             session_id: id.into(),
             title: title.into(),
@@ -312,7 +310,10 @@ mod tests {
 
     #[test]
     fn unjoined_task_ids_reports_missing() {
-        assert_eq!(unjoined_task_ids(&structure(), &sessions()), vec!["t3".to_string()]);
+        assert_eq!(
+            unjoined_task_ids(&structure(), &sessions()),
+            vec!["t3".to_string()]
+        );
     }
 
     #[test]

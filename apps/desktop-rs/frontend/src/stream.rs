@@ -42,7 +42,9 @@ pub enum FrameOutcome {
 #[derive(Clone, Copy)]
 pub struct StreamStore {
     /// sessionId → (rowId → (path, 已累积文本))
-    by_session: RwSignal<std::collections::HashMap<String, std::collections::HashMap<i64, (String, String)>>>,
+    by_session: RwSignal<
+        std::collections::HashMap<String, std::collections::HashMap<i64, (String, String)>>,
+    >,
     /// 需要触发重绘的会话 → 待重绘的行。
     dirty: RwSignal<std::collections::HashMap<String, Vec<i64>>>,
     /// 最近一次判定（用于 UI 显示流式状态）。
@@ -129,7 +131,9 @@ fn describe(outcome: &FrameOutcome) -> String {
 fn apply_wire_frame(
     session_id: &str,
     params: &Value,
-    by_session: &RwSignal<std::collections::HashMap<String, std::collections::HashMap<i64, (String, String)>>>,
+    by_session: &RwSignal<
+        std::collections::HashMap<String, std::collections::HashMap<i64, (String, String)>>,
+    >,
     dirty: &RwSignal<std::collections::HashMap<String, Vec<i64>>>,
 ) -> FrameOutcome {
     // 外层信封：有 kind + wireVersion 才是物理帧；否则容忍直接给逻辑帧的情况。
@@ -197,7 +201,11 @@ fn apply_wire_frame(
                     }
                     Some("row.upserted") => {
                         // 整行覆盖是权威：清该行累积，让 rowsRange 的文本接管。
-                        if let Some(row_id) = delta.get("row").and_then(|r| r.get("rowId")).and_then(|r| r.as_i64()) {
+                        if let Some(row_id) = delta
+                            .get("row")
+                            .and_then(|r| r.get("rowId"))
+                            .and_then(|r| r.as_i64())
+                        {
                             by_session.update(|m| {
                                 if let Some(rows) = m.get_mut(session_id) {
                                     rows.remove(&row_id);
@@ -376,7 +384,10 @@ mod tests {
         );
         s.feed(
             "s1",
-            &wire_deltas("s1", serde_json::json!([{ "op": "row.removed", "fromRowId": 1 }])),
+            &wire_deltas(
+                "s1",
+                serde_json::json!([{ "op": "row.removed", "fromRowId": 1 }]),
+            ),
         );
         assert!(!s.has_streaming("s1"), "removed 应清空该会话累积");
     }

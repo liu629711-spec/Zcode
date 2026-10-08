@@ -87,7 +87,10 @@ fn child_depth(workspace: &str, dir_path: &str) -> usize {
     if dir == ws || !dir.starts_with(&ws) {
         return 0;
     }
-    dir[ws.len() + 1..].split('/').filter(|s| !s.is_empty()).count()
+    dir[ws.len() + 1..]
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .count()
 }
 
 /// 相对 workspace 的展示路径（行 title / 预览头用）。
@@ -147,9 +150,11 @@ async fn load_directory_inner(data: RwSignal<TreeData>, workspace: String, dir_p
     current.mark_loading(&dir_path);
     data.set(current);
 
-    let result =
-        crate::app::invoke_json("fs_list", serde_json::json!({ "path": dir_path, "includeHidden": true }))
-            .await;
+    let result = crate::app::invoke_json(
+        "fs_list",
+        serde_json::json!({ "path": dir_path, "includeHidden": true }),
+    )
+    .await;
     let mut current = data.get_untracked();
     let mut preload: Option<TreeNode> = None;
     match result {
@@ -241,10 +246,7 @@ fn flatten_compact(root: &str, data: &TreeData) -> Vec<TreeRow> {
     let mut rows: Vec<TreeRow> = Vec::new();
 
     // 沿链压平：返回(展示节点, 该链覆盖的全部路径, 子内容深度偏移)。
-    fn compact<'a>(
-        node: &'a TreeNode,
-        data: &'a TreeData,
-    ) -> (TreeNode, Vec<String>, usize) {
+    fn compact<'a>(node: &'a TreeNode, data: &'a TreeData) -> (TreeNode, Vec<String>, usize) {
         if !is_auto_flattenable(node) {
             return (node.clone(), vec![node.path.clone()], 0);
         }
@@ -285,8 +287,7 @@ fn flatten_compact(root: &str, data: &TreeData) -> Vec<TreeRow> {
         };
         for child in children {
             let (node, compacted_paths, offset) = compact(child, data);
-            let expanded = node.is_dir
-                && compacted_paths.iter().any(|p| data.expanded.contains(p));
+            let expanded = node.is_dir && compacted_paths.iter().any(|p| data.expanded.contains(p));
             rows.push(TreeRow {
                 path: node.path.clone(),
                 name: node.name.clone(),
@@ -476,7 +477,9 @@ pub fn FileTreePanel() -> impl IntoView {
     // 展开集合变更与懒加载分离（WorkspaceFileTree.tsx:495-513）。
     // compact folder 传整组 compactedPaths：收起时逐个删除，展开时整组写入并加载末端目录。
     let toggle_dir = Callback::new(move |paths: Vec<String>| {
-        let Some(leaf_path) = paths.last().cloned() else { return };
+        let Some(leaf_path) = paths.last().cloned() else {
+            return;
+        };
         let mut current = data.get_untracked();
         let is_expanded = paths.iter().any(|p| current.expanded.contains(p));
         let needs_load = !is_expanded && current.needs_load(&leaf_path, false);
@@ -553,7 +556,10 @@ pub fn FileTreePanel() -> impl IntoView {
                 }
                 // 命中节点的祖先目录要保留，否则层级断裂。
                 let prefix = format!("{}/", r.path.replace('\\', "/"));
-                r.is_dir && keep.iter().any(|k| k.replace('\\', "/").starts_with(&prefix))
+                r.is_dir
+                    && keep
+                        .iter()
+                        .any(|k| k.replace('\\', "/").starts_with(&prefix))
             })
             .collect()
     });
@@ -561,99 +567,99 @@ pub fn FileTreePanel() -> impl IntoView {
     let workspace_path = move || root.get().unwrap_or_default();
 
     view! {
-        <section
-            data-testid="workspace-file-tree-panel"
-            class="flex h-full min-h-0 flex-col text-foreground"
-        >
-            // 返回按钮（WorkspaceFileTree.tsx:635-648）。
-            <div class="px-2 pb-3 pt-3">
-                <button
-                    type="button"
-                    class="flex w-full items-center justify-start gap-2 rounded-xl px-2.5 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
-                    on:click=move |_| show_file_tree.set(false)
-                >
-                    <span class="flex size-4 flex-none items-center justify-center">{arrow_left()}</span>
-                    "工作区文件"
-                </button>
-            </div>
-            // 搜索框（WorkspaceFileTree.tsx:649-664）。
-            <div class="flex shrink-0 items-center px-2 pb-2">
-                <div class="relative min-w-0 flex-1">
-                    <span class="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-foreground-subtlest">
-                        {icon_search()}
-                    </span>
-                    <input
-                        type="text"
-                        class="h-7 w-full rounded-lg border border-border bg-transparent pl-7 pr-7 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest focus-visible:border-border-hover focus-visible:bg-input-focused"
-                        placeholder="搜索文件"
-                        prop:value=move || query.get()
-                        on:input=move |ev| {
-                            query.set(event_target_value(&ev));
-                        }
-                    />
-                    {(!query.get().is_empty()).then(|| view! {
-                        <button
-                            type="button"
-                            class="absolute right-2 top-1/2 -translate-y-1/2 text-foreground-subtlest hover:text-foreground"
-                            on:click=move |_| query.set(String::new())
-                        >
-                            <span class="flex size-3 items-center justify-center">{icon_x()}</span>
-                        </button>
-                    })}
+            <section
+                data-testid="workspace-file-tree-panel"
+                class="flex h-full min-h-0 flex-col text-foreground"
+            >
+                // 返回按钮（WorkspaceFileTree.tsx:635-648）。
+                <div class="px-2 pb-3 pt-3">
+                    <button
+                        type="button"
+                        class="flex w-full items-center justify-start gap-2 rounded-xl px-2.5 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
+                        on:click=move |_| show_file_tree.set(false)
+                    >
+                        <span class="flex size-4 flex-none items-center justify-center">{arrow_left()}</span>
+                        "工作区文件"
+                    </button>
                 </div>
-            </div>
-            // 标题行（WorkspaceFileTree.tsx:686）。
-            <div class="flex items-center justify-between px-2">
-                <h3 class="min-w-0 truncate py-1 pl-2.5 pr-0.5 text-ui-base font-medium text-foreground-subtlest">
-                    {move || workspace_path()}
-                </h3>
-            </div>
-            // 滚动容器（WorkspaceFileTree.tsx:761-765）。真源内层 role="tree" + 虚拟定位，
-            // 本轮不虚拟化，行高固定 h-7 保证滚动节奏一致。
-            <div class="h-full min-h-0 flex-1 overflow-auto px-2 px-1" style="min-height: 0">
-                <div role="tree" class="relative w-full" style=format!("min-height: {ROW_HEIGHT_PX}px")>
-                    {move || {
-                        let list = rows.get();
-                        if list.is_empty() {
-                            return view! {
-                                <p class="px-2 py-1 text-xs text-muted">"没有匹配的文件"</p>
+                // 搜索框（WorkspaceFileTree.tsx:649-664）。
+                <div class="flex shrink-0 items-center px-2 pb-2">
+                    <div class="relative min-w-0 flex-1">
+                        <span class="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-foreground-subtlest">
+                            {icon_search()}
+                        </span>
+                        <input
+                            type="text"
+                            class="h-7 w-full rounded-lg border border-border bg-transparent pl-7 pr-7 text-ui-base text-foreground outline-none placeholder:text-foreground-subtlest focus-visible:border-border-hover focus-visible:bg-input-focused"
+                            placeholder="搜索文件"
+                            prop:value=move || query.get()
+                            on:input=move |ev| {
+                                query.set(event_target_value(&ev));
                             }
-                            .into_any();
-                        }
-let selected_now = selected_path.get_untracked();
-                            list.into_iter()
-                                .map(|row| {
-                                    let path = row.path.clone();
-                                    let is_selected = selected_now.as_deref() == Some(path.as_str());
-                                    view! {
-                                    <FileTreeRow
-                                        row=row
-                                        workspace=workspace_path()
-                                        selected=is_selected
-                                        on_select=Callback::new(move |p: String| selected_path.set(Some(p)))
-                                        on_toggle=toggle_dir
-                                        on_preview=Callback::new(move |p: String| preview_file.run(p))
-                                    />
-                                }
-                                })
-                            .collect_view()
-                            .into_any()
-                    }}
-                </div>
-            </div>
-            {move || preview.get().map(|p| {
-                view! {
-                    <div class="flex max-h-[45%] flex-none flex-col border-t border-border">
-                        <div class="flex items-center justify-between px-3 py-1 text-xs text-muted">
-                            <span>"预览"</span>
-                            {p.truncated.then(|| view! { <span>"（超长截断）"</span> })}
-                        </div>
-                        <pre class="min-h-0 flex-1 overflow-auto bg-[#f0f1f3] p-2 text-xs leading-relaxed whitespace-pre-wrap">{p.content}</pre>
+                        />
+                        {(!query.get().is_empty()).then(|| view! {
+                            <button
+                                type="button"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 text-foreground-subtlest hover:text-foreground"
+                                on:click=move |_| query.set(String::new())
+                            >
+                                <span class="flex size-3 items-center justify-center">{icon_x()}</span>
+                            </button>
+                        })}
                     </div>
-                }
-            })}
-        </section>
-    }
+                </div>
+                // 标题行（WorkspaceFileTree.tsx:686）。
+                <div class="flex items-center justify-between px-2">
+                    <h3 class="min-w-0 truncate py-1 pl-2.5 pr-0.5 text-ui-base font-medium text-foreground-subtlest">
+                        {move || workspace_path()}
+                    </h3>
+                </div>
+                // 滚动容器（WorkspaceFileTree.tsx:761-765）。真源内层 role="tree" + 虚拟定位，
+                // 本轮不虚拟化，行高固定 h-7 保证滚动节奏一致。
+                <div class="h-full min-h-0 flex-1 overflow-auto px-2 px-1" style="min-height: 0">
+                    <div role="tree" class="relative w-full" style=format!("min-height: {ROW_HEIGHT_PX}px")>
+                        {move || {
+                            let list = rows.get();
+                            if list.is_empty() {
+                                return view! {
+                                    <p class="px-2 py-1 text-xs text-muted">"没有匹配的文件"</p>
+                                }
+                                .into_any();
+                            }
+    let selected_now = selected_path.get_untracked();
+                                list.into_iter()
+                                    .map(|row| {
+                                        let path = row.path.clone();
+                                        let is_selected = selected_now.as_deref() == Some(path.as_str());
+                                        view! {
+                                        <FileTreeRow
+                                            row=row
+                                            workspace=workspace_path()
+                                            selected=is_selected
+                                            on_select=Callback::new(move |p: String| selected_path.set(Some(p)))
+                                            on_toggle=toggle_dir
+                                            on_preview=Callback::new(move |p: String| preview_file.run(p))
+                                        />
+                                    }
+                                    })
+                                .collect_view()
+                                .into_any()
+                        }}
+                    </div>
+                </div>
+                {move || preview.get().map(|p| {
+                    view! {
+                        <div class="flex max-h-[45%] flex-none flex-col border-t border-border">
+                            <div class="flex items-center justify-between px-3 py-1 text-xs text-muted">
+                                <span>"预览"</span>
+                                {p.truncated.then(|| view! { <span>"（超长截断）"</span> })}
+                            </div>
+                            <pre class="min-h-0 flex-1 overflow-auto bg-[#f0f1f3] p-2 text-xs leading-relaxed whitespace-pre-wrap">{p.content}</pre>
+                        </div>
+                    }
+                })}
+            </section>
+        }
 }
 
 #[derive(Debug, Clone)]
@@ -681,10 +687,15 @@ mod tests {
         let mut data = TreeData::default();
         data.children_by_dir.insert(
             "root".into(),
-            vec![node("root\\a", "a", true, 0), node("root\\f.txt", "f.txt", false, 0)],
+            vec![
+                node("root\\a", "a", true, 0),
+                node("root\\f.txt", "f.txt", false, 0),
+            ],
         );
-        data.children_by_dir
-            .insert("root\\a".into(), vec![node("root\\a\\x.rs", "x.rs", false, 1)]);
+        data.children_by_dir.insert(
+            "root\\a".into(),
+            vec![node("root\\a\\x.rs", "x.rs", false, 1)],
+        );
         data.expanded.insert("root\\a".into());
 
         let rows = flatten("root", &data);
@@ -698,8 +709,10 @@ mod tests {
         let mut data = TreeData::default();
         data.children_by_dir
             .insert("root".into(), vec![node("root\\a", "a", true, 0)]);
-        data.children_by_dir
-            .insert("root\\a".into(), vec![node("root\\a\\x.rs", "x.rs", false, 1)]);
+        data.children_by_dir.insert(
+            "root\\a".into(),
+            vec![node("root\\a\\x.rs", "x.rs", false, 1)],
+        );
         // expanded 为空 → 子节点不进平铺列表。
         let rows = flatten("root", &data);
         assert_eq!(rows.len(), 1);
@@ -754,7 +767,10 @@ mod tests {
         assert_eq!(rows.len(), 1, "单子目录链应压成一行");
         assert_eq!(rows[0].name, "a/b");
         assert_eq!(rows[0].depth, 0, "视觉深度停在最外层");
-        assert_eq!(rows[0].path, "root\\a\\b", "行 path 指向链末端（展开/加载用真实路径）");
+        assert_eq!(
+            rows[0].path, "root\\a\\b",
+            "行 path 指向链末端（展开/加载用真实路径）"
+        );
         assert_eq!(
             rows[0].compacted_paths,
             vec!["root\\a".to_string(), "root\\a\\b".to_string()],
@@ -770,8 +786,10 @@ mod tests {
             .insert("root".into(), vec![node("root\\a", "a", true, 0)]);
         data.children_by_dir
             .insert("root\\a".into(), vec![node("root\\a\\b", "b", true, 1)]);
-        data.children_by_dir
-            .insert("root\\a\\b".into(), vec![node("root\\a\\b\\x.rs", "x.rs", false, 2)]);
+        data.children_by_dir.insert(
+            "root\\a\\b".into(),
+            vec![node("root\\a\\b\\x.rs", "x.rs", false, 2)],
+        );
         data.loaded.insert("root\\a".into());
         data.loaded.insert("root\\a\\b".into());
         data.expanded.insert("root\\a".into());
@@ -802,8 +820,10 @@ mod tests {
         let mut link = node("root\\link", "link", true, 0);
         link.is_symlink = true;
         data.children_by_dir.insert("root".into(), vec![link]);
-        data.children_by_dir
-            .insert("root\\link".into(), vec![node("root\\link\\x", "x", true, 1)]);
+        data.children_by_dir.insert(
+            "root\\link".into(),
+            vec![node("root\\link\\x", "x", true, 1)],
+        );
         data.loaded.insert("root\\link".into());
 
         let rows = flatten_compact("root", &data);

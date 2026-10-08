@@ -127,6 +127,9 @@ pub struct ConversationRowView {
     /// turnHeader 行
     #[serde(default)]
     pub turn_id: Option<String>,
+    /// subagent 行的父工具调用 id（Agent 工具行配对用；真源 SubagentRow.parentToolCallId）。
+    #[serde(default)]
+    pub parent_tool_call_id: Option<String>,
     /// artifact 行
     #[serde(default)]
     pub display_name: Option<String>,
@@ -1355,8 +1358,76 @@ fn ChatView(session_id: String) -> impl IntoView {
                     if list.is_empty() {
                         return view! { <p class="text-sm text-muted">"还没有消息，发送第一条开始对话。"</p> }.into_any();
                     }
-                    list.iter()
-                        .map(|row| view! { <ConversationRow row=row.clone() /> })
+                    // 工作行分组（真源 buildAssistantWorkRenderItems）：
+                    // 连续终端命令折叠成 executeGroup 卡；Agent↔subagent 配对；
+                    // 其余逐行。
+                    let grouping_rows: Vec<crate::conversationWorkItems::GroupingRow> = list
+                        .iter()
+                        .map(|row| crate::conversationWorkItems::GroupingRow {
+                            row_id: row.row_id,
+                            kind: row.kind.clone(),
+                            tool_name: row.tool_name.clone(),
+                            tool_call_id: row.tool_call_id.clone(),
+                            status: row.status.clone().unwrap_or_default(),
+                            input: row.input.clone().unwrap_or(Value::Null),
+                            input_text: row.input_text.clone().unwrap_or_default(),
+                            started_at: row.started_at.as_ref().and_then(|v| v.as_f64()),
+                            turn_id: row.turn_id.clone(),
+                            parent_tool_call_id: row.parent_tool_call_id.clone(),
+                        })
+                        .collect();
+                    // 阶段尾部是否运行中：最后一行仍在跑时，尾部分组的父状态显「执行中」
+                    // （真源 stageTailIsRunning 由 turn 结构算出；v1 以末行状态近似）。
+                    let tail_running = list.last().is_some_and(|row| {
+                        matches!(
+                            row.status.as_deref(),
+                            Some("running") | Some("inputStreaming") | Some("pendingApproval")
+                        )
+                    });
+                    let items = crate::conversationWorkItems::build_assistant_work_render_items(
+                        &grouping_rows,
+                        &crate::conversationWorkItems::WorkRenderOptions {
+                            stage_tail_is_running: tail_running,
+                            ..Default::default()
+                        },
+                    );
+                    items
+                        .into_iter()
+                        .map(|item| match item {
+                            crate::conversationWorkItems::WorkRenderItem::Row {
+                                row_index, ..
+                            } => view! { <ConversationRow row=list[row_index].clone() /> }.into_any(),
+                            crate::conversationWorkItems::WorkRenderItem::ExecuteGroup {
+                                node, ..
+                            } => view! {
+                                <div class="py-0" data-tool-call-id=node.tool_call.tool_id.clone()>
+                                    <div data-conversation-selectable="true">
+                                        <crate::ToolCallBlocks::ToolCallBlock::ToolCallBlock
+                                            node=node.clone()
+                                            context=crate::ToolCallBlocks::ToolCallBlock::ToolCallBlockContext::default()
+                                        />
+                                    </div>
+                                </div>
+                            }
+                            .into_any(),
+                            // Explore/Changes 分组开关关闭时不产生这两类；防御路径：
+                            // 逐行渲染（explore.rs 迁完打开开关后换成专属卡）。
+                            crate::conversationWorkItems::WorkRenderItem::ExploreGroup {
+                                row_indices, ..
+                            }
+                            | crate::conversationWorkItems::WorkRenderItem::ChangesGroup {
+                                row_indices, ..
+                            } => row_indices
+                                .into_iter()
+                                .map(|i| view! { <ConversationRow row=list[i].clone() /> }.into_any())
+                                .collect_view()
+                                .into_any(),
+                            // Agent 卡（agent.tsx）未迁：v1 渲染 Agent 工具行本身，
+                            // subagent 行已被配对抑制。
+                            crate::conversationWorkItems::WorkRenderItem::AgentToolCall {
+                                row_index, ..
+                            } => view! { <ConversationRow row=list[row_index].clone() /> }.into_any(),
+                        })
                         .collect_view()
                         .into_any()
                 }}

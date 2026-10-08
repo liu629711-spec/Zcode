@@ -27,12 +27,16 @@ pub const EXECUTE_GROUP_ICON_CLASS: &str = "size-4 flex-none text-foreground-sub
 /// `ACTIVE_STATUSES`（真源 :19）。
 pub const ACTIVE_STATUSES: [&str; 2] = ["pending", "in_progress"];
 
-/// 子工具调用的最小信息（真源 childToolCalls 的 `child.toolCall`）。
+/// 子工具调用（真源 childToolCalls 的 `child.toolCall` + 完整节点）。
+///
+/// `input`/`status` 是主摘要用的便捷字段；`node` 供 children 递归渲染
+/// （真源 :56-70 逐项 `<ToolCallBlock toolCallNode={child} />`）。
 #[derive(Debug, Clone)]
 pub struct ChildToolCall {
     pub tool_id: String,
     pub input: Value,
     pub status: String,
+    pub node: crate::ToolCallBlocks::toolCallRowAdapter::LegacyToolCallNode,
 }
 
 /// 状态是否活跃（真源 :19）。
@@ -125,18 +129,21 @@ pub fn ExecuteGroupToolCallBlock(props: ExecuteGroupProps) -> impl IntoView {
             .collect::<Vec<_>>(),
     );
 
-    // 闭包要用 child_tool_calls —— 提前收集成 View（借用不能跨到 'static）。
-    let child_rows = props
+    // 闭包要用 child_tool_calls —— 提前收集数据（View 非 Clone，需在闭包内重建）。
+    // 真源 :56-70：每个 child 是完整的 ToolCallBlock 递归（showIcon=false）；
+    // 容器类名 `ml-2 space-y-2 border-border border-l pl-3.5` 照抄。
+    let child_context = crate::ToolCallBlocks::ToolCallBlock::ToolCallBlockContext {
+        show_icon: false,
+        ..Default::default()
+    };
+    let children_data: Vec<(
+        String,
+        crate::ToolCallBlocks::toolCallRowAdapter::LegacyToolCallNode,
+    )> = props
         .child_tool_calls
         .iter()
-        .map(|child| {
-            view! {
-                <div class="min-w-0" data-tool-id=child.tool_id.clone()>
-                    {child.tool_id.clone()}
-                </div>
-            }
-        })
-        .collect_view();
+        .map(|child| (child.tool_id.clone(), child.node.clone()))
+        .collect();
     let key = summary_content_key(
         &props.tool_id,
         props.is_running,
@@ -193,9 +200,22 @@ pub fn ExecuteGroupToolCallBlock(props: ExecuteGroupProps) -> impl IntoView {
             }))
             render_content=Some(std::sync::Arc::new(move || {
                 // 真源 :89-104 —— 展开区是子卡列表，缩进容器 + 不显示图标。
+                let child_views = children_data
+                    .iter()
+                    .map(|(tool_id, node)| {
+                        view! {
+                            <div class="min-w-0" data-tool-id=tool_id.clone()>
+                                <crate::ToolCallBlocks::ToolCallBlock::ToolCallBlock
+                                    node=node.clone()
+                                    context=child_context.clone()
+                                />
+                            </div>
+                        }
+                    })
+                    .collect_view();
                 view! {
                     <div class="ml-2 space-y-2 border-l border-border pl-3.5">
-                        {child_rows.clone()}
+                        {child_views}
                     </div>
                 }
                 .into_any()
@@ -209,10 +229,16 @@ mod tests {
     use super::*;
 
     fn child(id: &str, status: &str) -> ChildToolCall {
+        use crate::ToolCallBlocks::toolCallRowAdapter::tool_call_row_to_legacy_node;
+        let node = tool_call_row_to_legacy_node(&serde_json::json!({
+            "kind": "toolCall", "rowId": 0, "toolCallId": id,
+            "toolName": "Bash", "status": "success", "inputText": "",
+        }));
         ChildToolCall {
             tool_id: id.into(),
             input: Value::Null,
             status: status.into(),
+            node,
         }
     }
 
