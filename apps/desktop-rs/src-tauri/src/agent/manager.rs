@@ -107,18 +107,9 @@ fn client_id() -> &'static str {
     CLIENT_ID.get_or_init(|| format!("desktop-rs-{}", uuid::Uuid::new_v4()))
 }
 
-/// v4 sendText 主路径（对齐 zcodeAgentService.ts 5173 的提交方式）：
-/// JSON-RPC request `v4/command`，params = CommandEnvelope。
-/// payload 按 zcode-protocol-v4/command.ts 96 行 sendText schema 构造。
-pub async fn send_text(
-    runtime: &AgentRuntime,
-    session_id: &str,
-    text: &str,
-) -> Result<Value, String> {
-    if !runtime.is_connected().await {
-        return Err("agent 未连接".into());
-    }
-    let envelope = serde_json::json!({
+/// 构造 sendText CommandEnvelope（测试与主路径共用）。
+pub fn build_send_text_envelope(session_id: &str, text: &str) -> Value {
+    serde_json::json!({
         // uuid v7（RFC 9562）：时间有序，与 renderer/host 工厂同构。
         "commandId": uuid::Uuid::now_v7().to_string(),
         "clientId": client_id(),
@@ -132,10 +123,27 @@ pub async fn send_text(
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0),
-    });
+    })
+}
+
+/// v4 sendText 主路径（对齐 zcodeAgentService.ts 5173 的提交方式）：
+/// JSON-RPC request `v4/command`，params = CommandEnvelope。
+/// payload 按 zcode-protocol-v4/command.ts 96 行 sendText schema 构造。
+pub async fn send_text(
+    runtime: &AgentRuntime,
+    session_id: &str,
+    text: &str,
+) -> Result<Value, String> {
+    if !runtime.is_connected().await {
+        return Err("agent 未连接".into());
+    }
     let ack = runtime
         .client
-        .request(methods::V4_COMMAND, Some(envelope), std::time::Duration::from_secs(60))
+        .request(
+            methods::V4_COMMAND,
+            Some(build_send_text_envelope(session_id, text)),
+            std::time::Duration::from_secs(60),
+        )
         .await?;
     // CommandAck（command.ts 524-538）：accepted/duplicate 视为提交成功，
     // rejected/stale/failed 带原因上抛。

@@ -111,22 +111,32 @@ async fn live_agent_conversation_loop() {
         .to_string();
     eprintln!("[live] session created: {session_id}");
 
-    // 3. 发送消息。
-    let send_result = client
-        .request(
-            methods::SESSION_SEND,
-            Some(serde_json::json!({
-                "sessionId": session_id,
-                "content": "协议桥自检消息：请勿回复实质内容。"
-            })),
-            Duration::from_secs(60),
-        )
-        .await
-        .expect("session/send");
-    eprintln!(
-        "[live] send result: {}",
-        serde_json::to_string_pretty(&send_result).unwrap_or_default()
+    // 3. 发送消息：v4 sendText 主路径（CommandEnvelope 经 v4/command）。
+    let envelope = zcode_desktop_rs_lib::agent::manager::build_send_text_envelope(
+        &session_id,
+        "协议桥自检消息：请勿回复实质内容。",
     );
+    let ack = client
+        .request(methods::V4_COMMAND, Some(envelope), Duration::from_secs(60))
+        .await
+        .expect("v4 sendText");
+    eprintln!(
+        "[live] v4 ack: {}",
+        serde_json::to_string_pretty(&ack).unwrap_or_default()
+    );
+    // 已知边界：无 LLM key 的隔离环境可能 failed（模型不可用），协议链路仍验证。
+    let status = ack["status"].as_str().unwrap_or("unknown");
+    assert!(
+        matches!(status, "accepted" | "duplicate" | "failed"),
+        "v4 sendText 应返回结构化 ack，实际: {status}"
+    );
+    if status == "failed" {
+        eprintln!(
+            "[live] ack failed（无 LLM key 隔离环境的预期边界）: reasonCode={:?} message={:?}",
+            ack["reasonCode"].as_str(),
+            ack["message"].as_str()
+        );
+    }
 
     // 4. 拉取消息 + 通知诊断。
     // 已知边界：测试环境隔离了 ZCODE_DATA_BASE_DIR（无 LLM key），后台 turn 可能
