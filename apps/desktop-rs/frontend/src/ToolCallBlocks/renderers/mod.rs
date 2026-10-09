@@ -24,6 +24,7 @@ pub mod CuaScreenshotSection;
 pub mod cuaDetails;
 pub mod cuaErrorDetails;
 pub mod cuaIcon;
+pub mod cua_group;
 pub mod cuaListDetails;
 pub mod cuaResultState;
 pub mod cuaScreenshotDetails;

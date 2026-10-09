@@ -1452,6 +1452,49 @@ fn ChatView(session_id: String) -> impl IntoView {
                                 .map(|i| view! { <ConversationRow row=list[i].clone() /> }.into_any())
                                 .collect_view()
                                 .into_any(),
+                            // CUA 聚合卡（cua-group.tsx 已迁）：一张 Computer Use 卡
+                            // 装下整组 CUA 工具 + 其正文/思考。
+                            crate::conversationWorkItems::WorkRenderItem::CuaGroup {
+                                group,
+                                row_indices,
+                                ..
+                            } => {
+                                // 子卡需要「行下标 → 行文本 / 子节点」两份映射。
+                                let texts: Vec<(usize, String)> = row_indices
+                                    .iter()
+                                    .map(|i| (*i, list[*i].text.clone()))
+                                    .collect();
+                                let tool_nodes: Vec<(usize, crate::ToolCallBlocks::toolCallRowAdapter::LegacyToolCallNode)> =
+                                    group
+                                        .events
+                                        .iter()
+                                        .filter_map(|e| match e {
+                                            crate::cuaGroups::CuaGroupEvent::Tool {
+                                                row_index,
+                                                node,
+                                            } => Some((*row_index, node.clone())),
+                                            _ => None,
+                                        })
+                                        .collect();
+                                view! {
+                                    <div
+                                        class="py-0"
+                                        data-tool-call-id=group.node.tool_call.tool_id.clone()
+                                    >
+                                        <div data-conversation-selectable="true">
+                                            <crate::ToolCallBlocks::renderers::cua_group::CuaGroupToolCallBlock
+                                                group=group.clone()
+                                                texts=texts.clone()
+                                                tool_nodes=tool_nodes.clone()
+                                                is_running_ctx=false
+                                                can_toggle=None
+                                                force_open=None
+                                            />
+                                        </div>
+                                    </div>
+                                }
+                                .into_any()
+                            }
                             // Agent 卡（agent.tsx 已迁）：从配对的 subagent 行取
                             // authoritativeAgentType（真源 ConversationAgentToolCallRow:93）。
                             crate::conversationWorkItems::WorkRenderItem::AgentToolCall {

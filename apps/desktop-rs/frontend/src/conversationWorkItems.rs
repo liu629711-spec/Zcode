@@ -92,6 +92,16 @@ pub enum WorkRenderItem {
         /// 配对的 subagent 行下标（供后续 agent 卡迁移用）。
         subagent_row_index: usize,
     },
+    /// CUA 工具聚合组（真源 `ConversationCuaGroupRenderItem`）。
+    CuaGroup {
+        key: String,
+        row_id: i64,
+        row_indices: Vec<usize>,
+        node: LegacyToolCallNode,
+        /// 完整的聚合项（事件序列、active、flowKind 等），
+        /// 供`cua_group.rs` 渲染层消费。
+        group: crate::cuaGroups::CuaGroupRenderItem,
+    },
 }
 
 /// 分组开关（真源 `ConversationAssistantWorkRenderOptions`，:61-67）。
@@ -102,6 +112,8 @@ pub struct WorkRenderOptions {
     pub enable_explore_grouping: bool,
     pub enable_terminal_grouping: bool,
     pub enable_changes_grouping: bool,
+    /// CUA 工具聚合分组（真源 ENABLE_CUA_TOOL_CALL_GROUPING = true）。
+    pub enable_cua_grouping: bool,
 }
 
 impl Default for WorkRenderOptions {
@@ -110,6 +122,8 @@ impl Default for WorkRenderOptions {
             stage_tail_is_running: false,
             // 真源 ENABLE_EXPLORE_TOOL_CALL_GROUPING = true（explore.rs 已迁）。
             enable_explore_grouping: true,
+            // 真源 ENABLE_CUA_TOOL_CALL_GROUPING = true（cuaGroups.rs 已迁）。
+            enable_cua_grouping: true,
             // 真源 ENABLE_TERMINAL_TOOL_CALL_GROUPING = true。
             enable_terminal_grouping: true,
             // 真源 ENABLE_CHANGES_TOOL_CALL_GROUPING = false。
@@ -428,13 +442,70 @@ pub fn build_assistant_work_render_items(
     let visible_rows: Vec<&GroupingRow> = visible_indices.iter().map(|&i| &rows[i]).collect();
 
     let pairing = pair_subagent_rows(&visible_rows);
-    // prepareCuaGroups 裁剪：pass-through（见模块头注释）。
+
+    // prepareCuaGroups（真源 conversationCuaGroups.ts:253-280）：
+    // 先算出「哪些连续行被收敛成 CUA 聚合组」，主循环再按这份映射产出渲染项。
+    // 这样行序仍由主循环独家决定，不会出现两段 items 拼接导致的乱序。
+    let cua_groups: Vec<(Vec<usize>, crate::cuaGroups::CuaGroupRenderItem)> = if options
+        .enable_cua_grouping
+    {
+        crate::cuaGroups::prepare_cua_groups(
+            rows,
+            crate::cuaGroups::CuaGroupOptions {
+                enabled: true,
+                stage_tail_is_running: options.stage_tail_is_running,
+            },
+        )
+        .into_iter()
+        .filter_map(|entry| match entry {
+            crate::cuaGroups::PreparedEntry::CuaGroup(g) if !g.row_indices.is_empty() => {
+                Some((g.row_indices.clone(), g))
+            }
+            _ => None,
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
+    // 行下标 → 所属 CUA 组（CUA 组内任一行的下标都能查到组）。
+    let cua_group_of: std::collections::HashMap<usize, crate::cuaGroups::CuaGroupRenderItem> =
+        cua_groups
+            .iter()
+            .flat_map(|(indices, group)| {
+                indices
+                    .iter()
+                    .map(move |i| (*i, group.clone()))
+            })
+            .collect();
+    // 已消费的组（避免组内后续行重复产出）。
+    let mut cua_groups_emitted: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+
+    // 主循环的输入仍是可见行（CUA 分组只提供映射，不改行序）。
     let prepared_rows = visible_rows;
+
 
     let mut index = 0usize;
     while index < prepared_rows.len() {
         let row = prepared_rows[index];
         let row_index = visible_indices[index];
+
+        // CUA 聚合组（真源 conversationCuaGroups）：整组只在其**首个可见行**
+        // 处产出一次，后续组内行跳过。
+        if let Some(group) = cua_group_of.get(&row_index) {
+            if !cua_groups_emitted.contains(&group.key) {
+                cua_groups_emitted.insert(group.key.clone());
+                items.push(WorkRenderItem::CuaGroup {
+                    key: group.key.clone(),
+                    row_id: group.row_id,
+                    row_indices: group.row_indices.clone(),
+                    node: group.node.clone(),
+                    group: group.clone(),
+                });
+            }
+            index += 1;
+            continue;
+        }
 
         // 已配对进 Agent 块的 subagent 行：不再单独渲染（真源 :316-320）。
         if row.kind == "subagent" && pairing.claimed_subagent_row_ids.contains(&row_index) {
@@ -562,7 +633,8 @@ fn set_row_indices(item: &mut WorkRenderItem, indices: Vec<usize>) {
     match item {
         WorkRenderItem::ExploreGroup { row_indices, .. }
         | WorkRenderItem::ExecuteGroup { row_indices, .. }
-        | WorkRenderItem::ChangesGroup { row_indices, .. } => *row_indices = indices,
+        | WorkRenderItem::ChangesGroup { row_indices, .. }
+        | WorkRenderItem::CuaGroup { row_indices, .. } => *row_indices = indices,
         WorkRenderItem::Row { .. } | WorkRenderItem::AgentToolCall { .. } => {}
     }
 }
@@ -571,6 +643,97 @@ fn set_row_indices(item: &mut WorkRenderItem, indices: Vec<usize>) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// 官方 CUA 工具（连字符命名空间，真源 conversationCuaGroups.ts:22-25）。
+    fn cua_row(id: i64, name: &str, response_id: &str) -> GroupingRow {
+        let mut row = tool_row(id, name, "completed", Value::Null);
+        row.assistant_response_id = Some(response_id.into());
+        row
+    }
+
+    #[test]
+    fn cua_group_merges_official_cua_tools() {
+        // 两个官方 CUA 工具 + 同响应正文 → 一张CUA 卡。
+        let rows = vec![
+            cua_row(0, "mcp__computer-use__left_click", "r1"),
+            text_row(1, "assistantText"),
+            cua_row(2, "mcp__computer-use__type", "r1"),
+        ];
+        let items = build_assistant_work_render_items(&rows, &WorkRenderOptions::default());
+        let group_count = items
+            .iter()
+            .filter(|i| matches!(i, WorkRenderItem::CuaGroup { .. }))
+            .count();
+        assert_eq!(group_count, 1, "应合成一个 CUA 组：{items:?}");
+    }
+
+    #[test]
+    fn cua_group_not_emitted_twice() {
+        // 组内后续行必须跳过，否则同一张卡会渲染多次。
+        let rows = vec![
+            cua_row(0, "mcp__computer-use__left_click", "r1"),
+            cua_row(1, "mcp__computer-use__type", "r1"),
+            cua_row(2, "mcp__computer-use__key", "r1"),
+        ];
+        let items = build_assistant_work_render_items(&rows, &WorkRenderOptions::default());
+        assert_eq!(
+            items
+                .iter()
+                .filter(|i| matches!(i, WorkRenderItem::CuaGroup { .. }))
+                .count(),
+            1,
+            "三个连续 CUA 工具只出一张卡"
+        );
+    }
+
+    #[test]
+    fn cua_grouping_can_be_disabled() {
+        let rows = vec![
+            cua_row(0, "mcp__computer-use__left_click", "r1"),
+            cua_row(1, "mcp__computer-use__type", "r1"),
+        ];
+        let items = build_assistant_work_render_items(
+            &rows,
+            &WorkRenderOptions {
+                enable_cua_grouping: false,
+                ..Default::default()
+            },
+        );
+        assert!(
+            !items
+                .iter()
+                .any(|i| matches!(i, WorkRenderItem::CuaGroup { .. })),
+            "关闭后不产出 CUA 组：{items:?}"
+        );
+    }
+
+    #[test]
+    fn underscore_cua_tools_stay_ungrouped() {
+        // ★下划线命名空间不属于官方 CUA 前缀（真源 :22-25用连字符），
+        // 不该被聚合。
+        let rows = vec![
+            cua_row(0, "mcp__computer_use__left_click", "r1"),
+            cua_row(1, "mcp__computer_use__type", "r1"),
+        ];
+        let items = build_assistant_work_render_items(&rows, &WorkRenderOptions::default());
+        assert!(
+            !items
+                .iter()
+                .any(|i| matches!(i, WorkRenderItem::CuaGroup { .. })),
+            "下划线形式不聚合：{items:?}"
+        );
+    }
+
+    #[test]
+    fn non_cua_rows_keep_their_render_items() {
+        // 普通行仍走既有路径，CUA 分组不影响它们。
+        let rows = vec![text_row(0, "assistantText"), text_row(1, "reasoning")];
+        let items = build_assistant_work_render_items(&rows, &WorkRenderOptions::default());
+        assert!(
+            items.iter().all(|i| matches!(i, WorkRenderItem::Row { .. })),
+            "无 CUA 工具时全部为普通行：{items:?}"
+        );
+    }
 
     fn tool_row(id: i64, name: &str, status: &str, input: Value) -> GroupingRow {
         GroupingRow {

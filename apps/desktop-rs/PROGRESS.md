@@ -174,10 +174,20 @@
    - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 workflow 家族约 3000 行 /
          MCP / node-repl）、CUA 组聚合层（conversationCuaGroups 281 + cua-group 282）、
          工作流 run 联接、工作流 display strict 字段表。
+   - [x] **CUA 全链路已迁并接线**：
+       - `renderers/cuaDetails.rs`（152 行）—— 详情九区块完整视觉，
+         结果区块是唯一特例（仅在前面有操作块时才加分隔线）；
+         保留真源「不渲染 raw JSON」的设计约束
+       - `renderers/CuaScreenshotSection.rs`（84 行）—— 截图元数据五行
+         （尺寸分隔符是 × 不是 x；格式 image/png → PNG）+ 虚线占位
+       - `cuaGroups.rs`（281 行）—— 聚合分组器，判据是
+         「该响应内只有官方 CUA 工具、无其他工具」；三条关键规则
+         （连字符前缀 / streaming 不关组 / reasoning 不关组）都带测试
+       - `renderers/cua_group.rs`（282 行）—— 聚合卡渲染：滚动遮罩
+         （scrollMask 62 行随迁）+ 事件流视口 + 扫光主文本
      - CUA 遗留：`CuaAppSummaryIcon` 权威图标需主进程 Helper 协议
        （bundleId → iconLocators），当前首字母药丸占位；
-       `CuaToolCallDetails`（cuaDetails.tsx）的权限区/环境区/截图区/
-       失败原因区/建议动作区未渲染（数据已进模型）。
+       截图点击放大 Dialog（依赖 Radix focus trap / portal）。
 4. 文件树剩余项：git 状态 / fileWatcher / 虚拟滚动 / 拖拽右键菜单
 5. 归档区剩余：变更统计（changeSummary）、清空全部归档按钮
 6. 富文本输入（`LexicalChatInput` 1535 行 → Rust 富文本方案待定）

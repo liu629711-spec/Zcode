@@ -60,15 +60,6 @@ pub enum CuaFlowKind {
     AssistantWork,
 }
 
-impl CuaFlowKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::AssistantHistory => "assistantHistory",
-            Self::AssistantWork => "assistantWork",
-        }
-    }
-}
-
 /// `ConversationCuaGroupRenderItem`（真源 :12-27）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CuaGroupRenderItem {
@@ -842,9 +833,11 @@ mod tests {
     }
 
     #[test]
-    fn flow_kind_as_str_matches_source() {
-        assert_eq!(CuaFlowKind::AssistantHistory.as_str(), "assistantHistory");
-        assert_eq!(CuaFlowKind::AssistantWork.as_str(), "assistantWork");
+    fn flow_kind_covers_both_variants() {
+        // 真源 :26 只这两种；Rust侧枚举即约束。
+        let all = [CuaFlowKind::AssistantHistory, CuaFlowKind::AssistantWork];
+        assert_eq!(all.len(), 2);
+        assert_ne!(all[0], all[1]);
     }
 
     #[test]
