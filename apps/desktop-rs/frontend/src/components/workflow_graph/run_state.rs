@@ -208,6 +208,53 @@ pub struct WorkflowRunState {
     /// 没有可说的。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_model: Option<String>,
+    /// `status === "stopped"` 才在场。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<WorkflowRunStopReason>,
+    /// lineage 的两端：本 run 被哪次修订停下并替代（只随
+    /// `stopReason: "superseded"` 出现）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<String>,
+    /// 并发现状。只在**两条界里有一条低于天花板**时在场：收到过
+    /// `concurrency-changed`（共享桶被限流压低），或 `run-started` 带来一个
+    /// 低于天花板的 `limit`（用户给这次 run 定了上限）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concurrency: Option<WorkflowRunConcurrency>,
+    /// 本机的并发天花板（`run-started` 随带、恒在）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concurrency_ceiling: Option<i64>,
+}
+
+/// `workflowRunStopReason`（真源 :367）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum WorkflowRunStopReason {
+    #[serde(rename = "user")]
+    User,
+    #[serde(rename = "model")]
+    Model,
+    #[serde(rename = "provider")]
+    Provider,
+    #[serde(rename = "interrupted")]
+    Interrupted,
+    #[serde(rename = "superseded")]
+    Superseded,
+}
+
+/// `workflowRunConcurrencySchema`（真源 :289-295）。
+///
+/// ★`cap` / `ceiling` 是读数芯片自己的水位，`limit` 是用户给这次 run 定的上限
+/// （agent 侧钳到 `[1, 天花板]`）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunConcurrency {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub cap: i64,
+    pub ceiling: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_ms: Option<i64>,
 }
 
 /// `workflowRunUsageSchema`（真源 :152-165）。

@@ -13,5 +13,6 @@ pub mod timeline_geometry;
 pub mod timeline_ledge;
 pub mod timeline_model;
 pub mod timeline_summary;
+pub mod workflowRunSettings;
 pub mod workflowSettingsChange;
 pub mod workflow_graph;
