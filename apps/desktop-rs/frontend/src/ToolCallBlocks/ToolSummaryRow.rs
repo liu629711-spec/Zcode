@@ -213,7 +213,10 @@ pub fn ToolSummaryRowComponent(
                     class=INTERACTIVE_ROW_CLASS
                     role="button"
                     tabindex="0"
-                    aria-expanded=is_expanded
+                    // aria-* 传 bool 时 Leptos 会把 false 整个属性删掉（假数据画廊里
+                    // 实测到收起态 aria-expanded 是 null），而真源 React 渲染的是
+                    // "false"。这里显式给字符串，两种状态都留在 DOM 上。
+                    aria-expanded=if is_expanded { "true" } else { "false" }
                     aria-label=toggle_aria_label
                     data-testid=format!("tool-summary-trigger-{tool_id}")
                     title=title.clone()
