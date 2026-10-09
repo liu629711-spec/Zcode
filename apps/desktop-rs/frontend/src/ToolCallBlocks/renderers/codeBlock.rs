@@ -6,9 +6,11 @@
 //!   `<pre><code class="language-{lang}">`，由 app.rs 的 hljs 后处理
 //!   （`window.hljsLib` + `data-highlighted` 防重复）着色，与聊天区
 //!   markdown 代码块同一机制。
-//! - 行号、`focusedRange` 行定位、Mermaid 渲染分支（`MermaidBlock`/
-//!   `DiagramPreviewDialog`）、`CodeViewer`（@pierre/diffs）集成、
-//!   `fontSizePx` / `showLineNumbers` 等 props——仍待码查看器链路整体迁移。
+//! - ~~行号、`markedLines`~~ 已在 **v3** 补上（普通 flex 行号列复现可观察结果，
+//!   不是 @pierre/diffs 那套 shadow DOM，见文件内 v3 段注记）。
+//!   仍未迁：`focusedRange` 行定位与滚动、gutter 点选/拖拽选区、行内评论、
+//!   Mermaid 渲染分支（`MermaidBlock`/`DiagramPreviewDialog`）、
+//!   `fontSizePx` 等 props——仍待码查看器链路整体迁移。
 //! - v2 补齐：`CodeBlockContainer` 外壳类、`CodeBlockHeader` / `CodeBlockTitle` /
 //!   `CodeBlockActions`、`CodeBlockWrapButton`（换行切换，aria-pressed + bg-muted）、
 //!   `CodeBlockCopyButton`（clipboard 写入 + 已复制 2s 打勾）。复制走
@@ -43,6 +45,15 @@ pub fn CodeBlock(
 // v2：Container / Header / Title / Actions / WrapButton / CopyButton
 // （真源 :147-243 与 :376-510；容器类 :152-165，正文包裹 :326-360）
 // ---------------------------------------------------------------------------
+
+// ── v3 追加（create-workflow 的脚本块要的两件）：行号列 + markedLines 着色判定 ──
+//
+// ★做法偏离已注明在 props 上：真源这两件由 `@pierre/diffs` 在异步 Shadow DOM 里画
+// （code-viewer.tsx:12, :146-158, :694），整条码查看器链路（行定位 focusedRange、
+// gutter 点选/拖拽选区、行内评论、字体像素与主题 token）不在这一步。
+// 这里复现的是**可观察结果**：一列右对齐行号 + 被点名行号着 warning 色、代码行不加背景。
+// 未覆盖的仍是未覆盖：行定位滚动与选区评论没有，等码查看器那批。
+//
 
 /// Button 基础变体类（真源 `buttonVariants` 基座 + ghost + icon-md 的 tailwind-merge 结果）。
 pub const CODE_BLOCK_BUTTON_CLASS: &str = "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding font-medium whitespace-nowrap transition-colors outline-none select-none text-foreground hover:bg-hover hover:text-foreground size-7 [&_svg]:pointer-events-none [&_svg]:shrink-0";
@@ -79,6 +90,26 @@ fn copy_state_icon(copied: bool) -> AnyView {
     }
 }
 
+/// `codeViewerMarkedLinesCss` 的判据部分（真源 code-viewer.tsx:153-158）：
+/// 去重、丢掉非整数与非正数；空集合即「没有要标的行」。
+///
+/// 真源把结果拼成选择器注入 shadow root；Rust 侧的行号是自己渲染的，
+/// 所以这里只保留**哪些行算被点名**这一半判定。
+pub fn normalize_marked_lines(lines: &[i64]) -> Vec<i64> {
+    let mut out: Vec<i64> = Vec::with_capacity(lines.len());
+    for line in lines {
+        if *line > 0 && !out.contains(line) {
+            out.push(*line);
+        }
+    }
+    out
+}
+
+/// 行号列的行数（真源交给库，这里自己数）：按 `\n` 切，与 JS `code.split("\n").length` 同形。
+pub fn code_line_count(code: &str) -> usize {
+    code.split('\n').count()
+}
+
 /// v2 代码块（真源 `CodeBlock` + `CodeBlockHeader` 组合的 Rust 等价）。
 ///
 /// 真源 header 由 children 槽组装；Rust 侧收拢为结构化 props——
@@ -102,11 +133,33 @@ pub fn RichCodeBlock(
     /// 容器底色（真源 className：MCP/node-repl 传 "bg-card"）。
     #[prop(default = String::new())]
     class: String,
+    /// 真源 `showLineNumbers`（:249，缺省 false）：左侧行号列。
+    ///
+    /// ★实现偏离注明（不是少做，是换做法）：真源的行号由 `@pierre/diffs` 在
+    /// **异步创建的 Shadow DOM** 里画（code-viewer.tsx:12, :694 `disableLineNumbers`），
+    /// 整条「码查看器链路」（行定位 focusedRange、gutter 点选/拖拽选区、行内评论、
+    /// 字体像素与主题 token）都不在这一批。这里用一根普通 flex 行号列复现**可观察结果**：
+    /// 与代码同 `text-ui-base leading-[1.5]`、右对齐、不随文本换行错位。
+    /// 因此它只在**不换行**时成立——换行态（wrap）下行数与可视行数不再一一对应，
+    /// 真源由库重算，这里直接让行号列在不换行态才出现（见 `gutter_lines`）。
+    #[prop(default = false)]
+    show_line_numbers: bool,
+    /// 真源 `markedLines`（:61-62）：编译反馈点名的行。
+    ///
+    /// 着色的只有**行号本身**（`codeViewerMarkedLinesCss`：`[data-column-number="n"]{color:
+    /// var(--color-warning)}`），代码行不加背景——被诊断指到不等于那一行被选中。
+    #[prop(default = Vec::new())]
+    marked_lines: Vec<i64>,
 ) -> impl IntoView {
     let is_wrapped = RwSignal::new(wrap_long_lines);
     let is_copied = RwSignal::new(false);
     let language_class = format!("language-{language}");
     let code_for_copy = code.clone();
+    // 行号列的着色判定与行数都先算好（view! 的 children 先于属性求值，
+    // 且 code_for_copy 已被上面复制按钮的闭包 move 走）。
+    let marked_for_class: std::collections::HashSet<i64> =
+        normalize_marked_lines(&marked_lines).into_iter().collect();
+    let gutter_line_count = code_line_count(&code);
     let has_header = label.is_some() || copy_label.is_some() || wrap_label.is_some();
 
     view! {
@@ -222,19 +275,80 @@ pub fn RichCodeBlock(
                 }
             })}
             <div class="p-2 pt-0 pb-3">
-                <pre class=move || {
-                    format!(
-                        "{} text-ui-base leading-[1.5]",
-                        if is_wrapped.get() {
-                            "whitespace-pre-wrap break-words"
-                        } else {
-                            "overflow-x-auto"
-                        },
-                    )
-                }>
-                    <code class=language_class>{code}</code>
-                </pre>
+                <div class="flex min-w-0">
+                    // 行号列：与代码同一套字号与行高，才能一行对一行。
+                    // 换行态下行数与可视行数不再一一对应，此时整列隐藏（见 props 上的偏离注明）。
+                    {show_line_numbers.then(|| {
+                        (1..=gutter_line_count as i64)
+                            .map(|line| {
+                                let marked = marked_for_class.contains(&(line as i64));
+                                view! {
+                                    <div
+                                        data-column-number=line.to_string()
+                                        class=format!(
+                                            "{} text-right",
+                                            if marked { "text-warning" } else { "text-foreground-subtlest" },
+                                        )
+                                    >
+                                        {line.to_string()}
+                                    </div>
+                                }
+                            })
+                            .collect_view()
+                    })
+                        .map(|gutter| {
+                            view! {
+                                <div
+                                    aria-hidden="true"
+                                    class=move || format!(
+                                        "select-none shrink-0 pr-2 font-mono text-ui-base leading-[1.5] {}",
+                                        if is_wrapped.get() { "hidden" } else { "block" },
+                                    )
+                                >
+                                    {gutter}
+                                </div>
+                            }
+                        })}
+                    <pre class=move || {
+                        format!(
+                            "{} text-ui-base leading-[1.5]",
+                            if is_wrapped.get() {
+                                "whitespace-pre-wrap break-words"
+                            } else {
+                                "overflow-x-auto"
+                            },
+                        )
+                    }>
+                        <code class=language_class>{code}</code>
+                    </pre>
+                </div>
             </div>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn marked_lines_drop_invalid_and_duplicate_entries() {
+        // 真源 codeViewerMarkedLinesCss :154 —— `Number.isInteger(line) && line > 0`，
+        // 外加 `[...new Set(...)]` 去重。顺序保留首次出现序（拼选择器用）。
+        assert_eq!(normalize_marked_lines(&[3, 1, 3, 2]), vec![3, 1, 2]);
+        assert_eq!(normalize_marked_lines(&[0, -4, 5]), vec![5], "非正整数丢弃");
+        assert_eq!(normalize_marked_lines(&[]), Vec::<i64>::new());
+        // 空集合 = 「没有要标的行」，行号列仍照常渲染，只是全用弱色。
+        assert!(normalize_marked_lines(&[0, -1]).is_empty());
+    }
+
+    #[test]
+    fn line_count_matches_js_split_semantics() {
+        // JS `code.split("\n").length`：尾随换行会多出一空行，这决定行号列画几格。
+        assert_eq!(code_line_count(""), 1);
+        assert_eq!(code_line_count("one line"), 1);
+        assert_eq!(code_line_count("a\nb"), 2);
+        assert_eq!(code_line_count("a\nb\n"), 3, "尾部换行算一行");
+        assert_eq!(code_line_count("a\r\nb"), 2, "\\r 留在行内，只按 \\n 切");
     }
 }

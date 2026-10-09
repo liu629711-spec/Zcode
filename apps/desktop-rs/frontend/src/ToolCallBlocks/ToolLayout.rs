@@ -108,6 +108,9 @@ pub struct ToolLayoutProps {
     pub title: Option<String>,
     pub expanded_title: Option<String>,
     pub status_label: Option<String>,
+    /// 状态词之前的灯（真源 :50 邻位的 `statusIndicator?: ReactNode`）。
+    /// 编译反馈行的空环灯走这里：形状说「什么都没跑」，颜色说注意力还悬不悬着。
+    pub status_indicator_view: Option<ChildrenFn>,
     /// 状态位的自定义节点（真源 :50 `statusLabel?: ReactNode`）。优先于 `status_label`。
     /// 观察/恢复一类的工作流卡在状态位里画「圆点 + 词」（状态绝不只靠颜色，DESIGN.md），
     /// 那是节点不是文本，故开这个槽位（同 `kind_detail_view` 的先例）。
@@ -310,6 +313,7 @@ pub fn ToolLayoutComponent(
     let props_title = props.summary_title(props.force_open());
     let props_kind_label_cls = props.kind_label_class();
     let props_status_label = props.status_label.clone();
+    let props_status_indicator_view = props.status_indicator_view.clone();
     let props_status_tooltip = props.status_tooltip.clone();
     let props_source_label = props.source_label.clone();
     let props_diff_count = props.diff_count;
@@ -535,8 +539,20 @@ pub fn ToolLayoutComponent(
                         .clone()
                         .map(|f| f())
                         .or_else(|| props_status_label.clone().map(|label| view! { <>{label}</> }.into_any()));
-                    inner.map(|node| view! {
+                    let word = inner.map(|node| view! {
                         <span class=cls title=props_status_tooltip.clone().unwrap_or_default()>{node}</span>
+                    });
+                    // 真源 :294-302 —— 有 statusIndicator 时把灯与状态词包进一个
+                    // inline-flex 小组（gap-1.5），否则状态词自己站。
+                    word.map(|word_node| match props_status_indicator_view.clone() {
+                        None => word_node.into_any(),
+                        Some(indicator) => view! {
+                            <span class="inline-flex shrink-0 items-center gap-1.5">
+                                {indicator()}
+                                {word_node}
+                            </span>
+                        }
+                        .into_any(),
                     })
                 })}
                 // 复制按钮（真源 :262-275，在 tooltip 内）

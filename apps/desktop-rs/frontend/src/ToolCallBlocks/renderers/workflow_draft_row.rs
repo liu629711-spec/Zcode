@@ -1,7 +1,11 @@
 //! 1:1 翻译 `packages/ui/src/ToolCallBlocks/renderers/workflow-draft-row.tsx`（186 行）。
 //!
-//! 编译反馈行在 ToolLayout 各槽位里说的话 + 展开后的内容。
+//! 编译反馈行在 ToolLayout 各槽位里说的话 + 展开后的内容
+//! （`WorkflowFeedbackContent` 组件在文件末——上一批迁这个文件时只落了纯判定，
+//! 组件本体随 create-workflow 这批补齐）。
 //! 真源从 `create-workflow.tsx` 拆出（oxlint max-lines 400 门）。
+
+use leptos::prelude::*;
 
 use crate::ToolCallBlocks::i18n;
 
@@ -195,6 +199,89 @@ pub fn should_render_fallback_output(
     fallback_output_text: Option<&str>,
 ) -> bool {
     display.is_none() && fallback_output_text.is_some_and(|t| !t.is_empty())
+}
+
+/// `WorkflowFeedbackContent`（真源 :96-143）——编译反馈行展开后的内容。
+///
+/// 三段按在场情况叠：脚本代码块（行号 + 被诊断点名的行着色）→ 诊断表 →
+/// 没有 display 时的有界纯文本面板。
+#[component]
+pub fn WorkflowFeedbackContent(
+    // 真源 `display`（可空：还没结算的在途行没有 display）。
+    display: Option<CreateWorkflowDisplay>,
+    // 真源 `fallbackOutputText`（`readFallbackOutputText(toolCall.output)`）。
+    fallback_output_text: Option<String>,
+    // 脚本来自保存的工作流文件（真源 `saved`：那句话点名文件而不是这次调用）。
+    saved: bool,
+    // 真源 `scriptText`（`readWorkflowScript(toolCall.input)`）。
+    script_text: Option<String>,
+) -> impl IntoView {
+    // 真源 :107-111 —— 按内容记忆：display 不变就是同一个数组，
+    // 代码块的注入样式不会跟着重建。
+    let flagged = feedback_flagged_lines(display.as_ref());
+    let wrap_label = i18n::text("codeBlock.wrapLines");
+    let diagnostics = display
+        .as_ref()
+        .map(|d| {
+                d.diagnostics
+                    .iter()
+                    .map(|entry| super::workflow_diagnostics::WorkflowDiagnosticEntry {
+                        line: entry.line,
+                        column: entry.column,
+                        code: entry.code,
+                        message: entry.message.clone(),
+                    })
+                    .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let error_count = display.as_ref().map(|d| d.error_count);
+    let truncated = display.as_ref().and_then(|d| d.truncated) == Some(true);
+    let has_diagnostics = !diagnostics.is_empty();
+    let show_fallback = should_render_fallback_output(display.as_ref(), fallback_output_text.as_deref());
+    let fallback_text = fallback_output_text.unwrap_or_default();
+    let script_for_block = script_text.clone();
+    let show_script = script_text.is_some();
+
+    view! {
+        <div class="mb-2 space-y-3">
+            {show_script.then(|| {
+                let marked = flagged.clone();
+                view! {
+                    <div data-testid="workflow-script-codeblock">
+                        // 真源 :116-125 —— CodeBlock + CodeBlockHeader(language)。
+                        // 容器类照真源 className / contentClassName 两处。
+                        <div class="max-h-80 overflow-auto border border-border bg-card">
+                            <super::codeBlock::RichCodeBlock
+                                code=script_for_block.clone().unwrap_or_default()
+                                language="typescript".to_string()
+                                label=Some("typescript".to_string())
+                                copy_label=None
+                                wrap_label=Some(wrap_label.clone())
+                                wrap_long_lines=false
+                                class="border-border bg-card".to_string()
+                                show_line_numbers=true
+                                marked_lines=marked.unwrap_or_default()
+                            />
+                        </div>
+                    </div>
+                }
+            })}
+            {has_diagnostics.then(|| view! {
+                <super::workflow_diagnostics::WorkflowDiagnosticsSectionComponent
+                    count=error_count
+                    diagnostics=diagnostics.clone()
+                    saved=saved
+                    truncated=truncated
+                />
+            })}
+            {show_fallback.then(|| view! {
+                // 没有 display（老会话 / 读不出装饰载荷）时退回有界纯文本，不做 JSON dump。
+                <pre class="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-xl border border-border bg-panel px-3 py-2 font-mono text-ui-base text-foreground-subtle">
+                    {fallback_text.clone()}
+                </pre>
+            })}
+        </div>
+    }
 }
 
 #[cfg(test)]

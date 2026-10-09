@@ -22,6 +22,7 @@ pub mod codeBlock;
 pub mod cua;
 pub mod createWorkflowDisplay;
 pub mod createWorkflowInput;
+pub mod create_workflow;
 pub mod cuaAccessDetails;
 pub mod cuaActionDetail;
 pub mod CuaScreenshotSection;

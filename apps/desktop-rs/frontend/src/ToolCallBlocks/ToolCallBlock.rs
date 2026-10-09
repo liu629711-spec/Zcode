@@ -55,14 +55,41 @@ pub struct ToolCallBlockContext {
     /// 打开侧栏 run 视图的通道（真源 `onOpenWorkflowRun`，fileSummaryTypes.ts:255）。
     /// 与 `workflow_run` 同样未接线，恒 None；卡片据此退回纯展示态（不加 role/tabIndex）。
     pub on_open_workflow_run: Option<Callback<WorkflowRunOpenRequest>>,
+    /// 编译反馈的草稿位置（真源 `workflowDraft`，:295，宿主按 toolCallId 从行窗口联接）。
+    /// 与 `workflow_run` 同一条联接通道，未接线时恒 None。
+    pub workflow_draft: Option<super::fileSummaryTypes::WorkflowDraftPosition>,
+    /// 页脚 Resume（真源 `onResumeWorkflowRun`，:260）。
+    pub on_resume_workflow_run: Option<Callback<WorkflowRunOpenRequest>>,
+    /// 点一枚药丸开那个子代理的 transcript（真源 `onOpenWorkflowActor`，:265-276）。
+    pub on_open_workflow_actor: Option<Callback<WorkflowActorOpenRequest>>,
+    /// 点脚本药丸开 run 的脚本 transcript（真源 `onOpenWorkflowWorkspace`，:277）。
+    pub on_open_workflow_workspace: Option<Callback<WorkflowRunOpenRequest>>,
+    /// 点一枚产物开产物（真源 `onOpenWorkflowArtifact`，:282，参数是 artifactId）。
+    pub on_open_workflow_artifact: Option<Callback<String>>,
 }
 
-/// `onOpenWorkflowRun` 的请求体（真源 fileSummaryTypes.ts:255 的
-/// `{ workflowName?: string; phaseId?: string }`）。
+/// `onOpenWorkflowRun` / `onResumeWorkflowRun` / `onOpenWorkflowWorkspace` 共用的请求体。
+///
+/// 真源是三个各自的内联形状（fileSummaryTypes.ts:255/:260/:277）：
+/// `{workflowName?, phaseId?}` —— `phaseId` 只有 run 视图与脚本 transcript 用，
+/// Resume 只带 `workflowName`。Rust 侧收成一个结构，缺的字段就是真源里的「不带」。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkflowRunOpenRequest {
     pub workflow_name: Option<String>,
     pub phase_id: Option<String>,
+}
+
+/// `onOpenWorkflowActor` 的请求体（真源 fileSummaryTypes.ts:265-276）。
+///
+/// 卡片只交出**槽位身份**（还没启动的药丸也可开，会话 id 有则随行），
+/// 会话与 workspace 身份由宿主补齐。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowActorOpenRequest {
+    pub ordinal: i64,
+    pub run_id: String,
+    pub site_id: String,
+    pub actor_session_id: Option<String>,
+    pub actor_name: Option<String>,
 }
 
 impl Default for ToolCallBlockContext {
@@ -77,6 +104,11 @@ impl Default for ToolCallBlockContext {
             on_load_full_tool_call_fields: None,
             workflow_run: None,
             on_open_workflow_run: None,
+            workflow_draft: None,
+            on_resume_workflow_run: None,
+            on_open_workflow_actor: None,
+            on_open_workflow_workspace: None,
+            on_open_workflow_artifact: None,
         }
     }
 }
@@ -173,6 +205,11 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
                 context.on_load_full_tool_call_fields.clone(),
                 context.workflow_run.clone(),
                 context.on_open_workflow_run.clone(),
+                context.workflow_draft,
+                context.on_resume_workflow_run.clone(),
+                context.on_open_workflow_actor.clone(),
+                context.on_open_workflow_workspace.clone(),
+                context.on_open_workflow_artifact.clone(),
             )}
         </div>
     }
@@ -211,6 +248,12 @@ fn render_dispatch(
     workflow_run: Option<super::fileSummaryTypes::WorkflowRunCardSummary>,
     // 打开侧栏 run 视图的通道（同上，恒 None）。
     on_open_workflow_run: Option<Callback<WorkflowRunOpenRequest>>,
+    // 编译反馈的稿号位置（同上，恒 None）。
+    workflow_draft: Option<super::fileSummaryTypes::WorkflowDraftPosition>,
+    on_resume_workflow_run: Option<Callback<WorkflowRunOpenRequest>>,
+    on_open_workflow_actor: Option<Callback<WorkflowActorOpenRequest>>,
+    on_open_workflow_workspace: Option<Callback<WorkflowRunOpenRequest>>,
+    on_open_workflow_artifact: Option<Callback<String>>,
 ) -> AnyView {
     use super::renderers::*;
 
@@ -544,6 +587,48 @@ fn render_dispatch(
                         // 宿主通道未接线时 None → 组名退回 providerLabel → 「模型供应商」，
                         // 仍绝不回 providerId（见 list_models.rs 的裁剪注明）。
                         provider_name: None,
+                        legacy: legacy.clone(),
+                        display_model,
+                        workspace_path: workspace_path.clone(),
+                    }
+                />
+            }
+            .into_any()
+        }
+        // CreateWorkflow / AmendWorkflow 共用的一张卡（真源 :148-156 —— workflow family 的兜底）。
+        Renderer::CreateWorkflow => {
+            let display_model = super::toolDisplay::build_tool_display_model(
+                &super::codeViewer::CodeViewerToolCall::from_legacy(&legacy),
+                legacy.error.as_deref(),
+                &status,
+                &workspace_path,
+            );
+            view! {
+                <create_workflow::CreateWorkflowToolCallBlock
+                    props=create_workflow::CreateWorkflowBlockProps {
+                        tool_id: tool_id.to_string(),
+                        kind: kind.to_string(),
+                        tool_name,
+                        title,
+                        input,
+                        output,
+                        raw,
+                        status: status.clone(),
+                        v4_status: legacy.v4_status.clone(),
+                        is_running,
+                        status_label: Some(status_label),
+                        error_text,
+                        source_label,
+                        show_icon,
+                        snapshot_refs: legacy.snapshot_refs.clone(),
+                        on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                        workflow_run,
+                        workflow_draft,
+                        on_open_workflow_run,
+                        on_resume_workflow_run,
+                        on_open_workflow_actor,
+                        on_open_workflow_workspace,
+                        on_open_workflow_artifact,
                         legacy: legacy.clone(),
                         display_model,
                         workspace_path: workspace_path.clone(),
@@ -930,6 +1015,7 @@ mod tests {
             on_load_full_tool_call_fields: None,
             workflow_run: None,
             on_open_workflow_run: None,
+            ..Default::default()
         }
     }
 
