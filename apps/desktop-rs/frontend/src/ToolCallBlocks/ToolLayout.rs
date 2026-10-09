@@ -296,27 +296,10 @@ pub fn ToolLayoutComponent(
     /// 对应真源 `renderContent`（惰性内容）。
     render_content: Option<ChildrenFn>,
 ) -> impl IntoView {
-    // props 的所有取值在这里一次性取出：Rust 侧 props 会被后面的 Effect 闭包按值捕获，
-    // 之后再读就报borrow of moved value。真源不存在这个问题（props 是解构后的常量）。
-    let props_kind_label = props.summary_kind_label(props.force_open());
-    let props_kind_detail = props.summary_kind_detail(props.force_open());
-    // kind_detail 的自定义节点（真源 kindDetail 是 ReactNode，Agent 卡传带色
-    // 子代理名 span）。与 primary_text_view 同模式：ChildrenFn 可克隆复用。
-    let props_kind_detail_view = props.kind_detail_view.clone();
-    // 状态位的节点形态（真源 statusLabel 是 ReactNode）——同 kind_detail_view 的可克隆模式。
-    let props_status_label_view = props.status_label_view.clone();
-    let props_primary_text = props.summary_primary_text(props.force_open());
-    let props_secondary_text = props.summary_secondary_text(props.force_open());
-    let props_title = props.summary_title(props.force_open());
-    let props_kind_label_cls = props.kind_label_class();
-    let props_status_label = props.status_label.clone();
-    let props_status_indicator_view = props.status_indicator_view.clone();
-    let props_status_tooltip = props.status_tooltip.clone();
-    let props_source_label = props.source_label.clone();
-    let props_diff_count = props.diff_count;
-    let props_primary_file_chip = props.primary_file_chip.clone();
-    let props_primary_text_view = props.primary_text_view.clone();
-    let props_secondary_text_view = props.secondary_text_view.clone();
+    // props 的文本/节点槽不在这里预取了：摘要行整段构造改由下面的 `row_builder`
+    // 闭包按实时 isExpanded 现算（真源 :124-138 就是这个语义，React 靠重渲染拿到）。
+    // 再往下的标量仍要一次取净——Rust 侧 props 会被 Effect 闭包按值捕获，之后再读就
+    // 报 borrow of moved value，真源没这个问题。
 
     // ── :105-114 状态初始化 ──
     // 真源这些值都来自 props 解构（:67-99 已是常量），Effect 闭包里直接用不会有问题；
@@ -423,17 +406,35 @@ pub fn ToolLayoutComponent(
     };
 
     // ── :132-144 摘要行取值 ──
-    let expanded = is_expanded.get();
-    // 展开态文案（:132-141）。props_* 是开头一次性取出的副本，这里转成 owned便于 view 用。
-    let kind_label = props_kind_label.map(str::to_string);
-    let kind_detail = props_kind_detail.map(str::to_string);
-    let primary_text = props_primary_text.map(str::to_string);
-    let secondary_text = props_secondary_text.map(str::to_string);
-    let summary_title = props_title.map(str::to_string);
-    let show_diff_count = props.should_show_diff_count(expanded);
-    let show_status_label = props.should_show_status_label();
+    // 真源 :124-138 的七个派生值全部按**实时 isExpanded** 取，React 每次渲染重算。
+    // Rust 侧组件不会重跑，所以整段行 props 构造收进下面这个随展开态重算的闭包里，
+    // 由 view! 里的反应式子节点驱动——等价 React 的重渲染语义。
+    let row_builder = {
+        let props = props.clone();
+        let icon_view = icon_view.clone();
+        let is_open = is_open.clone();
+        let toggle = toggle.clone();
+        move |expanded: bool| {
+            let kind_label = props.summary_kind_label(expanded).map(str::to_string);
+            let kind_detail = props.summary_kind_detail(expanded).map(str::to_string);
+            let primary_text = props.summary_primary_text(expanded).map(str::to_string);
+            let secondary_text = props.summary_secondary_text(expanded).map(str::to_string);
+            let summary_title = props.summary_title(expanded).map(str::to_string);
+            let show_diff_count = props.should_show_diff_count(expanded);
+            let show_status_label = props.should_show_status_label();
+            let props_kind_label_cls = props.kind_label_class();
+            let props_kind_detail_view = props.kind_detail_view.clone();
+            let props_status_label_view = props.status_label_view.clone();
+            let props_status_label = props.status_label.clone();
+            let props_status_indicator_view = props.status_indicator_view.clone();
+            let props_status_tooltip = props.status_tooltip.clone();
+            let props_source_label = props.source_label.clone();
+            let props_diff_count = props.diff_count;
+            let props_primary_file_chip = props.primary_file_chip.clone();
+            let props_primary_text_view = props.primary_text_view.clone();
+            let props_secondary_text_view = props.secondary_text_view.clone();
 
-    // ── :140 ToolSummaryRow 的节点槽（真源传 ReactNode，见 ToolSummaryRow::SummaryNode）──
+            // ── :140 ToolSummaryRow 的节点槽（真源传 ReactNode，见 ToolSummaryRow::SummaryNode）──
     // primaryText 的三档优先级与真源一致：文件 chip > 自定义节点 > 纯文本。
     let primary_node = match (
         props_primary_file_chip.clone(),
@@ -585,15 +586,18 @@ pub fn ToolLayoutComponent(
             .disable_summary_content_animation
             .unwrap_or(false),
     };
-    // 组件的 canToggle 分支把点击与 Enter/Space 都收敛到这一个回调（真源 :194/:199-208）。
-    let row_on_activate = {
-        let is_open = is_open.clone();
-        let toggle = toggle.clone();
-        Callback::new(move |_| {
-            if can_toggle {
-                toggle(!is_open.get_untracked());
-            }
-        })
+            // 组件的 canToggle 分支把点击与 Enter/Space 都收敛到这一个回调（真源 :194/:199-208）。
+            let row_on_activate = {
+                let is_open = is_open.clone();
+                let toggle = toggle.clone();
+                Callback::new(move |_| {
+                    if can_toggle {
+                        toggle(!is_open.get_untracked());
+                    }
+                })
+            };
+            (row_props, row_on_activate, icon_view.clone())
+        }
     };
 
     view! {
@@ -604,13 +608,21 @@ pub fn ToolLayoutComponent(
             data-open=move || is_expanded.get()
         >
             // ── :319-345 ToolSummaryRow ──
-            // 行结构、类名、aria、chevron 全归 ToolSummaryRow 组件（真源就是这么分的），
-            // ToolLayout 只负责把上面算好的节点塞进 props。
-            <ToolSummaryRowComponent
-                props=row_props
-                icon=icon_view.clone()
-                on_activate=row_on_activate
-            />
+            // 行结构、类名、aria、chevron 全归 ToolSummaryRow 组件（真源就是这么分的）。
+            // 外面再套一层反应式闭包：isExpanded 一变就重算整段行 props 并重建行——
+            // 真源是靠 React 重渲染拿到实时的 summaryPrimaryText / shouldShowDiffCount
+            // 那批派生值的，Rust 侧不重跑组件，只能在这一层补上同样的重算。
+            {move || {
+                let (row_props, row_on_activate, row_icon) = row_builder(is_expanded.get());
+                view! {
+                    <ToolSummaryRowComponent
+                        props=row_props
+                        icon=row_icon
+                        on_activate=row_on_activate
+                    />
+                }
+                .into_any()
+            }}
             // ── :322-338 内容区 ──
             {{
                 let show = should_render_resolved_content.get();
@@ -687,6 +699,36 @@ mod tests {
             primary_text: Some("src/main.rs".into()),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn expanded_state_changes_every_summary_derivation() {
+        // 真源 :124-138 的七个派生值全部按**实时 isExpanded** 取。这里出过一次真事故：
+        // 调用点把 `force_open()`（常量）喂给了这些方法，`expanded` 又只在组件创建时
+        // `.get()` 一次，结果点开卡片后摘要行整行不变。测试钉住「展开态确实改变派生」。
+        let p = ToolLayoutProps {
+            primary_text: Some("正在读取".into()),
+            expanded_primary_text: Some("已读取 src/main.rs".into()),
+            secondary_text: Some("细节".into()),
+            hide_secondary_text_when_open: Some(true),
+            title: Some("折叠态标题".into()),
+            expanded_title: Some("展开态标题".into()),
+            diff_count: Some((3, 1)),
+            hide_diff_count_when_open: Some(true),
+            ..base_props("t1")
+        };
+        assert_eq!(p.summary_primary_text(false).unwrap(), "正在读取");
+        assert_eq!(p.summary_primary_text(true).unwrap(), "已读取 src/main.rs");
+        // 真源 :129-134：展开 + hideSecondaryTextWhenOpen → null，不是回落到原文案。
+        assert_eq!(p.summary_secondary_text(false), Some("细节"));
+        assert_eq!(p.summary_secondary_text(true), None);
+        assert_eq!(p.summary_title(false).unwrap(), "折叠态标题");
+        assert_eq!(p.summary_title(true).unwrap(), "展开态标题");
+        assert!(p.should_show_diff_count(false));
+        assert!(!p.should_show_diff_count(true));
+        // contentKey 也跟着展开态走（真源 :136-137 用的是 resolved 后的 title）。
+        assert_eq!(p.resolved_summary_content_key(false), "折叠态标题:");
+        assert_eq!(p.resolved_summary_content_key(true), "展开态标题:");
     }
 
     #[test]
