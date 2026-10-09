@@ -9,5 +9,7 @@
 pub mod nodeReplToolDisplay;
 pub mod taskListItemPresentation;
 pub mod workDuration;
+pub mod workflowObservationFormat;
 pub mod workflowRunAckStore;
 pub mod workflowRunLine;
+pub mod workflowToolNames;

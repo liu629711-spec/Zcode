@@ -16,7 +16,9 @@ use std::sync::Arc;
 use super::super::ToolLayout::ToolLayoutComponent;
 use super::super::i18n;
 use super::super::toolCallRowAdapter::LegacyToolCall;
-use super::super::toolResultDisplay::{ToolResultDisplay, read_tool_result_display};
+use super::super::toolResultDisplay::{
+    EvalWorkflowSnippetDisplay, ToolResultDisplay, read_tool_result_display,
+};
 use super::codeBlock::CodeBlock;
 use super::workflow_diagnostics::{
     WorkflowDiagnosticEntry, WorkflowDiagnosticsSectionComponent,
@@ -82,26 +84,21 @@ pub fn kind_label(running: bool) -> &'static str {
 }
 
 /// `eval_workflow_snippet` display 读出来（真源 :26）。
-fn read_snippet_display(raw: &Value) -> Option<Value> {
+///
+/// display 的 strict 字段表已在 `toolResultDisplay.rs` 里落定，这里直接拿 typed 结果，
+/// 不再从原始 JSON 二次取键（那层重复解析随本轮 strict 化一起去掉）。
+fn read_snippet_display(raw: &Value) -> Option<EvalWorkflowSnippetDisplay> {
     match read_tool_result_display(raw) {
-        Some(ToolResultDisplay::Workflow(d)) if d.kind == "eval_workflow_snippet" => {
-            Some(d.value)
-        }
+        Some(ToolResultDisplay::EvalWorkflowSnippet(d)) => Some(d),
         _ => None,
     }
-}
-
-/// 从 display 的原始 JSON 里读出严格解析后的字段。
-fn snippet_fields(value: &Value) -> Option<super::super::toolResultDisplay::EvalWorkflowSnippetDisplay> {
-    super::super::toolResultDisplay::parse_eval_workflow_snippet_display(value)
 }
 
 /// `EvalWorkflowSnippetToolCallBlock`（真源 :24-127）。
 #[component]
 pub fn EvalWorkflowSnippetToolCallBlock(tool_call: LegacyToolCall) -> impl IntoView {
     let running = false; // 真源读 context.isRunning；Rust 侧由调用方传入后合并
-    let snippet = read_snippet_display(&tool_call.raw);
-    let parsed = snippet.as_ref().and_then(snippet_fields);
+    let parsed = read_snippet_display(&tool_call.raw);
 
     let snippet_ok = parsed.as_ref().map(|p| p.ok);
     let failed = is_failed(running, &tool_call.status, snippet_ok);

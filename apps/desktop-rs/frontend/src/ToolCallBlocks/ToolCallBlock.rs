@@ -7,7 +7,9 @@
 //! - 入场动画键表（真源 :26-67）：装饰性淡入，依赖模块级 Map + 定时清理，
 //!   Leptos 侧 v1 跳过（`data-zcode-tool-stream-animate` 恒不设）；
 //! - workflowRun / workflowDraft 联接（:91/:135）：依赖 workflowRuns 投影
-//!   （宿主按 toolCallId 联接），未迁——workflow 系 renderer 走 fallback；
+//!   （宿主按 toolCallId 联接）与侧栏 run 视图，两者在 Rust 应用里都还没有宿主表面——
+//!   上下文里留了字段位（恒 None），workflow 系 renderer 已不再走 fallback，
+//!   但 run 态紧凑可点卡要等联接与侧板那批一起接上；
 //! - theme / codePreviewSettings（:109-112）：桌面端单主题，v1 无代码预览设置；
 //! - office 模式（:156）：桌面端恒 false；
 //! - CUA 组（:378-384）：依赖 conversationCuaGroups 分组器，未迁，走 fallback。
@@ -42,6 +44,25 @@ pub struct ToolCallBlockContext {
     /// `Callback<String, bool>` 承接（false = 失败）。宿主未接线时 None——
     /// 快照提示按真源语义（`!onLoadFullToolCallFields` → null）不渲染。
     pub on_load_full_tool_call_fields: Option<Callback<String, bool>>,
+    /// run 联接摘要（真源 `workflowRun`，fileSummaryTypes.ts:286-291）。
+    ///
+    /// ★宿主尚未接线：真源它由 `v4/workflowRunCardJoin.ts` 的 byToolCallId / byRunId 表
+    /// 按行联接，而那张表的数据源 `workflowRuns` 投影与侧栏 run 视图在 Rust 应用里都还没有
+    /// 宿主表面（同「node-repl 打开完整结果」那条 defer）。因此这里恒 None，
+    /// create / resume 两张卡走各自的「未联接」分支——那是真源为
+    /// 「display 缺席的老会话 / 失败路径 / 投影尚未就绪」写好的第三条路，不是兜底。
+    pub workflow_run: Option<super::fileSummaryTypes::WorkflowRunCardSummary>,
+    /// 打开侧栏 run 视图的通道（真源 `onOpenWorkflowRun`，fileSummaryTypes.ts:255）。
+    /// 与 `workflow_run` 同样未接线，恒 None；卡片据此退回纯展示态（不加 role/tabIndex）。
+    pub on_open_workflow_run: Option<Callback<WorkflowRunOpenRequest>>,
+}
+
+/// `onOpenWorkflowRun` 的请求体（真源 fileSummaryTypes.ts:255 的
+/// `{ workflowName?: string; phaseId?: string }`）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkflowRunOpenRequest {
+    pub workflow_name: Option<String>,
+    pub phase_id: Option<String>,
 }
 
 impl Default for ToolCallBlockContext {
@@ -54,6 +75,8 @@ impl Default for ToolCallBlockContext {
             show_icon: true,
             authoritative_agent_type: None,
             on_load_full_tool_call_fields: None,
+            workflow_run: None,
+            on_open_workflow_run: None,
         }
     }
 }
@@ -148,6 +171,8 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
                 context.authoritative_agent_type.clone(),
                 context.workspace_path.clone(),
                 context.on_load_full_tool_call_fields.clone(),
+                context.workflow_run.clone(),
+                context.on_open_workflow_run.clone(),
             )}
         </div>
     }
@@ -182,6 +207,10 @@ fn render_dispatch(
     workspace_path: String,
     // 「加载完整工具数据」通道（宿主未接线时为 None，快照提示按真源不渲染）。
     on_load_full_tool_call_fields: Option<Callback<String, bool>>,
+    // run 联接摘要（workflowRunCardJoin 的产物；宿主未接线上文恒 None）。
+    workflow_run: Option<super::fileSummaryTypes::WorkflowRunCardSummary>,
+    // 打开侧栏 run 视图的通道（同上，恒 None）。
+    on_open_workflow_run: Option<Callback<WorkflowRunOpenRequest>>,
 ) -> AnyView {
     use super::renderers::*;
 
@@ -304,6 +333,180 @@ fn render_dispatch(
                     output,
                     status: Some(status),
                     is_running,
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // 主代答子代理阻塞问题的卡（真源 :114-116 —— 按名分流，与 escalate 是配对的两张卡）。
+        Renderer::ResolveWorkflowQuestion => view! {
+            <resolve_workflow_question::ResolveWorkflowQuestionToolCallBlock
+                props=resolve_workflow_question::ResolveQuestionBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    output,
+                    error: legacy.error.clone(),
+                    status: Some(status),
+                    is_running,
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // 恢复入口卡（真源 :96-100 —— 按名分流，必须抢在 workflow family 之前认领自己的名字）。
+        Renderer::ResumeWorkflowRun => view! {
+            <resume_workflow_run::ResumeWorkflowRunToolCallBlock
+                props=resume_workflow_run::ResumeBlockProps {
+                    tool_id: tool_id.to_string(),
+                    raw,
+                    status,
+                    is_running,
+                    output_text: legacy.output.clone(),
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                    workflow_run: workflow_run.clone(),
+                    on_open_workflow_run: on_open_workflow_run.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // actor 提交结果的卡（真源 :148-156 —— workflow family 内按工具名分出的另一张卡面）。
+        Renderer::SubmitResult => view! {
+            <submit_result::SubmitResultToolCallBlock
+                props=submit_result::SubmitResultBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    status: status.clone(),
+                    is_running,
+                    error: legacy.error.clone(),
+                    error_text,
+                    output_text: legacy.output.clone(),
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // 实例清单卡（真源 :90-92 —— 按名分流，与 GetWorkflowRun 同族）。
+        Renderer::ListWorkflowRuns => view! {
+            <list_workflow_runs::ListWorkflowRunsToolCallBlock
+                props=list_workflow_runs::ListWorkflowRunsBlockProps {
+                    tool_id: tool_id.to_string(),
+                    raw,
+                    status,
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    title,
+                    source_label,
+                    output_text: legacy.output.clone(),
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // run 情势快照卡（真源 :87-89 —— 按名分流）。
+        Renderer::GetWorkflowRun => view! {
+            <get_workflow_run::GetWorkflowRunToolCallBlock
+                props=get_workflow_run::GetWorkflowRunBlockProps {
+                    tool_id: tool_id.to_string(),
+                    raw,
+                    status,
+                    is_running,
+                    error_text,
+                    output_text: legacy.output.clone(),
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // 可复用工作流的落库记录卡（真源 :77-79 —— 按名分流，排在 family 之前）。
+        Renderer::SaveWorkflow => view! {
+            <save_workflow::SaveWorkflowToolCallBlock
+                props=save_workflow::SaveWorkflowBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input,
+                    status,
+                    is_running,
+                    status_label: Some(status_label),
+                    error_text,
+                    title,
+                    source_label,
+                    show_icon,
+                    snapshot_refs: legacy.snapshot_refs.clone(),
+                    on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                }
+            />
+        }
+        .into_any(),
+        // 可复用清单卡（真源 :80-82 —— 按名分流）。读不出结构化结果时它自己交回 fallback，
+        // 所以要把 display model 与 legacy 一并递给它。
+        Renderer::ListSavedWorkflows => {
+            let display_model = super::toolDisplay::build_tool_display_model(
+                &super::codeViewer::CodeViewerToolCall::from_legacy(&legacy),
+                legacy.error.as_deref(),
+                &status,
+                &workspace_path,
+            );
+            view! {
+                <list_saved_workflows::ListSavedWorkflowsToolCallBlock
+                    props=list_saved_workflows::ListSavedWorkflowsBlockProps {
+                        tool_id: tool_id.to_string(),
+                        kind: kind.to_string(),
+                        raw,
+                        output_text: legacy.output.clone(),
+                        title,
+                        status: Some(status.clone()),
+                        is_running,
+                        status_label: Some(status_label),
+                        error_text,
+                        source_label,
+                        show_icon,
+                        snapshot_refs: legacy.snapshot_refs.clone(),
+                        on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                        legacy: legacy.clone(),
+                        display_model,
+                        workspace_path: workspace_path.clone(),
+                    }
+                />
+            }
+            .into_any()
+        }
+        Renderer::ReadSessionContext => view! {
+            <read_session_context::ReadSessionContextToolCallBlock
+                props=read_session_context::ReadSessionContextBlockProps {
+                    tool_id: tool_id.to_string(),
+                    input: Some(input),
+                    // v4 适配层把输出压平成散文（toolCallRowAdapter），这里还原成 Value 形态
+                    // 以走真源的 record 探测路径。
+                    output: legacy.output.clone().map(Value::String),
+                    raw,
+                    status,
+                    is_running,
+                    status_label: Some(status_label),
                     error_text,
                     title,
                     source_label,
@@ -654,6 +857,7 @@ fn render_dispatch(
                     error_text,
                     source_label,
                     show_icon,
+                    icon_override: None,
                     has_inline_preview: false,
                     hide_raw_fallback: false,
                     summary_only: false,
@@ -689,6 +893,8 @@ mod tests {
             show_icon: true,
             authoritative_agent_type: None,
             on_load_full_tool_call_fields: None,
+            workflow_run: None,
+            on_open_workflow_run: None,
         }
     }
 

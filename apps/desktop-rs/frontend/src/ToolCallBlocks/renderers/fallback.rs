@@ -48,7 +48,9 @@ pub fn build_kind_label(kind: &str) -> String {
 }
 
 /// FallbackToolCallBlock 的 props（真源 :14-19 的三个覆盖项 + context 字段）。
-#[derive(Debug, Clone)]
+// `ChildrenFn` 不是 `Debug`（图标覆盖槽位，真源 :12 的 iconOverride），
+// 故本 struct 不再 derive Debug——原先只有测试里构造它，没有打印需求。
+#[derive(Clone)]
 pub struct FallbackBlockProps {
     pub tool_id: String,
     pub snapshot_refs: Vec<SnapshotFieldRef>,
@@ -63,6 +65,9 @@ pub struct FallbackBlockProps {
     pub error_text: Option<String>,
     pub source_label: Option<String>,
     pub show_icon: bool,
+    /// 图标覆盖（真源 :12 + :88 `context.iconOverride ?? FALLBACK_TOOL_ICON`）——
+    /// ListSavedWorkflows 读不出结构化结果时交回本卡，但要保住自己的 Library 图标。
+    pub icon_override: Option<ChildrenFn>,
     /// 是否有 inlinePreview（真源 :31 `displayModel.inlinePreview.type !== "none"`）。
     pub has_inline_preview: bool,
     // ── context 的三个覆盖项（:15-18）──
@@ -162,18 +167,20 @@ pub fn FallbackToolCallBlock(props: FallbackBlockProps) -> impl IntoView {
                 title: title.clone(),
                 ..Default::default()
             }
-            icon_view=Some(std::sync::Arc::new(|| {
-                view! {
-                    <span class=FALLBACK_TOOL_ICON_CLASS>
-                        <crate::app::Icon
-                            paths=vec![
-                                "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
-                            ]
-                            circles=vec![]
-                        />
-                    </span>
-                }
-                .into_any()
+            icon_view=Some(props.icon_override.clone().unwrap_or_else(|| {
+                std::sync::Arc::new(|| {
+                    view! {
+                        <span class=FALLBACK_TOOL_ICON_CLASS>
+                            <crate::app::Icon
+                                paths=vec![
+                                    "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z",
+                                ]
+                                circles=vec![]
+                            />
+                        </span>
+                    }
+                    .into_any()
+                }) as ChildrenFn
             }))
             render_content=Some(std::sync::Arc::new(move || {
                 // 真源 :47-58 —— ToolCallBody → 快照提示 → raw JSON 兜底块。
@@ -232,6 +239,7 @@ mod tests {
             error_text: Some("命令失败".into()),
             source_label: None,
             show_icon: true,
+            icon_override: None,
             has_inline_preview: false,
             hide_raw_fallback: false,
             summary_only: false,
@@ -298,6 +306,7 @@ mod tests {
             error_text: None,
             source_label: None,
             show_icon: true,
+            icon_override: None,
             has_inline_preview: true,
             hide_raw_fallback: false,
             summary_only: true,

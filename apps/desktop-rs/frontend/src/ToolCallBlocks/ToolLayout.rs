@@ -108,6 +108,10 @@ pub struct ToolLayoutProps {
     pub title: Option<String>,
     pub expanded_title: Option<String>,
     pub status_label: Option<String>,
+    /// 状态位的自定义节点（真源 :50 `statusLabel?: ReactNode`）。优先于 `status_label`。
+    /// 观察/恢复一类的工作流卡在状态位里画「圆点 + 词」（状态绝不只靠颜色，DESIGN.md），
+    /// 那是节点不是文本，故开这个槽位（同 `kind_detail_view` 的先例）。
+    pub status_label_view: Option<ChildrenFn>,
     /// 失败详情（挂状态词 tooltip）。
     pub status_tooltip: Option<String>,
     /// diff 计数（增, 删）。
@@ -234,8 +238,12 @@ impl ToolLayoutProps {
 
     /// `shouldShowStatusLabel`（:114）：
     /// `(showStatusLabel || showFailureStatus) && statusLabel != null`。
+    ///
+    /// 真源的 `statusLabel` 是 ReactNode，节点形态在 Rust 侧走 `status_label_view`；
+    /// 两者任一在场即算「statusLabel != null」。
     pub fn should_show_status_label(&self) -> bool {
-        (self.show_status_label() || self.show_failure_status()) && self.status_label.is_some()
+        (self.show_status_label() || self.show_failure_status())
+            && (self.status_label.is_some() || self.status_label_view.is_some())
     }
 
     /// `resolvedSummaryContentKey`（:142-143）。
@@ -295,6 +303,8 @@ pub fn ToolLayoutComponent(
     // kind_detail 的自定义节点（真源 kindDetail 是 ReactNode，Agent 卡传带色
     // 子代理名 span）。与 primary_text_view 同模式：ChildrenFn 可克隆复用。
     let props_kind_detail_view = props.kind_detail_view.clone();
+    // 状态位的节点形态（真源 statusLabel 是 ReactNode）——同 kind_detail_view 的可克隆模式。
+    let props_status_label_view = props.status_label_view.clone();
     let props_primary_text = props.summary_primary_text(props.force_open());
     let props_secondary_text = props.summary_secondary_text(props.force_open());
     let props_title = props.summary_title(props.force_open());
@@ -510,24 +520,25 @@ pub fn ToolLayoutComponent(
                             })
                         })}
                 </span>
-                // ── :245-286 statusWordNode ──
-                {show_status_label
-                    .then(|| props_status_label.clone())
-                    .flatten()
-                    .map(|label| {
-                        // 真源 :250-254：有 statusTooltip 时挂虚线下划线 + tooltip，
-                        // 失败态不再强制展开内容，错误详情改挂状态词 tooltip。
-                        let cls = if props_status_tooltip.is_some() {
-                            "whitespace-nowrap underline decoration-dotted underline-offset-2 cursor-help"
-                        } else {
-                            "whitespace-nowrap"
-                        };
-                        view! {
-                            <span class=cls title=props_status_tooltip.clone().unwrap_or_default()>
-                                {label}
-                            </span>
-                        }
-                    })}
+                // ── :240-292 statusWordNode ──
+                {show_status_label.then(|| {
+                    // 真源 :250-254：有 statusTooltip 时挂虚线下划线 + tooltip，
+                    // 失败态不再强制展开内容，错误详情改挂状态词 tooltip。
+                    let cls = if props_status_tooltip.is_some() {
+                        "whitespace-nowrap underline decoration-dotted underline-offset-2 cursor-help"
+                    } else {
+                        "whitespace-nowrap"
+                    };
+                    // 节点优先于文本（真源把 statusLabel 原样塞进这层 span，
+                    // 圆点 + 词那类组合由调用方给节点，包装层与 tooltip 都归本组件）。
+                    let inner = props_status_label_view
+                        .clone()
+                        .map(|f| f())
+                        .or_else(|| props_status_label.clone().map(|label| view! { <>{label}</> }.into_any()));
+                    inner.map(|node| view! {
+                        <span class=cls title=props_status_tooltip.clone().unwrap_or_default()>{node}</span>
+                    })
+                })}
                 // 复制按钮（真源 :262-275，在 tooltip 内）
                 {(show_status_label && props_status_tooltip.is_some()).then(|| {
                     view! { <FailureCopyButton copied=is_failure_tooltip_copied /> }
@@ -805,6 +816,28 @@ mod tests {
             ..base_props("t1")
         };
         assert!(failure.should_show_status_label(), "失败态强制显示");
+
+        // ★真源的 statusLabel 是 ReactNode（观察/恢复一类卡在状态位里画「圆点 + 词」），
+        // 节点形态走 status_label_view，同样算「statusLabel != null」。
+        let view_only = ToolLayoutProps {
+            status_label_view: Some(std::sync::Arc::new(|| {
+                view! { <span class="flex shrink-0 items-center gap-1.5">"后台运行中"</span> }.into_any()
+            })),
+            show_status_label: Some(true),
+            ..base_props("t1")
+        };
+        assert!(
+            view_only.should_show_status_label(),
+            "只有节点、没有文本时也要显示状态位"
+        );
+        let view_no_flag = ToolLayoutProps {
+            status_label_view: view_only.status_label_view.clone(),
+            ..base_props("t1")
+        };
+        assert!(
+            !view_no_flag.should_show_status_label(),
+            "两个 flag 都没开时节点也不显示（与文本同规则）"
+        );
 
         let null_label = ToolLayoutProps {
             show_status_label: Some(true),

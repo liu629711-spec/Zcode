@@ -92,15 +92,9 @@ pub fn family_by_lower(name: &str) -> ToolFamily {
     }
 }
 
-/// 归一化工具名（真源 `workflowToolNames.ts:23-26` `normalizeToolToken`）：
-/// 抹掉大小写与分隔符，`SaveWorkflow` / `save_workflow` 都归一为 `saveworkflow`。
-fn normalize_tool_token(value: &str) -> String {
-    value
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
-        .collect()
-}
+/// `normalizeToolToken` 的出处已收进 `lib/workflowToolNames.rs`（真源把归一化和十一个谓词
+/// 放在同一个文件里）；这里 re-export，供本模块的分流表与单测引用。
+pub use crate::lib::workflowToolNames::normalize_tool_token;
 
 /// `normalizeToolName`（真源 `cuaPermissionAction.ts:3-5`）：
 /// trim + 小写 + 下划线转连字符。与 `normalizeToolToken` **不同**，别混用。
@@ -171,20 +165,43 @@ pub enum Renderer {
     Fallback,
 }
 
-/// 工作流工具的按名判定（真源 `workflowToolNames.ts:43-81`，九个判定）。
-fn workflow_renderer(tool_name: &str) -> Option<Renderer> {
-    match normalize_tool_token(tool_name).as_str() {
-        "saveworkflow" => Some(Renderer::SaveWorkflow),
-        "listsavedworkflows" => Some(Renderer::ListSavedWorkflows),
-        "getworkflowrun" => Some(Renderer::GetWorkflowRun),
-        "listworkflowruns" => Some(Renderer::ListWorkflowRuns),
-        "evalworkflowsnippet" => Some(Renderer::EvalWorkflowSnippet),
-        "resumeworkflowrun" => Some(Renderer::ResumeWorkflowRun),
-        "listmodels" => Some(Renderer::ListModels),
-        "escalate" => Some(Renderer::Escalate),
-        "resolveworkflowquestion" => Some(Renderer::ResolveWorkflowQuestion),
-        _ => None,
+/// 工作流工具的按名判定（真源 `resolveRenderer.ts:77-116` 调的九个 `workflowToolNames` 谓词，
+/// 谓词本体在 `lib/workflowToolNames.rs`）。
+///
+/// ★判定看**六个位置**（真源 `matchesToolName` :38-40：toolName / kind / title /
+/// raw.toolName / raw.tool_name / raw.name），不是只看工具名——投影出来的行经常只有
+/// `kind` 带真名。顺序照真源 :77-116，一条命中即返回。
+fn workflow_renderer(tool_name: &str, kind: &str, title: &str, raw: &Value) -> Option<Renderer> {
+    use crate::lib::workflowToolNames as wt;
+    let hit = |p: fn(&str, &str, &str, &Value) -> bool| p(tool_name, kind, title, raw);
+    if hit(wt::is_save_workflow_tool_call) {
+        return Some(Renderer::SaveWorkflow);
     }
+    if hit(wt::is_list_saved_workflows_tool_call) {
+        return Some(Renderer::ListSavedWorkflows);
+    }
+    if hit(wt::is_get_workflow_run_tool_call) {
+        return Some(Renderer::GetWorkflowRun);
+    }
+    if hit(wt::is_list_workflow_runs_tool_call) {
+        return Some(Renderer::ListWorkflowRuns);
+    }
+    if hit(wt::is_eval_workflow_snippet_tool_call) {
+        return Some(Renderer::EvalWorkflowSnippet);
+    }
+    if hit(wt::is_resume_workflow_run_tool_call) {
+        return Some(Renderer::ResumeWorkflowRun);
+    }
+    if hit(wt::is_list_models_tool_call) {
+        return Some(Renderer::ListModels);
+    }
+    if hit(wt::is_escalate_tool_call) {
+        return Some(Renderer::Escalate);
+    }
+    if hit(wt::is_resolve_workflow_question_tool_call) {
+        return Some(Renderer::ResolveWorkflowQuestion);
+    }
+    None
 }
 
 /// 从 `toolCall.raw` 读工具名（真源 `readRawToolName`，被 `collectToolNames` 用）。
@@ -250,7 +267,7 @@ pub fn resolve_tool_call_renderer(
     }
 
     // ── ② 工作流按名（:73-113），必须先于 family ──
-    if let Some(r) = workflow_renderer(tool_name) {
+    if let Some(r) = workflow_renderer(tool_name, kind, title, raw) {
         return r;
     }
 

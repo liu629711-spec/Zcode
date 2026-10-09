@@ -202,3 +202,111 @@ pub fn icon_minus() -> impl IntoView {
 pub fn icon_plus() -> impl IntoView {
     view! { <Icon paths=vec!["M5 12h14", "M12 5v14"] circles=vec![] /> }
 }
+
+// ── workflow 工具小卡（save / list / get-run / submit / list-models 一族）用的图标 ──
+
+/// `MessageCircleReply`（resolve-workflow-question.tsx:1,9）。
+pub fn icon_message_circle_reply() -> impl IntoView {
+    view! {
+        <Icon
+            paths=vec![
+                "M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719",
+                "m10 15-3-3 3-3",
+                "M7 12h8a2 2 0 0 1 2 2v1",
+            ]
+            circles=vec![]
+        />
+    }
+}
+
+/// `Save`（save-workflow.tsx）。
+pub fn icon_save() -> impl IntoView {
+    view! {
+        <Icon
+            paths=vec![
+                "M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+                "M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7",
+                "M7 3v4a1 1 0 0 0 1 1h7",
+            ]
+            circles=vec![]
+        />
+    }
+}
+
+/// `Library`（list-saved-workflows.tsx）。
+pub fn icon_library() -> impl IntoView {
+    view! {
+        <Icon
+            paths=vec!["m16 6 4 14", "M12 6v14", "M8 8v12", "M4 4v16"]
+            circles=vec![]
+        />
+    }
+}
+
+/// `History`（list-workflow-runs.tsx）。
+pub fn icon_history() -> impl IntoView {
+    view! {
+        <Icon
+            paths=vec!["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5", "M12 7v5l4 2"]
+            circles=vec![]
+        />
+    }
+}
+
+/// `Cpu`（list-models.tsx）。
+///
+/// 真源两个 rect（外框 rx=2、内核 rx=1），`Icon` 的 rect 统一画 rx=1；
+/// 与 `icon_workflow` 同一处既有偏离，不为一个图标改公共组件。
+pub fn icon_cpu() -> impl IntoView {
+    view! {
+        <Icon
+            paths=vec![
+                "M12 20v2",
+                "M12 2v2",
+                "M17 20v2",
+                "M17 2v2",
+                "M2 12h2",
+                "M2 17h2",
+                "M2 7h2",
+                "M20 12h2",
+                "M20 17h2",
+                "M20 7h2",
+                "M7 20v2",
+                "M7 2v2",
+            ]
+            circles=vec![]
+            rects=vec![("4", "4", "16", "16"), ("8", "8", "8", "8")]
+        />
+    }
+}
+
+/// `ClipboardCheck`（submit-result.tsx）。
+pub fn icon_clipboard_check() -> impl IntoView {
+    view! {
+        <Icon
+            paths=vec![
+                "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2",
+                "m9 14 2 2 4-4",
+            ]
+            circles=vec![]
+            rects=vec![("8", "2", "8", "4")]
+        />
+    }
+}
+
+/// `BookOpenText`（read-session-context.tsx）。
+pub fn icon_book_open_text() -> impl IntoView {
+    view! {
+        <Icon
+            paths=vec![
+                "M12 7v14",
+                "M16 12h2",
+                "M16 8h2",
+                "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z",
+                "M6 12h2",
+                "M6 8h2",
+            ]
+            circles=vec![]
+        />
+    }
+}
