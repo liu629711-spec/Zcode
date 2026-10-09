@@ -6,6 +6,7 @@
 #![allow(non_snake_case)]
 #![allow(special_module_name)]
 
+pub mod nodeReplToolDisplay;
 pub mod taskListItemPresentation;
 pub mod workDuration;
 pub mod workflowRunAckStore;

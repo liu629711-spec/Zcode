@@ -106,7 +106,9 @@ pub fn ToolCallBlock(node: LegacyToolCallNode, context: ToolCallBlockContext) ->
         &kind,
         title.as_deref().unwrap_or_default(),
         &raw,
-        false, // has_mcp_presentation：v4 行暂无 MCP 装饰载荷
+        // 真源 :124 `readMcpToolPresentation(context)`——display 载荷或 legacy
+        // `mcp__server__tool` 命名任一命中即通用 MCP 卡（node-repl 先于它分流）。
+        super::renderers::mcp::read_mcp_tool_presentation(tc).is_some(),
     );
 
     // todo 隐藏判定（真源 :366-368）。
@@ -600,7 +602,35 @@ fn render_dispatch(
             />
         }
         .into_any(),
-        // 其余未迁 renderer 统一走 fallback 兜底卡（Workflow 系 / MCP / node-repl 等）。
+        // 通用 MCP 卡（真源 renderers.tsx :125-126 的 McpToolCallBlock 位）。
+        Renderer::Mcp => view! {
+            <mcp::McpToolCallBlock
+                tool_call=legacy.clone()
+                is_running
+                show_icon
+                can_toggle=None
+                force_open=None
+                error_text=error_text.clone()
+                status_label=Some(status_label)
+                on_load_full_tool_call_fields=on_load_full_tool_call_fields.clone()
+            />
+        }
+        .into_any(),
+        // node-repl 卡（真源 :121-123 —— 先于通用 MCP 分流的专用卡）。
+        Renderer::NodeRepl => view! {
+            <node_repl::NodeReplToolCallBlock
+                tool_call=legacy.clone()
+                is_running
+                show_icon
+                can_toggle=None
+                force_open=None
+                error_text=error_text.clone()
+                source_label
+                on_load_full_tool_call_fields=on_load_full_tool_call_fields.clone()
+            />
+        }
+        .into_any(),
+        // 未迁 renderer 走 fallback 兜底卡（Workflow 系 / submit-result / cron 等小卡）。
         // 行级上下文不会命中的聚合类（changesGroup/executeGroup/cuaGroup 走
         // conversationAssistantWorkItems 分组器，未迁）；其余未迁 renderer 统一
         // 走 fallback 兜底卡——**未迁不隐藏**，标题/状态/错误仍可见。
