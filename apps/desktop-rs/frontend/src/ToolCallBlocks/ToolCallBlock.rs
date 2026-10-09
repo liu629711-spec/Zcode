@@ -589,6 +589,17 @@ fn render_dispatch(
             />
         }
         .into_any(),
+        Renderer::Cua => view! {
+            <cua::CuaToolCallBlock
+                tool_call=legacy.clone()
+                is_running
+                show_icon
+                can_toggle=None
+                force_open=None
+                error_text=error_text.clone()
+            />
+        }
+        .into_any(),
         // 其余未迁 renderer 统一走 fallback 兜底卡（Workflow 系 / MCP / node-repl 等）。
         // 行级上下文不会命中的聚合类（changesGroup/executeGroup/cuaGroup 走
         // conversationAssistantWorkItems 分组器，未迁）；其余未迁 renderer 统一

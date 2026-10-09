@@ -19,6 +19,7 @@ pub mod fileDisplay;
 pub mod fileSummaries;
 pub mod fileSummaryHeuristics;
 pub mod fileSummaryTypes;
+pub mod i18n;
 pub mod patchDiffPreview;
 pub mod renderers;
 pub mod resolveRenderer;

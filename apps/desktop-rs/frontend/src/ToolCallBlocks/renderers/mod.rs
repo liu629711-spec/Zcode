@@ -17,6 +17,7 @@ pub mod agentPromptSection;
 pub mod ask_question;
 pub mod changes_group;
 pub mod codeBlock;
+pub mod cua;
 pub mod cuaAccessDetails;
 pub mod cuaActionDetail;
 pub mod cuaErrorDetails;
