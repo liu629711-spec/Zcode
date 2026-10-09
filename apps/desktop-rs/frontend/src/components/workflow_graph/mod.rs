@@ -6,6 +6,7 @@
 
 pub mod lane_name;
 pub mod name_pattern;
+pub mod participant_model;
 pub mod phase_model;
 pub mod phase_name;
 pub mod run_status;
