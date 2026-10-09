@@ -45,6 +45,8 @@ pub struct GroupingRow {
     pub started_at: Option<f64>,
     pub turn_id: Option<String>,
     pub parent_tool_call_id: Option<String>,
+    /// 助手响应 id（真源 assistantResponseId）—— CUA 分组的判据。
+    pub assistant_response_id: Option<String>,
 }
 
 impl GroupingRow {
@@ -193,7 +195,10 @@ fn resolve_group_stage_status(rows: &[&GroupingRow], stage_tail_is_running: bool
 }
 
 /// 从 GroupingRow 造 legacy node（分组判定与子节点都要）。
-fn legacy_of(row: &GroupingRow) -> LegacyToolCallNode {
+///
+/// CUA 分组器（`cuaGroups.rs`）同样需要把 `GroupingRow` 转成 legacy 子节点，
+/// 故开放为 `pub` —— 转换口径必须唯一，两处各造一份会漂移。
+pub fn legacy_of(row: &GroupingRow) -> LegacyToolCallNode {
     tool_call_row_to_legacy_node(&json!({
         "kind": "toolCall",
         "rowId": row.row_id,
@@ -579,6 +584,7 @@ mod tests {
             started_at: None,
             turn_id: Some("t1".into()),
             parent_tool_call_id: None,
+            assistant_response_id: None,
         }
     }
 
@@ -594,6 +600,7 @@ mod tests {
             started_at: None,
             turn_id: Some("t1".into()),
             parent_tool_call_id: None,
+            assistant_response_id: None,
         }
     }
 

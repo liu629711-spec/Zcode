@@ -136,6 +136,11 @@ pub struct ConversationRowView {
     /// subagent 行的子会话 id（打开右侧 tab 用；Rust 侧未迁会话视图，暂存）。
     #[serde(default)]
     pub child_session_id: Option<String>,
+    /// 助手响应 id（真源 `assistantResponseId`，v4 rows.ts:174/186/209）。
+    /// **CUA 分组的唯一判据**：同一响应内只有官方 CUA 工具时，
+    /// 该响应的正文与思考才收进 Computer Use 聚合卡。
+    #[serde(default)]
+    pub assistant_response_id: Option<String>,
     /// artifact 行
     #[serde(default)]
     pub display_name: Option<String>,
@@ -1389,6 +1394,7 @@ fn ChatView(session_id: String) -> impl IntoView {
                             started_at: row.started_at.as_ref().and_then(|v| v.as_f64()),
                             turn_id: row.turn_id.clone(),
                             parent_tool_call_id: row.parent_tool_call_id.clone(),
+                            assistant_response_id: row.assistant_response_id.clone(),
                         })
                         .collect();
                     // 阶段尾部是否运行中：最后一行仍在跑时，尾部分组的父状态显「执行中」
