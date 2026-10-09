@@ -4,9 +4,13 @@
 
 #![allow(non_snake_case)]
 
+pub mod draft_scan;
+pub mod roster_model;
 pub mod station_observation;
 pub mod subagent_model_label;
 pub mod timeline_bands;
+pub mod timeline_geometry;
+pub mod timeline_ledge;
 pub mod timeline_model;
 pub mod timeline_summary;
 pub mod workflowSettingsChange;
