@@ -11,6 +11,7 @@
 //! - `getEditKindLabelMessageId`（:128-150）：编辑类 kindLabel 的 i18n id
 //! - `renderJoinedFileChips`（:152-175）：多文件 chip 拼接（逗号分隔）
 
+pub mod WorkflowCardMetaLine;
 pub mod agent;
 pub mod agentHelpers;
 pub mod agentPromptSection;
@@ -18,6 +19,8 @@ pub mod ask_question;
 pub mod changes_group;
 pub mod codeBlock;
 pub mod cua;
+pub mod createWorkflowDisplay;
+pub mod createWorkflowInput;
 pub mod cuaAccessDetails;
 pub mod cuaActionDetail;
 pub mod CuaScreenshotSection;
@@ -409,3 +412,4 @@ mod tests {
 }
 pub mod workflow_snippet_presentation;
 pub mod workflow_diagnostics;
+pub mod workflow_draft_row;
