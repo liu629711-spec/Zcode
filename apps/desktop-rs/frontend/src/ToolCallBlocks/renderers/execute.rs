@@ -325,11 +325,10 @@ pub fn ExecuteTerminalBox(command: Option<String>, output: Option<String>) -> im
                     </pre>
                 </div>
             </div>
-            // 真源 :314-318 —— 无输出且非运行中时显「没有输出。」
+            // 真源 :309-318 —— 有输出走 ExecuteOutput（流式吸底 / 上滚冻结）；
+            // 无输出且非运行中时显「没有输出。」
             {output.map(|o| view! {
-                <pre class="max-h-[5lh] flex-none overflow-auto whitespace-pre-wrap break-words font-mono text-ui-base leading-5 text-foreground-subtle">
-                    {o}
-                </pre>
+                <super::executeOutput::ExecuteOutputComponent text=o running=false />
             })}
         </div>
     }

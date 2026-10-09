@@ -184,7 +184,7 @@
 
 ## 六、验证现状
 
-- 前端 **537 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
+- 前端 **542 测试全绿**（文件树 flatten/compact、图标解析、置顶区、归档区、
   流式重组、**分组视图重排 24**、**join 层 11**、**拖拽落位 23**、
   **拖拽运行时 12**、**DOM 接线与落库载荷 7**、**拖拽端到端 2**、**toast 9**、**标题走马灯 9**、**右键菜单 9**）
 - 后端：taskgroup.rs 新增 7 个落库单测；后端 lib 测试**在本机无法运行**
@@ -236,9 +236,10 @@ exit code: 0xc0000139, STATUS_ENTRYPOINT_NOT_FOUND
 - [x] 纯逻辑层：cuaResultState（219）/ cuaAccessDetails（120）/
       cuaErrorDetails（51）/ cuaActionDetail（52）/ cuaScreenshotDetails（87）/
       cuaSummaryMessages（25 项表）/ cuaIcon（8）。
-- [ ] 组件层：cuaDetails（152）/ CuaScreenshotSection（84，Dialog 未迁）/
-      cuaListDetails（230）/ cuaAppSummaryIcon（平台图标 IPC 未迁）/
-      ExecuteOutput（50，吸底滚动 → v1 静态 pre）。
+- [x] 组件层：cuaListDetails（230）+ ExecuteOutput（50，吸底滚动 + 上滚
+      冻结，web-sys 实现，已接进 execute 卡的终端盒子）。
+- [ ] 组件层剩余：cuaDetails（152）/ CuaScreenshotSection（84，Dialog
+      未迁）/ cuaAppSummaryIcon（平台图标 IPC 未迁 → 回退 AppWindow）。
 - [ ] 主卡：cua.tsx（504）+ cua-group.tsx（282）。
 - 组件层：cuaDetails（152）/ CuaScreenshotSection（84）/
   cuaScreenshotDetails（87）/ ExecuteOutput（50，吸底滚动 + 上滚冻结，
