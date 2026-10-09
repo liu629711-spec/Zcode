@@ -19,7 +19,6 @@
 //!   未迁，markdown 区块用 pulldown-cmark 静态渲染。
 
 use leptos::prelude::*;
-use serde_json::Value;
 
 use super::super::ToolSnapshotFieldNotice::{
     ToolSnapshotFieldNoticeComponent, ToolSnapshotFieldNoticeProps,
@@ -378,7 +377,8 @@ pub fn AgentToolCallBlock(props: AgentBlockProps) -> impl IntoView {
 mod tests {
     use super::*;
     use crate::ToolCallBlocks::toolCallRowAdapter::tool_call_row_to_legacy_node;
-    use serde_json::json;
+    // Value 只在测试夹具里用，不进生产 import（否则是 unused import 警告）。
+    use serde_json::{Value, json};
 
     fn tc(input: Value, output: Value) -> LegacyToolCall {
         tool_call_row_to_legacy_node(&json!({

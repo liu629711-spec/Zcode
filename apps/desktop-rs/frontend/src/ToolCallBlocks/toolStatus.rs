@@ -3,8 +3,6 @@
 //!
 //! ToolCallBlock 的状态词与运行态判定都从这里取，保证与真源同一套词表。
 
-use std::collections::HashSet;
-use std::sync::OnceLock;
 
 /// ai-elements Tool 组件期望的状态（真源 `ToolPart["state"]`，mapToolStatus.ts:8-15）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -89,12 +87,6 @@ pub fn compact_tool_call_status_label(state: &str, raw_status: Option<&str>) -> 
         .unwrap_or("等待中")
 }
 
-/// 运行态集合的 OnceLock 版（真源用模块级 Set；Rust 侧保守构建）。
-fn running_states() -> &'static HashSet<&'static str> {
-    static SET: OnceLock<HashSet<&'static str>> = OnceLock::new();
-    SET.get_or_init(|| HashSet::from(["input-streaming", "input-available"]))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,9 +153,15 @@ mod tests {
 
     #[test]
     fn running_states_set_is_stable() {
-        // OnceLock 版与函数版一致。
-        let set = running_states();
-        assert!(set.contains("input-streaming") && set.contains("input-available"));
-        assert_eq!(set.len(), 2);
+        // 真源 TOOL_CALL_RUNNING_STATES（tool-call-summary.ts:30-33）只有这两个。
+        assert!(is_compact_tool_call_running_state("input-streaming"));
+        assert!(is_compact_tool_call_running_state("input-available"));
+        // 其余状态都不算运行中。
+        for other in ["output-available", "output-error", "unknown"] {
+            assert!(
+                !is_compact_tool_call_running_state(other),
+                "{other} 不应被判为运行中"
+            );
+        }
     }
 }
