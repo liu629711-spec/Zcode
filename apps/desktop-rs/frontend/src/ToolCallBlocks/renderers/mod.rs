@@ -20,6 +20,8 @@ pub mod codeBlock;
 pub mod cua;
 pub mod cuaAccessDetails;
 pub mod cuaActionDetail;
+pub mod CuaScreenshotSection;
+pub mod cuaDetails;
 pub mod cuaErrorDetails;
 pub mod cuaIcon;
 pub mod cuaListDetails;

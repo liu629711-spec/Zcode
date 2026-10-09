@@ -602,10 +602,19 @@ pub fn Icon(
     paths: Vec<&'static str>,
     circles: Vec<(&'static str, &'static str, &'static str)>,
     #[prop(optional)] rects: Vec<(&'static str, &'static str, &'static str, &'static str)>,
+    /// 根`<svg>` 的类名。真源里图标尺寸随上下文变化（如 CUA 详情行的
+    /// `size-3.5 shrink-0 text-success`），Rust 侧原先硬编码 `size-4`，
+    /// 故开放为可选参数；不传时保持原行为。
+    #[prop(optional, into)] class: String,
 ) -> impl IntoView {
+    let class = if class.is_empty() {
+        "size-4 flex-none".to_string()
+    } else {
+        class
+    };
     view! {
         <svg
-            class="size-4 flex-none"
+            class=class
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

@@ -873,7 +873,7 @@ pub fn CuaToolCallBlock(
                 let snapshot = tool_call.clone();
                 Arc::new(move || {
                     view! {
-                        <CuaToolCallDetailsComponent
+                        <super::cuaDetails::CuaToolCallDetailsComponent
                             model=model.clone()
                             tool_call=snapshot.clone()
                         />
@@ -921,88 +921,11 @@ fn CuaSummaryIcon(uses_fallback: bool, app_name: String) -> impl IntoView {
     }
 }
 
-/// `CuaToolCallDetails`（真源 `cuaDetails.tsx`）—— 本轮只渲染详情模型里的
-/// action/state 行与结果行，权限区/ 环境区 / 截图区 / 失败原因区的完整视觉
-/// 待 `cuaDetails.tsx` 单独迁移时补齐（见文件末 TODO）。
-#[component]
-fn CuaToolCallDetailsComponent(
-    model: CuaDetailsModel,
-    tool_call: LegacyToolCall,
-) -> impl IntoView {
-    let _ = &tool_call;
-    let action_rows = model.action_rows.clone();
-    let state_rows = model.state_rows.clone();
-    let result_id = model.result_id.clone();
-    let result_values = model.result_values.clone();
-    let success = model.success;
-
-    view! {
-        <div class="space-y-2 text-ui-base">
-            {(!action_rows.is_empty())
-                .then(|| {
-                    view! {
-                        <div class="space-y-1">
-                            {action_rows
-                                .into_iter()
-                                .map(|row| {
-                                    view! {
-                                        <CuaDetailRowView row=row />
-                                    }
-                                })
-                                .collect_view()}
-                        </div>
-                    }
-                })}
-            {(!state_rows.is_empty())
-                .then(|| {
-                    view! {
-                        <div class="space-y-1">
-                            {state_rows
-                                .into_iter()
-                                .map(|row| {
-                                    view! {
-                                        <CuaDetailRowView row=row />
-                                    }
-                                })
-                                .collect_view()}
-                        </div>
-                    }
-                })}
-            <p class=if success { "text-foreground-subtle" } else { "text-destructive" }>
-                {move || i18n::format(&result_id, &result_values)}
-            </p>
-        </div>
-    }
-    .into_any()
-}
-
-/// 单条详情行（标签 + 值，code 行用等宽字体）。
-#[component]
-fn CuaDetailRowView(row: CuaDetailRow) -> impl IntoView {
-    let label = i18n::text(&row.label_id);
-    let value = row.value.clone();
-    let value_cls = if row.code {
-        "min-w-0 flex-1 font-mono text-xs break-words text-foreground"
-    } else {
-        "min-w-0 flex-1 break-words text-foreground"
-    };
-    view! {
-        <div class="flex gap-2">
-            <span class="shrink-0 text-foreground-subtlest">{label}</span>
-            <span class=value_cls>{value}</span>
-        </div>
-    }
-    .into_any()
-}
-
 // TODO(后续迁移)：以下真源部分本轮未实现，逐项列出避免遗漏。
 // 1. `CuaAppSummaryIcon` 的权威图标渲染（cuaAppSummaryIcon.tsx）——
 //    需要主进程提供 Helper 协议（bundleId → iconLocators 的解析），
 //    当前用首字母药丸占位，类名与尺寸已对齐。
-// 2. `CuaToolCallDetails`（cuaDetails.tsx）的权限区 / 环境区 /
-//    截图区 / 失败原因区 / 建议动作区视觉 —— 本轮只渲染 action/state/result 行。
-// 3. `cuaAccessDetails.rs` 的 `permissionRows` / `environmentRows` 数据已接进
-//    详情模型，但未渲染对应区块（等 cuaDetails.tsx 迁移）。
+// （`CuaToolCallDetails` 的九个区块已由 `cuaDetails.rs` 完整迁入。）
 
 #[cfg(test)]
 mod tests {
