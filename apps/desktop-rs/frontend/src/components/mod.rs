@@ -6,3 +6,4 @@
 
 pub mod timeline_bands;
 pub mod workflowSettingsChange;
+pub mod workflow_graph;
