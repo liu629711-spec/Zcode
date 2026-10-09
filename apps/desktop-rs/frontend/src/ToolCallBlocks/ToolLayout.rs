@@ -125,6 +125,11 @@ pub struct ToolLayoutProps {
     pub summary_content_separator: Option<String>,
     /// 摘要内容的 key（真源 :45summaryContentKey）——变化时重置滚轮动画。
     pub summary_content_key: Option<String>,
+    /// 摘要内容的版本号（真源 :46 `summaryContentRefreshVersion?: string`）——
+    /// key 不变、只有正文变时用它原位刷新，不重播整条滚动。
+    /// 今天没有消费面（滚轮队列未接），字段先按真源 props 表补齐，
+    /// 免得 renderer 侧想传时无处可传。
+    pub summary_content_refresh_version: Option<String>,
     /// 摘要内容是否启用滚轮式轮播动画（真源 :46 animateSummaryContent）。
     pub animate_summary_content: Option<bool>,
     /// 禁用摘要动画（真源 :47 disableSummaryContentAnimation）。
@@ -580,7 +585,7 @@ pub fn ToolLayoutComponent(
         toggle_aria_label,
         tool_id: props.tool_id.clone(),
         content_key: props.resolved_summary_content_key(expanded),
-        content_refresh_version: None,
+        content_refresh_version: props.summary_content_refresh_version.clone(),
         animate_content: props.animate_summary_content.unwrap_or(false),
         disable_content_animation: props
             .disable_summary_content_animation
