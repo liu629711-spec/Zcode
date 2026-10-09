@@ -72,6 +72,45 @@ impl SummaryNode {
             }
         }
     }
+
+    /// 不包 span，原样落进父容器（真源 :159 `{statusNode}`）。
+    ///
+    /// statusNode 的外层类名归 ToolLayout 决定（真源 :294-302 在那里造好整个节点），
+    /// 本组件再包一层会凭空多出一个 span，改掉那边的 gap/flex 计算。
+    pub fn render_bare(&self) -> Option<AnyView> {
+        match self {
+            Self::Empty => None,
+            Self::Text(text) if text.is_empty() => None,
+            Self::Text(text) => {
+                let text = text.clone();
+                Some(view! { <>{text}</> }.into_any())
+            }
+            Self::View(factory) => {
+                let factory = factory.clone();
+                Some(view! { <>{factory()}</> }.into_any())
+            }
+        }
+    }
+
+    /// 真源 :147 separator 的口径：只判 `!= null`，**空串也出 span**。
+    ///
+    /// 与 `is_present`（`hasSummaryContent` 用的 `node !== ""`）是两套判定，
+    /// 真源就是两套，不能并成一个。
+    pub fn render_when_given(&self, cls: &str) -> Option<AnyView> {
+        match self {
+            Self::Empty => None,
+            Self::Text(text) => {
+                let text = text.clone();
+                let cls = cls.to_string();
+                Some(view! { <span class=cls>{text}</span> }.into_any())
+            }
+            Self::View(factory) => {
+                let factory = factory.clone();
+                let cls = cls.to_string();
+                Some(view! { <span class=cls>{factory()}</span> }.into_any())
+            }
+        }
+    }
 }
 
 /// 摘要行 props（真源 `ToolSummaryRowProps`，:27-52）。
@@ -290,7 +329,7 @@ fn summary_content(props: &ToolSummaryRowProps) -> AnyView {
 
     view! {
         <div class=content_cls>
-            {props.separator.render_with_class(SEPARATOR_CLASS)}
+            {props.separator.render_when_given(SEPARATOR_CLASS)}
             // 真源 :150-158 primaryText / secondaryText / trailingText={diffCount}
             // 三件套整体交给 QueuedSummaryContent（滚轮队列）。该组件依赖「每次内容变化
             // 冻结一份视图快照」，Leptos 的 ChildrenFn 取的是当前响应式值、冻结不了，
@@ -302,8 +341,9 @@ fn summary_content(props: &ToolSummaryRowProps) -> AnyView {
             {props
                 .diff_count
                 .render_with_class("min-w-0 truncate font-mono leading-none tabular-nums text-foreground-subtlest")}
-            // 真源 :159 statusNode 原样落在这层之后，无包装 span。
-            {(&props.status_node).render_with_class("shrink-0 text-foreground-subtlest")}
+            // 真源 :159 statusNode 原样落在这层之后，无包装 span
+            // （外层类名由 ToolLayout 造节点时决定，见 SummaryNode::render_bare）。
+            {props.status_node.render_bare()}
         </div>
     }
     .into_any()
@@ -422,12 +462,42 @@ mod tests {
 
     #[test]
     fn source_label_pill_class() {
-        // 真源 :92 sourceLabel 药丸类名。
-        let cls = "shrink-0 rounded border border-border bg-background-alt px-1.5 py-0.5 text-ui-xs leading-none text-foreground-subtlest";
-        assert!(cls.contains("rounded border border-border"));
-        assert!(cls.contains("bg-background-alt"));
-        assert!(cls.contains("text-ui-xs"));
-        assert!(cls.contains("leading-none"));
+        // 真源 :92-98 sourceLabel 药丸的每一项都要在，且走的是生产函数不是本地副本。
+        let cls = source_label_class(false);
+        assert_eq!(cls, SOURCE_LABEL_CLASS);
+        for token in [
+            "rounded",
+            "border-border",
+            "bg-background-alt",
+            "px-1.5",
+            "py-0.5",
+            "text-ui-xs",
+            "leading-none",
+            "text-foreground-subtlest",
+        ] {
+            assert!(cls.contains(token), "药丸类名缺 {token}");
+        }
+    }
+
+    #[test]
+    fn icon_class_keeps_the_svg_selector_half() {
+        // 真源 :74 的 `[&_svg]:text-foreground-subtlest` 曾被漏掉——图标是 svg 时
+        // 着色走不到，这一条把它钉住。
+        assert!(ICON_CLASS.contains("[&_svg]:text-foreground-subtlest"));
+    }
+
+    #[test]
+    fn separator_and_status_node_use_different_presence_rules() {
+        // 真源两套口径，不可并：:147 separator 只判 != null（空串也出 span），
+        // :130 hasSummaryContent 判 node !== ""（空串不算内容）。
+        let blank = SummaryNode::Text(String::new());
+        assert!(blank.render_when_given(SEPARATOR_CLASS).is_some(), "空 separator 仍要出 span");
+        assert!(SummaryNode::Empty.render_when_given(SEPARATOR_CLASS).is_none());
+        assert!(!blank.is_present(), "空串不算「有内容」");
+
+        // statusNode 裸插：真源 :159 不再包 span。
+        assert!(blank.render_bare().is_none());
+        assert!(SummaryNode::Text("已完成".into()).render_bare().is_some());
     }
 
     #[test]
