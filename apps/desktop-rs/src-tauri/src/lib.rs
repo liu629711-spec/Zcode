@@ -281,6 +281,236 @@ fn fs_read(path: String) -> Result<Value, String> {
     }))
 }
 
+// ---------------------------------------------------------------------------
+// git 状态（文件树 git 徽标数据源；shell 调 git CLI，对齐真源 IGitService.refresh 的载荷形态）
+// ---------------------------------------------------------------------------
+
+/// porcelain v1 字母 → GitChangeKind（闭集：modified/added/deleted/renamed）。
+fn git_kind_of(status_char: char) -> &'static str {
+    match status_char {
+        'A' => "added",
+        'D' => "deleted",
+        'R' | 'C' => "renamed",
+        // M / T（类型变更）/ 其他字母一律按 modified 兜底。
+        _ => "modified",
+    }
+}
+
+/// 相对路径（workspace 相对或仓库相对；前缀不匹配时原样返回）。
+fn git_relative(base: &str, path: &str) -> String {
+    let norm = |p: &str| p.replace('\\', "/").trim_end_matches('/').to_string();
+    let base = norm(base);
+    let path = norm(path);
+    let prefix = format!("{base}/");
+    if path.starts_with(&prefix) {
+        path[prefix.len()..].to_string()
+    } else {
+        path
+    }
+}
+
+/// `git_refresh(workspacePath)` → `GitRefreshResult` 形态
+/// （真源 packages/shared/src/git.ts:250-256；文件树只读 summary + 两组 changes）。
+///
+/// 不引 git 库：三次 CLI 调用（--version / rev-parse / status --porcelain），
+/// 与真源 isGitAvailable 的「git 可执行」语义一致；非 git 目录返回 isRepository:false。
+#[tauri::command]
+fn git_refresh(workspace_path: String) -> Result<Value, String> {
+    let git_available = std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let unavailable = || {
+        json!({
+            "summary": {
+                "workspacePath": workspace_path, "repoRoot": null, "workspaceInRepoPath": "",
+                "autoRefreshWatchPaths": [], "branchName": null, "trackingBranchName": null,
+                "headRefType": "branch", "ahead": 0, "behind": 0, "isDirty": false,
+                "isGitAvailable": false, "isRepository": false,
+            },
+            "identity": null, "unstagedChanges": [], "stagedChanges": [], "branchComparison": null,
+        })
+    };
+    if !git_available {
+        return Ok(unavailable());
+    }
+    let ws = PathBuf::from(&workspace_path);
+    let repo_root = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&ws)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().trim_end_matches(['/', '\\']).to_string());
+    let Some(repo_root) = repo_root else {
+        return Ok(unavailable());
+    };
+
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&ws)
+        .args(["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+        .output()
+        .map_err(|e| format!("git status 执行失败: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "git status 失败: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+
+    // -z 格式：条目以 NUL 分隔；R/C 重命名的条目带第二个 NUL 段（原路径）。
+    // 条目头两个字母 X=staged / Y=worktree，第三个字符是空格。
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let mut segments = raw.split('\0').filter(|s| !s.is_empty()).peekable();
+    let mut staged: Vec<Value> = Vec::new();
+    let mut unstaged: Vec<Value> = Vec::new();
+    while let Some(entry) = segments.next() {
+        if entry.chars().count() < 4 {
+            continue;
+        }
+        let mut chars = entry.chars();
+        let x = chars.next().unwrap_or(' ');
+        let y = chars.next().unwrap_or(' ');
+        let path_part = &entry[3..];
+        // R/C 条目的下一段是重命名原路径，消费掉。
+        let is_rename = x == 'R' || x == 'C' || y == 'R' || y == 'C';
+        if is_rename {
+            segments.next();
+        }
+        let is_untracked = x == '?' && y == '?';
+        let is_conflicted = x == 'U' || y == 'U' || (x == 'A' && y == 'A') || (x == 'D' && y == 'D');
+        let mut change = |kind: &str, section: &str, is_staged: bool| -> Value {
+            json!({
+                "path": path_part,
+                "repoRelativePath": git_relative(&repo_root, path_part),
+                "workspaceRelativePath": git_relative(&workspace_path, path_part),
+                "x": x.to_string(), "y": y.to_string(),
+                "kind": kind, "section": section,
+                "added": 0, "removed": 0,
+                "isStaged": is_staged,
+                "isUntracked": is_untracked,
+                "isConflicted": is_conflicted,
+            })
+        };
+        // 未跟踪：一组 "?? path"，挂 unstaged（真源 buildWorkspaceFileGitStatusByPath
+        // 只消费 isUntracked/section 的判定，载荷落哪组不影响状态词）。
+        if is_untracked {
+            unstaged.push(change("added", "untracked", false));
+            continue;
+        }
+        if x != ' ' && x != '?' {
+            staged.push(change(git_kind_of(x), "staged", true));
+        }
+        if y != ' ' && y != '?' {
+            unstaged.push(change(git_kind_of(y), if is_conflicted { "conflicted" } else { "unstaged" }, false));
+        }
+    }
+
+    let branch_name = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&ws)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let is_dirty = !staged.is_empty() || !unstaged.is_empty();
+    Ok(json!({
+        "summary": {
+            "workspacePath": workspace_path,
+            "repoRoot": repo_root,
+            "workspaceInRepoPath": git_relative(&repo_root, &workspace_path),
+            "autoRefreshWatchPaths": [],
+            "branchName": branch_name,
+            "trackingBranchName": null,
+            "headRefType": if branch_name.as_deref() == Some("HEAD") { "detached" } else { "branch" },
+            "ahead": 0, "behind": 0,
+            "isDirty": is_dirty,
+            "isGitAvailable": true,
+            "isRepository": true,
+        },
+        "identity": null,
+        "unstagedChanges": unstaged,
+        "stagedChanges": staged,
+        "branchComparison": null,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// 文件监听（文件树 watcher 数据源；notify crate，非递归按目录）
+// ---------------------------------------------------------------------------
+
+/// 活跃 watcher 注册表：id → (watcher, 事件线程的停机信号)。
+static FS_WATCHERS: std::sync::Mutex<Option<std::collections::HashMap<String, FsWatcherEntry>>> =
+    std::sync::Mutex::new(None);
+
+struct FsWatcherEntry {
+    _watcher: notify::RecommendedWatcher,
+    /// drop 即让事件转发线程退出（mpsc 断流）。
+    _shutdown: std::sync::mpsc::Sender<()>,
+}
+
+/// `fs_watch(path)` → `{ id }`。目录非递归监听；变更去抖 250ms 后以
+/// `fs-watcher-change` 事件广播 `{ id, dirPath }`（真源 IFileWatcherService.onDynamicChange）。
+#[tauri::command]
+fn fs_watch(path: String, window: tauri::Window) -> Result<Value, String> {
+    use notify::Watcher as _;
+    if !PathBuf::from(&path).is_dir() {
+        return Err(format!("不是目录: {path}"));
+    }
+    let (tx, rx) = std::sync::mpsc::channel::<notify::Result<notify::Event>>();
+    let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel::<()>();
+    let mut watcher = notify::recommended_watcher(tx)
+        .map_err(|e| format!("watcher 初始化失败: {e}"))?;
+    watcher
+        .watch(PathBuf::from(&path).as_path(), notify::RecursiveMode::NonRecursive)
+        .map_err(|e| format!("监听失败: {e}"))?;
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let event_id = id.clone();
+    let dir_path = path.clone();
+    std::thread::spawn(move || {
+        // 去抖：收到首个事件后静默 250ms，期间合并同类事件再广播一次。
+        loop {
+            match rx.recv() {
+                Ok(_event) => {
+                    // 吞掉窗口期内堆积的事件。
+                    while rx.recv_timeout(std::time::Duration::from_millis(250)).is_ok() {}
+                    let payload = json!({ "id": event_id, "dirPath": dir_path });
+                    if window.emit("fs-watcher-change", payload).is_err() {
+                        return;
+                    }
+                }
+                Err(_) => return,
+            }
+            if shutdown_rx.try_recv().is_ok() {
+                return;
+            }
+        }
+    });
+
+    FS_WATCHERS
+        .lock()
+        .map_err(|_| "watcher 注册表损坏")?
+        .get_or_insert_with(std::collections::HashMap::new)
+        .insert(id.clone(), FsWatcherEntry { _watcher: watcher, _shutdown: shutdown_tx });
+    Ok(json!({ "id": id }))
+}
+
+/// `fs_unwatch(id)`：停止监听并释放注册。
+#[tauri::command]
+fn fs_unwatch(id: String) -> Result<Value, String> {
+    if let Ok(mut guard) = FS_WATCHERS.lock() {
+        if let Some(map) = guard.as_mut() {
+            map.remove(&id);
+        }
+    }
+    Ok(json!({ "ok": true }))
+}
+
 /// v4 createSession：新会话走 v4 主路径（外键约束要求会话在 v4 表登记）。
 #[tauri::command]
 async fn agent_create_session_v4(
@@ -669,6 +899,9 @@ pub fn run() {
             get_home,
             fs_list,
             fs_read,
+            git_refresh,
+            fs_watch,
+            fs_unwatch,
             agent_start,
             agent_status,
             agent_request,

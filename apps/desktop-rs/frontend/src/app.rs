@@ -28,6 +28,19 @@ pub async fn invoke_json(cmd: &str, args: Value) -> Result<Value, String> {
     serde_wasm_bindgen::from_value(raw).map_err(|e| e.to_string())
 }
 
+/// 订阅 Tauri 事件（handler 是 JS 函数；serde 序列化不了闭包，参数手工拼装）。
+/// 返回 listen Promise 的 JsValue（unlisten 函数；调用方 `forget` handler 即常驻）。
+pub async fn listen_tauri_event(event: &str, handler: &js_sys::Function) -> Result<JsValue, JsValue> {
+    let args = js_sys::Object::new();
+    let target = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &"event".into(), &event.into()).ok();
+    js_sys::Reflect::set(&args, &"kind".into(), &"Any".into()).ok();
+    js_sys::Reflect::set(&target, &"kind".into(), &"Any".into()).ok();
+    js_sys::Reflect::set(&args, &"target".into(), &target.into()).ok();
+    js_sys::Reflect::set(&args, &"handler".into(), handler).ok();
+    invoke("plugin:event|listen", args.into()).await
+}
+
 fn js_err_text(e: JsValue) -> String {
     e.as_string().unwrap_or_else(|| format!("{e:?}"))
 }

@@ -25,6 +25,8 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 # （真源 wire-binary.ts 用标准 CRC-32/IEEE + 严格标准字母表 base64）。
 crc32fast = "1"
 base64 = "0.22"
+# 文件树目录监听（真源 fileWatcherService 的主进程对应物）。
+notify = "7"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }

@@ -1,26 +1,41 @@
-//! 树形文件树面板（1:1 翻译 `packages/ui/src/workspace-file-tree/`）。
+﻿//! 树形文件树面板（1:1 翻译 `packages/ui/src/workspace-file-tree/`）。
 //!
 //! 对照真源：
 //! - 面板外壳 `WorkspaceFileTree.tsx:630-765`
 //! - 行渲染 `WorkspaceFileTreeRowView.tsx:213-304`
 //! - 数据层 `useWorkspaceFileTreeData.ts:80-92`（expanded/loaded/loading/error 六个集合）
 //! - 平铺 `model.ts:435-461`（DFS：树 → 扁平 row 列表，再渲染）
+//! - git 状态 / watcher / 过滤：`workspace_file_tree/` 子模块（model.ts 纯层、
+//!   gitStatus.ts、useWorkspaceFileTreeWatchers.ts、statusStyles.ts）
 //!
 //! 差异（已知取舍，逐条标注）：
-//! - **不做虚拟滚动**：真源用 @tanstack/react-virtual，行高固定 28px（constants.ts:1）。
-//!   Rust 侧先用普通滚动；目录懒加载后行数量可控，overscan 优化留后续。
-//! - **不做 compact folder 自动压平**：真源把 `a/b/c` 单子目录链合并成一行
-//!   （model.ts:394-433）。本轮先出正确层级，压平另做。
-//! - **不做 git 状态 / watcher / 拖拽 / 右键菜单**：依赖 gitService 与 fileWatcherService，
-//!   Rust 侧主进程未接，等协议侧补齐再迁。
+//! - **虚拟滚动**：真源用 @tanstack/react-virtual（28px 定高、overscan 12）。
+//!   Rust 侧按同参数手写窗口化：scrollTop/clientHeight 信号 + 总高占位 + 可见切片。
+//! - **compact folder 自动压平**：已实现（flatten_compact）。
 //! - **搜索**：真源走全局文件索引 IPC（useWorkspaceFileSearchIndex），本轮只过滤已加载的树节点。
+//! - **拖拽 / 右键菜单**：真源 Radix ContextMenu + dnd，未迁。
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::{HashMap, HashSet};
+use wasm_bindgen::JsCast;
 
 use crate::app::Icon;
 use crate::file_icons::{icon_src, resolve_icon_name};
+use crate::workspace_file_tree::gitStatus::{
+    load_workspace_file_tree_git_status, WorkspaceFileTreeGitStatusState,
+};
+use crate::workspace_file_tree::model::{
+    add_deleted_git_status_rows_to_tree, get_workspace_directory_git_statuses,
+    get_workspace_file_git_status, is_workspace_file_tree_deleted_file, GitDeletedNode,
+    WorkspaceFileGitStatus,
+};
+use crate::workspace_file_tree::statusStyles::{
+    get_workspace_file_git_status_dot_class_name, get_workspace_file_git_status_indicator,
+    get_workspace_file_git_status_indicator_class_name, get_workspace_file_git_status_text_class_name,
+    get_workspace_file_tree_row_display_git_status,
+};
+use crate::workspace_file_tree::useWorkspaceFileTreeWatchers::{WatcherCommand, WatcherRegistry};
 
 /// 真源 constants.ts:1-2 —— 行高 28px，gap 0（虚拟估高与 h-7 双向绑定）。
 const ROW_HEIGHT_PX: usize = 28;
@@ -54,6 +69,12 @@ pub struct TreeRow {
     /// compact folder 覆盖的全部路径（真源 compactedPaths）：单元素=普通目录，
     /// 多元素=压平链 `a/b/c`。展开/收起按整组处理。
     compacted_paths: Vec<String>,
+    /// 自身 git 状态（真源 `gitStatus` prop；文件有、目录无）。
+    git_status: Option<WorkspaceFileGitStatus>,
+    /// 目录聚合的 descendant 状态表（真源 `directoryGitStatuses`，已按 decoration 优先级排序）。
+    dir_statuses: Vec<WorkspaceFileGitStatus>,
+    /// deleted 文件（不在文件系统，点开预览被禁）。
+    deleted: bool,
 }
 
 /// 目录懒加载数据（useWorkspaceFileTreeData.ts:80-92 的 Rust 对应）。
@@ -228,6 +249,9 @@ fn flatten(root: &str, data: &TreeData) -> Vec<TreeRow> {
                 loading: data.loading.contains(&child.path),
                 error: data.error_dirs.contains(&child.path),
                 compacted_paths: vec![child.path.clone()],
+                git_status: None,
+                dir_statuses: Vec::new(),
+                deleted: false,
             });
             if expanded {
                 visit(&child.path, data, rows);
@@ -238,15 +262,71 @@ fn flatten(root: &str, data: &TreeData) -> Vec<TreeRow> {
     rows
 }
 
-/// DFS 平铺 + compact folder 压平（model.ts:390-461 全量语义）。
+/// DFS 平铺 + compact folder 压平（model.ts:390-461 全量语义）+ git 状态装饰。
 ///
 /// 与 `flatten` 的差异：沿单子目录链合并节点，展示名变`a/b/c`，深度停在最外层，
 /// 收起时整组 compacted_paths 都要退出 expanded 集合（否则下次展开只剩内层生效）。
-fn flatten_compact(root: &str, data: &TreeData) -> Vec<TreeRow> {
+/// git 状态：deleted 文件经 `add_deleted_git_status_rows_to_tree` 注入
+/// （model.ts:158-208，文件系统里已经没有这些行）；其余状态在行级挂
+/// 自身状态与目录聚合表（真源 useWorkspaceFileTreeRows.ts:26-41 的两步）。
+fn flatten_compact(
+    root: &str,
+    data: &TreeData,
+    status_by_path: &HashMap<String, WorkspaceFileGitStatus>,
+) -> Vec<TreeRow> {
+    // deleted 注入：TreeData 的 children 先转成 model 层的 pairs 形态，
+    // 走 model.rs 的 1:1 实现（含目录在前、同名去重），再转回 TreeNode。
+    let children_as_pairs: HashMap<String, Vec<(GitDeletedNode, bool)>> = data
+        .children_by_dir
+        .iter()
+        .map(|(dir, nodes)| {
+            (
+                dir.clone(),
+                nodes
+                    .iter()
+                    .map(|n| {
+                        (
+                            GitDeletedNode {
+                                path: n.path.clone(),
+                                name: n.name.clone(),
+                                depth: n.depth,
+                                is_symlink: n.is_symlink,
+                            },
+                            n.is_dir,
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    let injected = add_deleted_git_status_rows_to_tree(root, &children_as_pairs, status_by_path);
+    let children_by_dir: HashMap<String, Vec<TreeNode>> = injected
+        .into_iter()
+        .map(|(dir, pairs)| {
+            (
+                dir,
+                pairs
+                    .into_iter()
+                    .map(|(node, is_dir)| TreeNode {
+                        path: node.path,
+                        name: node.name,
+                        is_dir,
+                        is_symlink: node.is_symlink,
+                        depth: node.depth,
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+
     let mut rows: Vec<TreeRow> = Vec::new();
 
     // 沿链压平：返回(展示节点, 该链覆盖的全部路径, 子内容深度偏移)。
-    fn compact<'a>(node: &'a TreeNode, data: &'a TreeData) -> (TreeNode, Vec<String>, usize) {
+    fn compact(
+        node: &TreeNode,
+        children_by_dir: &HashMap<String, Vec<TreeNode>>,
+        data: &TreeData,
+    ) -> (TreeNode, Vec<String>, usize) {
         if !is_auto_flattenable(node) {
             return (node.clone(), vec![node.path.clone()], 0);
         }
@@ -256,7 +336,7 @@ fn flatten_compact(root: &str, data: &TreeData) -> Vec<TreeRow> {
             && !data.loading.contains(&current.path)
             && !data.error_dirs.contains(&current.path)
         {
-            let Some(children) = data.children_by_dir.get(&current.path) else {
+            let Some(children) = children_by_dir.get(&current.path) else {
                 break;
             };
             if children.len() != 1 || !is_auto_flattenable(&children[0]) {
@@ -281,13 +361,31 @@ fn flatten_compact(root: &str, data: &TreeData) -> Vec<TreeRow> {
         (merged, paths, current.depth - node.depth)
     }
 
-    fn visit(dir_path: &str, depth_offset: usize, data: &TreeData, rows: &mut Vec<TreeRow>) {
-        let Some(children) = data.children_by_dir.get(dir_path) else {
+    fn visit(
+        dir_path: &str,
+        depth_offset: usize,
+        children_by_dir: &HashMap<String, Vec<TreeNode>>,
+        data: &TreeData,
+        status_by_path: &HashMap<String, WorkspaceFileGitStatus>,
+        rows: &mut Vec<TreeRow>,
+    ) {
+        let Some(children) = children_by_dir.get(dir_path) else {
             return;
         };
         for child in children {
-            let (node, compacted_paths, offset) = compact(child, data);
+            let (node, compacted_paths, offset) = compact(child, children_by_dir, data);
             let expanded = node.is_dir && compacted_paths.iter().any(|p| data.expanded.contains(p));
+            let own_status = get_workspace_file_git_status(status_by_path, &node.path);
+            // git 状态三件套：文件自身状态、目录聚合表、deleted 判定
+            // （真源 RowView props 由 useWorkspaceFileTreeRows 阶段派生，此处同步计算）。
+            let git_status = if node.is_dir { None } else { own_status };
+            let dir_statuses = if node.is_dir {
+                get_workspace_directory_git_statuses(status_by_path, &node.path)
+            } else {
+                Vec::new()
+            };
+            let deleted =
+                is_workspace_file_tree_deleted_file(node.is_dir, own_status);
             rows.push(TreeRow {
                 path: node.path.clone(),
                 name: node.name.clone(),
@@ -297,14 +395,24 @@ fn flatten_compact(root: &str, data: &TreeData) -> Vec<TreeRow> {
                 loading: data.loading.contains(&node.path),
                 error: data.error_dirs.contains(&node.path),
                 compacted_paths,
+                git_status,
+                dir_statuses,
+                deleted,
             });
             if expanded {
-                visit(&node.path, depth_offset + offset, data, rows);
+                visit(
+                    &node.path,
+                    depth_offset + offset,
+                    children_by_dir,
+                    data,
+                    status_by_path,
+                    rows,
+                );
             }
         }
     }
 
-    visit(root, 0, data, &mut rows);
+    visit(root, 0, &children_by_dir, data, status_by_path, &mut rows);
     rows
 }
 
@@ -362,6 +470,19 @@ fn hierarchy_guide(depth: usize) -> impl IntoView {
     }
 }
 
+/// git 状态的 tooltip 文案（真源 `gitStatusLabelByStatus`，WorkspaceFileTree.tsx:240-250）。
+fn git_status_label(status: WorkspaceFileGitStatus) -> String {
+    use crate::ToolCallBlocks::i18n;
+    i18n::text(match status {
+        WorkspaceFileGitStatus::Modified => "git.kind.modified",
+        WorkspaceFileGitStatus::Added => "git.kind.added",
+        WorkspaceFileGitStatus::Deleted => "git.kind.deleted",
+        WorkspaceFileGitStatus::Renamed => "git.kind.renamed",
+        WorkspaceFileGitStatus::Untracked => "git.section.untracked",
+        WorkspaceFileGitStatus::Ignored => "workspaceFileTree.gitStatus.ignored",
+    })
+}
+
 #[component]
 fn FileTreeRow(
     row: TreeRow,
@@ -380,6 +501,31 @@ fn FileTreeRow(
         // 目录刻意不挂图标（RowView.tsx:116 fileIconSrc 对目录强制 null），只有箭头。
         Some(icon_src(&resolve_icon_name(&row.path)))
     };
+
+    // git 状态装饰（RowView.tsx:117-129）：
+    // 文件行 = 状态字母；目录行 = descendant 聚合圆点（loading 期间隐藏避免与 spinner 混义）。
+    let display_status =
+        get_workspace_file_tree_row_display_git_status(row.git_status, &row.dir_statuses);
+    let name_text_class =
+        get_workspace_file_git_status_text_class_name(display_status).unwrap_or_default();
+    let indicator = row
+        .git_status
+        .and_then(get_workspace_file_git_status_indicator);
+    let indicator_class = row
+        .git_status
+        .and_then(get_workspace_file_git_status_indicator_class_name)
+        .unwrap_or_default();
+    let indicator_label = row.git_status.map(git_status_label);
+    let show_dir_dot = !row.loading && !row.dir_statuses.is_empty();
+    let dot_class = get_workspace_file_git_status_dot_class_name(row.dir_statuses.first().copied());
+    let dot_label = row
+        .dir_statuses
+        .iter()
+        .map(|status| git_status_label(*status))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // deleted 文件不在磁盘上：行主动作被禁（RowView.tsx:357 canOpenPrimary=false）。
+    let can_open = !row.deleted;
 
     // 横向连接线：从父级竖线延伸到本行图标（RowView.tsx:275-284）。
     // depth=0 时整段不渲染（真源 depth>0 才画），故用 Option<String> 交由条件分支控制。
@@ -409,7 +555,7 @@ fn FileTreeRow(
                 // 单击即执行主要动作：目录展开 / 文件预览（RowView.tsx:139-156）。
                 if is_dir {
                     on_toggle.run(compacted_paths.clone());
-                } else {
+                } else if can_open {
                     on_preview.run(row.path.clone());
                 }
             }
@@ -436,8 +582,70 @@ fn FileTreeRow(
                             <img src=src class="shrink-0 size-4" alt="" />
                         }
                     })}
-                <span class="min-w-0 flex-1 truncate">{row.name.clone()}</span>
+                <span
+                    class=format!("min-w-0 flex-1 truncate {name_text_class}")
+                >
+                    {row.name.clone()}
+                </span>
             </span>
+            // 文件行的状态字母（RowView.tsx:305-323）：tooltip 挂状态词，ml-auto 顶到行尾。
+            {(indicator.is_some() && indicator_label.is_some()).then(|| {
+                let indicator = indicator.clone().unwrap_or_default();
+                let indicator_label = indicator_label.clone().unwrap_or_default();
+                // 全部在 view! 之外构造（多行宏在属性里的解析器坑 + 数据准备一次到位）。
+                let indicator_span_class = format!(
+                    "ml-auto inline-flex shrink-0 justify-center font-mono text-ui-base font-bold leading-none {indicator_class}",
+                );
+                let indicator_children = {
+                    // indicator 是 &'static str（Copy），闭包直接按值捕获。
+                    let indicator_label_for_closure = indicator_label.clone();
+                    std::sync::Arc::new(move || {
+                        let indicator_label = indicator_label_for_closure.clone();
+                        view! {
+                            <span aria-label=indicator_label class=indicator_span_class.clone()>
+                                {indicator}
+                            </span>
+                        }
+                        .into_any()
+                    })
+                        as std::sync::Arc<dyn Fn() -> AnyView + Send + Sync + 'static>
+                };
+                let indicator_data = crate::ControlHintTooltip::ControlHintTooltipData {
+                    title: indicator_label.clone(),
+                    side: Some(crate::ControlHintTooltip::TooltipSide::Right),
+                    ..Default::default()
+                };
+                view! {
+                    <crate::ControlHintTooltip::ControlHintTooltip
+                        children=indicator_children
+                        data=indicator_data
+                    />
+                }
+            })}
+            // 目录行的聚合圆点（RowView.tsx:324-341）。
+            {show_dir_dot.then(|| {
+                let dot_label_for_data = dot_label.clone();
+                let dot_children = std::sync::Arc::new(move || {
+                    view! {
+                        <span aria-label="●" class="flex shrink-0 items-center">
+                            <span class=format!("size-1.5 rounded-full {dot_class}")></span>
+                        </span>
+                    }
+                    .into_any()
+                })
+                    as std::sync::Arc<dyn Fn() -> AnyView + Send + Sync + 'static>;
+                let dot_data = crate::ControlHintTooltip::ControlHintTooltipData {
+                    title: dot_label_for_data,
+                    side: Some(crate::ControlHintTooltip::TooltipSide::Right),
+                    ..Default::default()
+                };
+                view! {
+                    <crate::ControlHintTooltip::ControlHintTooltip
+                        children=dot_children
+                        data=dot_data
+                    />
+                }
+            })}
             {row.loading.then(|| view! {
                 <span class="ml-2 flex size-3 shrink-0 animate-spin text-foreground-subtlest">
                     {loader_circle()}
@@ -473,6 +681,18 @@ pub fn FileTreePanel() -> impl IntoView {
     let selected_path = RwSignal::new(None::<String>);
     let query = RwSignal::new(String::new());
     let (preview, set_preview) = signal(None::<FilePreview>);
+    // git 状态（WorkspaceFileTree.tsx:240-250 + useWorkspaceFileTreeData 的 loadGitStatus）。
+    let git_status = RwSignal::new(WorkspaceFileTreeGitStatusState::default());
+    // 只看变更开关（WorkspaceFileTree.tsx:109；git 不可用时强制回退）。
+    let show_changed_only = RwSignal::new(false);
+    // 目录监听登记表（useWorkspaceFileTreeWatchers.ts 的 Rust 对应物）。
+    let watcher_registry = RwSignal::new(WatcherRegistry::default());
+    // 变更刷新合并拍：多次 watcher 事件合并成一次重载（真源 enqueueWatchRefresh 的去抖）。
+    let refresh_epoch = RwSignal::new(0u64);
+    // 虚拟滚动状态（真源 useVirtualizer：28px 定高 + overscan 12）。
+    let scroll_ref: NodeRef<leptos::html::Div> = NodeRef::new();
+    let scroll_top = RwSignal::new(0.0f64);
+    let viewport_height = RwSignal::new(0.0f64);
 
     // 展开集合变更与懒加载分离（WorkspaceFileTree.tsx:495-513）。
     // compact folder 传整组 compactedPaths：收起时逐个删除，展开时整组写入并加载末端目录。
@@ -528,39 +748,190 @@ pub fn FileTreePanel() -> impl IntoView {
         data.set(TreeData::default());
         selected_path.set(None);
         set_preview.set(None);
+        git_status.set(WorkspaceFileTreeGitStatusState::default());
+        show_changed_only.set(false);
+        // git 不可用的 workspace 切换后强制收起只看变更（真源 :212-216）。
         spawn_local(load_directory(data, ws.clone(), ws));
+    });
+
+    // git 状态装载（真源 loadGitStatus：workspace 变化 + watcher 变更时刷新）。
+    Effect::new(move |_| {
+        let Some(ws) = root.get() else { return };
+        spawn_local(async move {
+            if let Ok(state) = load_workspace_file_tree_git_status(&ws).await {
+                git_status.set(state);
+            }
+        });
+    });
+
+    // 目录监听（useWorkspaceFileTreeData.ts:623-636）：watched = {workspace} ∪ expanded。
+    // 每次集合变化对齐登记表，命令经 invoke 执行（真源直接调 fileWatcherService）。
+    Effect::new(move |_| {
+        let Some(ws) = root.get() else { return };
+        let mut watched: HashSet<String> = data.get().expanded.iter().cloned().collect();
+        watched.insert(ws);
+        // RwSignal::update 借用改写（WatcherRegistry 不可 Clone，不走 get/set 往返）。
+        let mut commands: Vec<WatcherCommand> = Vec::new();
+        watcher_registry.update(|registry| {
+            commands = registry.sync(&watched);
+        });
+        for command in commands {
+            match command {
+                WatcherCommand::Watch { dir_path } => {
+                    spawn_local(async move {
+                        match crate::app::invoke_json(
+                            "fs_watch",
+                            serde_json::json!({ "path": dir_path }),
+                        )
+                        .await
+                        {
+                            Ok(v) => {
+                                let id = v["id"].as_str().unwrap_or_default().to_string();
+                                // 迟到注册：拿到 id 时集合可能已变（真源 :70-75）。
+                                let current = data.get_untracked();
+                                let mut latest: HashSet<String> =
+                                    current.expanded.iter().cloned().collect();
+                                if let Some(ws) = root.get_untracked() {
+                                    latest.insert(ws);
+                                }
+                                watcher_registry.update(|registry| {
+                                    registry.on_watch_ok(&dir_path, id, &latest);
+                                });
+                            }
+                            Err(_) => {
+                                watcher_registry.update(|registry| registry.on_watch_failed(&dir_path));
+                            }
+                        }
+                    });
+                }
+                WatcherCommand::Unwatch { watcher_id, .. } => {
+                    spawn_local(async move {
+                        let _ = crate::app::invoke_json(
+                            "fs_unwatch",
+                            serde_json::json!({ "id": watcher_id }),
+                        )
+                        .await;
+                    });
+                }
+            }
+        }
+    });
+
+    // 变更事件订阅（一次性；真源 onDynamicChange → enqueueWatchRefresh）。
+    // 收到变更后推进合并拍，Effect 按拍去抖刷新已加载目录与 git 状态。
+    {
+        let refresh_epoch = refresh_epoch;
+        Effect::new(move |_| {
+            spawn_local(async move {
+                let handler = wasm_bindgen::closure::Closure::<dyn Fn(wasm_bindgen::JsValue)>::new(
+                    move |event: wasm_bindgen::JsValue| {
+                        let payload = js_sys::Reflect::get(&event, &"payload".into()).ok();
+                        let text = payload.and_then(|p| p.as_string());
+                        let dir_path = text
+                            .as_deref()
+                            .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+                            .and_then(|v| {
+                                v.get("dirPath").and_then(|d| d.as_str().map(str::to_string))
+                            });
+                        if dir_path.is_some() {
+                            refresh_epoch.update(|n| *n += 1);
+                        }
+                    },
+                );
+                let handler_fn: &js_sys::Function = handler.as_ref().unchecked_ref();
+                let subscribed = crate::app::listen_tauri_event("fs-watcher-change", handler_fn).await;
+                if subscribed.is_err() {
+                    web_sys::console::warn_1(&"文件树 watcher 事件订阅失败，退化为手动刷新".into());
+                }
+                handler.forget();
+            });
+        });
+    }
+
+    // 合并拍 → 去抖刷新：重读 workspace ∪ loaded ∪ expanded（真源
+    // getWorkspaceFileTreeRefreshDirectoryPaths），再重载 git 状态。
+    Effect::new(move |_| {
+        let epoch = refresh_epoch.get();
+        if epoch == 0 {
+            return;
+        }
+        let Some(ws) = root.get() else { return };
+        let data = data;
+        let git_status = git_status;
+        set_timeout(
+            move || {
+                // 刷新路径按真源顺序：根 → loaded → expanded（同拍去重，且都必须在 workspace 内）。
+                let current = data.get_untracked();
+                let mut refresh_paths: Vec<String> = Vec::new();
+                let mut seen: HashSet<String> = HashSet::new();
+                let mut add_refresh = |path: String| {
+                    if crate::workspace_file_tree::model::is_workspace_file_path_inside(&ws, &path)
+                        && seen.insert(path.clone())
+                    {
+                        refresh_paths.push(path);
+                    }
+                };
+                add_refresh(ws.clone());
+                for path in current.loaded.clone() {
+                    add_refresh(path);
+                }
+                for path in current.expanded.clone() {
+                    add_refresh(path);
+                }
+                for path in refresh_paths {
+                    spawn_local(load_directory(data, ws.clone(), path));
+                }
+                // git 状态随后重载（真源 loadGitStatus 与目录刷新同拍）。
+                let ws_for_git = ws.clone();
+                spawn_local(async move {
+                    if let Ok(state) =
+                        load_workspace_file_tree_git_status(&ws_for_git).await
+                    {
+                        git_status.set(state);
+                    }
+                });
+            },
+            std::time::Duration::from_millis(300),
+        );
+    });
+
+    // 虚拟滚动：挂载与面板打开时量一次视口高度（真源 useVirtualizer 内部有
+    // ResizeObserver；Rust 侧以挂载测量 + 滚动事件随测近似，面板宽度不频繁变）。
+    Effect::new(move |_| {
+        if !show_file_tree.get() {
+            return;
+        }
+        let Some(el) = scroll_ref.get() else { return };
+        let element = el.unchecked_ref::<web_sys::Element>();
+        viewport_height.set(element.client_height() as f64);
+        scroll_top.set(element.scroll_top() as f64);
     });
 
     let rows = Memo::new(move |_| {
         let Some(root) = root.get() else {
             return Vec::new();
         };
-        let all = flatten_compact(&root, &data.get());
-        let q = query.get().trim().to_lowercase();
-        if q.is_empty() {
-            return all;
-        }
-        // 搜索：真源走全局文件索引 IPC（useWorkspaceFileSearchIndex），本轮只过滤已加载节点。
-        let keep: HashSet<String> = all
+        let status_state = git_status.get();
+        let all = flatten_compact(&root, &data.get(), &status_state.status_by_path);
+        // 只看变更 + 搜索过滤（真源 :179-198 走 filterWorkspaceFileTreeRows；
+        // 搜索语义按已加载节点近似——真源全局索引 IPC 未迁）。
+        let filter_input: Vec<crate::workspace_file_tree::model::FilterRow> = all
             .iter()
-            .filter(|r| r.name.to_lowercase().contains(&q))
-            .map(|r| r.path.clone())
-            .collect();
-        if keep.is_empty() {
-            return Vec::new();
-        }
-        all.into_iter()
-            .filter(|r| {
-                if keep.contains(&r.path) {
-                    return true;
-                }
-                // 命中节点的祖先目录要保留，否则层级断裂。
-                let prefix = format!("{}/", r.path.replace('\\', "/"));
-                r.is_dir
-                    && keep
-                        .iter()
-                        .any(|k| k.replace('\\', "/").starts_with(&prefix))
+            .map(|row| crate::workspace_file_tree::model::FilterRow {
+                path: row.path.clone(),
+                name: row.name.clone(),
+                is_dir: row.is_dir,
             })
+            .collect();
+        let kept = crate::workspace_file_tree::model::filter_rows(
+            &filter_input,
+            &query.get(),
+            show_changed_only.get(),
+            &status_state.status_by_path,
+        );
+        let kept_set: HashSet<String> = kept.into_iter().map(|row| row.path).collect();
+        all.into_iter()
+            .filter(|row| kept_set.contains(&row.path))
             .collect()
     });
 
@@ -608,44 +979,111 @@ pub fn FileTreePanel() -> impl IntoView {
                         })}
                     </div>
                 </div>
-                // 标题行（WorkspaceFileTree.tsx:686）。
+                // 标题行（WorkspaceFileTree.tsx:686）+ 只看变更开关（:717-744）。
                 <div class="flex items-center justify-between px-2">
                     <h3 class="min-w-0 truncate py-1 pl-2.5 pr-0.5 text-ui-base font-medium text-foreground-subtlest">
                         {move || workspace_path()}
                     </h3>
+                    {move || {
+                        // git 不可用时开关整个缺席（真源 :717）。
+                        if !git_status.get().available {
+                            return ().into_any();
+                        }
+                        let label = if show_changed_only.get() {
+                            crate::ToolCallBlocks::i18n::text("workspaceFileTree.showAllFiles")
+                        } else {
+                            crate::ToolCallBlocks::i18n::text("workspaceFileTree.showChangedFiles")
+                        };
+                        let pressed = show_changed_only.get();
+                        view! {
+                            <button
+                                aria-label=label.clone()
+                                aria-pressed=pressed
+                                class=format!(
+                                    "flex size-6 shrink-0 items-center justify-center rounded-lg text-foreground-subtle hover:bg-surface-hover hover:text-foreground {}",
+                                    if pressed { "bg-selected text-foreground" } else { "" },
+                                )
+                                title=label
+                                type="button"
+                                on:click=move |_| show_changed_only.update(|v| *v = !*v)
+                            >
+                                <span class="flex size-3.5 items-center justify-center">
+                                    <Icon paths=vec!["M12 3v6", "M12 15v6"] circles=vec![("12", "12", "3")] />
+                                </span>
+                            </button>
+                        }
+                            .into_any()
+                    }}
                 </div>
-                // 滚动容器（WorkspaceFileTree.tsx:761-765）。真源内层 role="tree" + 虚拟定位，
-                // 本轮不虚拟化，行高固定 h-7 保证滚动节奏一致。
-                <div class="h-full min-h-0 flex-1 overflow-auto px-2 px-1" style="min-height: 0">
-                    <div role="tree" class="relative w-full" style=format!("min-height: {ROW_HEIGHT_PX}px")>
-                        {move || {
-                            let list = rows.get();
-                            if list.is_empty() {
-                                return view! {
-                                    <p class="px-2 py-1 text-xs text-muted">"没有匹配的文件"</p>
-                                }
-                                .into_any();
+                // 滚动容器 + 虚拟滚动（WorkspaceFileTree.tsx:761-765 + useVirtualizer :199-204）。
+                // 28px 定高 + overscan 12；总高占位撑出真实滚动条，窗口内绝对定位渲染。
+                <div
+                    class="h-full min-h-0 flex-1 overflow-auto px-1 px-2"
+                    node_ref=scroll_ref
+                    style="min-height: 0"
+                    on:scroll=move |ev| {
+                        let el = event_target::<web_sys::Element>(&ev);
+                        scroll_top.set(el.scroll_top() as f64);
+                        viewport_height.set(el.client_height() as f64);
+                    }
+                >
+                    {move || {
+                        let list = rows.get();
+                        if list.is_empty() {
+                            return view! {
+                                <p class="px-2 py-1 text-xs text-muted">"没有匹配的文件"</p>
                             }
-    let selected_now = selected_path.get_untracked();
-                                list.into_iter()
-                                    .map(|row| {
+                            .into_any();
+                        }
+                        let selected_now = selected_path.get_untracked();
+                        let total = list.len();
+                        let total_height = total * ROW_HEIGHT_PX;
+                        // 可见窗口：scrollTop 上取整行号，向下补满视口，上下各扩 12 行（真源 overscan=12）。
+                        const OVERSCAN: usize = 12;
+                        let start = ((scroll_top.get() / ROW_HEIGHT_PX as f64) as usize)
+                            .saturating_sub(OVERSCAN);
+                        let visible_end = ((scroll_top.get() + viewport_height.get())
+                            / ROW_HEIGHT_PX as f64)
+                            as usize
+                            + 1
+                            + OVERSCAN;
+                        let end = total.min(visible_end);
+                        view! {
+                            <div
+                                role="tree"
+                                class="relative w-full"
+                                style=format!("height: {total_height}px")
+                            >
+                                {list
+                                    .into_iter()
+                                    .enumerate()
+                                    .skip(start)
+                                    .take(end.saturating_sub(start))
+                                    .map(|(index, row)| {
                                         let path = row.path.clone();
                                         let is_selected = selected_now.as_deref() == Some(path.as_str());
+                                        let offset = index * ROW_HEIGHT_PX;
                                         view! {
-                                        <FileTreeRow
-                                            row=row
-                                            workspace=workspace_path()
-                                            selected=is_selected
-                                            on_select=Callback::new(move |p: String| selected_path.set(Some(p)))
-                                            on_toggle=toggle_dir
-                                            on_preview=Callback::new(move |p: String| preview_file.run(p))
-                                        />
-                                    }
+                                            <div
+                                                class="absolute left-0 top-0 w-full px-1"
+                                                style=format!("transform: translateY({offset}px); height: {ROW_HEIGHT_PX}px")
+                                            >
+                                                <FileTreeRow
+                                                    row=row
+                                                    workspace=workspace_path()
+                                                    selected=is_selected
+                                                    on_select=Callback::new(move |p: String| selected_path.set(Some(p)))
+                                                    on_toggle=toggle_dir
+                                                    on_preview=Callback::new(move |p: String| preview_file.run(p))
+                                                />
+                                            </div>
+                                        }
                                     })
-                                .collect_view()
-                                .into_any()
-                        }}
-                    </div>
+                                    .collect_view()}
+                            </div>
+                        }
+                            .into_any()
+                    }}
                 </div>
                 {move || preview.get().map(|p| {
                     view! {
@@ -763,7 +1201,7 @@ mod tests {
         data.loaded.insert("root\\a".into());
         data.loaded.insert("root\\a\\b".into());
 
-        let rows = flatten_compact("root", &data);
+        let rows = flatten_compact("root", &data, &HashMap::new());
         assert_eq!(rows.len(), 1, "单子目录链应压成一行");
         assert_eq!(rows[0].name, "a/b");
         assert_eq!(rows[0].depth, 0, "视觉深度停在最外层");
@@ -795,7 +1233,7 @@ mod tests {
         data.expanded.insert("root\\a".into());
         data.expanded.insert("root\\a\\b".into());
 
-        let rows = flatten_compact("root", &data);
+        let rows = flatten_compact("root", &data, &HashMap::new());
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["a/b", "x.rs"]);
         assert_eq!(rows[1].depth, 1, "子行深度 = 物理深度2 - 偏移1");
@@ -808,7 +1246,7 @@ mod tests {
         data.children_by_dir
             .insert("root".into(), vec![node("root\\a", "a", true, 0)]);
         // root\\a 未 loaded → 只知道它有个子项名，但没读过，压平条件不成立。
-        let rows = flatten_compact("root", &data);
+        let rows = flatten_compact("root", &data, &HashMap::new());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "a");
     }
@@ -826,7 +1264,7 @@ mod tests {
         );
         data.loaded.insert("root\\link".into());
 
-        let rows = flatten_compact("root", &data);
+        let rows = flatten_compact("root", &data, &HashMap::new());
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "link", "软链接目录保持单行，不拼成 link/x");
     }

@@ -23,6 +23,7 @@ pub mod pinned;
 pub mod stream;
 pub mod taskTitle;
 pub mod toast;
+pub mod workspace_file_tree;
 
 fn main() {
     console_error_panic_hook::set_once();
