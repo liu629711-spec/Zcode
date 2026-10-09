@@ -166,10 +166,18 @@
          EditInlineDiffContent 简化版 + fileDisplay 路径链 + **edit
          renderContent 三态完整迁移（含 3 处 notice 与 EditFileSummaryBlock）**
          + todo/fallback 的 ToolCallBody 兜底分支。
-   - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 switch-mode/skill/
-         ask-question/respond-to-coordinator 等）、CUA 组
-         （conversationCuaGroups 281 + cua.tsx 504 + cua-group 282）、
-         工作流 run 联接、ToolSnapshotFieldNotice、工作流 display strict 字段表。
+   - [x] **CUA 主卡已迁并接线**：`renderers/cua.rs`（真源 cua.tsx 504 行）——
+         工具名识别（两种命名空间）/ CUA 判定扫四处 / 详情模型三段 /
+         摘要呈现（appName 四级链 + description 五级三元 + 药丸）/
+         展开折叠决策。**并新增 i18n 中文文案层**（6345 条，
+         `scripts/gen_i18n.mjs` 从 zh-CN.ts 生成，此前 Rust 侧只有 i18n id）。
+   - [ ] toolCall 剩余：其余 ~45 个 renderer（按需，含 workflow 家族约 3000 行 /
+         MCP / node-repl）、CUA 组聚合层（conversationCuaGroups 281 + cua-group 282）、
+         工作流 run 联接、工作流 display strict 字段表。
+     - CUA 遗留：`CuaAppSummaryIcon` 权威图标需主进程 Helper 协议
+       （bundleId → iconLocators），当前首字母药丸占位；
+       `CuaToolCallDetails`（cuaDetails.tsx）的权限区/环境区/截图区/
+       失败原因区/建议动作区未渲染（数据已进模型）。
 4. 文件树剩余项：git 状态 / fileWatcher / 虚拟滚动 / 拖拽右键菜单
 5. 归档区剩余：变更统计（changeSummary）、清空全部归档按钮
 6. 富文本输入（`LexicalChatInput` 1535 行 → Rust 富文本方案待定）
