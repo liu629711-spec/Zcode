@@ -4,6 +4,7 @@
 //! 故豁免 snake_case 警告。
 #![allow(non_snake_case)]
 
+pub mod instance_phases;
 pub mod lane_name;
 pub mod name_pattern;
 pub mod participant_model;

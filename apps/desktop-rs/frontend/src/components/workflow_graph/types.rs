@@ -51,7 +51,11 @@ pub struct WorkflowStepData {
     /// `z.enum(["ask", "world-read"])`
     pub kind: String,
     pub label: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "labelPattern",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub label_pattern: Option<NamePattern>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<i64>,
@@ -78,7 +82,11 @@ pub struct WorkflowLaneData {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// `name` 缺席而 agent() 首参是带洞的模板串时的静态形状；**与 name 互斥**。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "namePattern",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub name_pattern: Option<NamePattern>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<i64>,
@@ -135,27 +143,56 @@ pub struct WorkflowPhaseData {
 }
 
 /// `ToolCallCreateWorkflowCausalityGraph`（真源 :37-133）。
+///
+/// ★载荷是**camelCase**（display 的 `causalityGraph` 是原始 JSON），所以多词字段
+/// 逐个显式 `rename`——漏一个不会报错，只会让那一项**静默变成 `None`**：
+/// `phaseEdges` 读成 `phase_edges` 时整张图的边集合是空的，而所有断言
+/// 「没有轨道段」的测试都会通过。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowCausalityGraphData {
+    #[serde(rename = "steps")]
     pub steps: Vec<WorkflowStepData>,
+    #[serde(rename = "lanes")]
     pub lanes: Vec<WorkflowLaneData>,
+    #[serde(rename = "participants")]
     pub participants: Vec<WorkflowParticipantData>,
+    #[serde(rename = "handoffs")]
     pub handoffs: Vec<WorkflowHandoffData>,
     /// 阶段词汇表：作者施加的分组结构。
     ///
     /// ★真源 :106-108 注释——与 `phaseEdges` / `exits` / `Step.phase`
     /// **全有或全无**：零标记脚本全缺席，UI 据此退回 step/车道视图。
     /// 零成员阶段也在表里。`unphased` 无 name，显示名由 UI 本地化。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "phases",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub phases: Option<Vec<WorkflowPhaseData>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "phaseEdges",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub phase_edges: Option<Vec<WorkflowEdge>>,
     /// 控制流可在其后正常完成的阶段（阶段视图的「阶段 → 返回物」箭头）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "exits",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub exits: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "sink",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub sink: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "truncated",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub truncated: Option<bool>,
 }
 
@@ -302,6 +339,37 @@ mod tests {
         );
         assert_eq!(WorkflowGraphSelectionKind::Phase.as_str(), "phase");
         assert_eq!(WorkflowGraphSelectionKind::Sink.as_str(), "sink");
+    }
+
+    #[test]
+    fn multiword_fields_use_camel_case_on_the_wire() {
+        // ★回归——`phaseEdges` / `labelPattern` / `namePattern` 曾经漏了 rename，
+        // serde 不报错，只是把那一项读成 `None`：整张图的边集合静默变空，
+        // 所有「没有轨道段」的断言照样通过。这里逐项钉住。
+        let raw = serde_json::json!({
+            "steps": [{
+                "id": "s1", "kind": "ask", "label": "问", "lane": "l1",
+                "labelPattern": { "head": "研究员", "tail": "号" }
+            }],
+            "lanes": [{ "id": "l1", "namePattern": { "head": "研究员" } }],
+            "participants": [],
+            "handoffs": [],
+            "phaseEdges": [{ "from": "p1", "to": "p2" }]
+        });
+        let g: WorkflowCausalityGraphData = serde_json::from_value(raw).unwrap();
+        assert_eq!(
+            g.phase_edges.as_ref().unwrap().len(),
+            1,
+            "★phaseEdges 必须读进来"
+        );
+        assert_eq!(
+            g.steps[0].label_pattern.as_ref().unwrap().head.as_deref(),
+            Some("研究员")
+        );
+        assert_eq!(
+            g.lanes[0].name_pattern.as_ref().unwrap().head.as_deref(),
+            Some("研究员")
+        );
     }
 
     #[test]

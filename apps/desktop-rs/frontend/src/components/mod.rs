@@ -4,6 +4,10 @@
 
 #![allow(non_snake_case)]
 
+pub mod station_observation;
+pub mod subagent_model_label;
 pub mod timeline_bands;
+pub mod timeline_model;
+pub mod timeline_summary;
 pub mod workflowSettingsChange;
 pub mod workflow_graph;

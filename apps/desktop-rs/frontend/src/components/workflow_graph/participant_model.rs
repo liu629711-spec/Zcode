@@ -1,20 +1,20 @@
 //! 1:1 翻译 `packages/ui/src/components/workflow-graph/participant-model.ts`
-//! （369 行）的**纯选择器部分**。
+//! （369 行）。
 //!
-//! ★真源 :12-19 注释——参与者层的纯选择器。载荷的 `participants` 已经是
+//! ★真源 :14-24 注释——参与者层的纯选择器。载荷的 `participants` 已经是
 //! 分析器排好的**交接序**（第一张是开局者），`handoffs` 已经归约过；
 //! 这里只做分桶、状态折叠、计数，以及 UI 自己的两件事：
 //! - 无标记脚本合成一个隐式阶段（`with_implicit_phase`）；
-//! - 运行中把 `many` 卡按真实实例拆开（`live_participant_view`）。
+//! - 运行中把 `many` 卡按真实实例拆开、成员卡按 ordinal 收窄、
+//!   单卡绑定它唯一的实例或在多实例时同样拆开（`live_participant_view`）。
 //!
-//! **裁剪注明**——`liveParticipantView` / `phaseBinder` / `runIndex` 依赖
-//! `WorkflowRunState` 协议类型（actors / nodes / phaseName / siteId），
-//! 该类型在协议层尚未迁入，故本模块只落不依赖它的纯选择器；
-//! 待协议类型落地后按文件末 TODO 补齐（与 `run_status.rs` 的同款裁剪对齐）。
+//! 无 React、无 DOM：投影层与组件都消费它，测试直接调。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use super::run_status::collapse_statuses;
+use super::instance_phases::{PhaseBinder, phase_binder};
+use super::run_state::{WorkflowRunActor, WorkflowRunNode, WorkflowRunState};
+use super::run_status::{aggregate_run_statuses, collapse_statuses, status_of_run_node};
 use super::types::{
     IMPLICIT_PHASE_ID, StepRunStatus, StepStatusTable, WorkflowCausalityGraphData,
     WorkflowHandoffData, WorkflowParticipantData, WorkflowPhaseData,
@@ -228,14 +228,318 @@ pub struct ParticipantInstance {
     pub bound: bool,
 }
 
-// TODO(后续迁移)：以下真源部分依赖 `WorkflowRunState` 协议类型，
-// 待该类型从协议层迁入后补齐（与 run_status.rs 的 workflowRunOverlay 同款裁剪）。
-// - `liveParticipantView`（真源 :220-369）：把 many 卡按真实实例拆开、
-//   成员卡按 ordinal 收窄、单卡绑定唯一实例。约 150 行，是这个模块的主体。
-// - `phaseBinder` / `phasesOf` / `runHasPhaseVocabulary`（instance-phases.ts:21-72）：
-//   一个戳的归属阶段集——有戳按名字匹配、无戳且 run 有词汇则落无名阶段、
-//   任一分支结果为空则全阶段（「宁可重复显示，也不把一个在跑的子代理藏起来」）。
-// - `runIndex` / `actorKey` / `statusOfRunNode`（run-status.ts:83-174）。
+// ---------------------------------------------------------------------------
+// 实时视图（真源 :161-369）
+// ---------------------------------------------------------------------------
+
+/// `LiveParticipantView`（真源 :183-190）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveParticipantView {
+    /// 参与者与交接已按实例拆分的图；无 run 时就是输入图（值相等）。
+    pub graph: WorkflowCausalityGraphData,
+    /// 按实例收窄后的卡片状态（成员卡、实例卡）；其余卡由 step 折叠。
+    pub participant_statuses: HashMap<String, StepRunStatus>,
+    /// 实例卡 id → 身份。
+    pub instances: HashMap<String, ParticipantInstance>,
+}
+
+/// `boundInstance`（真源 :359-369）。
+fn bound_instance(participant_id: &str, actor: &WorkflowRunActor) -> ParticipantInstance {
+    ParticipantInstance {
+        // ★真源 :296-297 —— 名字缺席就不带这个键（Rust 侧 None）。
+        name: actor.name.clone(),
+        ordinal: actor.ordinal,
+        participant: participant_id.to_string(),
+        bound: true,
+    }
+}
+
+/// `RunIndex`（真源 :325-330）：一次视图建一遍的两张索引。
+#[derive(Debug, Clone, Default)]
+struct RunIndex {
+    /// `actorKey` → 该实例名下的节点，保持 `run.nodes` 的顺序。
+    nodes_by_actor: HashMap<String, Vec<WorkflowRunNode>>,
+    /// 车道 → 该车道上的 actor，已按 ordinal 升序（认领顺序）。
+    actors_by_site: HashMap<String, Vec<WorkflowRunActor>>,
+}
+
+/// `actorKey`（真源 :321-323）。
+///
+/// ★键用 `\0` 连接，与 shared 的 `workflow-runs-actor-status.ts` 同一条理由：
+/// `siteId` 是引擎给的**任意字符串**，用 `-` 之类可打印分隔符会让
+/// `("a-1", 2)` 与 `("a", "1-2")` 撞车。
+fn actor_key(site_id: &str, ordinal: i64) -> String {
+    format!("{site_id}\0{ordinal}")
+}
+
+/// `runIndex`（真源 :340-357）。
+///
+/// ★真源 :332-339 注释——没有它们，每张实例卡都要重扫一遍 `run.nodes` 才能收自己的状态
+/// ——表界是 1024 个实例 × 1024 个节点，也就是每帧一百万次比较。
+/// 索引之后建模按 actors + nodes 线性。
+///
+/// 没有 actor 的节点（world-read）与不带 ordinal 的旧载荷不进索引：原来的筛选条件
+/// `node.actorSiteId === lane && node.actorOrdinal === ordinal` 对它们恒假，丢掉等价。
+fn run_index(run: &WorkflowRunState) -> RunIndex {
+    let mut nodes_by_actor: HashMap<String, Vec<WorkflowRunNode>> = HashMap::new();
+    for node in &run.nodes {
+        let (Some(site), Some(ordinal)) = (node.actor_site_id.as_deref(), node.actor_ordinal)
+        else {
+            continue;
+        };
+        nodes_by_actor
+            .entry(actor_key(site, ordinal))
+            .or_default()
+            .push(node.clone());
+    }
+    let mut actors_by_site: HashMap<String, Vec<WorkflowRunActor>> = HashMap::new();
+    for actor in &run.actors {
+        actors_by_site
+            .entry(actor.site_id.clone())
+            .or_default()
+            .push(actor.clone());
+    }
+    // 整条车道只排一次序，与原来「先筛后排」同序——排序稳定，筛选保序。
+    for actors in actors_by_site.values_mut() {
+        actors.sort_by_key(|a| a.ordinal);
+    }
+    RunIndex {
+        nodes_by_actor,
+        actors_by_site,
+    }
+}
+
+/// `liveParticipantView`（真源 :212-315）。
+///
+/// ★真源 :193-211 注释——
+/// - `many` 卡：该车道上每个已出现的 actor 实例各出一张卡，交接边按原卡复制到
+///   每张实例卡；实例尚未出现时保留原来那一张（状态由 step 折叠）。
+/// - 单卡：车道上恰有一个实例 → 原卡绑定它（id 不变、状态仍由 step 折叠，
+///   只是名字有了）；两个以上 → 与 `many` 同一条拆分路径——运行时基数胜过静态基数。
+/// - 成员卡（字面量基数展开）：第 i 个成员对应该车道上按 ordinal 排序的第 i 个实例，
+///   绑定它，状态只看那个实例的节点；实例未出现 → pending、不绑定。
+///   多出 `of` 的实例不出卡。
+/// - 工作区等合成车道上没有实例，卡不动。
+///
+/// 节点按 `(siteId ∈ 卡的站点, actorSiteId === lane, actorOrdinal === ordinal,
+/// 卡的阶段 ∈ phasesOf(节点))` 收窄；站点取 `step.source ?? step.id`（may-set 拷贝报的是
+/// 站点 id，与 run-status.ts 的关联键同源）。实例在场而它的站点上一个节点都没有 → pending：
+/// 实例是观察到的事实，只是还没在这一站动（折叠自己对空集只说 undefined，解缺席是这里的事）。
+///
+/// ★「实例绑定」（真源 :207-210）——一张卡认领的实例不再是**整条车道**上的实例：
+/// 同一个站点被 k 个阶段再入时，k 张卡共享一条车道，按车道认领就是一次广播
+/// （每站都列全部 100 个）。见 `instances_of_card`。
+pub fn live_participant_view(
+    graph: &WorkflowCausalityGraphData,
+    run: Option<&WorkflowRunState>,
+) -> LiveParticipantView {
+    let Some(run) = run else {
+        // ★真源 :216 —— 无 run 时就是输入图（引用相等）。
+        return LiveParticipantView {
+            graph: graph.clone(),
+            instances: HashMap::new(),
+            participant_statuses: HashMap::new(),
+        };
+    };
+    // 站点取 `source ?? id`（真源 :217）——may-set 拷贝报的是站点 id。
+    let site_of: HashMap<&str, &str> = graph
+        .steps
+        .iter()
+        .map(|step| {
+            (
+                step.id.as_str(),
+                step.source.as_deref().unwrap_or(step.id.as_str()),
+            )
+        })
+        .collect();
+    let mut binder = phase_binder(graph, Some(run));
+    let index = run_index(run);
+
+    // 真源 :219-220 —— 一张卡的站点集合。
+    let sites_of = |participant: &WorkflowParticipantData| -> HashSet<String> {
+        participant
+            .steps
+            .iter()
+            .map(|id| site_of.get(id.as_str()).copied().unwrap_or(id.as_str()).to_string())
+            .collect()
+    };
+
+    /// 真源 :231-247 —— 这张卡名下的实例：车道上在**这张卡的站点**留下过节点、
+    /// 且该节点的戳落在这张卡的阶段的 actor；在这些站点上还一个节点都没有的 actor
+    /// （建了还没被 ask，或还没走到这一站）则按它**自己的出生戳**归位。
+    /// 无戳的 run 里 `phasesOf` 恒是全部阶段，两条合起来正是今天的「按车道」
+    /// ——旧 run 逐字节不变。
+    fn instances_of_card(
+        participant: &WorkflowParticipantData,
+        sites: &HashSet<String>,
+        index: &RunIndex,
+        binder: &mut PhaseBinder,
+    ) -> Vec<WorkflowRunActor> {
+        let mut claimed: Vec<WorkflowRunActor> = Vec::new();
+        let Some(actors) = index.actors_by_site.get(&participant.lane) else {
+            return claimed;
+        };
+        for actor in actors {
+            let mut seen = false;
+            let mut here = false;
+            if let Some(nodes) = index
+                .nodes_by_actor
+                .get(&actor_key(&participant.lane, actor.ordinal))
+            {
+                for node in nodes {
+                    if !sites.contains(&node.site_id) {
+                        continue;
+                    }
+                    seen = true;
+                    if binder.has(&participant.phase, node.phase_name.as_deref()) {
+                        here = true;
+                        break;
+                    }
+                }
+            }
+            if here || (!seen && binder.has(&participant.phase, actor.phase_name.as_deref())) {
+                claimed.push(actor.clone());
+            }
+        }
+        claimed
+    }
+
+    /// 真源 :248-259 —— 按实例收状态。
+    fn status_for(
+        participant: &WorkflowParticipantData,
+        ordinal: i64,
+        sites: &HashSet<String>,
+        index: &RunIndex,
+        binder: &mut PhaseBinder,
+    ) -> StepRunStatus {
+        let mut values: Vec<StepRunStatus> = Vec::new();
+        if let Some(nodes) = index.nodes_by_actor.get(&actor_key(&participant.lane, ordinal)) {
+            for node in nodes {
+                if !sites.contains(&node.site_id)
+                    || !binder.has(&participant.phase, node.phase_name.as_deref())
+                {
+                    continue;
+                }
+                values.push(status_of_run_node(node));
+            }
+        }
+        // ★真源 :258 —— 空集落pending：实例在场而它的站点上一个节点都没有，
+        // 实例是观察到的事实，只是还没在这一站动。
+        aggregate_run_statuses(&values).unwrap_or(StepRunStatus::Pending)
+    }
+
+    let mut participants: Vec<WorkflowParticipantData> = Vec::new();
+    let mut replacements: HashMap<String, Vec<String>> = HashMap::new();
+    let mut participant_statuses: HashMap<String, StepRunStatus> = HashMap::new();
+    let mut instances: HashMap<String, ParticipantInstance> = HashMap::new();
+    let mut changed = false;
+    for participant in &graph.participants {
+        let sites = sites_of(participant);
+        let actors = instances_of_card(participant, &sites, &index, &mut binder);
+        // 成员卡（真源 :269-276）：字面量基数展开的那一张。
+        if let Some(member) = &participant.member {
+            let actor = actors.get(member.index.max(0) as usize);
+            participant_statuses.insert(
+                participant.id.clone(),
+                match actor {
+                    None => StepRunStatus::Pending,
+                    Some(actor) => status_for(participant, actor.ordinal, &sites, &index, &mut binder),
+                },
+            );
+            if let Some(actor) = actor {
+                instances.insert(
+                    participant.id.clone(),
+                    bound_instance(&participant.id, actor),
+                );
+            }
+            participants.push(participant.clone());
+            continue;
+        }
+        // 单卡恰有一个实例（真源 :277-281）：原卡绑定它，id 与标签规则都不变。
+        if participant.many != Some(true) && actors.len() == 1 {
+            instances.insert(
+                participant.id.clone(),
+                bound_instance(&participant.id, &actors[0]),
+            );
+            participants.push(participant.clone());
+            continue;
+        }
+        // `many` 卡或多个实例（真源 :282-303）：按真实实例拆开。
+        if participant.many == Some(true) || actors.len() > 1 {
+            if actors.is_empty() {
+                // ★真源 :283-286 —— 实例尚未出现时保留原来那一张
+                // （状态由 step 折叠）。
+                participants.push(participant.clone());
+                continue;
+            }
+            changed = true;
+            let mut ids: Vec<String> = Vec::new();
+            for actor in &actors {
+                let id = instance_card_id(&participant.id, actor.ordinal);
+                let mut split = participant.clone();
+                split.many = None;
+                split.id = id.clone();
+                participants.push(split);
+                participant_statuses.insert(
+                    id.clone(),
+                    status_for(participant, actor.ordinal, &sites, &index, &mut binder),
+                );
+                instances.insert(
+                    id.clone(),
+                    ParticipantInstance {
+                        ordinal: actor.ordinal,
+                        participant: participant.id.clone(),
+                        name: actor.name.clone(),
+                        // 缺席 = 拆分出的实例卡（真源 :176-180）。
+                        bound: false,
+                    },
+                );
+                ids.push(id);
+            }
+            replacements.insert(participant.id.clone(), ids);
+            continue;
+        }
+        participants.push(participant.clone());
+    }
+    // ★真源 :306 —— 没拆过就不重建图（引用相等，memo友好）。
+    if !changed {
+        return LiveParticipantView {
+            graph: graph.clone(),
+            instances,
+            participant_statuses,
+        };
+    }
+
+    // 交接边按原卡复制到每张实例卡（真源 :308-313）。
+    let mut handoffs: Vec<WorkflowHandoffData> = Vec::new();
+    for edge in &graph.handoffs {
+        let empty = Vec::new();
+        let froms = replacements.get(&edge.from).unwrap_or(&empty);
+        let tos = replacements.get(&edge.to).unwrap_or(&empty);
+        let froms: Vec<&String> = if froms.is_empty() {
+            vec![&edge.from]
+        } else {
+            froms.iter().collect()
+        };
+        let tos: Vec<&String> = if tos.is_empty() { vec![&edge.to] } else { tos.iter().collect() };
+        for from in &froms {
+            for to in &tos {
+                let mut split = edge.clone();
+                split.from = (*from).clone();
+                split.to = (*to).clone();
+                handoffs.push(split);
+            }
+        }
+    }
+    let mut split_graph = graph.clone();
+    split_graph.handoffs = handoffs;
+    split_graph.participants = participants;
+    LiveParticipantView {
+        graph: split_graph,
+        instances,
+        participant_statuses,
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -243,6 +547,10 @@ mod tests {
     use crate::components::workflow_graph::run_status::aggregate_run_statuses;
 
     fn graph_from_str(raw: &str) -> WorkflowCausalityGraphData {
+        serde_json::from_str(raw).unwrap()
+    }
+
+    fn run_from_str(raw: &str) -> WorkflowRunState {
         serde_json::from_str(raw).unwrap()
     }
 
@@ -487,5 +795,354 @@ mod tests {
             Some(StepRunStatus::Running),
             "两条路径一致"
         );
+    }
+
+    // ── 实时视图 ──
+
+    /// 一张 `many` 卡在 lane `l1` 上，站点 `s1`。
+    fn many_graph() -> WorkflowCausalityGraphData {
+        graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [],
+                "participants": [
+                    {"id": "p1", "phase": "main", "lane": "l1", "steps": ["s1"], "many": true}
+                ]}"#,
+        )
+    }
+
+    fn many_run(ordinals: &str) -> WorkflowRunState {
+        run_from_str(&format!(
+            r#"{{"runId": "r", "status": "running",
+                "actors": [{ordinals}],
+                "nodes": [
+                  {{"siteId": "s1", "ordinal": 0, "phase": "executing",
+                    "actorSiteId": "l1", "actorOrdinal": 0}},
+                  {{"siteId": "s1", "ordinal": 1, "phase": "settled", "outcome": "ok",
+                    "actorSiteId": "l1", "actorOrdinal": 1}}
+                ]}}"#
+        ))
+    }
+
+    #[test]
+    fn live_view_without_run_returns_input_graph() {
+        // ★真源 :216 —— 无 run 时就是输入图（引用相等）。
+        let graph = many_graph();
+        let view = live_participant_view(&graph, None);
+        assert_eq!(view.graph, graph);
+        assert!(view.instances.is_empty());
+        assert!(view.participant_statuses.is_empty());
+    }
+
+    #[test]
+    fn many_card_splits_into_one_card_per_instance() {
+        // ★真源 :195 —— `many` 卡：每个已出现的 actor 实例各出一张卡。
+        let run = many_run(
+            r#"{"siteId": "l1", "ordinal": 0, "status": "running", "name": "研究员1"},
+               {"siteId": "l1", "ordinal": 1, "status": "completed", "name": "研究员2"}"#,
+        );
+        let view = live_participant_view(&many_graph(), Some(&run));
+        let ids: Vec<&str> = view.graph.participants.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["p1@0", "p1@1"], "实例卡 id 是参与者 id + @ + ordinal");
+        // 状态按实例收窄，不是一张卡一个状态。
+        assert_eq!(
+            view.participant_statuses.get("p1@0"),
+            Some(&StepRunStatus::Running)
+        );
+        assert_eq!(
+            view.participant_statuses.get("p1@1"),
+            Some(&StepRunStatus::Done)
+        );
+        // 身份表：名字是引擎发出的有效名，卡面优先念它。
+        assert_eq!(view.instances["p1@0"].name.as_deref(), Some("研究员1"));
+        assert_eq!(view.instances["p1@0"].participant, "p1");
+        assert!(!view.instances["p1@0"].bound, "拆分出的实例卡不bound");
+    }
+
+    #[test]
+    fn split_cards_lose_the_many_flag() {
+        // 真源 :291 —— `{...rest}` 去掉 `many`，实例卡自己不再声称「多」。
+        let run = many_run(r#"{"siteId": "l1", "ordinal": 0, "status": "running"}"#);
+        let view = live_participant_view(&many_graph(), Some(&run));
+        for card in &view.graph.participants {
+            assert_eq!(card.many, None);
+        }
+    }
+
+    #[test]
+    fn many_card_without_instances_stays_as_is() {
+        // ★真源 :196 —— 实例尚未出现时保留原来那一张
+        // （状态由 step 折叠，所以不进 participant_statuses）。
+        let run = run_from_str(
+            r#"{"runId": "r", "status": "running", "actors": [],
+                "nodes": []}"#,
+        );
+        let view = live_participant_view(&many_graph(), Some(&run));
+        assert_eq!(view.graph.participants.len(), 1);
+        assert_eq!(view.graph.participants[0].id, "p1");
+        assert!(view.participant_statuses.is_empty());
+    }
+
+    #[test]
+    fn handoffs_are_copied_to_every_split_card() {
+        // ★真源 :196 /308-313 —— 交接边按原卡复制到每张实例卡。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [{"from": "p1", "to": "p2"}],
+                "participants": [
+                    {"id": "p1", "phase": "main", "lane": "l1", "steps": ["s1"], "many": true},
+                    {"id": "p2", "phase": "main", "lane": "l2", "steps": []}
+                ]}"#,
+        );
+        let run = many_run(
+            r#"{"siteId": "l1", "ordinal": 0, "status": "running"},
+               {"siteId": "l1", "ordinal": 1, "status": "completed"}"#,
+        );
+        let view = live_participant_view(&graph, Some(&run));
+        let mut edges: Vec<(String, String)> = view
+            .graph
+            .handoffs
+            .iter()
+            .map(|e| (e.from.clone(), e.to.clone()))
+            .collect();
+        edges.sort();
+        assert_eq!(
+            edges,
+            vec![
+                ("p1@0".to_string(), "p2".to_string()),
+                ("p1@1".to_string(), "p2".to_string()),
+            ],
+            "每张实例卡各拿一份边"
+        );
+    }
+
+    #[test]
+    fn single_card_with_one_instance_is_bound_not_split() {
+        // ★真源 :197 —— 车道上恰有一个实例 → 原卡绑定它
+        // （id 不变、状态仍由 step 折叠，只是名字有了）。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [],
+                "participants": [{"id": "p1", "phase": "main", "lane": "l1", "steps": ["s1"]}]}"#,
+        );
+        let run = many_run(r#"{"siteId": "l1", "ordinal": 0, "status": "running", "name": "研究员1"}"#);
+        let view = live_participant_view(&graph, Some(&run));
+        assert_eq!(view.graph.participants.len(), 1);
+        assert_eq!(view.graph.participants[0].id, "p1", "卡 id 不变");
+        assert!(
+            view.participant_statuses.is_empty(),
+            "单卡状态仍由 step 折叠，不进覆盖表"
+        );
+        let bound = &view.instances["p1"];
+        assert!(bound.bound, "原卡绑定");
+        assert_eq!(bound.name.as_deref(), Some("研究员1"));
+    }
+
+    #[test]
+    fn runtime_cardinality_beats_static_cardinality() {
+        // ★真源 :198 —— 两个以上 → 与 `many` 同一条拆分路径：
+        // 运行时基数胜过静态基数（这张卡静态上没写 many）。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [],
+                "participants": [{"id": "p1", "phase": "main", "lane": "l1", "steps": ["s1"]}]}"#,
+        );
+        let run = many_run(
+            r#"{"siteId": "l1", "ordinal": 0, "status": "running"},
+               {"siteId": "l1", "ordinal": 1, "status": "completed"}"#,
+        );
+        let view = live_participant_view(&graph, Some(&run));
+        let ids: Vec<&str> = view.graph.participants.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(ids, vec!["p1@0", "p1@1"]);
+    }
+
+    #[test]
+    fn member_card_binds_the_nth_instance_by_ordinal() {
+        // ★真源 :199-200 —— 成员卡：第 i 个成员对应该车道上按 ordinal 排序的第 i 个实例。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [],
+                "participants": [
+                    {"id": "p0", "phase": "main", "lane": "l1", "steps": ["s1"],
+                     "member": {"index": 0, "of": 2}},
+                    {"id": "p1", "phase": "main", "lane": "l1", "steps": ["s1"],
+                     "member": {"index": 1, "of": 2}}
+                ]}"#,
+        );
+        let run = many_run(
+            r#"{"siteId": "l1", "ordinal": 0, "status": "running", "name": "甲"},
+               {"siteId": "l1", "ordinal": 1, "status": "completed", "name": "乙"}"#,
+        );
+        let view = live_participant_view(&graph, Some(&run));
+        assert_eq!(view.graph.participants.len(), 2, "成员卡不拆开");
+        assert_eq!(view.participant_statuses["p0"], StepRunStatus::Running);
+        assert_eq!(view.participant_statuses["p1"], StepRunStatus::Done);
+        assert_eq!(view.instances["p0"].name.as_deref(), Some("甲"));
+        assert_eq!(view.instances["p1"].name.as_deref(), Some("乙"));
+        assert!(view.instances["p0"].bound, "成员卡是绑定而非拆分");
+    }
+
+    #[test]
+    fn member_card_without_its_instance_is_pending_and_unbound() {
+        // ★真源 :200 —— 实例未出现 → pending、不绑定。
+        // 声明 of=3 但只出现了 ordinal 0 那一个：index 1 的成员卡没实例可认。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [],
+                "participants": [
+                    {"id": "p0", "phase": "main", "lane": "l1", "steps": ["s1"],
+                     "member": {"index": 0, "of": 3}},
+                    {"id": "p1", "phase": "main", "lane": "l1", "steps": ["s1"],
+                     "member": {"index": 1, "of": 3}}
+                ]}"#,
+        );
+        let run = many_run(r#"{"siteId": "l1", "ordinal": 0, "status": "running"}"#);
+        let view = live_participant_view(&graph, Some(&run));
+        assert_eq!(view.participant_statuses["p0"], StepRunStatus::Running);
+        assert_eq!(
+            view.participant_statuses["p1"],
+            StepRunStatus::Pending,
+            "第1 号成员还没有对应实例"
+        );
+        assert!(!view.instances.contains_key("p1"), "缺席 = 不绑定");
+    }
+
+    #[test]
+    fn instance_present_but_idle_on_this_site_is_pending() {
+        // ★真源 :204-206 —— 实例在场而它的站点上一个节点都没有 → pending：
+        // 实例是观察到的事实，只是还没在这一站动。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [],
+                "participants": [
+                    {"id": "p0", "phase": "main", "lane": "l1", "steps": ["s1"],
+                     "member": {"index": 0, "of": 1}}
+                ]}"#,
+        );
+        // actor 在别的站点留下了节点 —— 它在l1 上还没动。
+        let run = run_from_str(
+            r#"{"runId": "r", "status": "running",
+                "actors": [{"siteId": "l1", "ordinal": 0, "status": "running"}],
+                "nodes": [{"siteId": "elsewhere", "ordinal": 0, "phase": "executing",
+                           "actorSiteId": "l1", "actorOrdinal": 0}]}"#,
+        );
+        let view = live_participant_view(&graph, Some(&run));
+        assert!(view.instances.contains_key("p0"), "建了还没被ask → 按出生戳归位");
+        assert_eq!(view.participant_statuses["p0"], StepRunStatus::Pending);
+    }
+
+    #[test]
+    fn instance_binding_is_a_partition_not_a_broadcast() {
+        // ★真源 :207-210 —— 同一个站点被 k 个阶段再入时，k 张卡共享一条车道；
+        // 按车道认领就是一次广播（每站都列全部 100 个）。
+        let graph = graph_from_str(
+            r#"{"steps": [
+                  {"id": "s1", "kind": "ask", "label": "问", "lane": "l1", "source": "site1"}
+                ], "lanes": [], "handoffs": [],
+                "participants": [
+                    {"id": "a", "phase": "p1", "lane": "l1", "steps": ["s1"]},
+                    {"id": "b", "phase": "p2", "lane": "l1", "steps": ["s1"]}
+                ],
+                "phases": [{"id": "p1", "name": "阶段一"}, {"id": "p2", "name": "阶段二"}]}"#,
+        );
+        // 只有一个 actor，它出生在阶段一。
+        let run = run_from_str(
+            r#"{"runId": "r", "status": "running",
+                "actors": [{"siteId": "l1", "ordinal": 0, "status": "running",
+                            "phaseName": "阶段一"}],
+                "nodes": [{"siteId": "site1", "ordinal": 0, "phase": "executing",
+                           "actorSiteId": "l1", "actorOrdinal": 0, "phaseName": "阶段一"}]}"#,
+        );
+        let view = live_participant_view(&graph, Some(&run));
+        assert!(
+            view.instances.contains_key("a"),
+            "阶段一那张卡认领它"
+        );
+        assert!(
+            !view.instances.contains_key("b"),
+            "★阶段二那张卡不认领——一次划分，不是一次广播"
+        );
+    }
+
+    #[test]
+    fn unstamped_run_falls_back_to_claiming_by_lane() {
+        // ★真源 :222-229 —— 无戳的 run 里 `phasesOf` 恒是全部阶段，
+        // 两条合起来正是今天的「按车道」——旧 run 逐字节不变。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "s1", "kind": "ask", "label": "问", "lane": "l1"}],
+                "lanes": [], "handoffs": [],
+                "participants": [
+                    {"id": "a", "phase": "p1", "lane": "l1", "steps": ["s1"]},
+                    {"id": "b", "phase": "p2", "lane": "l1", "steps": ["s1"]}
+                ],
+                "phases": [{"id": "p1", "name": "阶段一"}, {"id": "p2", "name": "阶段二"}]}"#,
+        );
+        let run = run_from_str(
+            r#"{"runId": "r", "status": "running",
+                "actors": [{"siteId": "l1", "ordinal": 0, "status": "running"}],
+                "nodes": [{"siteId": "s1", "ordinal": 0, "phase": "executing",
+                           "actorSiteId": "l1", "actorOrdinal": 0}]}"#,
+        );
+        let view = live_participant_view(&graph, Some(&run));
+        assert!(
+            view.instances.contains_key("a") && view.instances.contains_key("b"),
+            "旧 run按车道认领，两张卡都绑定（逐字节不变）"
+        );
+    }
+
+    #[test]
+    fn synthetic_lane_cards_never_move() {
+        // ★真源 :201 —— 工作区等合成车道上没有实例，卡不动。
+        let graph = graph_from_str(
+            r#"{"steps": [{"id": "r1", "kind": "world-read", "label": "读", "lane": "workspace"}],
+                "lanes": [], "handoffs": [],
+                "participants": [{"id": "w", "phase": "main", "lane": "workspace",
+                                  "steps": ["r1"]}]}"#,
+        );
+        let run = run_from_str(
+            r#"{"runId": "r", "status": "running",
+                "actors": [{"siteId": "l1", "ordinal": 0, "status": "running"}],
+                "nodes": [{"siteId": "r1", "ordinal": 0, "phase": "executing",
+                           "actorSiteId": "l1", "actorOrdinal": 0}]}"#,
+        );
+        let view = live_participant_view(&graph, Some(&run));
+        assert_eq!(view.graph, graph, "没有卡被拆 → 图原样返回");
+        assert!(view.instances.is_empty());
+    }
+
+    #[test]
+    fn actor_key_uses_nul_separator() {
+        // ★真源 :317-323 —— 用 `\0` 连接：siteId 是引擎给的任意字符串，
+        // 用可打印分隔符会让 ("a-1", 2) 与 ("a", "1-2") 撞车。
+        assert_eq!(actor_key("a-1", 2), "a-1\0 2".replace(' ', ""));
+        assert_ne!(actor_key("a-1", 2), actor_key("a", 12));
+    }
+
+    #[test]
+    fn run_index_skips_nodes_without_actor() {
+        // ★真源 :337-338 —— 没有 actor 的节点（world-read）与不带ordinal
+        // 的旧载荷不进索引：原筛选条件对它们恒假，丢掉等价。
+        let run = run_from_str(
+            r#"{"runId": "r", "status": "running",
+                "actors": [{"siteId": "l1", "ordinal": 0, "status": "running"}],
+                "nodes": [{"siteId": "r1", "ordinal": 0, "phase": "executing"}]}"#,
+        );
+        let index = run_index(&run);
+        assert_eq!(index.actors_by_site["l1"].len(), 1);
+        assert!(index.nodes_by_actor.is_empty());
+    }
+
+    #[test]
+    fn run_index_sorts_actors_by_ordinal() {
+        // 真源 :355 —— 车道上的 actor 按 ordinal 升序（认领顺序）。
+        let run = run_from_str(
+            r#"{"runId": "r", "status": "running", "actors": [
+                {"siteId": "l1", "ordinal": 5, "status": "running"},
+                {"siteId": "l1", "ordinal": 2, "status": "running"},
+                {"siteId": "l1", "ordinal": 9, "status": "running"}
+              ], "nodes": []}"#,
+        );
+        let index = run_index(&run);
+        let ords: Vec<i64> = index.actors_by_site["l1"].iter().map(|a| a.ordinal).collect();
+        assert_eq!(ords, vec![2, 5, 9]);
     }
 }

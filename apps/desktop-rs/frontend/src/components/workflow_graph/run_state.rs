@@ -185,13 +185,163 @@ pub struct WorkflowRunState {
     /// 与 `phaseNames` **按位置对齐**的「同时在跑」表。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase_alongside: Option<Vec<Vec<i64>>>,
+    /// 界在各个**出生阶段**上花掉了多少。**一格都没有时整个键缺席**。
+    /// 表长比 `maxPhases` 多一格：那一格是「无阶段」，与具名阶段共用同一张表。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlisted_by_phase: Option<Vec<WorkflowRunUnlistedPhase>>,
+    /// 该实例有待答的升级问题。**零条是常态**，而且它会来回进出：
+    /// 一被作答就从表里消失，答完最后一个又退回缺席。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_questions: Option<Vec<WorkflowRunPendingQuestion>>,
+    /// run 级停滞（driver 的 RunStallClock 观察，随 `run-stalled` 事件到达）：
+    /// 整个 run 连续一段阈值没有一次**成功的模型请求**。**为真才在场**。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stalled: Option<bool>,
+    /// run 级用量：观察面，不是控制面。摘要行的 token 数读它。
+    #[serde(default)]
+    pub usage: WorkflowRunUsage,
+    /// 本 run 发布的**用户面产物**，按首次出现顺序。**零件时整个键缺席**。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<WorkflowRunArtifactSummary>>,
+    /// 这次 run 的**子代理**跑在哪个模型上，规范串 `providerId/modelId[$reasoningLevel]`。
+    /// **只在用户给这次 run 指定过模型时在场**——不指定的 run 里子代理跟随会话模型，
+    /// 没有可说的。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subagent_model: Option<String>,
+}
+
+/// `workflowRunUsageSchema`（真源 :152-165）。
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunUsage {
+    /// 引擎 `usage-updated` 事件携带的已花总量。
+    pub spent_tokens: i64,
+    /// 本 run 已派发（dispatched）的节点数。
+    pub nodes_used: i64,
+    /// 撞上 `maxNodes` 被**拒之表外**的实例数（`truncated` 只说得出「有东西没进来」）。
+    /// 零时整个键缺席。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nodes_unlisted: Option<i64>,
+    /// 其中已结算的条数。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nodes_unlisted_settled: Option<i64>,
+}
+
+/// `workflowRunStepCounts`（真源 workflow-runs-caps.ts:118-125）的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkflowRunStepCounts {
+    /// 表内 + 表外（撞界后没进表的实例仍算步数）。
+    pub total: i64,
+    pub settled: i64,
+}
+
+/// `workflowRunStepCounts`（真源 workflow-runs-caps.ts:118-125）。
+///
+/// ★真源 caps.ts:10 —— **唯一允许的步数读法**：表内 + 表外。
+/// 读面三处（run 卡、时间线摘要、TUI 镜像）共用这一计算，
+/// 保证同一条 run 的显示步数一致。
+pub fn workflow_run_step_counts(run: &WorkflowRunState) -> WorkflowRunStepCounts {
+    let settled_in_list = run
+        .nodes
+        .iter()
+        .filter(|n| n.phase == WorkflowRunNodePhase::Settled)
+        .count() as i64;
+    WorkflowRunStepCounts {
+        total: run.nodes.len() as i64 + run.usage.nodes_unlisted.unwrap_or(0),
+        settled: settled_in_list + run.usage.nodes_unlisted_settled.unwrap_or(0),
+    }
+}
+
+/// `workflowRunArtifactKindSchema`（真源 workflow-artifacts.ts:31-38）。
+///
+/// ★闭集枚举——加值是**破坏性**的偏斜（旧读端整帧拒收），
+/// 与 `workflowRuns[].status` 同一档。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum WorkflowRunArtifactKind {
+    #[serde(rename = "file")]
+    File,
+    #[serde(rename = "markdown")]
+    Markdown,
+    #[serde(rename = "chart")]
+    Chart,
+    #[serde(rename = "table")]
+    Table,
+    #[serde(rename = "metrics")]
+    Metrics,
+    #[serde(rename = "board")]
+    Board,
+}
+
+/// `workflowRunArtifactSummarySchema`（真源 workflow-artifacts.ts:125-137）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunArtifactSummary {
+    pub id: String,
+    pub kind: WorkflowRunArtifactKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub version: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_count: Option<i64>,
+    /// run 的交付物（至多一件）。UI 据它排先后与选形态；缺席即不是。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<bool>,
 }
 
 /// `workflowRunPhaseSchema`（已进入的阶段）。
+///
+/// ★真源 :115-118 —— `name` 是作者原词（时间线按它关联 display 的 `phases[].name`）；
+/// `rounds` 是**进入次数**——单调（reducer 取 max），所以 resume 重放的前缀
+/// 不会把它加倍。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowRunPhase {
     pub name: String,
+    pub rounds: i64,
+}
+
+/// `workflowRunUnlistedPhaseSchema`（真源 :137-143）：界在某个**出生阶段**上花掉了多少。
+///
+/// ★真源 :124-135 注释——两个 run 级计数器说得出「总共少列了多少」，
+/// 说不出少在**哪一站**——而读面是按站画的。`phaseName` 缺席= 无阶段那一格
+/// （出生在任何 `phase()` 标记之前，或旧 CLI 没打戳）。`actors` 可加可减：
+/// 一个被淘汰的子代理在下次被派活时会回到表上。零值的可选子键**缺席**——
+/// 缺席说的是「零个」，不是「不知道」。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunUnlistedPhase {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_name: Option<String>,
+    pub actors: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actors_settled: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actors_failed: Option<i64>,
+    pub settled: i64,
+}
+
+/// `workflowRunPendingQuestionSchema`（真源 :342-358）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunPendingQuestion {
+    /// 全局唯一的问题 id（形如 `dwfq-<runId 片段>-<seq>`）。
+    pub qid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_site_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_ordinal: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor_name: Option<String>,
+    pub question: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    /// 提问时刻（epoch 毫秒）。渲染侧按「有则显示等待时长」处理，缺席不是错误。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_at: Option<i64>,
 }
 
 // TODO(后续迁移)：workflowRunSchema 的其余字段（按消费面逐块补）。
@@ -310,6 +460,86 @@ mod tests {
     }
 
     #[test]
+    fn step_counts_add_unlisted_nodes() {
+        // ★真源 caps.ts:10 —— 唯一允许的步数读法：表内 + 表外。
+        // 一个 3000 路 fan-out 的 run 显示成「1024 步」是一句假话。
+        let raw = serde_json::json!({
+            "runId": "r", "status": "running",
+            "actors": [], "nodes": [
+                {"siteId": "s1", "ordinal": 0, "phase": "settled", "outcome": "ok"},
+                {"siteId": "s1", "ordinal": 1, "phase": "executing"}
+            ],
+            "usage": { "spentTokens": 42118, "nodesUsed": 2,
+                       "nodesUnlisted": 1976, "nodesUnlistedSettled": 1900 }
+        });
+        let run: WorkflowRunState = serde_json::from_value(raw).unwrap();
+        let counts = workflow_run_step_counts(&run);
+        assert_eq!(counts.total, 2 + 1976);
+        assert_eq!(counts.settled, 1 + 1900);
+        assert_eq!(run.usage.spent_tokens, 42118);
+    }
+
+    #[test]
+    fn step_counts_treat_absent_counters_as_zero() {
+        let raw = serde_json::json!({
+            "runId": "r", "status": "running", "actors": [], "nodes": [],
+            "usage": { "spentTokens": 0, "nodesUsed": 0 }
+        });
+        let run: WorkflowRunState = serde_json::from_value(raw).unwrap();
+        let counts = workflow_run_step_counts(&run);
+        assert_eq!(counts.total, 0);
+        assert_eq!(counts.settled, 0);
+    }
+
+    #[test]
+    fn artifact_summary_parses_all_six_kinds() {
+        // ★真源 artifacts.ts:31-38 —— 闭集枚举，加值是破坏性偏斜。
+        for wire in ["file", "markdown", "chart", "table", "metrics", "board"] {
+            let raw = serde_json::json!({
+                "id": "a1", "kind": wire, "version": 2, "primary": true,
+                "title": "报告", "contentType": "text/markdown", "bytes": 120, "itemCount": 4
+            });
+            let a: WorkflowRunArtifactSummary = serde_json::from_value(raw).unwrap();
+            assert_eq!(a.id, "a1");
+            assert_eq!(a.version, 2);
+            assert_eq!(a.primary, Some(true));
+            assert_eq!(a.item_count, Some(4));
+        }
+        // 表外枚举值必须被拒。
+        let bad = serde_json::json!({ "id": "a", "kind": "pdf", "version": 1 });
+        assert!(serde_json::from_value::<WorkflowRunArtifactSummary>(bad).is_err());
+    }
+
+    #[test]
+    fn run_state_reads_artifacts_and_subagent_model() {
+        let raw = serde_json::json!({
+            "runId": "r", "status": "completed",
+            "actors": [], "nodes": [],
+            "usage": { "spentTokens": 10, "nodesUsed": 1 },
+            "artifacts": [{ "id": "a1", "kind": "markdown", "version": 1 }],
+            "subagentModel": "uuid-provider/sonnet$high"
+        });
+        let run: WorkflowRunState = serde_json::from_value(raw).unwrap();
+        assert_eq!(run.artifacts.as_ref().unwrap().len(), 1);
+        assert_eq!(
+            run.subagent_model.as_deref(),
+            Some("uuid-provider/sonnet$high"),
+            "规范串：providerId/modelId[$reasoningLevel]"
+        );
+        // 缺席时是 None（跟随会话模型，没有可说的）。
+        let bare = run_from_min();
+        assert!(bare.artifacts.is_none());
+        assert!(bare.subagent_model.is_none());
+    }
+
+    fn run_from_min() -> WorkflowRunState {
+        serde_json::from_value(serde_json::json!({
+            "runId": "r", "status": "running", "actors": [], "nodes": []
+        }))
+        .unwrap()
+    }
+
+    #[test]
     fn run_state_parses_with_phases() {
         let raw = serde_json::json!({
             "runId": "r1", "status": "completed",
@@ -318,7 +548,7 @@ mod tests {
                 "siteId": "ask", "ordinal": 0, "phase": "settled",
                 "outcome": "ok", "actorSiteId": "ask", "actorOrdinal": 0
             }],
-            "phases": [{ "name": "预备" }],
+            "phases": [{ "name": "预备", "rounds": 2 }],
             "currentPhase": "预备",
             "phaseNames": ["预备", "主体"],
             "phaseAlongside": [[], [0]]
@@ -328,9 +558,69 @@ mod tests {
         assert_eq!(run.actors.len(), 1);
         assert_eq!(run.nodes[0].actor_site_id.as_deref(), Some("ask"));
         assert_eq!(run.phases.as_ref().unwrap()[0].name, "预备");
+        assert_eq!(
+            run.phases.as_ref().unwrap()[0].rounds,
+            2,
+            "★真源 :117 —— rounds 是进入次数"
+        );
         assert_eq!(run.phase_names.as_ref().unwrap().len(), 2);
         // phaseAlongside[i] 落在 phaseNames 这张表上。
         assert_eq!(run.phase_alongside.as_ref().unwrap()[1], vec![0]);
+    }
+
+    #[test]
+    fn run_state_no_run_blocks_absent() {
+        // ★真源 :472/:476/:480 —— phases / phaseNames 零条时**整个键缺席**
+        // （不是空数组）；unlistedByPhase / pendingQuestions / stalled 同规。
+        let raw = serde_json::json!({
+            "runId": "r1", "status": "running",
+            "actors": [], "nodes": []
+        });
+        let run: WorkflowRunState = serde_json::from_value(raw).unwrap();
+        assert_eq!(run.phases, None);
+        assert_eq!(run.phase_names, None);
+        assert_eq!(run.phase_alongside, None);
+        assert_eq!(run.current_phase, None);
+        assert_eq!(run.tool_call_id, None);
+        assert_eq!(run.unlisted_by_phase, None);
+        assert_eq!(run.pending_questions, None);
+        assert_eq!(run.stalled, None);
+    }
+
+    #[test]
+    fn unlisted_phase_zero_subkeys_are_absent() {
+        // ★真源 :135 —— 零值的可选子键缺席：缺席说的是「零个」，
+        // 不是「不知道」——还没跑完的那些因此留在 pending。
+        let raw = serde_json::json!({
+            "phaseName": "预备", "actors": 3, "settled": 7
+        });
+        let u: WorkflowRunUnlistedPhase = serde_json::from_value(raw).unwrap();
+        assert_eq!(u.actors, 3);
+        assert_eq!(u.settled, 7);
+        assert_eq!(u.actors_settled, None, "零值子键缺席");
+        assert_eq!(u.actors_failed, None);
+    }
+
+    #[test]
+    fn unlisted_phase_may_have_no_stamp() {
+        // ★真源 :132 —— phaseName 缺席 = 无阶段那一格。
+        let raw = serde_json::json!({ "actors": 0, "settled": 0 });
+        let u: WorkflowRunUnlistedPhase = serde_json::from_value(raw).unwrap();
+        assert_eq!(u.phase_name, None);
+    }
+
+    #[test]
+    fn pending_question_actor_binding_is_optional() {
+        // 真源 :343-347 —— actorSiteId / actorOrdinal 各自可缺。
+        let raw = serde_json::json!({
+            "qid": "dwfq-abc-1", "question": "要继续吗？",
+            "actorSiteId": "ask", "actorOrdinal": 2, "askedAt": 1730000000000i64
+        });
+        let q: WorkflowRunPendingQuestion = serde_json::from_value(raw).unwrap();
+        assert_eq!(q.qid, "dwfq-abc-1");
+        assert_eq!(q.actor_ordinal, Some(2));
+        assert_eq!(q.actor_name, None);
+        assert_eq!(q.asked_at, Some(1730000000000));
     }
 
     #[test]
