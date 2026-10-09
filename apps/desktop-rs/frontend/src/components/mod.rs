@@ -4,4 +4,5 @@
 
 #![allow(non_snake_case)]
 
+pub mod timeline_bands;
 pub mod workflowSettingsChange;
