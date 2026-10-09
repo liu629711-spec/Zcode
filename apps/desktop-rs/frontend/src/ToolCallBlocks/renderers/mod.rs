@@ -12,6 +12,7 @@
 //! - `renderJoinedFileChips`（:152-175）：多文件 chip 拼接（逗号分隔）
 
 pub mod WorkflowCardMetaLine;
+pub mod WorkflowRetuneRow;
 pub mod agent;
 pub mod agentHelpers;
 pub mod agentPromptSection;
@@ -34,6 +35,7 @@ pub mod cuaScreenshotDetails;
 pub mod cuaSummaryMessages;
 pub mod edit;
 pub mod editInlineDiffContent;
+pub mod eval_workflow_snippet;
 pub mod escalate;
 pub mod execute;
 pub mod execute_group;
