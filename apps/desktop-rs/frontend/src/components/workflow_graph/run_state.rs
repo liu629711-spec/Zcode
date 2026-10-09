@@ -193,6 +193,15 @@ pub struct WorkflowRunState {
     /// 一被作答就从表里消失，答完最后一个又退回缺席。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pending_questions: Option<Vec<WorkflowRunPendingQuestion>>,
+    /// 可恢复。**为真才在场**（真源 :386 `resumable: z.literal(true).optional()`）。
+    /// 由 CLI 在 `run-settled` 载荷上按 resume 门的同一个谓词给出，reducer 只搬运——
+    /// UI 绝不自行按 status + failureCode 推导（「已停止」并不蕴含可恢复）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumable: Option<bool>,
+    /// 步数详情被截断（真源 `truncated`）：run 或某个小表（reports / artifacts /
+    /// phases）撞过 `WORKFLOW_RUNS_LIMITS.maxNodes`。卡上据此挂「仅展示 n/m 步」。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
     /// run 级停滞（driver 的 RunStallClock 观察，随 `run-stalled` 事件到达）：
     /// 整个 run 连续一段阈值没有一次**成功的模型请求**。**为真才在场**。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -212,7 +221,7 @@ pub struct WorkflowRunState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<WorkflowRunStopReason>,
     /// lineage 的两端：本 run 被哪次修订停下并替代（只随
-    /// `stopReason: "superseded"` 出现）。
+    /// stopReason: "superseded"` 出现）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub superseded_by: Option<String>,
     /// 并发现状。只在**两条界里有一条低于天花板**时在场：收到过
@@ -317,6 +326,20 @@ pub enum WorkflowRunArtifactKind {
     Metrics,
     #[serde(rename = "board")]
     Board,
+}
+
+impl WorkflowRunArtifactKind {
+    /// wire 词（data-* 与图标分派共用）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Markdown => "markdown",
+            Self::Chart => "chart",
+            Self::Table => "table",
+            Self::Metrics => "metrics",
+            Self::Board => "board",
+        }
+    }
 }
 
 /// `workflowRunArtifactSummarySchema`（真源 workflow-artifacts.ts:125-137）。
@@ -584,6 +607,24 @@ mod tests {
             "runId": "r", "status": "running", "actors": [], "nodes": []
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn resumable_is_true_only_literal() {
+        // ★真源 :386 —— resumable: z.literal(true).optional()`：为真才在场。
+        // 卡的状态行据此接「· 可恢复」的第三个词，绝不按 status 推导。
+        let raw = serde_json::json!({
+            "runId": "r1", "status": "stopped", "stopReason": "user",
+            "resumable": true, "actors": [], "nodes": []
+        });
+        let run: WorkflowRunState = serde_json::from_value(raw).unwrap();
+        assert_eq!(run.resumable, Some(true));
+        // 缺席是 None，不是 false。
+        let bare: WorkflowRunState = serde_json::from_value(serde_json::json!({
+            "runId": "r2", "status": "stopped", "actors": [], "nodes": []
+        }))
+        .unwrap();
+        assert_eq!(bare.resumable, None);
     }
 
     #[test]

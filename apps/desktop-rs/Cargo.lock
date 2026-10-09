@@ -5255,6 +5255,7 @@ dependencies = [
  "leptos_meta",
  "pulldown-cmark",
  "regex-lite",
+ "send_wrapper",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

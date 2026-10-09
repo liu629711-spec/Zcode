@@ -14,10 +14,13 @@ leptos_meta = "0.8"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["HtmlFormElement", "Window", "Element", "HtmlElement", "Storage", "DragEvent", "DataTransfer", "NodeList", "Document", "Navigator", "Clipboard"] }
+web-sys = { version = "0.3", features = ["HtmlFormElement", "Window", "Element", "HtmlElement", "Storage", "DragEvent", "DataTransfer", "NodeList", "Document", "Navigator", "Clipboard", "DomRect", "SvgElement", "HtmlCollection", "PointerEvent", "ResizeObserver", "ResizeObserverEntry", "IntersectionObserver", "IntersectionObserverEntry", "MediaQueryList", "MediaQueryListEvent", "ScrollToOptions", "ScrollBehavior"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde-wasm-bindgen = "0.6"
+# Leptos on_cleanup 的回调要求 Send；wasm 侧的 DOM 闭包（Closure）不是 Send，
+# 用 SendWrapper 装进清理回调。
+send_wrapper = "0.6"
 console_error_panic_hook = "0.1"
 # 模型回复的 markdown 渲染（纯 Rust，wasm 兼容）。
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }

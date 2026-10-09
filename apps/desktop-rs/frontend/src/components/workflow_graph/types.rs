@@ -1,4 +1,4 @@
-//! 1:1 翻译 `packages/ui/src/components/workflow-graph/types.ts`（91 行）。
+﻿//! 1:1 翻译 `packages/ui/src/components/workflow-graph/types.ts`（91 行）。
 //!
 //! 真源这一层几乎全是**注释**——它在定义「渲染器消费的图就是 CreateWorkflow 工具
 //! 那份有界 display 载荷」，即「从分析器到像素只有一套词汇」。
@@ -201,12 +201,24 @@ pub struct WorkflowCausalityGraphData {
 // ---------------------------------------------------------------------------
 
 /// `StepRunStatus`（真源 :27）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepRunStatus {
     Pending,
     Running,
     Done,
     Failed,
+}
+
+impl StepRunStatus {
+    /// wire 词（`StepRunStatus` 真源 :27 的四值，data-* 与状态词表共用）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StepRunStatus::Pending => "pending",
+            StepRunStatus::Running => "running",
+            StepRunStatus::Done => "done",
+            StepRunStatus::Failed => "failed",
+        }
+    }
 }
 
 /// `StepStatusTable`（真源 :33-38）。
@@ -260,7 +272,7 @@ pub const SINK_NODE_ID: &str = "sink";
 /// `UNPHASED_PHASE_ID`（真源 :64）。
 ///
 /// ★真源 :58-63 注释——兜底阶段：首个 `phase()` 标记之前发出的 step 的家，
-/// 也是无标记脚本的隐式唯一阶段（分析器的参与者恒带 `phase: "unphased"`）。
+/// 也是无标记脚本的隐式唯一阶段（分析器的参与者恒带 phase: "unphased"`）。
 /// 保留 id，且**没有 name**——显示名由 UI 本地化。
 pub const UNPHASED_PHASE_ID: &str = "unphased";
 
@@ -276,8 +288,9 @@ pub const IMPLICIT_PHASE_ID: &str = "workflow";
 /// `workspace` 不是 actor（没有邮箱，故没有 `fifo`），
 /// `unresolved` 是接收方无法定位的询问——两者都是真区别。
 /// per-actor 的身份由卡上的名字承载，不由色相承载。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum LaneClass {
+    #[default]
     Agent,
     Workspace,
     Unresolved,
