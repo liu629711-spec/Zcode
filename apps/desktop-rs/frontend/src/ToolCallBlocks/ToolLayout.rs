@@ -17,9 +17,11 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::app::Icon;
+use super::ToolSummaryRow::{SummaryNode, ToolSummaryRowComponent, ToolSummaryRowProps};
+use super::i18n;
 
 /// `TOOL_CONTENT_COLLAPSE_UNMOUNT_DELAY_MS = 300`（:19）。
 pub const TOOL_CONTENT_COLLAPSE_UNMOUNT_DELAY_MS: u64 = 300;
@@ -261,11 +263,6 @@ impl ToolLayoutProps {
 // 图标（lucide path 取自 node_modules/lucide-react/dist/esm/icons，与真源同源）
 // ---------------------------------------------------------------------------
 
-fn icon_chevron_right() -> impl IntoView {
-    // 真源 ToolSummaryRow.tsx:213 ChevronRightIcon
-    view! { <Icon paths=vec!["m9 18 6-6-6-6"] circles=vec![] /> }
-}
-
 fn icon_check() -> impl IntoView {
     // 真源 :277 CheckIcon
     view! { <Icon paths=vec!["M20 6 9 17l-5-5"] circles=vec![] /> }
@@ -436,18 +433,168 @@ pub fn ToolLayoutComponent(
     let show_diff_count = props.should_show_diff_count(expanded);
     let show_status_label = props.should_show_status_label();
 
-    // ── :140 ToolSummaryRow ──
-    // 摘要行触发区类名（ToolSummaryRow.tsx:200-208）。
-    let summary_row_cls = if props.can_toggle() {
-        "group/tool-summary inline-flex max-w-full cursor-pointer items-center gap-2 self-start text-left text-ui-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
-    } else {
-        // :226-234 不可折叠时渲染成 div，无点击区无 chevron
-        "group/tool-summary inline-flex max-w-full items-center gap-2 self-start text-left text-ui-base transition-colors"
+    // ── :140 ToolSummaryRow 的节点槽（真源传 ReactNode，见 ToolSummaryRow::SummaryNode）──
+    // primaryText 的三档优先级与真源一致：文件 chip > 自定义节点 > 纯文本。
+    let primary_node = match (
+        props_primary_file_chip.clone(),
+        props_primary_text_view.clone(),
+    ) {
+        (Some(chip), _) => {
+            let cls_static = "inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle";
+            let cls_clickable =
+                "inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-foreground-subtle hover:underline";
+            let f: ChildrenFn = Arc::new(move || {
+                let path = chip.path.clone();
+                let icon_src = chip.icon_src.clone();
+                let file_name = chip.file_name.clone();
+                view! {
+                    <span class=if chip.clickable { cls_clickable } else { cls_static } title=path>
+                        <img src=icon_src class="size-4 flex-none" alt="" />
+                        <span class="min-w-0 truncate">{file_name}</span>
+                    </span>
+                }
+                .into_any()
+            });
+            SummaryNode::View(f)
+        }
+        (None, Some(f)) => SummaryNode::View(f),
+        (None, None) => primary_text.map(SummaryNode::Text).unwrap_or_default(),
     };
-    // 前导区图标类名（ToolSummaryRow.tsx:74）。
-    let icon_cls = "shrink-0 text-foreground-subtlest";
-    // 来源药丸（ToolSummaryRow.tsx:92）。
-    let source_label_cls = "shrink-0 rounded border border-border bg-background-alt px-1.5 py-0.5 text-ui-xs leading-none text-foreground-subtlest";
+    let secondary_node = match props_secondary_text_view.clone() {
+        Some(f) => SummaryNode::View(f),
+        None => secondary_text.map(SummaryNode::Text).unwrap_or_default(),
+    };
+    // kindDetail 同理：节点优先于文本（真源 Agent 卡带色子代理名）。
+    let kind_detail_node = match props_kind_detail_view.clone() {
+        Some(f) => SummaryNode::View(f),
+        None => kind_detail.map(SummaryNode::Text).unwrap_or_default(),
+    };
+
+    // statusNode（真源 :294-302）整段在这里造完，组件侧按 :159 裸插、不再包 span。
+    let status_node = show_status_label.then(|| {
+        // 真源 :250-254：有 statusTooltip 时挂虚线下划线 + tooltip，
+        // 失败态不再强制展开内容，错误详情改挂状态词 tooltip。
+        let cls = if props_status_tooltip.is_some() {
+            "whitespace-nowrap underline decoration-dotted underline-offset-2 cursor-help"
+        } else {
+            "whitespace-nowrap"
+        };
+        let label_view = props_status_label_view.clone();
+        let label_text = props_status_label.clone();
+        let tooltip = props_status_tooltip.clone();
+        let indicator = props_status_indicator_view.clone();
+        let copied = is_failure_tooltip_copied;
+        let has_tooltip = props_status_tooltip.is_some();
+        let f: ChildrenFn = Arc::new(move || {
+            // 节点优先于文本（真源把 statusLabel 原样塞进这层 span，
+            // 圆点 + 词那类组合由调用方给节点，包装层与 tooltip 都归本组件）。
+            let inner = label_view
+                .clone()
+                .map(|g| g())
+                .or_else(|| {
+                    label_text
+                        .clone()
+                        .map(|label| view! { <>{label}</> }.into_any())
+                });
+            let word = inner.map(|node| view! {
+                <span class=cls title=tooltip.clone().unwrap_or_default()>{node}</span>
+            });
+            // 真源 :294-302 —— 有 statusIndicator 时把灯与状态词包进一个
+            // inline-flex 小组（gap-1.5），否则状态词自己站。
+            let word = match (word, indicator.clone()) {
+                (None, None) => ().into_any(),
+                (Some(word_node), None) => word_node.into_any(),
+                (word_node, Some(ind)) => view! {
+                    <span class="inline-flex shrink-0 items-center gap-1.5">
+                        {ind()}
+                        {word_node}
+                    </span>
+                }
+                .into_any(),
+            };
+            // 复制按钮（真源 :257-285，在 tooltip 内容里）。Rust 侧没做 Radix
+            // tooltip，按钮仍跟在状态词后面，位置与改造前的行内标记一致。
+            view! {
+                <>
+                    {word}
+                    {has_tooltip.then(|| view! { <FailureCopyButton copied=copied /> })}
+                </>
+            }
+            .into_any()
+        });
+        f
+    });
+
+    // diffCount（真源 :147 是当作 prop 传进摘要行的，不是画在行外）。
+    let diff_count_node = show_diff_count
+        .then(|| props_diff_count)
+        .flatten()
+        .map(|(added, removed)| {
+            let f: ChildrenFn = Arc::new(move || view! {
+                // renderers.tsx:31-62
+                <span class="inline-flex items-center gap-1 whitespace-nowrap font-mono leading-none tabular-nums">
+                    {(added > 0).then(|| view! {
+                        <span class="inline-flex items-center text-diff-added">
+                            {format!("+{added}")}
+                        </span>
+                    })}
+                    {(removed > 0).then(|| view! {
+                        <span class="inline-flex items-center text-diff-removed">
+                            {format!("-{removed}")}
+                        </span>
+                    })}
+                </span>
+            }
+            .into_any());
+            f
+        });
+
+    // 真源 :341-343 toggleAriaLabel 按展开态换两条文案。
+    let toggle_aria_label = i18n::text(if expanded {
+        "chat.toolCall.collapseDetails"
+    } else {
+        "chat.toolCall.expandDetails"
+    });
+
+    let row_props = ToolSummaryRowProps {
+        can_toggle,
+        force_open,
+        is_expanded: expanded,
+        show_icon,
+        kind_label: kind_label.map(SummaryNode::Text).unwrap_or_default(),
+        kind_label_class_name: Some(props_kind_label_cls.to_string()),
+        kind_detail: kind_detail_node,
+        source_label: props_source_label.clone().map(SummaryNode::Text).unwrap_or_default(),
+        primary_text: primary_node,
+        secondary_text: secondary_node,
+        prioritize_primary_text: props.prioritize_primary_text(),
+        separator: props
+            .summary_content_separator
+            .clone()
+            .map(SummaryNode::Text)
+            .unwrap_or_default(),
+        diff_count: diff_count_node.map(SummaryNode::View).unwrap_or_default(),
+        status_node: status_node.map(SummaryNode::View).unwrap_or_default(),
+        title: summary_title.clone(),
+        toggle_aria_label,
+        tool_id: props.tool_id.clone(),
+        content_key: props.resolved_summary_content_key(expanded),
+        content_refresh_version: None,
+        animate_content: props.animate_summary_content.unwrap_or(false),
+        disable_content_animation: props
+            .disable_summary_content_animation
+            .unwrap_or(false),
+    };
+    // 组件的 canToggle 分支把点击与 Enter/Space 都收敛到这一个回调（真源 :194/:199-208）。
+    let row_on_activate = {
+        let is_open = is_open.clone();
+        let toggle = toggle.clone();
+        Callback::new(move |_| {
+            if can_toggle {
+                toggle(!is_open.get_untracked());
+            }
+        })
+    };
 
     view! {
         // ── :305-358 Collapsible 外壳 ──
@@ -456,139 +603,14 @@ pub fn ToolLayoutComponent(
             data-state=move || if is_expanded.get() { "open" } else { "closed" }
             data-open=move || is_expanded.get()
         >
-            // ── :319-338 ToolSummaryRow ──
-            <div
-                class=summary_row_cls
-                role="button"
-                tabindex="0"
-                aria-expanded=expanded
-                title=summary_title.clone().unwrap_or_default()
-                on:click=move |_| {
-                    if can_toggle {
-                        toggle(!is_open.get_untracked());
-                    }
-                }
-            >
-                // SummaryLeadingContent（ToolSummaryRow.tsx:71-101）
-                {(show_icon && icon_view.is_some()).then(|| {
-                    icon_view.clone().map(|f| view! { <span class=icon_cls>{f()}</span> })
-                })}
-                {kind_label.clone().map(|label| view! {
-                    <span class=props_kind_label_cls>{label}</span>
-                })}
-                {kind_detail.clone().map(|d| view! {
-                    <span class="min-w-0 shrink-0">{d}</span>
-                })}
-                // kindDetail 的自定义节点优先（真源 ReactNode；Agent 卡带色名）。
-                {props_kind_detail_view.clone().map(|f| f())}
-                {props_source_label.clone().map(|s| view! {
-                    <span class=source_label_cls>{s}</span>
-                })}
-                // SummaryContent（ToolSummaryRow.tsx:140-161）
-                <span class="tool-summary-content min-w-0 flex max-w-full items-center gap-2 text-foreground-subtlest">
-                    // 真源 primaryText 是 ReactNode：给文件 chip 时渲染 chip，
-                    // 否则退化成纯文本。
-                    {props_primary_file_chip.clone().map(|chip| view! {
-                        <span
-                            class=if chip.clickable {
-                                "inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-foreground-subtle hover:underline"
-                            } else {
-                                "inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle"
-                            }
-                            title=chip.path.clone()
-                        >
-                            <img src=chip.icon_src class="size-4 flex-none" alt="" />
-                            <span class="min-w-0 truncate">{chip.file_name.clone()}</span>
-                        </span>
-                    })}
-                    {props_primary_text_view
-                        .map(|f| view! { <span class="min-w-0 truncate">{f()}</span> }.into_any())
-                        .or_else(|| {
-                            primary_text.map(|p| {
-                                view! { <span class="min-w-0 truncate">{p}</span> }.into_any()
-                            })
-                        })}
-                    {props_secondary_text_view
-                        .map(|f| {
-                            view! {
-                                <span class="min-w-0 truncate font-sans text-foreground-subtlest">{f()}</span>
-                            }
-                            .into_any()
-                        })
-                        .or_else(|| {
-                            secondary_text.map(|s| {
-                                view! {
-                                    <span class="min-w-0 truncate font-sans text-foreground-subtlest">{s}</span>
-                                }
-                                .into_any()
-                            })
-                        })}
-                </span>
-                // ── :240-292 statusWordNode ──
-                {show_status_label.then(|| {
-                    // 真源 :250-254：有 statusTooltip 时挂虚线下划线 + tooltip，
-                    // 失败态不再强制展开内容，错误详情改挂状态词 tooltip。
-                    let cls = if props_status_tooltip.is_some() {
-                        "whitespace-nowrap underline decoration-dotted underline-offset-2 cursor-help"
-                    } else {
-                        "whitespace-nowrap"
-                    };
-                    // 节点优先于文本（真源把 statusLabel 原样塞进这层 span，
-                    // 圆点 + 词那类组合由调用方给节点，包装层与 tooltip 都归本组件）。
-                    let inner = props_status_label_view
-                        .clone()
-                        .map(|f| f())
-                        .or_else(|| props_status_label.clone().map(|label| view! { <>{label}</> }.into_any()));
-                    let word = inner.map(|node| view! {
-                        <span class=cls title=props_status_tooltip.clone().unwrap_or_default()>{node}</span>
-                    });
-                    // 真源 :294-302 —— 有 statusIndicator 时把灯与状态词包进一个
-                    // inline-flex 小组（gap-1.5），否则状态词自己站。
-                    word.map(|word_node| match props_status_indicator_view.clone() {
-                        None => word_node.into_any(),
-                        Some(indicator) => view! {
-                            <span class="inline-flex shrink-0 items-center gap-1.5">
-                                {indicator()}
-                                {word_node}
-                            </span>
-                        }
-                        .into_any(),
-                    })
-                })}
-                // 复制按钮（真源 :262-275，在 tooltip 内）
-                {(show_status_label && props_status_tooltip.is_some()).then(|| {
-                    view! { <FailureCopyButton copied=is_failure_tooltip_copied /> }
-                })}
-                // ── ToolSummaryRow.tsx:210-222 折叠箭头 ──
-                {can_toggle.then(|| view! {
-                    <span
-                        class="flex size-4 flex-none items-center justify-center text-foreground-subtlest opacity-0 transition-transform transition-opacity duration-200 ease-out will-change-transform group-hover/tool-summary:opacity-100 shrink-0"
-                        class:rotate-90=expanded
-                        class:opacity-100=expanded
-                    >
-                        {icon_chevron_right()}
-                    </span>
-                })}
-            </div>
-            // ── diffCount（真源 :147 传给 ToolSummaryRow 的 diffCount）──
-            {show_diff_count
-                .then(|| props_diff_count)
-                .flatten()
-                .map(|(added, removed)| view! {
-                    // renderers.tsx:31-62
-                    <span class="inline-flex items-center gap-1 whitespace-nowrap font-mono leading-none tabular-nums">
-                        {(added > 0).then(|| view! {
-                            <span class="inline-flex items-center text-diff-added">
-                                "+{added}"
-                            </span>
-                        })}
-                        {(removed > 0).then(|| view! {
-                            <span class="inline-flex items-center text-diff-removed">
-                                "-{removed}"
-                            </span>
-                        })}
-                    </span>
-                })}
+            // ── :319-345 ToolSummaryRow ──
+            // 行结构、类名、aria、chevron 全归 ToolSummaryRow 组件（真源就是这么分的），
+            // ToolLayout 只负责把上面算好的节点塞进 props。
+            <ToolSummaryRowComponent
+                props=row_props
+                icon=icon_view.clone()
+                on_activate=row_on_activate
+            />
             // ── :322-338 内容区 ──
             {{
                 let show = should_render_resolved_content.get();
