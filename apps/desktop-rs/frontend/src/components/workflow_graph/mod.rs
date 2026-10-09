@@ -9,5 +9,6 @@ pub mod name_pattern;
 pub mod participant_model;
 pub mod phase_model;
 pub mod phase_name;
+pub mod run_state;
 pub mod run_status;
 pub mod types;
