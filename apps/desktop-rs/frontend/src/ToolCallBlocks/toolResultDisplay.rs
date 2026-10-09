@@ -62,7 +62,117 @@ pub struct CuaDisplay {
     pub target_app: Value,
 }
 
-/// 工作流 display（六个 kind 的宽松形态，见模块头裁剪注明）。
+/// 一条 TS 诊断（真源 `diagnosticSchema`，workflow-observation-display.ts:116-123）。
+///
+/// 四字段全必填 + `.strict()`（不容额外键）；三个数值都是
+/// `int().nonnegative()`；message 非空且 ≤2048。
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkflowDiagnostic {
+    pub line: i64,
+    pub column: i64,
+    pub code: i64,
+    pub message: String,
+}
+
+/// `ToolCallEvalWorkflowSnippetDisplay`（真源 :195-207）。
+///
+/// 上限照抄 zod：diagnostics ≤100、logs ≤40 且每条 ≤1024、response ≤4000。
+/// 超限即视为非法 display（真源 zod 会reject）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvalWorkflowSnippetDisplay {
+    pub ok: bool,
+    pub diagnostics: Vec<WorkflowDiagnostic>,
+    pub logs: Vec<String>,
+    pub response: String,
+    pub duration_ms: i64,
+    pub truncated: Option<bool>,
+}
+
+/// zod 的 `.int().nonnegative()`：非整数或负数都非法。
+fn is_nonnegative_int(value: Option<&Value>) -> Option<i64> {
+    let n = value?.as_i64()?;
+    (n >= 0).then_some(n)
+}
+
+/// `toolCallEvalWorkflowSnippetDisplaySchema`（真源 :195-207）的 strict 解析。
+///
+/// 独立成函数而非塞进 `parse_display` 的大分支：六个工作流 kind 里
+/// 这个字段最复杂，单独成函数便于逐条对拍约束。
+pub fn parse_eval_workflow_snippet_display(
+    value: &Value,
+) -> Option<EvalWorkflowSnippetDisplay> {
+    if !is_record(value) {
+        return None;
+    }
+    let ok = value.get("ok")?.as_bool()?;
+
+    let raw_diagnostics = value.get("diagnostics")?.as_array()?;
+    if raw_diagnostics.len() > 100 {
+        return None;
+    }
+    let mut diagnostics = Vec::with_capacity(raw_diagnostics.len());
+    for item in raw_diagnostics {
+        if !is_record(item) {
+            return None;
+        }
+        // strict()：只认这四个键。
+        if item.as_object().is_some_and(|o| o.len() != 4) {
+            return None;
+        }
+        let line = is_nonnegative_int(item.get("line"))?;
+        let column = is_nonnegative_int(item.get("column"))?;
+        let code = is_nonnegative_int(item.get("code"))?;
+        let message = item.get("message")?.as_str()?;
+        // z.string().min(1).max(2048)
+        if message.is_empty() || message.chars().count() > 2048 {
+            return None;
+        }
+        diagnostics.push(WorkflowDiagnostic {
+            line,
+            column,
+            code,
+            message: message.to_string(),
+        });
+    }
+
+    let raw_logs = value.get("logs")?.as_array()?;
+    if raw_logs.len() > 40 {
+        return None;
+    }
+    let mut logs = Vec::with_capacity(raw_logs.len());
+    for line in raw_logs {
+        let s = line.as_str()?;
+        // z.string().max(1024)
+        if s.chars().count() > 1024 {
+            return None;
+        }
+        logs.push(s.to_string());
+    }
+
+    let response = value.get("response")?.as_str()?;
+    if response.chars().count() > 4000 {
+        return None;
+    }
+    let duration_ms = is_nonnegative_int(value.get("durationMs"))?;
+    // truncated: z.boolean().optional() —— zod 的 optional() **不接受 null**
+    // （键必须缺席），存在但非 bool 即非法。
+    let truncated = match value.get("truncated") {
+        None => None,
+        Some(v) => Some(v.as_bool()?),
+    };
+
+    Some(EvalWorkflowSnippetDisplay {
+        ok,
+        diagnostics,
+        logs,
+        response: response.to_string(),
+        duration_ms,
+        truncated,
+    })
+}
+
+/// 工作流 display：六个 kind 里`eval_workflow_snippet` 走 strict 解析，
+/// 其余五个仍是宽松形态（见模块头裁剪注明）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkflowDisplay {
     pub kind: String,
@@ -287,8 +397,17 @@ fn parse_display(value: &Value) -> Option<ToolResultDisplay> {
         }));
     }
 
-    // 工作流 kind（宽松形态，见模块头裁剪注明）。
+    // 工作流 kind。
     if let Some(kind) = value.get("kind").and_then(|k| k.as_str()) {
+        if kind == "eval_workflow_snippet" {
+            // 走 strict 解析（本轮补齐，见模块头裁剪注明）。
+            return parse_eval_workflow_snippet_display(value).map(|_| {
+                ToolResultDisplay::Workflow(WorkflowDisplay {
+                    kind: kind.to_string(),
+                    value: value.clone(),
+                })
+            });
+        }
         if WORKFLOW_DISPLAY_KINDS.contains(&kind) {
             return Some(ToolResultDisplay::Workflow(WorkflowDisplay {
                 kind: kind.to_string(),
@@ -456,8 +575,12 @@ mod tests {
 
     #[test]
     fn workflow_kinds_are_lenient_v1() {
-        // 六个工作流 kind 宽松解析（裁剪注明：待 strict 字段表）。
+        // 其余五个工作流 kind仍是宽松解析（裁剪注明：待各自 strict 字段表）。
+        // eval_workflow_snippet 已在 v2 迁为 strict，见下面两个测试。
         for kind in WORKFLOW_DISPLAY_KINDS {
+            if kind == "eval_workflow_snippet" {
+                continue;
+            }
             let value = json!({ "kind": kind, "extra": 1 });
             match parse_display(&value) {
                 Some(ToolResultDisplay::Workflow(d)) => assert_eq!(d.kind, kind),
@@ -467,6 +590,107 @@ mod tests {
         // 未知 kind → None。
         let unknown = json!({ "kind": "no_such_kind" });
         assert_eq!(parse_display(&unknown), None);
+    }
+
+    fn valid_snippet_display() -> Value {
+        json!({
+            "kind": "eval_workflow_snippet",
+            "ok": true,
+            "diagnostics": [],
+            "logs": ["a"],
+            "response": "r",
+            "durationMs": 12,
+        })
+    }
+
+    #[test]
+    fn eval_snippet_display_uses_strict_schema() {
+        // 真源 zod schema：kind/ok/diagnostics/logs/response/durationMs 全必填。
+        let parsed = parse_eval_workflow_snippet_display(&valid_snippet_display()).unwrap();
+        assert!(parsed.ok);
+        assert_eq!(parsed.duration_ms, 12);
+        assert_eq!(parsed.truncated, None, "truncated 可选");
+
+        // 缺任一必填字段 → None。
+        for missing in ["ok", "diagnostics", "logs", "response", "durationMs"] {
+            let mut value = valid_snippet_display();
+            value.as_object_mut().unwrap().remove(missing);
+            assert!(
+                parse_eval_workflow_snippet_display(&value).is_none(),
+                "缺 {missing} 应非法"
+            );
+        }
+    }
+
+    #[test]
+    fn eval_snippet_display_enforces_limits() {
+        // 真源：diagnostics ≤100、logs ≤40（每条 ≤1024）、response ≤4000。
+        let mut too_many_diags = valid_snippet_display();
+        let diag = json!({ "line": 1, "column": 1, "code": 9001, "message": "x" });
+        too_many_diags["diagnostics"] = json!(vec![diag.clone(); 101]);
+        assert!(parse_eval_workflow_snippet_display(&too_many_diags).is_none());
+
+        let mut too_many_logs = valid_snippet_display();
+        too_many_logs["logs"] = json!(vec!["x"; 41]);
+        assert!(parse_eval_workflow_snippet_display(&too_many_logs).is_none());
+
+        let mut long_log = valid_snippet_display();
+        long_log["logs"] = json!(["x".repeat(1025)]);
+        assert!(parse_eval_workflow_snippet_display(&long_log).is_none());
+
+        let mut long_response = valid_snippet_display();
+        long_response["response"] = json!("x".repeat(4001));
+        assert!(parse_eval_workflow_snippet_display(&long_response).is_none());
+    }
+
+    #[test]
+    fn eval_snippet_display_rejects_invalid_scalars() {
+        // 真源 zod：三个数值都是 int().nonnegative()。
+        for field in ["line", "column", "code"] {
+            let mut value = valid_snippet_display();
+            value["diagnostics"] = json!([{ "line": 1, "column": 1, "code": 9001, "message": "x" }]);
+            value["diagnostics"][0][field] = json!(-1);
+            assert!(
+                parse_eval_workflow_snippet_display(&value).is_none(),
+                "{field} 为负应非法"
+            );
+        }
+        // message 非空（min(1)）。
+        let mut empty_msg = valid_snippet_display();
+        empty_msg["diagnostics"] =
+            json!([{ "line": 1, "column": 1, "code": 9001, "message": "" }]);
+        assert!(parse_eval_workflow_snippet_display(&empty_msg).is_none());
+
+        // durationMs 负数非法。
+        let mut neg_duration = valid_snippet_display();
+        neg_duration["durationMs"] = json!(-1);
+        assert!(parse_eval_workflow_snippet_display(&neg_duration).is_none());
+
+        // truncated 存在但非 bool → 非法（zod optional() 不接受 null）。
+        let mut bad_truncated = valid_snippet_display();
+        bad_truncated["truncated"] = json!(null);
+        assert!(parse_eval_workflow_snippet_display(&bad_truncated).is_none());
+    }
+
+    #[test]
+    fn eval_snippet_diagnostic_is_strict() {
+        // 真源 diagnosticSchema.strict() —— 不容额外键。
+        let mut extra = valid_snippet_display();
+        extra["diagnostics"] =
+            json!([{ "line": 1, "column": 1, "code": 9001, "message": "x", "extra": 1 }]);
+        assert!(parse_eval_workflow_snippet_display(&extra).is_none());
+    }
+
+    #[test]
+    fn eval_snippet_display_reaches_render_layer() {
+        // 经 parse_display 也要能拿到（不是只有直调解析函数才行）。
+        match parse_display(&valid_snippet_display()) {
+            Some(ToolResultDisplay::Workflow(d)) => assert_eq!(d.kind, "eval_workflow_snippet"),
+            other => panic!("期望 Workflow 形态，得 {other:?}"),
+        }
+        // 非法 payload 走parse_display 时被 strict 拦掉。
+        let bad = json!({ "kind": "eval_workflow_snippet", "ok": true });
+        assert_eq!(parse_display(&bad), None);
     }
 
     #[test]

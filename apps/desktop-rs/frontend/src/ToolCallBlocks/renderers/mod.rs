@@ -407,3 +407,5 @@ mod tests {
         let _diff = view! { <RenderDiffCount view=DiffCountView { added: 1, removed: 2 } /> };
     }
 }
+pub mod workflow_snippet_presentation;
+pub mod workflow_diagnostics;
