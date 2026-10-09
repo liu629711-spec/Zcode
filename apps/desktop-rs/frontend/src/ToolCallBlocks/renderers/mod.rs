@@ -413,3 +413,4 @@ mod tests {
 pub mod workflow_snippet_presentation;
 pub mod workflow_diagnostics;
 pub mod workflow_draft_row;
+pub mod workflow_run_compact_card;
