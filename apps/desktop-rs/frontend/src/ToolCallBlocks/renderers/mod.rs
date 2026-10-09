@@ -46,6 +46,7 @@ pub mod get_workflow_run;
 pub mod get_workflow_run_roster;
 pub mod get_workflow_run_situation;
 pub mod goal;
+pub mod list_models;
 pub mod list_saved_workflows;
 pub mod list_workflow_runs;
 pub mod lightweightDiffPreview;

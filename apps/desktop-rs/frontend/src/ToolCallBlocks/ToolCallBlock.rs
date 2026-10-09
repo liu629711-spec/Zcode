@@ -517,6 +517,41 @@ fn render_dispatch(
             />
         }
         .into_any(),
+        // 模型目录卡（真源 :101-105 —— 不按名认领，兜底卡会把 `<models>` 文本原样摊开）。
+        Renderer::ListModels => {
+            let display_model = super::toolDisplay::build_tool_display_model(
+                &super::codeViewer::CodeViewerToolCall::from_legacy(&legacy),
+                legacy.error.as_deref(),
+                &status,
+                &workspace_path,
+            );
+            view! {
+                <list_models::ListModelsToolCallBlock
+                    props=list_models::ListModelsBlockProps {
+                        tool_id: tool_id.to_string(),
+                        raw,
+                        output: legacy.output.clone().map(Value::String),
+                        status,
+                        is_running,
+                        status_label: Some(status_label),
+                        error_text,
+                        title,
+                        source_label,
+                        show_icon,
+                        snapshot_refs: legacy.snapshot_refs.clone(),
+                        on_load_full_tool_call_fields: on_load_full_tool_call_fields.clone(),
+                        // provider 名来自会话 store 的 configOptions（workspace-config topic），
+                        // 宿主通道未接线时 None → 组名退回 providerLabel → 「模型供应商」，
+                        // 仍绝不回 providerId（见 list_models.rs 的裁剪注明）。
+                        provider_name: None,
+                        legacy: legacy.clone(),
+                        display_model,
+                        workspace_path: workspace_path.clone(),
+                    }
+                />
+            }
+            .into_any()
+        }
         Renderer::Edit => {
             // kind_source 携带完整输入输出（edit.rs 的操作类型判定用）。
             let kind_source = super::fileSummaryTypes::EditKindSource {

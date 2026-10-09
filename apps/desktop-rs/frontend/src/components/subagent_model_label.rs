@@ -55,6 +55,25 @@ pub fn resolve_model_provider_family_id_by_provider_id(provider_id: &str) -> Opt
     }
 }
 
+/// `getModelProviderFamilySpec(familyId).label`（真源 model-provider-family.ts:26-47, 66-70）。
+///
+/// ★这张表只有两个内置家族，词表是产品固定入口名，不是 providerId
+/// ——组名/标签名一律走这里，屏幕上绝不出现 `account:zai-*` 这类连接 id。
+pub fn model_provider_family_label(family_id: &str) -> Option<&'static str> {
+    match family_id {
+        "zai" => Some("Z.ai"),
+        "bigmodel" => Some("BigModel"),
+        _ => None,
+    }
+}
+
+/// `resolveModelProviderFamilyLabelByProviderId`（真源 model-provider-family.ts:106-108）：
+/// providerId → 家族名；不是内置家族时回 None（调用方继续往 providerLabel / 会话清单找）。
+pub fn resolve_model_provider_family_label_by_provider_id(provider_id: &str) -> Option<&'static str> {
+    resolve_model_provider_family_id_by_provider_id(provider_id)
+        .and_then(model_provider_family_label)
+}
+
 /// `formatProviderModelLabel`（真源 modelTriggerDisplay.ts:41-54）。
 ///
 /// ★真源 :46-50 注释——内置家族只显示模型名（连接名是产品固定入口，
