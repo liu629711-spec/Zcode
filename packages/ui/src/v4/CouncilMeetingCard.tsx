@@ -21,8 +21,11 @@ import type { CouncilMeetingModel } from "@/v4/councilMeeting.js";
 /** 专区弹层的开关不跨重挂持久化：会话流滚动重挂后默认收起（弹层跟着点开走）。 */
 export function CouncilMeetingCard({
   meeting,
+  sessionId,
 }: {
   meeting: CouncilMeetingModel;
+  /** 召集方会话（行渲染上下文带）：控场命令的目标；草稿态缺席=不出控件。 */
+  sessionId?: string | null;
 }) {
   const { intl } = useZCodeIntl();
   const [zoneOpen, setZoneOpen] = useState(false);
@@ -84,6 +87,7 @@ export function CouncilMeetingCard({
         meeting={meeting}
         open={zoneOpen}
         onOpenChange={setZoneOpen}
+        sessionId={sessionId}
       />
     </>
   );

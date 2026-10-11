@@ -1601,8 +1601,9 @@ function ConversationTurnGroupImpl({
         : null}
       {councilMeeting ? (
         // 圆桌会（真会议）摘要卡：同工地卡一样挂在本轮内容**收尾**、贴着与会议
-        // 相关的最新证据轮（活边）；一行收敛，点开进评审专区。
-        <CouncilMeetingCard meeting={councilMeeting} />
+        // 相关的最新证据轮（活边）；一行收敛，点开进评审专区。控场命令以本会话
+        // runtime 为目标（sessionId 随行渲染上下文带）。
+        <CouncilMeetingCard meeting={councilMeeting} sessionId={context.sessionId} />
       ) : null}
     </section>
   );
