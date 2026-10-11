@@ -3876,6 +3876,9 @@ const zhCN: Record<string, string> = {
   "settings.subagents.openUserAgentsFolder": "打开用户智能体目录",
   "settings.subagents.noDescription": "暂无描述",
   "settings.subagents.userScopeDesktopOnly": "当前阶段用户级智能体仅支持桌面端。",
+  "settings.subagents.group.workspace": "工作区档案",
+  "settings.subagents.backfill.action": "补工号",
+  "settings.subagents.backfill.done": "已为 {count} 个档案补上工号，记事本目录一并归位。",
   "settings.subagents.group.user": "已安装",
   "settings.subagents.group.plugin": "插件智能体",
   "settings.subagents.group.plugin.hint":

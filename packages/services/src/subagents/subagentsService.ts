@@ -16,6 +16,7 @@ import {
   type AgentScope,
   type AgentSummary,
   type AgentUpdateParams,
+  type AgentsBackfillResult,
   type AgentsCapability,
   type AgentsListResult,
   type BuiltInSubagentModelOverrideParams,
@@ -820,6 +821,51 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       disabledSet.delete(params.agentId);
       state.disabledAgentIds = [...disabledSet].sort();
       await writeAgentStateFile(state, storageOptions);
+    },
+
+    async backfillAgentIds(): Promise<AgentsBackfillResult> {
+      // 一键补号（D26 账上"可考虑显式补号"的落地，2026-10-08）：**只处理 user
+      // scope 档案**——workspace 档案是要进 git 的项目文件，从设置页批量改盘=
+      // 凭空造脏 diff（D26 教训），它们继续走"第一次编辑时上号"。每个无号档案
+      // 走与 updateAgent 完全相同的链：读旧档 → 保号/补号（previous 在场才补）
+      // → 记事本搬家（名字目录 → 号目录）→ 落盘；同名覆盖写，内容零变化只加号。
+      const root = await resolveUserSubagentRoot(storageOptions);
+      const assigned: Array<{ name: string; agentId: string }> = [];
+      for (const agentPath of await collectAgentMarkdownPaths(root)) {
+        const markdown = await readFile(agentPath, "utf-8").catch(() => undefined);
+        if (markdown === undefined) continue;
+        const previous = parseSubagentMarkdown({
+          content: markdown,
+          path: agentPath,
+          scope: "user",
+        }).agent;
+        // 已有号/坏 frontmatter（parse 返回 undefined）跳过：补号只认"读得出且没号"。
+        if (!previous || normalizeAgentId(previous.agentId) !== undefined) continue;
+        const config = withAgentIdPreserved(previous, previous);
+        const content = serializeSubagentMarkdown(config);
+        const agent = parseSavedAgent(content, agentPath, "user", undefined);
+        // 搬家计划按 updateAgent 同款构造：oldFilePath=目标本身（同名编辑），
+        // previous 无号 + 新 agent 有号 → 名字目录一次性归位到号目录。
+        const memoryRenamePlan = planAgentMemoryRenameFromPrevious(
+          {
+            agentId: previous.id,
+            config,
+            oldFilePath: agentPath,
+            provider: "glm",
+            scope: "user",
+          },
+          previous,
+          agent,
+        );
+        if (memoryRenamePlan) {
+          await applyAgentMemoryDirectoryRename(memoryRenamePlan);
+        }
+        await writeFile(agentPath, content, "utf-8");
+        if (agent.agentId) {
+          assigned.push({ name: agent.name, agentId: agent.agentId });
+        }
+      }
+      return { assigned };
     },
   };
 }

@@ -1,6 +1,7 @@
 import type {
   ZCodeProvider,
   AgentSummary,
+  AgentsBackfillResult,
   AgentsListResult,
   AgentCreateParams,
   AgentUpdateParams,
@@ -38,6 +39,9 @@ export interface ISubagentsService {
 
   /** 删除 agent 文件 */
   deleteAgent(params: AgentDeleteParams): Promise<void>;
+
+  /** 一键补号（D26 收尾）：给 user scope 的无号老档案发工号并归位记事本目录。 */
+  backfillAgentIds(): Promise<AgentsBackfillResult>;
 }
 
 export const ISubagentsService = createServiceDescriptor<ISubagentsService>(

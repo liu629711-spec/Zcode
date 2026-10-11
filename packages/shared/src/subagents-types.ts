@@ -99,6 +99,11 @@ export interface AgentsListResult {
   diagnostics?: AgentDiagnostic[];
 }
 
+/** 一键补号结果（D26 收尾，2026-10-08）：本次上了工号的档案清单。 */
+export interface AgentsBackfillResult {
+  assigned: Array<{ name: string; agentId: string }>;
+}
+
 /** Agent 配置，用于创建/更新 agent */
 export interface SubAgentConfig {
   name: string;

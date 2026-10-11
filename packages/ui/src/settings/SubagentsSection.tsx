@@ -106,6 +106,8 @@ interface AgentGroups {
   builtIn: AgentSummary[];
   plugin: AgentSummary[];
   user: AgentSummary[];
+  /** 工作区档案（source=project）：只读呈现，D28 提升可发现性。 */
+  workspace: AgentSummary[];
 }
 
 function projectSettingsSubagents(result: AgentsListResult): AgentSummary[] {
@@ -384,9 +386,13 @@ function AgentBadge({ children, className }: { children: string; className?: str
 }
 
 function groupAgentsByScope(agents: readonly AgentSummary[]): AgentGroups {
-  const groups: AgentGroups = { builtIn: [], plugin: [], user: [] };
+  const groups: AgentGroups = { builtIn: [], plugin: [], user: [], workspace: [] };
   for (const agent of agents) {
-    if (isEditableUserAgent(agent)) {
+    if (agent.scope === "workspace") {
+      // D28：工作区档案独立成组（仍按既有 workspace 编辑链路可编辑）——此前与
+      // user 档案混在「已安装」组、user 档位下干脆不可见，老板找不到改过名的档案。
+      groups.workspace.push(agent);
+    } else if (isEditableUserAgent(agent)) {
       groups.user.push(agent);
     } else if (agent.source === "plugin") {
       groups.plugin.push(agent);
@@ -1358,6 +1364,36 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
         // 插件 agent 是运行时 profile 的只读投影；设置页展示它们，但仍不展示工作区级编辑入口。
         setAgents(projectSettingsSubagents(result));
         setCapability(result.capability);
+        // D28 工作区档案提升呈现：user 档位的 settingsUserOnly 不含工作区档案，
+        // 对各开着的本地工位补一轮只读查询（读项目 .zcode/agents 文件，不激活
+        // runtime），归入「工作区档案」分组；读不了的工位静默跳过不拖垮列表。
+        if (activeScope === "user" && workspaceTabs.length > 0) {
+          const workspaceAgentLists = await Promise.all(
+            workspaceTabs.map(async (tab) => {
+              try {
+                const workspaceResult = await subagentsService.list({
+                  workspacePath: tab.workspacePath,
+                  workspaceIdentity: undefined,
+                  provider: ZCODE_AGENT_PROVIDER,
+                  mode: "allRuntimeScopes",
+                });
+                return workspaceResult.agents.filter((agent) => agent.scope === "workspace");
+              } catch {
+                return [];
+              }
+            }),
+          );
+          if (requestId !== latestRequestIdRef.current) {
+            return;
+          }
+          const workspaceAgents = workspaceAgentLists.flat();
+          if (workspaceAgents.length > 0) {
+            setAgents((current) => {
+              const seenPaths = new Set(current.map((agent) => agent.path));
+              return [...current, ...workspaceAgents.filter((agent) => !seenPaths.has(agent.path))];
+            });
+          }
+        }
         setLoading(false);
         setRefreshing(false);
       } catch (loadError) {
@@ -1369,7 +1405,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
         setError(loadError instanceof Error ? loadError.message : String(loadError));
       }
     },
-    [subagentsService, activeScope, targetWorkspaceIdentity, targetWorkspacePath],
+    [subagentsService, activeScope, targetWorkspaceIdentity, targetWorkspacePath, workspaceTabs],
   );
 
   useEffect(() => {
@@ -1637,6 +1673,29 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
     [refresh, refreshMentionStore, subagentsService],
   );
 
+  // 一键补号（D26 收尾）：user scope 无号老档案发工号 + 记事本目录归位。
+  // 结果内联提示；补完刷新列表（行上的号就位）。
+  const [backfillNotice, setBackfillNotice] = useState<string | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
+  const handleBackfillAgentIds = useCallback(async () => {
+    setBackfilling(true);
+    setBackfillNotice(null);
+    try {
+      const result = await subagentsService.backfillAgentIds();
+      setBackfillNotice(
+        intl.formatMessage(
+          { id: "settings.subagents.backfill.done" },
+          { count: String(result.assigned.length) },
+        ),
+      );
+      await Promise.all([refresh(), refreshMentionStore()]);
+    } catch (error) {
+      setBackfillNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBackfilling(false);
+    }
+  }, [subagentsService, intl, refresh, refreshMentionStore]);
+
   const handleEdit = useCallback((agent: AgentSummary) => {
     if (!isEditableUserAgent(agent)) {
       return;
@@ -1700,6 +1759,21 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   }, [activeScope, agents, query, targetWorkspacePath]);
 
   const groupedAgents = useMemo(() => groupAgentsByScope(filteredAgents), [filteredAgents]);
+  // D28：工作区档案按所属项目再分组（组头带项目文件夹名，多个工位互不混淆）。
+  const workspaceGroups = useMemo(() => {
+    const groups = new Map<string, AgentSummary[]>();
+    for (const agent of groupedAgents.workspace) {
+      const key = agent.projectPath ?? "";
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(agent);
+      else groups.set(key, [agent]);
+    }
+    return [...groups.entries()];
+  }, [groupedAgents.workspace]);
+  const pendingIdCount = useMemo(
+    () => groupedAgents.user.filter((agent) => !agent.agentId).length,
+    [groupedAgents.user],
+  );
   const pluginGroups = useMemo(
     () => groupPluginAgentsById(groupedAgents.plugin),
     [groupedAgents.plugin],
@@ -1878,12 +1952,28 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
                   id: "settings.subagents.group.user",
                 })}
               />
+              {pendingIdCount > 0 && canManageUserAgents ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={backfilling}
+                  onClick={() => void handleBackfillAgentIds()}
+                >
+                  {intl.formatMessage({ id: "settings.subagents.backfill.action" })}
+                </Button>
+              ) : null}
               <SettingsResourceHeaderActions
                 onRefresh={() => void Promise.all([refresh(), refreshMentionStore()])}
                 onNew={canManageUserAgents ? handleAddNew : undefined}
                 refreshing={refreshing}
               />
             </div>
+            {backfillNotice ? (
+              <p className="text-ui-base text-foreground-subtle" role="status">
+                {backfillNotice}
+              </p>
+            ) : null}
             {groupedAgents.user.length > 0 ? (
               renderAgentList(groupedAgents.user)
             ) : (
@@ -1903,6 +1993,24 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
               />
             )}
           </section>
+          {workspaceGroups.map(([groupWorkspacePath, items]) => {
+            // 组头带项目文件夹名：多个工位的同名档案靠它区分。
+            const folderName =
+              groupWorkspacePath.split(/[\\/]+/).filter(Boolean).pop() ?? groupWorkspacePath;
+            return (
+              <section
+                key={groupWorkspacePath || "workspace"}
+                className="space-y-4"
+                data-testid="settings-subagents-workspace-group"
+              >
+                <SettingsResourceGroupHeader
+                  count={items.length}
+                  title={`${intl.formatMessage({ id: "settings.subagents.group.workspace" })} · ${folderName}`}
+                />
+                {renderAgentList(items)}
+              </section>
+            );
+          })}
           {pluginGroups.map(([pluginId, items]) => (
             <section key={pluginId} className="space-y-4">
               <SettingsResourceGroupHeader

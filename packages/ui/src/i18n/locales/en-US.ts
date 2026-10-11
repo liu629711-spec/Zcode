@@ -4129,6 +4129,9 @@ const enUS: Record<string, string> = {
   "settings.subagents.noDescription": "No description",
   "settings.subagents.userScopeDesktopOnly":
     "User-level agents are currently available on desktop only.",
+  "settings.subagents.group.workspace": "Workspace profiles",
+  "settings.subagents.backfill.action": "Assign IDs",
+  "settings.subagents.backfill.done": "Assigned IDs to {count} profiles; notebook folders relocated.",
   "settings.subagents.group.user": "Installed",
   "settings.subagents.group.plugin": "Plugin agents",
   "settings.subagents.group.plugin.hint":
