@@ -9,6 +9,10 @@ import {
 import { importLegacyAutomationSelections } from "#src/session/tasksDatabase/provider-selection-v2.js";
 import { OFFICIAL_GLM_SELECTION_MIGRATION_SQL } from "#src/session/tasksDatabase/official-glm-selection-v3.js";
 import { DISPATCH_DESK_MIGRATION_SQL } from "#src/session/tasksDatabase/dispatch-desk-v4.js";
+import {
+  TASK_SEARCH_FTS_MIGRATION_SQL,
+  adoptTaskSearchFts,
+} from "#src/session/tasksDatabase/task-search-fts5.js";
 
 // 冻结历史列声明，不能以实时 Repo/schema 代替，否则新版构建会改变已应用 checksum。
 const columns = [
@@ -69,6 +73,10 @@ const definitions = [
     id: "0004_dispatch_desk",
     checksumInput: [DISPATCH_DESK_MIGRATION_SQL],
   },
+  {
+    id: "0005_task_search_fts",
+    checksumInput: [TASK_SEARCH_FTS_MIGRATION_SQL, "task-search-fts-backfill-v1"],
+  },
 ] as const;
 
 // 每个 migration 的执行器显式建表：新增 migration 忘记登记执行器时在编译期报错，
@@ -78,6 +86,7 @@ const executors: Record<(typeof definitions)[number]["id"], (db: DatabaseSync) =
   "0002_provider_selection": importLegacyAutomationSelections,
   "0003_official_glm_selection": (db) => db.exec(OFFICIAL_GLM_SELECTION_MIGRATION_SQL),
   "0004_dispatch_desk": (db) => db.exec(DISPATCH_DESK_MIGRATION_SQL),
+  "0005_task_search_fts": adoptTaskSearchFts,
 };
 
 export function runTasksDatabaseMigrations(

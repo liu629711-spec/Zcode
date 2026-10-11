@@ -125,7 +125,7 @@ test("migration 0004 adds dispatch desk bypass columns with CHECK and safe defau
     const executed = ctx.raw
       .prepare(`SELECT count(*) AS n FROM tasks_schema_migration`)
       .get() as { n: number };
-    assert.equal(executed.n, 4);
+    assert.equal(executed.n, 5);
   } finally {
     await ctx.cleanup();
   }

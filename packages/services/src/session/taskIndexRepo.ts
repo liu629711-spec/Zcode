@@ -38,6 +38,11 @@ import type {
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { getTasksIndexDatabasePath } from "#src/paths.js";
 import { runTasksDatabaseMigrations } from "#src/session/tasksDatabase/migrations.js";
+import {
+  buildCjkBigramText,
+  buildTaskFtsMatch,
+  buildTaskSearchFtsRowText,
+} from "#src/session/tasksDatabase/task-search-fts5.js";
 
 const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
@@ -1208,16 +1213,13 @@ export class TaskIndexRepo {
   }
 
   private writeRecord(record: TaskIndexWriteRecord): ZCodeTaskMeta {
-    // searchable_text 传 undefined 表示"不动现有值"。读一次 row 拿到当前值，
-    // 否则 ON CONFLICT 时 excluded.searchable_text 会被赋成空字符串，把已索引正文清空。
-    const existing =
-      record.searchableText === undefined
-        ? this.getTaskRow({
-            workspacePath: record.meta.workspacePath,
-            workspaceIdentity: record.meta.workspaceIdentity,
-            taskId: record.meta.taskId,
-          })
-        : null;
+    // 读一次现有 row：searchable_text 传 undefined 表示"不动现有值"（否则 ON CONFLICT 时
+    // excluded.searchable_text 会被赋成空字符串，把已索引正文清空）；同时用于 FTS 行的跳重。
+    const existing = this.getTaskRow({
+      workspacePath: record.meta.workspacePath,
+      workspaceIdentity: record.meta.workspaceIdentity,
+      taskId: record.meta.taskId,
+    });
     const searchableText =
       record.searchableText !== undefined
         ? record.searchableText.slice(0, TASK_SEARCH_TEXT_MAX_CHARS)
@@ -1331,11 +1333,56 @@ export class TaskIndexRepo {
         searchable_text: searchableText,
         meta_json: serializeMetaJson(record.meta),
       });
+    this.syncTaskSearchFtsRow({
+      workspaceKey: workspaceKey(record.meta),
+      taskId: record.meta.taskId,
+      title: record.meta.title,
+      searchableText,
+      deleted: record.deleted === true,
+      previous: existing,
+    });
     const persisted = this.getTaskRow(record.meta);
     if (!persisted) {
       throw new Error(`task index 写入后缺少 task: ${record.meta.taskId}`);
     }
     return rowToMeta(persisted);
+  }
+
+  // FTS 行同步：标题/正文/删除标记任一变化时重建，未变化直接跳过（正文最大 200k，分词不便宜）。
+  // DELETE 按未索引列过滤是行数级扫描，但任务量级 ≤ 千级，可接受。
+  private syncTaskSearchFtsRow(params: {
+    workspaceKey: string;
+    taskId: string;
+    title: string;
+    searchableText: string;
+    deleted: boolean;
+    previous: Pick<TaskIndexRow, "title" | "searchable_text" | "deleted"> | null;
+  }): void {
+    const unchanged =
+      params.previous !== null &&
+      params.previous.deleted === 0 &&
+      !params.deleted &&
+      params.previous.title === params.title &&
+      params.previous.searchable_text === params.searchableText;
+    if (unchanged) {
+      return;
+    }
+    const database = this.getDatabase();
+    database
+      .prepare("DELETE FROM task_search_fts WHERE workspace_key = ? AND task_id = ?")
+      .run(params.workspaceKey, params.taskId);
+    if (params.deleted) {
+      return;
+    }
+    const body = buildTaskSearchFtsRowText(params.title, params.searchableText);
+    if (!body.trim()) {
+      return;
+    }
+    database
+      .prepare(
+        "INSERT INTO task_search_fts (body, cjk, workspace_key, task_id) VALUES (?, ?, ?, ?)",
+      )
+      .run(body, buildCjkBigramText(body), params.workspaceKey, params.taskId);
   }
 
   async syncTaskMeta(params: {
@@ -1924,8 +1971,11 @@ export class TaskIndexRepo {
     }
 
     const search = params.search?.trim();
+    // 含 ≥2 字汉字关键词走 FTS 倒排（多词 AND、量大不卡）；纯拉丁/含单字汉字回落 LIKE
+    // （LIKE 是逐字节子串匹配，保住 "error" 命中 "TypeError" 的词中缀行为）。
+    const ftsMatch = search ? buildTaskFtsMatch(search) : null;
     const normalizedSearchLike =
-      search && search.length > 0 ? `%${search.toLocaleLowerCase()}%` : null;
+      search && search.length > 0 && !ftsMatch ? `%${search.toLocaleLowerCase()}%` : null;
     const where = ["deleted = 0", `workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`];
     const args: Array<string | number> = [...workspaceKeys];
     if (params.provider) {
@@ -1938,7 +1988,13 @@ export class TaskIndexRepo {
     } else {
       where.push("pinned = 0", "archived = 0");
     }
-    if (normalizedSearchLike) {
+    if (ftsMatch) {
+      // FTS 路径：倒排先命中 (workspace_key, task_id) 对，再回 tasks 套用本查询的列表过滤。
+      where.push(
+        "(workspace_key, task_id) IN (SELECT workspace_key, task_id FROM task_search_fts WHERE task_search_fts MATCH ?)",
+      );
+      args.push(ftsMatch);
+    } else if (normalizedSearchLike) {
       // 之前只按 title 模糊匹配，没有命中聊天正文；TaskSearchDialog 长期搜不到内容。
       // 现在 title 或 searchable_text 任一命中即视为匹配，正文摘要在结果阶段构建。
       where.push("(LOWER(title) LIKE ? OR LOWER(searchable_text) LIKE ?)");
