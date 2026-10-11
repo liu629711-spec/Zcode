@@ -200,6 +200,11 @@ export interface AgentRuntimeCoreMethods {
   maybeEnqueueAgentWorkOrderBatchQc(
     input: MaybeEnqueueAgentWorkOrderBatchQcInput,
   ): Promise<void>;
+  /** 组长汇总触发（组长制批，幂等自查）：本会话里该父单的子单全部收口且未汇总过 → 开汇总轮。 */
+  maybeEnqueueAgentWorkOrderConsolidation(input: {
+    workOrderId: string;
+    traceContext?: TraceContext;
+  }): Promise<void>;
   maybeAdvanceCouncilRound(input: MaybeAdvanceCouncilRoundInput): Promise<void>;
   /** 复盘站证据门禁（2026-10-07 拍板）：这只员工会预期在工单轮后跑复盘轮。 */
   isWorkOrderDebriefExpected(): boolean;

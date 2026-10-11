@@ -80,6 +80,7 @@ export function parseSubagentMarkdown(
   const skills = parseStringList(frontmatter.skills);
   const background = parseOptionalBoolean(frontmatter.background);
   const injectAgentsMd = parseOptionalBoolean(frontmatter.injectAgentsMd);
+  const teamLead = parseOptionalBoolean(frontmatter.teamLead);
   const mcpServers = Array.isArray(frontmatter.mcpServers) ? frontmatter.mcpServers : undefined;
 
   return {
@@ -99,6 +100,7 @@ export function parseSubagentMarkdown(
       ...(maxTurns ? { maxTurns } : {}),
       ...(background !== undefined ? { background } : {}),
       ...(injectAgentsMd !== undefined ? { injectAgentsMd } : {}),
+      ...(teamLead !== undefined ? { teamLead } : {}),
       ...(mcpServers ? { mcpServers } : {}),
       path: input.path,
       scope: input.scope,
@@ -137,6 +139,9 @@ export function serializeSubagentMarkdown(config: SubAgentConfig): string {
   }
   if (config.injectAgentsMd !== undefined) {
     frontmatterLines.push(`injectAgentsMd: ${config.injectAgentsMd ? "true" : "false"}`);
+  }
+  if (config.teamLead !== undefined) {
+    frontmatterLines.push(`teamLead: ${config.teamLead ? "true" : "false"}`);
   }
   appendUnknownList(frontmatterLines, "mcpServers", config.mcpServers);
 

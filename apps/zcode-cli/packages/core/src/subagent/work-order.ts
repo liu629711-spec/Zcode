@@ -191,7 +191,7 @@ function buildCouncilSeatEnvelopeText(envelope: AgentWorkOrderEnvelope, task: st
  */
 export function buildWorkOrderEnvelopeText(
   envelope: AgentWorkOrderEnvelope,
-  options?: { skillsAppendix?: string },
+  options?: { skillsAppendix?: string; leadAppendix?: string },
 ): string {
   const task = neutralizeEnvelopeTags(envelope.task);
   // 圆桌会席位单（真会议）：信封带 councilId 即按发言口味组装（与 review 互斥——
@@ -226,6 +226,11 @@ export function buildWorkOrderEnvelopeText(
   // 同款（标签外、压轴前）；调用方现读现匹配后传入，无命中/评审单/席位单不传。
   if (options?.skillsAppendix) {
     lines.push(options.skillsAppendix);
+  }
+  // 组长授权（组长制批 2026-10-12）：gen-1 × 组长的工单才带——教组长拆单转派，
+  // 以及"收齐汇总"的收口口径；评审单豁免（只评审不动手，没有可拆的活）。
+  if (options?.leadAppendix && envelope.review !== true) {
+    lines.push(options.leadAppendix);
   }
   lines.push(
     // 桌子铁规矩（2026-10-02 真机实证：弱模型把 PRD 产出写进老板家目录的绝对路径）
@@ -394,6 +399,57 @@ export function buildBatchQcTitle(batchTitle?: string, options?: { review?: bool
 
 /** 质检信封里的单条任务上界：与 agentWorkOrderMeta 的落库上界同口径（超界截断诚实）。 */
 const BATCH_QC_TASK_MAX_CHARS = 8_192;
+
+/** 汇总清单里的一张子单（组长制批）：来自组长会话台账里 parentWorkOrderId 对上号的行。 */
+export interface WorkOrderConsolidationItem {
+  workOrderId: string;
+  /** 子单是谁干的（台账行 payload 顶层的 agentName，不是信封发起方署名）。 */
+  agentName: string;
+  task: string;
+  status: WorkOrderReceiptStatus;
+  /** status=completed 的最终答案本体；cancelled/failed 用 reason。 */
+  response?: string;
+  reason?: string;
+}
+
+/**
+ * 组长汇总轮正文（组长会话的模型输入 carrier，组长制批 2026-10-12）。子单清单+
+ * 交活原文随信封内联（<work-order-consolidation>），汇总要求压轴：产出一份汇总
+ * 交活——它就是 gen-1 工单的最终回执，bootstrap watcher 据汇总轮的 TurnComplete
+ * 回传给老板。交活原文与任务都过标签中和，组员答案里种信封也伪造不了结构。
+ */
+export function buildWorkOrderConsolidationEnvelopeText(input: {
+  workOrderId: string;
+  items: readonly WorkOrderConsolidationItem[];
+}): string {
+  const itemLines = input.items.map((item) => {
+    const task = neutralizeEnvelopeTags(neutralizeBatchQcTags(item.task)).trim();
+    const clipped =
+      task.length > BATCH_QC_TASK_MAX_CHARS
+        ? `${task.slice(0, BATCH_QC_TASK_MAX_CHARS - 1)}…`
+        : task;
+    const agentLabel = escapeEnvelopeAttribute(item.agentName.trim() || "agent");
+    const answer =
+      item.status === "completed"
+        ? neutralizeEnvelopeTags(neutralizeBatchQcTags(item.response ?? "")).trim() ||
+          "（没有交话）"
+        : item.status === "cancelled"
+          ? "（被中断）"
+          : `（未完成：${neutralizeEnvelopeTags(neutralizeBatchQcTags(item.reason ?? "未知原因")).trim()}）`;
+    return `<sub-order id="${escapeEnvelopeAttribute(item.workOrderId)}" agent="${agentLabel}" status="${item.status}">\n任务：${clipped}\n交活：${answer}\n</sub-order>`;
+  });
+  return [
+    `<work-order-consolidation id="${escapeEnvelopeAttribute(input.workOrderId)}">`,
+    ...itemLines,
+    "</work-order-consolidation>",
+    "",
+    "汇总要求（自动汇总，不是用户发言）：",
+    "1. 你是组长：上列子工单是你转派给组员的。以本信封清单为准逐单核对，交活原文也在本会话历史里（<work-order-receipt> 信封），两处对不上的如实指出。",
+    "2. 产出一份汇总交活（它将作为你这张工单的最终回执交回发起方）：先一两句总述这单整体干成了什么；再逐组员一行——名字 + 干了什么 + 有没有干完；有未完成/被中断的子单，如实写原因，不要粉饰。",
+    "3. 不要替组员编造没说的结论；不要自己动手补活（不改任何文件）；最后可给一句下一步建议。",
+    "4. 用发起方工单的语言，大白话，不贴大段原文。",
+  ].join("\n");
+}
 
 /**
  * 批次收口自动轮正文（发起方会话的模型输入 carrier）。自带 <batch-qc> 信封（批次

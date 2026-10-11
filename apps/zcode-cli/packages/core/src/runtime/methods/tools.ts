@@ -83,6 +83,7 @@ export async function executeTools(
     automationTurn: options?.automationTurn,
     offPeakTurn: options?.offPeakTurn,
     workOrderTurn: options?.workOrderTurn,
+    workOrderDispatchRestricted: options?.workOrderDispatchRestricted,
     signal: options?.signal,
     traceContext,
     subagentModelOverride: options?.subagentModelOverride,

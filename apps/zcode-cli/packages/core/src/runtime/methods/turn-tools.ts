@@ -34,6 +34,7 @@ import type { RegularTurnLoopState } from "./turn-loop-state.js";
 import {
   isAutomationMutationRestrictedTurn,
   isOffPeakCreateRestrictedTurn,
+  isWorkOrderDispatchRestrictedTurn,
   isWorkOrderRestrictedTurn,
   recordCompletedToolBatch,
 } from "./turn-loop-state.js";
@@ -182,6 +183,7 @@ export async function executeToolCallsForModelStep(
       automationTurn: isAutomationMutationRestrictedTurn(state),
       offPeakTurn: isOffPeakCreateRestrictedTurn(state),
       workOrderTurn: isWorkOrderRestrictedTurn(state),
+      workOrderDispatchRestricted: isWorkOrderDispatchRestrictedTurn(state),
       ...(state.workOrderId ? { workOrderId: state.workOrderId } : {}),
       signal: state.turnAbortSignal,
       traceContext: options.modelTraceContext,

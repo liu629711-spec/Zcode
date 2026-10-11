@@ -12,6 +12,7 @@ import {
   SessionEventType,
   WORK_ORDER_INPUT_ID_PREFIX,
   WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX,
+  WORK_ORDER_CONSOLIDATE_INPUT_ID_PREFIX,
   type AgentWorkOrderEnvelope,
   type SessionEvent,
   type SessionId,
@@ -210,17 +211,56 @@ export function scheduleWorkOrderReceiptRelay(
         outcome: receiptOutcome,
       });
     };
-    void deliverWithWorktreeFinalize().catch((error) => {
-      context.logger?.warn("Failed to deliver agent work order receipt", {
-        errorMessage: error instanceof Error ? error.message : String(error),
-        event: "agent_work_order_receipt.delivery_failed",
-        fromSessionId: input.envelope.fromSessionId,
-        module: "bootstrap.zcode_protocol",
-        outcomeStatus: outcomeWithDebrief.status,
-        targetSessionId: input.targetRecord.app.sessionId,
-        workOrderId: input.envelope.workOrderId,
+    // 组长制收口（2026-10-12）：gen-1 工单轮转派了子单 → 回执先挂起（台账不销账、
+    // 批次质检照旧等这张），等子单全部收口后由汇总轮的终态触发投递。查询失败/
+    // 无台账 fail-open 照旧直投。复盘结算 watcher 两条路都武装（批次门禁的结算行
+    // 不挂在起上）。handleTerminalOutcome 本身是同步回调（notifyEventSinks 迭代中），
+    // 台账自查放进异步尾段，不在事件分发中途 await。
+    const deliverOrDefer = async (): Promise<void> => {
+      if (finalOutcome.status === "completed") {
+        const subOrdersPending = await listSubWorkOrderAdmissionState(
+          context,
+          input.targetRecord.app.sessionId,
+          input.envelope.workOrderId,
+        ).catch((error: unknown) => {
+          context.logger?.warn(
+            "Sub work order admission check failed; delivering receipt directly",
+            {
+              errorMessage: error instanceof Error ? error.message : String(error),
+              event: "agent_work_order_receipt.suborder_check_failed",
+              fromSessionId: input.envelope.fromSessionId,
+              module: "bootstrap.zcode_protocol",
+              targetSessionId: input.targetRecord.app.sessionId,
+              workOrderId: input.envelope.workOrderId,
+            },
+          );
+          return undefined;
+        });
+        if (subOrdersPending === true) {
+          scheduleWorkOrderConsolidationRelay(context, deps, {
+            targetRecord: input.targetRecord,
+            envelope: input.envelope,
+            agentName: input.agentName,
+            ...(input.agentId ? { agentId: input.agentId } : {}),
+            ...(debriefExpected ? { debriefExpected: true } : {}),
+            ...(input.watchdogMs === undefined ? {} : { watchdogMs: input.watchdogMs }),
+          });
+          return;
+        }
+      }
+      void deliverWithWorktreeFinalize().catch((error) => {
+        context.logger?.warn("Failed to deliver agent work order receipt", {
+          errorMessage: error instanceof Error ? error.message : String(error),
+          event: "agent_work_order_receipt.delivery_failed",
+          fromSessionId: input.envelope.fromSessionId,
+          module: "bootstrap.zcode_protocol",
+          outcomeStatus: outcomeWithDebrief.status,
+          targetSessionId: input.targetRecord.app.sessionId,
+          workOrderId: input.envelope.workOrderId,
+        });
       });
-    });
+    };
+    void deliverOrDefer();
     // 复盘终态 watcher：工单轮之后必然跟着复盘轮（确定性 inputId），落终态就回写
     // 结算行并重触发批次质检——免检判定在复盘缺席时被缓裁决，全靠这里解冻。
     if (debriefExpected) {
@@ -484,8 +524,122 @@ export function scheduleWorkOrderDebriefSettleWatcher(
   });
 }
 
-async function deliverWorkOrderReceipt(
+/**
+ * 父单工单轮转派子单的挂起判定（组长制批）：读派单方（组长）会话台账里
+ * parentWorkOrderId 对上号的 gen-2 派单行。返回：
+ * - true  = 有子单且还有没收口的（admitted）→ 父单回执挂起；
+ * - false = 没有子单（普通工单）或子单已全部收口 → 照旧直投；
+ * - undefined = 台账缺席/查询失败 → fail-open 照旧直投。
+ */
+async function listSubWorkOrderAdmissionState(
+  context: Pick<ZCodeProtocolAgentServerContext, "deps">,
+  leadSessionId: string,
+  parentWorkOrderId: string,
+): Promise<boolean | undefined> {
+  const store = context.deps.sessionStore;
+  if (!store?.listSessionInputs) return undefined;
+  const rows = await store.listSessionInputs({
+    sessionID: leadSessionId as SessionId,
+  });
+  const subRows = rows.filter(
+    (row) =>
+      row.kind === "agentWorkOrderDispatch" &&
+      (row.payload as { envelope?: { parentWorkOrderId?: unknown } } | undefined)?.envelope
+        ?.parentWorkOrderId === parentWorkOrderId,
+  );
+  if (subRows.length === 0) return false;
+  return subRows.some((row) => row.status === "admitted");
+}
+
+/**
+ * 组长汇总轮 watcher（组长制批 2026-10-12）：gen-1 回执挂起后武装，盯
+ * `agent-work-order-consolidate:<父单id>` 的终态——汇总轮的最终回答就是父单的
+ * 最终回执（completed 带回答 / TurnError 带原因）；宽限到点没等到 = 合成失败回执，
+ * 不让老板的单永远"进行中"。与回执看门狗同款 best-effort：目标 record 关闭时
+ * 订阅随之消失，兜底走宽限定时器。
+ */
+const CONSOLIDATION_SETTLE_GRACE_MS_DEFAULT = 30 * 60_000;
+
+export function scheduleWorkOrderConsolidationRelay(
   context: ZCodeProtocolAgentServerContext,
+  deps: ReceiptRelayDeps,
+  input: {
+    targetRecord: ZCodeProtocolSessionRecord;
+    envelope: AgentWorkOrderEnvelope;
+    agentName: string;
+    agentId?: string;
+    /** 父单轮挂起时探得的复盘预期：随最终回执标注，批次免检门禁据此等结算行。 */
+    debriefExpected?: boolean;
+    /** 结算宽限；缺席用 30 分钟默认（测试注入小值）。 */
+    watchdogMs?: number;
+  },
+): void {
+  const consolidateInputId = `${WORK_ORDER_CONSOLIDATE_INPUT_ID_PREFIX}${input.envelope.workOrderId}`;
+  let settled = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const clearTimer = () => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const settle = (outcome: WorkOrderReceiptOutcome) => {
+    if (settled) return;
+    settled = true;
+    unsubscribe();
+    clearTimer();
+    const finalOutcome =
+      input.debriefExpected && outcome.status === "completed"
+        ? { ...outcome, debriefExpected: true }
+        : outcome;
+    void deliverWorkOrderReceipt(context, deps, {
+      envelope: input.envelope,
+      agentName: input.agentName,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+      targetSessionId: input.targetRecord.app.sessionId,
+      outcome: finalOutcome,
+    }).catch((error) => {
+      context.logger?.warn("Failed to deliver consolidated agent work order receipt", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "agent_work_order_receipt.consolidated_delivery_failed",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        targetSessionId: input.targetRecord.app.sessionId,
+        workOrderId: input.envelope.workOrderId,
+      });
+    });
+  };
+  timer = setTimeout(() => {
+    context.logger?.warn("Agent work order consolidation settle grace elapsed", {
+      event: "agent_work_order_receipt.consolidation_timeout",
+      fromSessionId: input.envelope.fromSessionId,
+      module: "bootstrap.zcode_protocol",
+      targetSessionId: input.targetRecord.app.sessionId,
+      workOrderId: input.envelope.workOrderId,
+    });
+    settle({
+      status: "failed",
+      reason:
+        "组员们的活都收回来了，但组长的最后一步汇总没有按时完成。可以打开组长的会话让他手动汇总，或用失败卡重派这一单。",
+    });
+  }, input.watchdogMs ?? CONSOLIDATION_SETTLE_GRACE_MS_DEFAULT);
+  const unsubscribe = input.targetRecord.app.runtime.subscribeEvents({
+    onSessionEvent: (event: SessionEvent) => {
+      const payload = event.payload;
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return;
+      const record = payload as Record<string, unknown>;
+      if (record.inputId !== consolidateInputId) return;
+      if (event.type !== SessionEventType.TurnComplete && event.type !== SessionEventType.TurnError) {
+        return;
+      }
+      const outcome = receiptOutcomeFromSessionEvent(event, consolidateInputId);
+      if (!outcome) return;
+      settle(outcome);
+    },
+  });
+}
+
+async function deliverWorkOrderReceipt(  context: ZCodeProtocolAgentServerContext,
   deps: ReceiptRelayDeps,
   input: {
     envelope: AgentWorkOrderEnvelope;
@@ -508,6 +662,26 @@ async function deliverWorkOrderReceipt(
     });
   } catch {
     // 收口失败 ≠ 回执失败；清扫侧按"有回执行即不合成"兜底。
+  }
+  // 组长制收口（2026-10-12）：gen-2 子单回执销账后自查父单——该父单的子单若已
+  // 全部收口且未汇总过，在组长会话开汇总轮（幂等，core 侧台账闸门行兜底重触发）。
+  // 触发失败只留痕：下一次子单销账/重触发路径会再试。
+  if (input.envelope.parentWorkOrderId) {
+    try {
+      await initiatorRecord.app.runtime.maybeEnqueueAgentWorkOrderConsolidation({
+        workOrderId: input.envelope.parentWorkOrderId,
+        traceContext: initiatorRecord.traceContext,
+      });
+    } catch (error) {
+      context.logger?.warn("Failed to trigger parent work order consolidation", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        event: "agent_work_order_receipt.consolidation_trigger_failed",
+        fromSessionId: input.envelope.fromSessionId,
+        module: "bootstrap.zcode_protocol",
+        parentWorkOrderId: input.envelope.parentWorkOrderId,
+        workOrderId: input.envelope.workOrderId,
+      });
+    }
   }
   // 批次质检（纪律协议批）：本单销账后批次可能刚好全部收口。触发自查在 core
   // runtime 上（闸门行 + 收口判定 + 同批并发串行），resume 清扫路径共用同一入口；

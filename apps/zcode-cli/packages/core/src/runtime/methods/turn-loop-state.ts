@@ -85,6 +85,12 @@ export interface RegularTurnLoopState {
   automationId?: string;
   /** 显式传入的本轮工单身份（D29）；工单唤醒轮据此禁 AgentDispatch（嵌套上限=1）。 */
   workOrderId?: string;
+  /**
+   * 组长豁免（组长制批 2026-10-12）：工单轮铸造时算好的显式标记——gen-1 × 组长
+   * 才置位。isWorkOrderDispatchRestrictedTurn 据它放行转派；哨兵（denylist 带着
+   * AgentDispatch）永远优先，兜住旧 host / 异常入口。
+   */
+  workOrderDispatchAllowed?: boolean;
   /** 工单停机守卫（types.ts workOrderStopGuard 透传）：缺席 = 非工单轮，守卫不生效。 */
   workOrderStopGuard?: { review: boolean };
   /** 本轮已补射的停机提醒次数；>0 后再犯直接判失败（hermes 两次机会口径）。 */
@@ -177,6 +183,24 @@ export function isWorkOrderRestrictedTurn(state: RegularTurnLoopState): boolean 
   // 仍要被终审拦住，工单轮内绝不允许再派单。
   const disallowedTools = new Set(state.toolDisallowlist ?? []);
   return disallowedTools.has("AgentDispatch");
+}
+
+/**
+ * 本轮 AgentDispatch 是否被禁（组长制批 2026-10-12 代次化）：工单轮里默认禁，
+ * 只有铸轮时算好的组长豁免（gen-1 × 组长，workOrderDispatchAllowed）才放行——
+ * 放行的是"转派给其他员工"，子单 gen=2，gen-2 轮里照样禁（嵌套上限=2）。
+ * 哨兵（denylist 带着 AgentDispatch）永远最高：旧 host / 异常入口一律拦。
+ * 与 isWorkOrderRestrictedTurn 分开：后者还管 CouncilConvene（工单轮内开会
+ * 依旧是越权，组长也不例外）。
+ */
+export function isWorkOrderDispatchRestrictedTurn(state: RegularTurnLoopState): boolean {
+  if ((state.toolDisallowlist ?? []).includes("AgentDispatch")) return true;
+  const workOrderSignal =
+    Boolean(state.workOrderId?.trim()) ||
+    state.turnTraceContext.queryId?.trim().startsWith(WORK_ORDER_QUERY_ID_PREFIX) ||
+    false;
+  if (!workOrderSignal) return false;
+  return state.workOrderDispatchAllowed !== true;
 }
 
 export function evaluateRapidRefill(

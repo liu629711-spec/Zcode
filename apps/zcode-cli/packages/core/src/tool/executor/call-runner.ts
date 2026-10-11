@@ -377,6 +377,7 @@ async function executeToolCallImpl(
       automationTurn: options?.automationTurn,
       offPeakTurn: options?.offPeakTurn,
       workOrderTurn: options?.workOrderTurn,
+      workOrderDispatchRestricted: options?.workOrderDispatchRestricted,
       ...(options?.workOrderId ? { workOrderId: options.workOrderId } : {}),
       traceContext,
       traceId,

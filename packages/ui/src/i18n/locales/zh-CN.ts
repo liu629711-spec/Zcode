@@ -3927,6 +3927,10 @@ const zhCN: Record<string, string> = {
   "settings.subagents.form.background.label": "允许后台运行",
   "settings.subagents.form.background.description": "模型请求时允许该子智能体作为后台任务运行。",
   "settings.subagents.form.injectAgentsMd.label": "注入 AGENTS.md",
+  // 组长开关（组长制批 2026-10-12）：勾上的员工被派单后可把活转派给其他员工。
+  "settings.subagents.form.teamLead.label": "组长",
+  "settings.subagents.form.teamLead.hint":
+    "勾上后，这位员工接到工单可以把活拆开转派给其他员工，收齐后由系统安排他汇总交活",
   "settings.subagents.form.systemPrompt.label": "系统提示词",
   "settings.subagents.form.systemPrompt.placeholder": "描述这个子智能体的角色、边界和规则...",
   "settings.subagents.form.validation.nameLength": "长度必须在 {min} 到 {max} 个字符之间",

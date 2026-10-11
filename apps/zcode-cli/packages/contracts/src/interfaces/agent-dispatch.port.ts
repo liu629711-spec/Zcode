@@ -22,6 +22,15 @@ export const WORK_ORDER_INPUT_ID_PREFIX = "workorder-";
  */
 export const WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX = "agent-work-order-debrief:";
 
+/**
+ * 组长汇总轮的确定性 inputId 前缀（组长制批 2026-10-12）：gen-1 工单轮转派了子单时，
+ * 回执先挂起不投；子单全部收口后 core 在组长会话开一轮汇总（inputId =
+ * `agent-work-order-consolidate:<父工单id>`），bootstrap watcher 靠这个前缀对号，
+ * 把汇总轮的回答当父单的最终回执交给老板。刻意不借 workorder- 前缀——那是工单轮
+ * denylist 的身份信号，汇总轮不是工单轮。
+ */
+export const WORK_ORDER_CONSOLIDATE_INPUT_ID_PREFIX = "agent-work-order-consolidate:";
+
 /** 工单信封：随工单正文落库 + 提交入参携带（谁派的单、派给谁的会话、干什么）。 */
 export interface AgentWorkOrderEnvelope {  /** 本次工单身份（uuid）；目标唤醒轮的 inputId 以 `workorder-<id>` 派生。 */
   workOrderId: string;
@@ -80,6 +89,17 @@ export interface AgentWorkOrderEnvelope {  /** 本次工单身份（uuid）；�
   councilSeatIndex?: number;
   /** 本单席位攻角；回执据此把发言归位到圆桌卡的对应席位。 */
   councilSeatLens?: CouncilSeatLensId;
+  /**
+   * 派单代次（组长制批 2026-10-12）：1 = 首代（老板→员工）；2 = 组长转派（组长
+   * →组员）。缺席 = 旧信封，视作 1。嵌套上限=2：gen-2 工单轮内再派一律拒绝
+   * （四道闸照旧，只是从"一刀禁"改成"数代次"）。
+   */
+  generation?: number;
+  /**
+   * 转派来源（组长制批）：gen-2 单携带父工单 id——组长会话的台账对账（子单全部
+   * 收口才触发汇总轮）与批次质检的挂起判定靠它。gen-1 单缺席。
+   */
+  parentWorkOrderId?: string;
   /**
    * 隔离仓（任务隔离批 2026-10-11）：本单在独立 git worktree 里干——员工会话的
    * 工作区是隔离仓（或仓里对应子目录），主工作区文件一个不碰。终态 completed 后

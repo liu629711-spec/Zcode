@@ -466,6 +466,11 @@ export interface AgentRuntime {
    * 永远开不了质检（评审 A1/B4）。
    */
   maybeEnqueueAgentWorkOrderBatchQc(input: MaybeEnqueueAgentWorkOrderBatchQcInput): Promise<void>;
+  /** 组长汇总触发（组长制批，幂等自查）：子单全部收口且未汇总过 → 开汇总轮；否则空转。 */
+  maybeEnqueueAgentWorkOrderConsolidation(input: {
+    workOrderId: string;
+    traceContext?: TraceContext;
+  }): Promise<void>;
   /**
    * 圆桌会（真会议）收票推进（幂等自查）：本轮全部席位回执到齐 → 解析裁定行收票
    * （缺行补交一次，仍缺按弃权如实标注）→ 代码算票出决议：首轮全票早退、否则第 2

@@ -207,6 +207,7 @@ function profileToPersona(profile: AgentProfile): ZCodeSessionPersona {
     ...(profile.tools?.length ? { tools: [...profile.tools] } : {}),
     ...(profile.disallowedTools?.length ? { disallowedTools: [...profile.disallowedTools] } : {}),
     ...(profile.color ? { color: profile.color } : {}),
+    ...(profile.teamLead ? { teamLead: true } : {}),
   };
 }
 
@@ -322,6 +323,36 @@ export async function isReuseSessionRetired(
  */
 const batchMintPerTurn = new Map<string, string>();
 
+/**
+ * 活跃工单轮的代次（组长制批）：inputId 是 workorder-<id> 时，回本会话台账找
+ * agentWorkOrder admission 行读信封代次（gen-1 老信封缺席字段视作 1）。对不上号
+ * 返回 undefined——守卫侧 fail-closed（验证不了就不放行转派）。
+ */
+async function resolveActiveWorkOrderGeneration(
+  context: Pick<ZCodeProtocolAgentServerContext, "deps">,
+  ownSessionId: string,
+  activeInputId: string,
+): Promise<number | undefined> {
+  if (!context.deps.sessionStore?.listSessionInputs) return undefined;
+  const workOrderId = activeInputId.trim().slice(WORK_ORDER_INPUT_ID_PREFIX.length);
+  if (!workOrderId) return undefined;
+  const rows = await context.deps.sessionStore.listSessionInputs({
+    sessionID: ownSessionId as SessionId,
+  });
+  for (const row of rows) {
+    if (row.kind !== "agentWorkOrder") continue;
+    const payload = row.payload as
+      | { workOrderId?: unknown; envelope?: { generation?: unknown } }
+      | undefined;
+    if (payload?.workOrderId !== workOrderId) continue;
+    const generation = payload.envelope?.generation;
+    return typeof generation === "number" && Number.isFinite(generation) && generation >= 1
+      ? Math.floor(generation)
+      : 1;
+  }
+  return undefined;
+}
+
 export function createProtocolAgentDispatchPort(
   context: ZCodeProtocolAgentServerContext,
   deps: ProtocolAgentDispatchPortDeps,
@@ -335,13 +366,27 @@ export function createProtocolAgentDispatchPort(
           "AgentDispatch is not bound to a session record",
         );
       }
-      // 端口自检：工单唤醒轮内再派单 → 直接拒绝（照 automation-port 自检先例）。
-      const activeInputId = ownRecord.app.runtime.getActiveTurnInfo()?.inputId;
-      if (activeInputId?.trim().startsWith(WORK_ORDER_INPUT_ID_PREFIX)) {
-        throw agentWorkOrderGuardError(
-          AGENT_WORK_ORDER_GUARDS.nested,
-          "Cannot dispatch a work order while running an agent work order turn.",
+      // 端口自检：工单唤醒轮内再派单 → 默认拒绝（照 automation-port 自检先例）。
+      // 组长制代次化（2026-10-12）：gen-1 × 组长的工单轮放行转派（子单 gen=2）；
+      // gen-2 轮内 / 非组长 / 台账对不上号一律照旧拒绝（嵌套上限=2）。
+      const activeInputId = ownRecord.app.runtime.getActiveTurnInfo()?.inputId?.trim();
+      const activeWorkOrderId = activeInputId?.startsWith(WORK_ORDER_INPUT_ID_PREFIX)
+        ? activeInputId.slice(WORK_ORDER_INPUT_ID_PREFIX.length)
+        : undefined;
+      let activeWorkOrderGeneration: number | undefined;
+      if (activeWorkOrderId) {
+        activeWorkOrderGeneration = await resolveActiveWorkOrderGeneration(
+          context,
+          ownRecord.app.sessionId,
+          activeInputId!,
         );
+        const isLead = ownRecord.app.runtime.getProjectAgentPersona()?.teamLead === true;
+        if (!(activeWorkOrderGeneration === 1 && isLead)) {
+          throw agentWorkOrderGuardError(
+            AGENT_WORK_ORDER_GUARDS.nested,
+            "Cannot dispatch a work order while running an agent work order turn. Only designated team leads (组长) may split a first-generation order into sub-orders, and only one level deep.",
+          );
+        }
       }
 
       // 频控/成本熔断（audit A 盲区 2026-10-05）：在飞上限 + 频窗 + 全局近窗花费，
@@ -402,6 +447,10 @@ export function createProtocolAgentDispatchPort(
       }
       const envelope: AgentWorkOrderEnvelope = {
         workOrderId: crypto.randomUUID(),
+        // 派单代次（组长制批）：普通轮铸 gen=1；组长在 gen-1 工单轮内转派（走到
+        // 这里必已过守卫）铸 gen=2 并带父单号——收口汇总与台账对账靠它。
+        generation: activeWorkOrderId ? (activeWorkOrderGeneration ?? 1) + 1 : 1,
+        ...(activeWorkOrderId ? { parentWorkOrderId: activeWorkOrderId } : {}),
         ...(sourcePersona?.agentId ? { fromAgentId: sourcePersona.agentId } : {}),
         fromAgentName: sourcePersona?.name ?? "",
         fromSessionId: ownRecord.app.sessionId,

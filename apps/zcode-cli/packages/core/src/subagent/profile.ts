@@ -43,6 +43,12 @@ export interface AgentProfile {
   source: AgentProfileSource;
   systemPrompt: string;
   tools?: readonly string[];
+  /**
+   * 组长标记（组长制批 2026-10-12，档案 frontmatter `teamLead`）：true = 被工单
+   * 唤醒（gen-1）后可把活转派给其他员工（工单轮 AgentDispatch 豁免），收齐子单
+   * 回执后由系统安排汇总轮交活。缺席 = 与从前一致（工单轮禁派单）。
+   */
+  teamLead?: boolean;
 }
 
 export interface AgentProfileParseDiagnostic {
@@ -232,6 +238,7 @@ export function parseAgentProfileFromMarkdown(input: {
       ...optionalList("skills", frontmatter.skills),
       ...optionalBoolean("background", frontmatter.background),
       ...optionalBoolean("injectAgentsMd", frontmatter.injectAgentsMd),
+      ...optionalBoolean("teamLead", frontmatter.teamLead),
       ...(mcpServers === undefined ? {} : { mcpServers }),
     },
   };
@@ -291,7 +298,7 @@ function optionalList(
 }
 
 function optionalBoolean(
-  key: "background" | "injectAgentsMd",
+  key: "background" | "injectAgentsMd" | "teamLead",
   value: unknown,
 ): Partial<AgentProfile> {
   if (typeof value === "boolean") return { [key]: value };

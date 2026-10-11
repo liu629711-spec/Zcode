@@ -13,6 +13,7 @@
     "apps/zcode-cli/packages/core/src/runtime/methods/work-order-batch-qc.test.ts",
     "apps/zcode-cli/packages/core/src/runtime/methods/work-orders.test.ts",
     "apps/zcode-cli/packages/core/src/subagent/agent-skills.test.ts",
+    "apps/zcode-cli/packages/core/src/subagent/work-order-lead.test.ts",
     "packages/shared/src/**/*.ts"
   ]
 }

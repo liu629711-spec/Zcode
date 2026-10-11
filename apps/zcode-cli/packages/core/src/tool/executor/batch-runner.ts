@@ -42,6 +42,7 @@ export async function executeToolBatch(
           automationTurn: options?.automationTurn,
           offPeakTurn: options?.offPeakTurn,
           workOrderTurn: options?.workOrderTurn,
+          workOrderDispatchRestricted: options?.workOrderDispatchRestricted,
           ...(options?.workOrderId ? { workOrderId: options.workOrderId } : {}),
           signal: options?.signal,
           traceContext: options?.traceContext,
@@ -83,6 +84,7 @@ export async function* executeToolSchedule(
       automationTurn: options?.automationTurn,
       // offPeakTurn 刻意不在此透传（与既有行为一致，不因 workOrderTurn 顺带改语义）。
       workOrderTurn: options?.workOrderTurn,
+      workOrderDispatchRestricted: options?.workOrderDispatchRestricted,
       signal: options?.signal,
       traceContext: options?.traceContext,
       subagentModelOverride: options?.subagentModelOverride,

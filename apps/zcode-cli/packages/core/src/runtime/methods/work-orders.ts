@@ -87,9 +87,22 @@ export async function enqueueAgentWorkOrder(
           personalNotebookRoot: resolveOwnPersonalNotebookRoot(this) ?? "",
           taskText: input.envelope.task,
         });
+  // 组长授权（组长制批 2026-10-12）：gen-1 × 档案标了组长的员工，工单信封教它
+  // 拆单转派与收口口径；gen-2（组员）与普通员工不带（他们没有转派权，教了也教错）。
+  const generation = input.envelope.generation ?? 1;
+  const leadAppendix =
+    generation === 1 && this.config.projectAgentPersona?.teamLead === true && !input.envelope.councilId
+      ? [
+          "组长授权：你是组长。可以把本单拆成几份子工单，用 AgentDispatch 派给其他员工（每张子单把任务写完整，他们看不见这里）；子单回执会自动回流到你这个会话。",
+          "子单全部收口后，系统会在你的会话里开一轮汇总，把你整理好的一份总结交回发起方——汇总前不要自己写最终结论，等子单干完。",
+        ].join("\n")
+      : undefined;
   const text = buildWorkOrderEnvelopeText(
     input.envelope,
-    skillsAppendix ? { skillsAppendix } : undefined,
+    {
+      ...(skillsAppendix ? { skillsAppendix } : {}),
+      ...(leadAppendix ? { leadAppendix } : {}),
+    },
   );
   const delivery: EnqueueAgentWorkOrderResult["delivery"] = this.hasActiveOrQueuedTurnWork()
     ? "queued"
@@ -238,6 +251,15 @@ export async function runWorkOrderCommand(
       ? resolveAgentSkillsRoot(debriefNotebookRoot)
       : undefined;
     let mainTurnError: unknown;
+    // 组长豁免（组长制批 2026-10-12）：嵌套上限从"一刀禁"改成"数代次"——
+    // gen-1 × 组长的工单轮放行 AgentDispatch（转派子单 gen=2），其余照旧禁。
+    // 组长豁免轮的 denylist 留空（AgentDispatch 必须对模型可见才调得到），
+    // CouncilConvene 照旧被 workOrderTurn 旗禁（工单轮内开会仍是越权）。
+    const generation = command.envelope.generation ?? 1;
+    const dispatchAllowed =
+      generation === 1 &&
+      command.envelope.review !== true &&
+      this.config.projectAgentPersona?.teamLead === true;
     try {
       await this.executeTurnCommand(command.text, undefined, {
       abortSignal: foregroundExecution.controller.signal,
@@ -250,7 +272,8 @@ export async function runWorkOrderCommand(
       recordedInputMessageId: messageID,
       skipInputRecord: true,
       skipUserPromptSubmitHooks: true,
-      toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES],
+      ...(dispatchAllowed ? {} : { toolDisallowlist: [...WORK_ORDER_RESTRICTED_TOOL_NAMES] }),
+      ...(dispatchAllowed ? { workOrderDispatchAllowed: true } : {}),
       traceContext: command.traceContext,
       workOrderId: command.workOrderId,
       // 工单停机守卫（2026-10-04，Hermes kanban_stop 同款）：光说不练补一脚再判。

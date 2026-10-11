@@ -26,7 +26,9 @@ const AGENT_DISPATCH_MODEL_BYTES = 16_000;
 
 /** 与 cron.ts 的 assertNotAutomationTurn 同款终审：provider denylist 只是可见性约束。 */
 function assertNotWorkOrderTurn(context: ToolExecutionContext): void {
-  if (!context.workOrderTurn) return;
+  // 组长制代次化（2026-10-12）：工单轮里默认禁派单，gen-1 × 组长的豁免轮放行
+  // （isWorkOrderDispatchRestrictedTurn 算好逐跳透传）。非工单轮两者皆 false 不拦。
+  if (!context.workOrderDispatchRestricted) return;
   // 工单触发的轮次里再派单 = A→B→A 死循环；合议轮（评审会批）共享同一哨兵，
   // 理由不同但结论相同——合议的产出是意见不是工单。文案写中性，不指向具体轮种。
   throw createCoreError(CoreErrorType.PermissionDenied, `AgentDispatch is not allowed in this turn.`, {
@@ -209,7 +211,9 @@ export const agentDispatchToolEntry: ToolEntry = {
       "When the user names a model for the task ('用 deepseek 回复我', 'use deepseek-v4.1'), pass the user's words verbatim as model - the system resolves the name against the model catalog. NEVER research model identifiers first (no grepping dist bundles, no reading session databases): pass the name and if it cannot be resolved the error lists the available models - relay them to the user instead of investigating.",
       "Starting or messaging other sessions is ONLY this tool. Never spawn the zcode CLI in Bash (--prompt/-p/--resume/...) to run a task in another or a fresh session - that creates an untracked side session outside the product, the command is blocked for confirmation, and reporting it as success is wrong.",
       "A successful call only means the work order was accepted (queued if the target is busy). The final answer arrives as a separate receipt; do not claim the task is done.",
-      "Never call AgentDispatch from a turn that was itself started by an agent work order; nesting is not allowed.",
+      // 组长制（2026-10-12）：嵌套上限=2——只有档案标了组长的员工，在被老板工单
+      // 唤醒的轮里可以转派子工单（gen=2）；普通员工与 gen-2 轮内照旧禁止。
+      "Never call AgentDispatch from a turn that was itself started by an agent work order, UNLESS you are a designated team lead (组长) working a first-generation order: leads may split their order into sub-orders for other agents (each sub-order must carry complete standalone instructions). Sub-orders are generation 2 and can never be dispatched from; the system collects sub-receipts back into your session and asks you to consolidate one final delivery when all of them finish.",
       // 隔离执行（任务隔离批）：用户怕员工动他手头的文件时点隔离。
       "When the user asks for a task to run isolated from their current changes (「隔离执行」/「在独立环境里做，别动我的文件」/ 'run it isolated' / 'use a separate worktree'), pass isolation=worktree: the order runs in a dedicated git worktree and its changes merge back automatically when the receipt arrives. Do not set it on your own initiative for ordinary tasks.",
       // 评审会（2026-10-02）：用户要多人评/把关 → 同批 2~3 张评审单，评审人不能是

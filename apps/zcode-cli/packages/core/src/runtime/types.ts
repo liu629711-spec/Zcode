@@ -237,6 +237,8 @@ export interface AgentRuntimeConfig {
     color?: AgentColor;
     tools?: readonly string[];
     disallowedTools?: readonly string[];
+    /** 组长标记（组长制批）：随 persona 快照落盘；true = gen-1 工单轮可转派。 */
+    teamLead?: boolean;
   };
   /**
    * 动态工作流子代理的身份输入：在场即让
@@ -489,6 +491,12 @@ export interface ExecuteTurnOptionsBase {
   inputVisibility?: MessageVisibility;
   /** 显式传入的本轮工单身份（D29）；工单唤醒轮据此在执行边界禁 AgentDispatch（嵌套上限=1）。 */
   workOrderId?: string;
+  /**
+   * 组长豁免（组长制批 2026-10-12）：gen-1 × 组长的工单轮置位——本轮允许
+   * AgentDispatch（转派子单，gen=2）。工单轮铸造侧（runWorkOrderCommand）算好，
+   * turn-loop 的 isWorkOrderDispatchRestrictedTurn 据它放行；缺席 = 禁。
+   */
+  workOrderDispatchAllowed?: boolean;
   /**
    * 工单停机守卫（2026-10-04，Hermes kanban_stop 同款）：工单轮收尾若只是确认/
    * 寒暄（零工具调用），补射一次「收到即干」提醒后同轮续跑；再犯判轮失败走
@@ -781,8 +789,10 @@ export interface PermissionDecisionResult {
 export interface ExecuteToolsOptions {
   automationTurn?: boolean;
   offPeakTurn?: boolean;
-  /** 当前执行处于工单唤醒轮；AgentDispatch 执行边界终审的来源（嵌套上限=1）。 */
+  /** 当前执行处于工单唤醒轮；CouncilConvene 执行边界终审的来源。 */
   workOrderTurn?: boolean;
+  /** 本轮 AgentDispatch 是否被禁（组长制批代次化，turn-loop 谓词算好）。 */
+  workOrderDispatchRestricted?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
   /** 仅透传给当前 turn 同步等待的 Agent child。 */

@@ -123,6 +123,7 @@ interface SubagentFormInitialState {
   model: string;
   thoughtLevel?: string;
   injectAgentsMd: boolean;
+  teamLead: boolean;
   inheritAllTools: boolean;
   selectedTools: string[];
   preservedTools: string[];
@@ -315,6 +316,7 @@ function createSubagentFormInitialState(
     | "tools"
     | "systemPrompt"
     | "injectAgentsMd"
+    | "teamLead"
   >,
 ): SubagentFormInitialState {
   return {
@@ -324,6 +326,7 @@ function createSubagentFormInitialState(
     model: toSubagentModelValue(initial?.modelSelection),
     thoughtLevel: initial?.modelSelection?.options?.reasoningLevel,
     injectAgentsMd: initial?.injectAgentsMd ?? true,
+    teamLead: initial?.teamLead ?? false,
     inheritAllTools: initial?.tools === undefined || initial.tools.length === 0,
     selectedTools: getKnownTools(initial?.tools),
     preservedTools: getPreservedTools(initial?.tools),
@@ -843,6 +846,7 @@ function SubagentForm({
   const [model, setModel] = useState(initialFormState.model);
   const [thoughtLevel, setThoughtLevel] = useState(initialFormState.thoughtLevel);
   const [injectAgentsMd, setInjectAgentsMd] = useState(initialFormState.injectAgentsMd);
+  const [teamLead, setTeamLead] = useState(initialFormState.teamLead);
   const [inheritAllTools, setInheritAllTools] = useState(initialFormState.inheritAllTools);
   const [selectedTools, setSelectedTools] = useState<string[]>(initialFormState.selectedTools);
   const [systemPrompt, setSystemPrompt] = useState(initialFormState.systemPrompt);
@@ -931,6 +935,7 @@ function SubagentForm({
     setModel(nextInitialState.model);
     setThoughtLevel(nextInitialState.thoughtLevel);
     setInjectAgentsMd(nextInitialState.injectAgentsMd);
+    setTeamLead(nextInitialState.teamLead);
     setInheritAllTools(nextInitialState.inheritAllTools);
     setSelectedTools(nextInitialState.selectedTools);
     setSystemPrompt(nextInitialState.systemPrompt);
@@ -1030,6 +1035,7 @@ function SubagentForm({
       systemPrompt: systemPrompt.trim(),
       color,
       injectAgentsMd,
+      teamLead,
       ...(selection ? { modelSelection: selection } : {}),
       tools: inheritAllTools
         ? undefined
@@ -1247,6 +1253,24 @@ function SubagentForm({
           onCheckedChange={setInjectAgentsMd}
           aria-label={intl.formatMessage({
             id: "settings.subagents.form.injectAgentsMd.label",
+          })}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-ui-base font-medium text-foreground">
+            {intl.formatMessage({ id: "settings.subagents.form.teamLead.label" })}
+          </p>
+          <p className="mt-0.5 text-ui-xs text-foreground-subtle">
+            {intl.formatMessage({ id: "settings.subagents.form.teamLead.hint" })}
+          </p>
+        </div>
+        <Switch
+          checked={teamLead}
+          onCheckedChange={setTeamLead}
+          aria-label={intl.formatMessage({
+            id: "settings.subagents.form.teamLead.label",
           })}
         />
       </div>

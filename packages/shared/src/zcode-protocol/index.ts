@@ -1580,6 +1580,10 @@ export const zcodeSessionPersonaSchema = z.object({
   // 结果送回发起方；逐单开会话曾在会话区/归档区堆出成片一次性空壳。可选字段，
   // additive 纪律同上；用户此后在该会话里手聊不改变不 Listed 的既成事实（v1 边界）。
   workOrderOnly: z.boolean().optional(),
+  // 组长标记（组长制批 2026-10-12）：档案编辑页的「组长」开关随 persona 快照落
+  // 会话记录。true = 这只员工被工单唤醒（gen-1）后可以把活转派给其他员工，收齐
+  // 子单回执后由系统安排汇总交活；缺席/false = 与从前完全一样（工单轮禁派单）。
+  teamLead: z.boolean().optional(),
 });
 export type ZCodeSessionPersona = z.infer<typeof zcodeSessionPersonaSchema>;
 

@@ -139,8 +139,13 @@ export interface ToolExecutionContext {
   telemetry?: ToolExecutionSpanWriter;
   /** 当前工具调用是否属于 automation 派发轮；写工具 handler 用它做最终权限校验。 */
   automationTurn?: boolean;
-  /** 当前工具调用是否属于工单唤醒轮；AgentDispatch handler 用它做最终拒绝（嵌套上限=1）。 */
+  /** 当前工具调用是否属于工单唤醒轮；CouncilConvene handler 用它做最终拒绝（工单轮内不开会）。 */
   workOrderTurn?: boolean;
+  /**
+   * 本轮 AgentDispatch 是否被禁（组长制批代次化）：工单轮默认禁、组长豁免轮放行。
+   * AgentDispatch handler 的终审读它；CouncilConvene 不看它（工单轮内开会照旧禁）。
+   */
+  workOrderDispatchRestricted?: boolean;
   /**
    * 本轮的工单身份（工单唤醒轮/消息轮才有）：TeamMessage 据它经全局台账找回
    * 队（批次）与队长会话——队内校验与通讯留痕的钥匙。

@@ -176,8 +176,10 @@ export interface ToolExecutor {
 export interface ToolExecuteOptions {
   automationTurn?: boolean;
   offPeakTurn?: boolean;
-  /** 当前执行处于工单唤醒轮；AgentDispatch 的 context 标志（嵌套上限终审）来源。 */
+  /** 当前执行处于工单唤醒轮；CouncilConvene 的 context 标志来源。 */
   workOrderTurn?: boolean;
+  /** 本轮 AgentDispatch 是否被禁（组长制批代次化，turn-loop 谓词算好逐跳透传）。 */
+  workOrderDispatchRestricted?: boolean;
   /** 本轮工单身份（工单轮/消息轮）；TeamMessage 找队用。 */
   workOrderId?: string;
   signal?: AbortSignal;

@@ -4185,6 +4185,10 @@ const enUS: Record<string, string> = {
   "settings.subagents.form.background.description":
     "Allow the subagent to run as a background task when requested by the model.",
   "settings.subagents.form.injectAgentsMd.label": "Inject AGENTS.md",
+  // Team-lead switch (team-lead batch, 2026-10-12): flagged agents may split work orders.
+  "settings.subagents.form.teamLead.label": "Team lead",
+  "settings.subagents.form.teamLead.hint":
+    "When enabled, this agent can split an assigned work order into sub-orders for other agents and consolidate one final delivery when they finish",
   "settings.subagents.form.systemPrompt.label": "System prompt",
   "settings.subagents.form.systemPrompt.placeholder": "Describe this subagent's role and rules...",
   "settings.subagents.form.validation.nameLength": "Length must be between {min} and {max}",

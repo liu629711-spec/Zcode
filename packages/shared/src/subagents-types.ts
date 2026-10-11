@@ -69,6 +69,8 @@ export interface AgentSummary {
   maxTurns?: number;
   background?: boolean;
   mcpServers?: unknown[];
+  /** 组长标记（组长制批）：与 SubAgentConfig.teamLead 同源，设置页列表徽章与编辑表单吃它。 */
+  teamLead?: boolean;
   path: string;
   scope: AgentScope;
   source: AgentSource;
@@ -126,6 +128,11 @@ export interface SubAgentConfig {
   maxTurns?: number;
   background?: boolean;
   mcpServers?: unknown[];
+  /**
+   * 组长标记（组长制批 2026-10-12）：档案 frontmatter `teamLead`。true = 这只
+   * 员工被工单唤醒（gen-1）后可把活转派给其他员工；缺席/false = 工单轮禁派单照旧。
+   */
+  teamLead?: boolean;
 }
 
 /** Agent 创建参数 */

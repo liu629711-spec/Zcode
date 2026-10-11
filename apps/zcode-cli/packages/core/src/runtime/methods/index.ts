@@ -55,6 +55,7 @@ import {
   enqueueAgentWorkOrderBatchQc,
   maybeEnqueueAgentWorkOrderBatchQc,
 } from "./work-order-batch-qc.js";
+import { maybeEnqueueAgentWorkOrderConsolidation } from "./work-order-consolidation.js";
 import {
   addCouncilInterjection,
   maybeAdvanceCouncilRound,
@@ -278,6 +279,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.enqueueAgentWorkOrderReceipt = enqueueAgentWorkOrderReceipt;
   proto.enqueueAgentWorkOrderBatchQc = enqueueAgentWorkOrderBatchQc;
   proto.maybeEnqueueAgentWorkOrderBatchQc = maybeEnqueueAgentWorkOrderBatchQc;
+  proto.maybeEnqueueAgentWorkOrderConsolidation = maybeEnqueueAgentWorkOrderConsolidation;
   proto.maybeAdvanceCouncilRound = maybeAdvanceCouncilRound;
   proto.isWorkOrderDebriefExpected = isWorkOrderDebriefExpected;
   proto.setCouncilMeetingPaused = setCouncilMeetingPaused;

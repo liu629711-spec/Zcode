@@ -28,6 +28,7 @@ export type RuntimeCommandMode =
   | "work-order"
   | "work-order-receipt"
   | "work-order-batch-qc"
+  | "work-order-consolidation"
   | "council-moderation"
   | "control-only-turn";
 export type RuntimeCommandId = string & {
@@ -191,14 +192,31 @@ export interface WorkOrderBatchQcRuntimeCommand extends RuntimeCommandBase {
 }
 
 /**
+ * 组长汇总轮命令（组长制批 2026-10-12）：gen-1 工单轮转派了子单时父单回执先挂起，
+ * 子单全部收口后在组长会话自动开的汇总轮。与 work-order-batch-qc 同家族但独立
+ * 成轮（轮身份 workOrderId 必须逐单携带）；presentation/source 沿用 batch-qc
+ * 家族标签（闭集不动）；汇总轮禁派单（toolDisallowlist）——要改派由老板重派。
+ */
+export interface WorkOrderConsolidationRuntimeCommand extends RuntimeCommandBase {
+  readonly branchGeneration: number;
+  readonly mode: "work-order-consolidation";
+  readonly source: "agent_work_order_batch_qc";
+  /** 确定性轮身份（`agent-work-order-consolidate:<父单id>`）；bootstrap watcher 靠它对号。 */
+  readonly inputId: string;
+  /** 汇总的是哪张 gen-1 工单（父单 id；inputId = WORK_ORDER_CONSOLIDATE_INPUT_ID_PREFIX + 它）。 */
+  readonly workOrderId: string;
+  /** 信封拼装后的汇总正文（<work-order-consolidation> 包裹 + 汇总要求）。 */
+  readonly text: string;
+}
+
+/**
  * 圆桌会主席合成轮命令（真会议 2026-10-03）：会议收口后在发起方会话自动开的
  * 一次合成轮——主席模型只组织决议卡（共识/分歧/盲区/建议下一步），不代笔票数。
  * 与 work-order-batch-qc 同家族但独立成轮：轮身份（councilId/originMeta）必须
  * 逐场携带。落 presentation/source 用 batch-qc 家族标签（闭集不动，UI 靠
  * originMeta.council* 分流圆桌卡）；主席轮禁派单（toolDisallowlist，机制层掐死
  * 「主席替会议派工单」）。
- */
-export interface CouncilModerationRuntimeCommand extends RuntimeCommandBase {
+ */export interface CouncilModerationRuntimeCommand extends RuntimeCommandBase {
   readonly branchGeneration: number;
   readonly mode: "council-moderation";
   readonly source: "agent_work_order_batch_qc";
@@ -245,6 +263,7 @@ export type RuntimeCommand =
   | WorkOrderRuntimeCommand
   | WorkOrderReceiptRuntimeCommand
   | WorkOrderBatchQcRuntimeCommand
+  | WorkOrderConsolidationRuntimeCommand
   | CouncilModerationRuntimeCommand
   | ControlOnlyTurnRuntimeCommand;
 
