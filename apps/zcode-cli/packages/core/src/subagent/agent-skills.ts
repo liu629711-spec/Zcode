@@ -13,6 +13,7 @@
 
 import { basename, join } from "node:path";
 import type { FileSystemPort } from "@zcode/contracts";
+import { neutralizeEnvelopeTags } from "./work-order.js";
 
 /** 技能卡目录名（随身柜下的固定子目录）。 */
 export const AGENT_SKILLS_DIR_NAME = "skills";
@@ -168,4 +169,124 @@ export function buildWorkOrderDebriefText(input: {
     "禁止沉淀：环境性失败（没装的包、没配的凭据）、对工具的负面断言（「X 工具是坏的」）、一次性任务的过程流水账——这些不是本事。",
     "实在没有值得沉淀的，就只回复「无事可记」四个字，不要硬凑。",
   ].join("\n");
+}
+
+// ── 派单自动触发（学习沉淀 v1.5）：接活时对任务正文现读现匹配 ──────────
+// 索引是会话开局冻结的（保 prefix cache），代价有二：①模型可能没把任务和索引
+// 对上号；②本轮复盘刚写的卡要下个会话才进索引。派单时对任务正文现读技能册、
+// 命中卡整卡带上——两个代价一次收掉。参照件核对：Hermes skill_utils.py:761 与
+// 我们 v1 同款索引披露、无按单匹配；Claude Code 的 Skill 工具与我们的 Read
+// 路径同效——这刀是补自己的天花板，不是抄谁。
+
+/** 单卡正文注入上限：超限截断并标注，完整卡仍在文件里可 Read。 */
+export const TASK_MATCHED_SKILL_CHAR_CAP = 2_000;
+/** 单张工单最多自动带几张卡（命中再多也只带前三，防信封无界膨胀）。 */
+export const TASK_MATCHED_SKILL_MAX_CARDS = 3;
+
+/**
+ * 任务正文命中哪些卡。无分词库不做语义，召回靠三层字面信号（宁带勿漏——
+ * 漏了功能看着就是死的；误命中由「至多带三张」与卡内容本身兜底）：
+ * ①卡名整体出现在任务里（最强信号）；②slug 大小写不敏感出现；③卡名里的
+ * 中文二字窗（「周报写作」→ 周报/报写/写作）任一出现在任务里——老板说
+ * 「写个周报」也要能对上「周报写作」这张卡。description 自由文本不参与
+ * （没有分段器，误召回更吵）；单字名不参与（到处误命中）。
+ */
+export function selectTaskMatchedSkills(input: {
+  taskText: string;
+  cards: readonly AgentSkillCard[];
+  maxCards?: number;
+}): AgentSkillCard[] {
+  const task = input.taskText;
+  if (task.trim().length === 0 || input.cards.length === 0) return [];
+  const max = input.maxCards ?? TASK_MATCHED_SKILL_MAX_CARDS;
+  const lowered = task.toLowerCase();
+  const nameHitsTask = (name: string): boolean => {
+    const cleaned = name.trim();
+    if (cleaned.length < 2) return false;
+    if (lowered.includes(cleaned.toLowerCase())) return true;
+    // 中文二字窗只对汉字段开窗（混排名里的 ascii 段会产生垃圾窗）。
+    for (const run of cleaned.match(/[\u4e00-\u9fff]{2,}/g) ?? []) {
+      for (let i = 0; i + 2 <= run.length; i++) {
+        if (lowered.includes(run.slice(i, i + 2))) return true;
+      }
+    }
+    return false;
+  };
+  const hits: AgentSkillCard[] = [];
+  for (const card of input.cards) {
+    const byName = nameHitsTask(card.name);
+    const bySlug =
+      card.slug.length >= 2 &&
+      lowered.includes(card.slug.toLowerCase()) &&
+      card.slug !== card.name.trim();
+    if (byName || bySlug) {
+      hits.push(card);
+      if (hits.length >= max) break;
+    }
+  }
+  return hits;
+}
+
+/**
+ * 命中卡正文块（拼进工单信封 </work-order> 之后、压轴执行要求之前——与评审
+ * 要求同一槽位：标签内原文会被事件面当任务正文透出，里面不能掺指令的纪律
+ * 照旧；卡正文里的同形信封标签一律中和，防伪造信封边界）。
+ */
+export function buildTaskMatchedSkillsPrompt(input: {
+  skillsRoot: string;
+  matches: ReadonlyArray<AgentSkillCard & { content: string }>;
+}): string | undefined {
+  if (input.matches.length === 0) return undefined;
+  const lines: string[] = [
+    "本单命中你的技能册，下面整卡附上（照卡办事；截断的卡用 Read 打开完整文件）：",
+  ];
+  for (const card of input.matches) {
+    const path = join(input.skillsRoot, `${card.slug}.md`);
+    const content = neutralizeEnvelopeTags(card.content).trim();
+    const body =
+      content.length > TASK_MATCHED_SKILL_CHAR_CAP
+        ? `${content.slice(0, TASK_MATCHED_SKILL_CHAR_CAP)}…（卡过长已截断，完整内容用 Read 打开：${path}）`
+        : content;
+    lines.push(`### ${card.name}（${path}）`, body);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * 现读技能册 → 命中卡正文块。册子不存在/读不了=无命中（读路径不现造目录，
+ * D25 口径）；单卡坏掉跳过。每单都现读（不缓存）——新写的卡下一单就生效。
+ */
+export async function loadTaskMatchedSkillsPrompt(input: {
+  fileSystemPort: FileSystemPort | undefined;
+  personalNotebookRoot: string;
+  taskText: string;
+}): Promise<string | undefined> {
+  if (!input.fileSystemPort) return undefined;
+  const skillsRoot = resolveAgentSkillsRoot(input.personalNotebookRoot);
+  let fileNames: string[];
+  try {
+    const listing = await input.fileSystemPort.listDirectory({ path: skillsRoot });
+    fileNames = (listing.entries ?? [])
+      .map((entry) => entry.name)
+      .filter((name) => typeof name === "string" && name.toLowerCase().endsWith(".md"));
+  } catch {
+    return undefined;
+  }
+  const matches: Array<AgentSkillCard & { content: string }> = [];
+  for (const fileName of fileNames.sort()) {
+    if (matches.length >= TASK_MATCHED_SKILL_MAX_CARDS) break;
+    try {
+      const content = (
+        await input.fileSystemPort.readTextFile({ path: join(skillsRoot, fileName) })
+      ).content;
+      const card = parseSkillCard({ fileName, content });
+      if (!card) continue;
+      if (selectTaskMatchedSkills({ taskText: input.taskText, cards: [card] }).length > 0) {
+        matches.push({ ...card, content });
+      }
+    } catch {
+      // 单卡坏掉跳过。
+    }
+  }
+  return buildTaskMatchedSkillsPrompt({ skillsRoot, matches });
 }

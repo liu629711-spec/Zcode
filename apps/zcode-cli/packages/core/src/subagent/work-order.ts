@@ -189,10 +189,14 @@ function buildCouncilSeatEnvelopeText(envelope: AgentWorkOrderEnvelope, task: st
  * 与 task-notification 同一家族：不走 <system-reminder> 包装，正文自证来源。
  * 任务正文里出现的同形关闭标签一律中和，防伪造信封边界。
  */
-export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): string {
+export function buildWorkOrderEnvelopeText(
+  envelope: AgentWorkOrderEnvelope,
+  options?: { skillsAppendix?: string },
+): string {
   const task = neutralizeEnvelopeTags(envelope.task);
   // 圆桌会席位单（真会议）：信封带 councilId 即按发言口味组装（与 review 互斥——
-  // 席位单不设 batchId/batchTitle 也不设 review，编排侧保证）。
+  // 席位单不设 batchId/batchTitle 也不设 review，编排侧保证）；技能卡也不掺
+  // （席位单的材料面由会议编排管）。
   if (envelope.councilId) {
     return buildCouncilSeatEnvelopeText(envelope, task);
   }
@@ -217,6 +221,11 @@ export function buildWorkOrderEnvelopeText(envelope: AgentWorkOrderEnvelope): st
       "3. 理由分条讲事实（指出具体文件、行为或复现步骤），不写空评。",
       "4. 必须给一条「最不放心的地方」：哪怕结论是通过，也要说出你最担心的一点。",
     );
+  }
+  // 派单自动触发（学习沉淀 v1.5）：接活时命中的技能卡整卡带上。槽位与评审要求
+  // 同款（标签外、压轴前）；调用方现读现匹配后传入，无命中/评审单/席位单不传。
+  if (options?.skillsAppendix) {
+    lines.push(options.skillsAppendix);
   }
   lines.push(
     // 桌子铁规矩（2026-10-02 真机实证：弱模型把 PRD 产出写进老板家目录的绝对路径）

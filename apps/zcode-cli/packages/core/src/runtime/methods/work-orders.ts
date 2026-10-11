@@ -18,6 +18,7 @@ import {
 } from "../../subagent/work-order.js";
 import {
   buildWorkOrderDebriefText,
+  loadTaskMatchedSkillsPrompt,
   resolveAgentSkillsRoot,
 } from "../../subagent/agent-skills.js";
 import { resolveAgentMemoryRoot } from "@zcode/shared/node";
@@ -25,6 +26,25 @@ import type { MemoryRuntimeConfig } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { isStaleBranchRuntimeCommand } from "./runtime-command-generation.js";
 import { beginForegroundExecution, finishForegroundExecution } from "./runtime-command-queue.js";
+
+/**
+ * 本人随身柜根（与 context.ts 技能索引注入同一门控与路径）：persona + 记忆开 +
+ * 存储根齐备才有；没有随身柜=undefined（没有技能册可言）。派单自动触发与复盘
+ * 轮定位共用这一份判定，不各写一遍门控。
+ */
+function resolveOwnPersonalNotebookRoot(runtime: AgentRuntimeInternal): string | undefined {
+  const persona = runtime.config.projectAgentPersona;
+  const memory = runtime.config.memory as MemoryRuntimeConfig | undefined;
+  return persona && memory?.enabled === true && memory.use !== false && memory.storageRoot
+    ? resolveAgentMemoryRoot({
+        agentName: persona.name,
+        ...(persona.agentId ? { agentId: persona.agentId } : {}),
+        scope: "user",
+        storageRoot: memory.storageRoot,
+        workspaceRoot: runtime.workspaceRoot,
+      })
+    : undefined;
+}
 
 export interface EnqueueAgentWorkOrderResult {
   /** started = 空闲即刻成轮；queued = 目标忙，已按既有消息排队。投递成功 ≠ 已处理。 */
@@ -55,7 +75,22 @@ export async function enqueueAgentWorkOrder(
   }
   const workOrderId = input.envelope.workOrderId;
   const inputId = `${WORK_ORDER_INPUT_ID_PREFIX}${workOrderId}`;
-  const text = buildWorkOrderEnvelopeText(input.envelope);
+  // 派单自动触发（学习沉淀 v1.5）：接活时对任务正文现读技能册、命中卡整卡带上。
+  // 索引是开局冻结的——这一步顺带把"本轮新写的卡下个会话才生效"收成"下一单就
+  // 生效"。评审单豁免（只评审不动手）；圆桌席位单不带（材料面由会议编排管）。
+  // 现读现匹配（每单不缓存），册子读不了=无命中=信封与从前逐字一致。
+  const skillsAppendix =
+    input.envelope.review === true || input.envelope.councilId
+      ? undefined
+      : await loadTaskMatchedSkillsPrompt({
+          fileSystemPort: this.fileSystemPort,
+          personalNotebookRoot: resolveOwnPersonalNotebookRoot(this) ?? "",
+          taskText: input.envelope.task,
+        });
+  const text = buildWorkOrderEnvelopeText(
+    input.envelope,
+    skillsAppendix ? { skillsAppendix } : undefined,
+  );
   const delivery: EnqueueAgentWorkOrderResult["delivery"] = this.hasActiveOrQueuedTurnWork()
     ? "queued"
     : "started";
@@ -196,24 +231,12 @@ export async function runWorkOrderCommand(
     const displayTask = command.envelope.task.trim();
     // 复盘技能册定位（成功/失败两路共用）：评审单豁免（只评审不动手，没有过程
     // 可学）；没有随身柜（记忆关闭/非驻场）就没有落笔的地方，同样跳过。
-    const debriefSkillsRoot =
-      command.envelope.review !== true
-        ? (() => {
-            const persona = this.config.projectAgentPersona;
-            const memory = this.config.memory as MemoryRuntimeConfig | undefined;
-            return persona && memory?.enabled === true && memory.use !== false && memory.storageRoot
-              ? resolveAgentSkillsRoot(
-                  resolveAgentMemoryRoot({
-                    agentName: persona.name,
-                    ...(persona.agentId ? { agentId: persona.agentId } : {}),
-                    scope: "user",
-                    storageRoot: memory.storageRoot,
-                    workspaceRoot: this.workspaceRoot,
-                  }),
-                )
-              : undefined;
-          })()
-        : undefined;
+    // 门控与路径收敛到 resolveOwnPersonalNotebookRoot（派单自动触发同一份判定）。
+    const debriefNotebookRoot =
+      command.envelope.review !== true ? resolveOwnPersonalNotebookRoot(this) : undefined;
+    const debriefSkillsRoot = debriefNotebookRoot
+      ? resolveAgentSkillsRoot(debriefNotebookRoot)
+      : undefined;
     let mainTurnError: unknown;
     try {
       await this.executeTurnCommand(command.text, undefined, {
