@@ -1614,6 +1614,10 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.sortByUpdated": "更新时间",
   "workspaceSidebar.expandAllGroups": "展开全部",
   "workspaceSidebar.collapseAllGroups": "收起全部",
+  // 待你拍板（跨任务待批聚合 2026-10-12）：员工提问/待批准的跨会话门口。
+  "workspaceSidebar.pendingApprovals.title": "待你拍板",
+  "workspaceSidebar.pendingApprovals.hint":
+    "有员工在等你回答问题或批准操作，点一下就到现场",
   "workspaceSidebar.searchTasks": "搜索任务",
   "workspaceSidebar.searchTasksPlaceholder": "搜索任务...",
   "workspaceSidebar.searchArchivedTasksPlaceholder": "搜索归档任务...",

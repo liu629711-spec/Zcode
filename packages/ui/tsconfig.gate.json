@@ -24,6 +24,7 @@
     "test/assetPreview.test.ts",
     "test/assetTryPrompt.test.ts",
     "test/assetReferenceMessage.test.ts",
-    "test/codePreviewTheme.test.ts"
+    "test/codePreviewTheme.test.ts",
+    "test/workspacePendingApprovals.test.ts"
   ]
 }

@@ -138,6 +138,10 @@ import {
 } from "@/WorkspaceSidebar/taskGroupTogglePresentation.js";
 import { WorkspacePurposeSection } from "@/WorkspaceSidebar/WorkspacePurposeSection.js";
 import {
+  collectPendingApprovalItems,
+  WorkspacePendingApprovalsSection,
+} from "@/WorkspaceSidebar/PendingApprovalsSection.js";
+import {
   useOpenProjectAgentChat,
   useWorkspaceProjectAgents,
   WorkspaceProjectAgentCreateDialog,
@@ -923,6 +927,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     visibleLimitByWorkspaceKey: workspaceTaskVisibleLimitByKey,
     defaultVisibleLimit: WORKSPACE_TASK_PAGE_SIZE,
   });
+  // 待你拍板（跨任务待批聚合 2026-10-12）：任务行上的 pendingInteraction/活性计数
+  // 求和归口。只看已加载的分页窗口——挂着提问的会话必在最近活跃的窗口里；
+  // 分页外的远端陈年单不在册（ponytail：真出现再放宽 limit）。
+  const pendingApprovalItems = useMemo(
+    () => collectPendingApprovalItems(workspaceTaskLists.groups),
+    [workspaceTaskLists.groups],
+  );
   const workspaceTaskGroupByKey = useMemo(
     () =>
       new Map(
@@ -1881,6 +1892,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               style={workspaceScrollMaskStyle}
             >
               {workspaceTaskToolbar()}
+              <WorkspacePendingApprovalsSection
+                items={pendingApprovalItems}
+                onSelectTask={handleTaskRowSelect}
+              />
               {shouldShowPinnedTasks ? (
                 // 归档切换主任务区时不应隐藏 pinned。
                 // pinned 是全局置顶区，归档态保持置顶区可见。

@@ -1730,6 +1730,10 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.sortByUpdated": "Updated",
   "workspaceSidebar.expandAllGroups": "Expand all",
   "workspaceSidebar.collapseAllGroups": "Collapse all",
+  // Pending-approvals aggregation (2026-10-12): one door for asks & approvals.
+  "workspaceSidebar.pendingApprovals.title": "Waiting for you",
+  "workspaceSidebar.pendingApprovals.hint":
+    "An agent is waiting for your answer or approval — click to jump to it",
   "workspaceSidebar.searchTasks": "Search tasks",
   "workspaceSidebar.searchTasksPlaceholder": "Search tasks...",
   "workspaceSidebar.searchArchivedTasksPlaceholder": "Search archived tasks...",
