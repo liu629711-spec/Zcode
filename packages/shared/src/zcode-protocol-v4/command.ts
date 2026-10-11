@@ -298,6 +298,20 @@ export const commandPayloadSchemas = {
   teamPlanDiscard: z.object({
     planId: z.string().trim().min(1).max(64),
   }),
+  // 圆桌会控场（人工控场批）：暂停=冻结下一轮派单与推进（进行中的席位发言自然
+  // 跑完），恢复时 core 立即自查推进一次。非输入类命令，幂等（重放同值无副作用），
+  // 终态会议 core 内自行忽略。councilId = 会议台账 id（席位回执轮头 originMeta 同源）。
+  councilPause: z.object({
+    councilId: z.string().trim().min(1).max(128),
+    paused: z.boolean(),
+  }),
+  // 插话：老板的话作为材料注入下一轮席位信封（未点名全体可见；点名只进被点
+  // 席位）。点名解析在 UI（席位模型有员工名），core 只认座位号。
+  councilInterject: z.object({
+    councilId: z.string().trim().min(1).max(128),
+    text: z.string().trim().min(1).max(4000),
+    targetSeatIndexes: z.array(z.number().int().nonnegative()).max(32).optional(),
+  }),
 } as const;
 
 export type CommandType = keyof typeof commandPayloadSchemas;
@@ -510,6 +524,17 @@ export const commandResultSchema = z.discriminatedUnion("type", [
     // teamPlanDiscard ACK（批3b）：草案已作废。
     type: z.literal("teamPlanDiscard"),
     planId: z.string().min(1),
+  }),
+  z.object({
+    // councilPause ACK（人工控场批）：暂停旗已落会议台账（恢复时 core 已自查推进一次）。
+    type: z.literal("councilPause"),
+    paused: z.boolean(),
+  }),
+  z.object({
+    // councilInterject ACK：插话已入账，随下一轮席位信封下发；targetedSeats =
+    // 点名席位数（0 = 全体可见）。
+    type: z.literal("councilInterject"),
+    targetedSeats: z.number().int().nonnegative(),
   }),
   z.object({
     // restart discarded 过去只返回一个无差别 fault，renderer 无法区分

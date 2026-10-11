@@ -13,6 +13,7 @@ import { sessionMgmtHandlers } from "./session-mgmt.js";
 import { selectionSideSessionHandlers } from "./selection-side-session.js";
 import { assistantFeedbackHandlers } from "./assistant-feedback.js";
 import { teamBoardHandlers } from "./team-board.js";
+import { councilControlHandlers } from "./council-controls.js";
 
 export const NATIVE_HANDLERS = {
   ...sessionFlowHandlers,
@@ -27,4 +28,5 @@ export const NATIVE_HANDLERS = {
   ...assistantFeedbackHandlers,
   ...agentWorkOrderHandlers,
   ...teamBoardHandlers,
+  ...councilControlHandlers,
 } as const;
