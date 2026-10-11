@@ -2187,7 +2187,12 @@ export function SessionPane({
     async (
       agent: string,
       task: string,
-      options?: { batchId?: string; batchTitle?: string; review?: boolean },
+      options?: {
+        batchId?: string;
+        batchTitle?: string;
+        review?: boolean;
+        isolation?: "worktree";
+      },
     ): Promise<"started" | "queued"> => {
       if (!sessionId) {
         // 草稿还没有归属会话：回执没有归还地址，先发一条消息把会话建起来。
@@ -2202,6 +2207,7 @@ export function SessionPane({
             ...(options?.batchId ? { batchId: options.batchId } : {}),
             ...(options?.batchTitle ? { batchTitle: options.batchTitle } : {}),
             ...(options?.review ? { review: true } : {}),
+            ...(options?.isolation ? { isolation: options.isolation } : {}),
           },
           sessionId,
         }),
@@ -2231,7 +2237,9 @@ export function SessionPane({
                   ? intl.formatMessage({ id: "chat.mention.agents.dispatchRateLimited" })
                   : reasonCode === "guard.agentWorkOrderCost"
                     ? intl.formatMessage({ id: "chat.mention.agents.dispatchCostBreaker" })
-                    : fallback,
+                    : reasonCode === "guard.agentWorkOrderIsolation"
+                      ? intl.formatMessage({ id: "chat.mention.agents.dispatchIsolationFailed" })
+                      : fallback,
       );
     },
     [intl, sendCommand, sessionId],

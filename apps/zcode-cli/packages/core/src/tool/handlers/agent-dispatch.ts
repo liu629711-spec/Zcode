@@ -118,6 +118,8 @@ const agentDispatchHandler: ToolHandler = async (input, context) => {
     // 返修链挂点（团队看板批2）：评审单点名它审的工单 id。
     ...(parsed.reviews === undefined ? {} : { reviews: parsed.reviews }),
     ...(parsed.review === true ? { review: true } : {}),
+    // 隔离执行（任务隔离批）：透传端口，端口负责建/收隔离仓。
+    ...(parsed.isolation === undefined ? {} : { isolation: parsed.isolation }),
     sourceSessionId: context.sessionId,
   });
   const deliveryNote = result.held
@@ -208,6 +210,8 @@ export const agentDispatchToolEntry: ToolEntry = {
       "Starting or messaging other sessions is ONLY this tool. Never spawn the zcode CLI in Bash (--prompt/-p/--resume/...) to run a task in another or a fresh session - that creates an untracked side session outside the product, the command is blocked for confirmation, and reporting it as success is wrong.",
       "A successful call only means the work order was accepted (queued if the target is busy). The final answer arrives as a separate receipt; do not claim the task is done.",
       "Never call AgentDispatch from a turn that was itself started by an agent work order; nesting is not allowed.",
+      // 隔离执行（任务隔离批）：用户怕员工动他手头的文件时点隔离。
+      "When the user asks for a task to run isolated from their current changes (「隔离执行」/「在独立环境里做，别动我的文件」/ 'run it isolated' / 'use a separate worktree'), pass isolation=worktree: the order runs in a dedicated git worktree and its changes merge back automatically when the receipt arrives. Do not set it on your own initiative for ordinary tasks.",
       // 评审会（2026-10-02）：用户要多人评/把关 → 同批 2~3 张评审单，评审人不能是
       // 做活的人本人；合议由系统自动开，派单方只对单张回执简短回应，别抢在合议前
       // 自己写总结。评审单尽量点名对口员工（无工牌的匿名评审是兜底，且必须给 title、

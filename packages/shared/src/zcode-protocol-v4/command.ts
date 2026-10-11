@@ -272,6 +272,9 @@ export const commandPayloadSchemas = {
     // 评审单重派透传（2026-10-07）：失败卡「重派这单」把原单 review 标记原样带回，
     // 重派收口才不会把合议口味退化成普通质检（评审会批交接项）。
     review: z.boolean().optional(),
+    // 隔离执行（任务隔离批 2026-10-11）：worktree = 员工在独立 git 工作室干活，
+    // 不碰主工作区文件；交活后自动提交并合并回主工作区，合不动时工作室原样保留。
+    isolation: z.enum(["worktree"]).optional(),
   }),
   renameSession: z.object({ title: z.string() }),
   deleteSession: z.object({}),

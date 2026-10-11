@@ -25,6 +25,7 @@ import type {
 } from "./server-types.js";
 import type { ProtocolAgentDispatchPortDeps } from "./agent-dispatch-port.js";
 import { runTeamSchedulerAfterReceipt } from "./team-scheduler.js";
+import { finalizeTaskWorktree } from "./worktree-ops.js";
 
 /**
  * 回执链对端口依赖的窄视图：只需要「发起方不在场时冷恢复」这一件事；
@@ -180,13 +181,36 @@ export function scheduleWorkOrderReceiptRelay(
     const outcomeWithDebrief = debriefExpected
       ? { ...finalOutcome, debriefExpected: true }
       : finalOutcome;
-    void deliverWorkOrderReceipt(context, deps, {
-      envelope: input.envelope,
-      agentName: input.agentName,
-      ...(input.agentId ? { agentId: input.agentId } : {}),
-      targetSessionId: input.targetRecord.app.sessionId,
-      outcome: outcomeWithDebrief,
-    }).catch((error) => {
+    // 隔离仓收尾（任务隔离批 2026-10-11）：completed 终态才提交+合并回主工作区，
+    // 结果一行随回执；failed/cancelled 现场原样保留（半成品可能正是排查线索），
+    // 工作室路径在派单台账 payload.envelope.worktree 里可查。收尾失败只带话不挡回执。
+    const deliverWithWorktreeFinalize = async (): Promise<void> => {
+      let receiptOutcome = outcomeWithDebrief;
+      const worktree = input.envelope.worktree;
+      if (worktree && receiptOutcome.status === "completed") {
+        const finalize = await finalizeTaskWorktree(worktree, {
+          commitMessage: `zcode-task(${input.envelope.workOrderId}): ${input.envelope.task
+            .slice(0, 72)
+            .replace(/\s+/g, " ")}`,
+        }).catch((error: unknown): { note?: string } => ({
+          note: `隔离工作室收尾失败：${error instanceof Error ? error.message : String(error)}`,
+        }));
+        if (finalize.note) {
+          receiptOutcome = {
+            ...receiptOutcome,
+            response: `${receiptOutcome.response}\n\n${finalize.note}`,
+          };
+        }
+      }
+      await deliverWorkOrderReceipt(context, deps, {
+        envelope: input.envelope,
+        agentName: input.agentName,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        targetSessionId: input.targetRecord.app.sessionId,
+        outcome: receiptOutcome,
+      });
+    };
+    void deliverWithWorktreeFinalize().catch((error) => {
       context.logger?.warn("Failed to deliver agent work order receipt", {
         errorMessage: error instanceof Error ? error.message : String(error),
         event: "agent_work_order_receipt.delivery_failed",

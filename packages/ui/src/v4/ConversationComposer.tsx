@@ -429,7 +429,11 @@ interface ConversationComposerProps {
    * 派单（D29/D5）：@ 菜单智能体行「派单」直达宿主派单能力（v4 dispatchAgentWorkOrder）。
    * 实现在宿主 pane（sendCommand 归宿）；resolve = 受理口径，reject 的 Error.message 已是人话。
    */
-  onDispatchAgentWorkOrder?: (agent: string, task: string) => Promise<"started" | "queued">;
+  onDispatchAgentWorkOrder?: (
+    agent: string,
+    task: string,
+    options?: { isolation?: "worktree" },
+  ) => Promise<"started" | "queued">;
   /** 把当前输入文本上抛给父组件（editUserQuery 用 composer 文本作 newText）。 */
   onTextChange?: (text: string) => void;
   /** queue 撤回 admission 读取的完整 composer 占用态；附件包含上传中状态。 */

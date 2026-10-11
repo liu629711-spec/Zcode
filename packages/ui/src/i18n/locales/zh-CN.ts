@@ -5765,6 +5765,12 @@ const zhCN: Record<string, string> = {
   "chat.mention.agents.dispatchCostBreaker":
     "花费熔断：最近一小时的用量已到安全线，先消化手头回执，稍后再派",
   "chat.mention.agents.dispatchSelfTarget": "不能给自己派活：你就是当前对话。要换人请直接点名。",
+  // 隔离执行（任务隔离批 2026-10-11）：独立工作室干活，交活自动合并回来。
+  "chat.mention.agents.dispatchIsolation": "隔离执行",
+  "chat.mention.agents.dispatchIsolationHint":
+    "在独立的工作室（git 分支）里干活，不碰你正在改的文件；交活后自动合并回来",
+  "chat.mention.agents.dispatchIsolationFailed":
+    "开不了隔离工作室：需要工作区是个 git 仓库（先在项目里 git init 或换个 git 项目）",
   "chat.agentWorkOrder.card.fromTitle": "来自 {name} 的任务",
   "chat.agentWorkOrder.card.fromUserName": "用户",
   "chat.agentWorkOrder.card.fromUserTitle": "来自用户的任务",

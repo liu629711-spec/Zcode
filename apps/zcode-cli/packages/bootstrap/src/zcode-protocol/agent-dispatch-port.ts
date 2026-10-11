@@ -30,11 +30,17 @@ import {
   resolveWorkOrderTarget,
   type AgentProfile,
 } from "@zcode/core";
+import type { AgentWorkOrderWorktree } from "@zcode/contracts";
+import { buildWorkspaceRef } from "./workspace.js";
 import { scheduleWorkOrderReceiptRelay } from "./agent-dispatch-receipts.js";
 import {
   computeCompletedTaskKeys,
   type TeamBoardInputRow,
 } from "./team-board.js";
+import {
+  createTaskWorktree,
+  seedTaskWorktreeMemory,
+} from "./worktree-ops.js";
 
 import {
   ProtocolRequestError,
@@ -76,6 +82,8 @@ export const AGENT_WORK_ORDER_GUARDS = {
   rate: "guard.agentWorkOrderRate",
   /** 成本熔断（audit A 盲区 2026-10-05）：全进程近窗 token 花费超安全线。 */
   cost: "guard.agentWorkOrderCost",
+  /** 隔离仓开不了（任务隔离批 2026-10-11）：工作区不是 git 仓库 / 与 dependsOn 互斥。 */
+  isolation: "guard.agentWorkOrderIsolation",
 } as const;
 
 // ── 派单频控 / 成本熔断（audit A 盲区，2026-10-05 老板拍板）────────────
@@ -254,6 +262,9 @@ export async function findLatestPersonaSessionId(
     if (!personaMatchesProfile(session.persona, profile)) continue;
     // workspace 护栏：目录前缀判据（同 UI），别的 workspace 的同名档案会话不参与。
     if (!normalizeWorkspacePath(session.directory).startsWith(normalizedWorkspace)) continue;
+    // 隔离仓工位不参与复用（任务隔离批 2026-10-11）：隔离单的会话住在主仓
+    // .git/zcode-worktrees/ 下（前缀判据罩得住），但正经工位永远不该住在 .git 里。
+    if (/[\\/]\.git[\\/]/.test(session.directory)) continue;
     // 工位必须落在侧栏看得见的会话上（2026-10-03 真机实证）：划词侧聊
     // （selection_side_chat）等工作会话不进主会话列表，续用它们=给员工造
     // 隐身工位——frontend-design 的席位发言交活都正常，卡片却永远找不到。
@@ -447,7 +458,51 @@ export function createProtocolAgentDispatchPort(
 
       let targetSessionId: string | undefined;
       let createdSession = false;
-      if (namedProfile && input.newSession !== true) {
+      // 隔离仓（任务隔离批 2026-10-11）：开在本仓 .git/zcode-worktrees/<workOrderId>
+      // 的独立 git worktree，员工会话的工作区换成隔离仓（或仓里对应子目录）——文件
+      // 工具/Bash 的目录语义全部随 workingDirectory 走，主工作区文件一个不碰。信封
+      // 带 worktree 登记（落台账 + 回执链收尾合并）。isolation 单永不复用旧工位：
+      // 旧工位的工作区就是主工作区，续用它隔离就成了空话，一律新建。
+      let effectiveWorkspaceRef: ZCodeWorkspaceRef = ownRecord.workspace;
+      let worktreeInfo: AgentWorkOrderWorktree | undefined;
+      const isolation = input.isolation === "worktree";
+      if (isolation) {
+        // 隔离与批内依赖互斥：持派单不投递也不接回执线，没有终态就没有收尾时机，
+        // 工作室会永远挂着。让派单方二选一。
+        if (input.dependsOn?.length) {
+          throw agentWorkOrderGuardError(
+            AGENT_WORK_ORDER_GUARDS.isolation,
+            "isolation=worktree cannot be combined with depends_on in this version: pick one - an isolated standalone order, or a batch dependency.",
+          );
+        }
+        try {
+          const worktree = await createTaskWorktree({
+            workspacePath: ownRecord.workspace.workspacePath,
+            workOrderId: envelope.workOrderId,
+          });
+          worktreeInfo = {
+            path: worktree.worktreePath,
+            branch: worktree.branch,
+            workspacePath: ownRecord.workspace.workspacePath,
+            baseCommit: worktree.baseCommit,
+          };
+          envelope.worktree = worktreeInfo;
+          effectiveWorkspaceRef = buildWorkspaceRef({
+            workspacePath: worktree.sessionWorkspacePath,
+          });
+          // project 作用域随身柜的种子（学习沉淀连续性，worktree-ops 头注）。
+          await seedTaskWorktreeMemory({
+            sourceWorkspacePath: ownRecord.workspace.workspacePath,
+            targetWorkspacePath: worktree.sessionWorkspacePath,
+          });
+        } catch (error) {
+          throw agentWorkOrderGuardError(
+            AGENT_WORK_ORDER_GUARDS.isolation,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+      if (namedProfile && input.newSession !== true && !isolation) {
         targetSessionId = context.deps.sessionStore
           ? await findLatestPersonaSessionId(
               context.deps.sessionStore,
@@ -476,7 +531,7 @@ export function createProtocolAgentDispatchPort(
         const created = await deps.createPersonaSessionRecord(
           namedProfile
             ? {
-                workspace: ownRecord.workspace,
+                workspace: effectiveWorkspaceRef,
                 persona: {
                   ...profileToPersona(namedProfile),
                   ...(birthModel.modelSelection === undefined
@@ -485,7 +540,7 @@ export function createProtocolAgentDispatchPort(
                 },
               }
             : {
-                workspace: ownRecord.workspace,
+                workspace: effectiveWorkspaceRef,
                 ...(birthModel.modelSelection === undefined
                   ? {}
                   : { model: birthModel.modelSelection }),

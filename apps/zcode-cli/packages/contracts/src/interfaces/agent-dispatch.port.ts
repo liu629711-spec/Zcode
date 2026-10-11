@@ -23,8 +23,7 @@ export const WORK_ORDER_INPUT_ID_PREFIX = "workorder-";
 export const WORK_ORDER_DEBRIEF_INPUT_ID_PREFIX = "agent-work-order-debrief:";
 
 /** 工单信封：随工单正文落库 + 提交入参携带（谁派的单、派给谁的会话、干什么）。 */
-export interface AgentWorkOrderEnvelope {
-  /** 本次工单身份（uuid）；目标唤醒轮的 inputId 以 `workorder-<id>` 派生。 */
+export interface AgentWorkOrderEnvelope {  /** 本次工单身份（uuid）；目标唤醒轮的 inputId 以 `workorder-<id>` 派生。 */
   workOrderId: string;
   /** 发起方智能体工号；发起方不是驻场智能体（用户会话直接派单）时缺席。 */
   fromAgentId?: string;
@@ -81,6 +80,25 @@ export interface AgentWorkOrderEnvelope {
   councilSeatIndex?: number;
   /** 本单席位攻角；回执据此把发言归位到圆桌卡的对应席位。 */
   councilSeatLens?: CouncilSeatLensId;
+  /**
+   * 隔离仓（任务隔离批 2026-10-11）：本单在独立 git worktree 里干——员工会话的
+   * 工作区是隔离仓（或仓里对应子目录），主工作区文件一个不碰。终态 completed 后
+   * 回执链收尾：提交全部改动 → 合并回主工作区 → 收走隔离仓；合不动（冲突/主区
+   * 未保存改动挡路）时隔离仓原样保留并随回执告知。缺席 = 直接在主工作区干活。
+   */
+  worktree?: AgentWorkOrderWorktree;
+}
+
+/** 隔离仓登记（随信封落台账：崩溃后账上可查、人工可寻）。 */
+export interface AgentWorkOrderWorktree {
+  /** 隔离仓根目录（git worktree 的检出根，位于主仓 `.git/zcode-worktrees/` 下）。 */
+  path: string;
+  /** 本单专用分支；合并回主工作区的凭据。 */
+  branch: string;
+  /** 主工作区路径（合并回去的地方）。 */
+  workspacePath: string;
+  /** 开仓时的基准提交；收尾时与分支尖端比对判断"员工有没有自己提交过"。 */
+  baseCommit: string;
 }
 
 export interface AgentDispatchRequest {
@@ -122,6 +140,12 @@ export interface AgentDispatchRequest {
   repairRound?: number;
   /** 评审单标记（工具输入 review 逐字透传）；缺席 = 普通施工单。 */
   review?: boolean;
+  /**
+   * 隔离执行（任务隔离批 2026-10-11）：worktree = 目标在本单专用的独立 git
+   * worktree 里干活（干净工作室，不复用旧工位、不碰主工作区文件），交活后自动
+   * 提交并合并回主工作区。要求工作区是 git 仓库，否则派单拒绝（guard.isolation）。
+   */
+  isolation?: "worktree";
   /**
    * 圆桌会席位单（真会议）：由召集方**代码**在用户批准后逐席直派（CouncilConvene
    * 工具路径不把会议编排交给模型）——席位解析、round 推进与收票都在代码侧，模型

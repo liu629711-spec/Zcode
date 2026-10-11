@@ -6019,6 +6019,12 @@ const enUS: Record<string, string> = {
     "Spending breaker tripped: the last hour's usage hit the safety line — review existing receipts first, then retry",
   "chat.mention.agents.dispatchSelfTarget":
     "You cannot assign a task to yourself — this conversation is you. Name another agent to hand it off.",
+  // Isolated execution (task-isolation batch, 2026-10-11): private studio, auto-merge on completion.
+  "chat.mention.agents.dispatchIsolation": "Isolated",
+  "chat.mention.agents.dispatchIsolationHint":
+    "Work in a private studio (a git worktree) without touching your current files; changes merge back automatically when the order completes",
+  "chat.mention.agents.dispatchIsolationFailed":
+    "Cannot open an isolated studio: the workspace must be a git repository (run git init in the project or pick a git project)",
   "chat.agentWorkOrder.card.fromTitle": "Task from {name}",
   "chat.agentWorkOrder.card.fromUserName": "You",
   "chat.agentWorkOrder.card.fromUserTitle": "Task from you",

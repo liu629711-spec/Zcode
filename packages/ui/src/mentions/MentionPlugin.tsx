@@ -80,7 +80,11 @@ interface MentionPluginProps {
    * dispatchAgentWorkOrder 命令直达宿主派单能力，resolve 值是受理口径
    * （started=空闲即刻成轮；queued=目标忙已排队）。rejected 时 Error.message 已是人话。
    */
-  onDispatchAgentWorkOrder?: (agentName: string, task: string) => Promise<"started" | "queued">;
+  onDispatchAgentWorkOrder?: (
+    agentName: string,
+    task: string,
+    options?: { isolation?: "worktree" },
+  ) => Promise<"started" | "queued">;
 }
 
 function getWrappedMentionIndex(currentIndex: number, delta: number, itemCount: number): number {
@@ -266,6 +270,8 @@ export function MentionPlugin({
   const [dispatchDraft, setDispatchDraft] = useState<{ agentName: string } | null>(null);
   const [dispatchTask, setDispatchTask] = useState("");
   const [dispatchPending, setDispatchPending] = useState(false);
+  // 隔离执行（任务隔离批）：勾上 = 员工在独立 git 工作室干活，交活自动合并回来。
+  const [dispatchIsolated, setDispatchIsolated] = useState(false);
 
   const closeMentionPanel = useCallback(() => {
     dismissedSignatureRef.current = null;
@@ -278,6 +284,7 @@ export function MentionPlugin({
     setDispatchDraft(null);
     setDispatchTask("");
     setDispatchPending(false);
+    setDispatchIsolated(false);
     requestAnimationFrame(() => {
       editor.focus();
     });
@@ -299,7 +306,11 @@ export function MentionPlugin({
     }
     setDispatchPending(true);
     try {
-      const delivery = await onDispatchAgentWorkOrder(dispatchDraft.agentName, task);
+      const delivery = await onDispatchAgentWorkOrder(
+        dispatchDraft.agentName,
+        task,
+        dispatchIsolated ? { isolation: "worktree" } : undefined,
+      );
       toast(
         intl.formatMessage(
           {
@@ -324,6 +335,7 @@ export function MentionPlugin({
   }, [
     closeDispatchDraft,
     dispatchDraft,
+    dispatchIsolated,
     dispatchPending,
     dispatchTask,
     intl,
@@ -910,7 +922,9 @@ export function MentionPlugin({
           agentName={dispatchDraft.agentName}
           task={dispatchTask}
           pending={dispatchPending}
+          isolated={dispatchIsolated}
           onTaskChange={setDispatchTask}
+          onIsolatedChange={setDispatchIsolated}
           onSubmit={submitDispatchDraft}
           onCancel={closeDispatchDraft}
         />

@@ -15,14 +15,19 @@ export function AgentWorkOrderDraftCard({
   agentName,
   task,
   pending,
+  isolated,
   onTaskChange,
+  onIsolatedChange,
   onSubmit,
   onCancel,
 }: {
   agentName: string;
   task: string;
   pending: boolean;
+  /** 隔离执行（任务隔离批）：勾上 = 在独立 git 工作室干活，交活自动合并回来。 */
+  isolated: boolean;
   onTaskChange: (task: string) => void;
+  onIsolatedChange: (isolated: boolean) => void;
   onSubmit: () => void;
   onCancel: () => void;
 }) {
@@ -91,7 +96,23 @@ export function AgentWorkOrderDraftCard({
         }}
       />
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-ui-xs text-foreground-subtlest">
+        <label
+          className="flex min-w-0 cursor-pointer items-center gap-1.5 text-ui-xs text-foreground-subtle"
+          title={intl.formatMessage({ id: "chat.mention.agents.dispatchIsolationHint" })}
+        >
+          <input
+            type="checkbox"
+            checked={isolated}
+            disabled={pending}
+            data-testid="agent-work-order-draft-isolated"
+            className="size-3.5 shrink-0 accent-[var(--color-ring)]"
+            onChange={(event) => onIsolatedChange(event.target.checked)}
+          />
+          <span className="truncate">
+            {intl.formatMessage({ id: "chat.mention.agents.dispatchIsolation" })}
+          </span>
+        </label>
+        <span className="hidden min-w-0 truncate text-ui-xs text-foreground-subtlest sm:inline">
           {intl.formatMessage({ id: "chat.mention.agents.dispatchHint" })}
         </span>
         <button

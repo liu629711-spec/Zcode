@@ -93,6 +93,13 @@ export const AgentDispatchInputSchema = z
       .describe(
         "For REVIEW orders: the workOrderId of the order whose deliverable this review judges. With the team auto-flow switch on, a 不通过 verdict automatically dispatches a repair order back to the original worker and re-reviews the fix (max 2 rounds) instead of leaving the failure entirely to the user.",
       ),
+    // 隔离执行（任务隔离批 2026-10-11）：目标在独立 git worktree 干活，交活自动合并。
+    isolation: z
+      .enum(["worktree"])
+      .optional()
+      .describe(
+        "Run this order ISOLATED from the user's working files: the target works in a dedicated git worktree (a private studio) instead of the shared workspace, and its changes are committed and merged back into the workspace automatically when the order completes. Use when the user asks not to touch their current changes (「在隔离环境里做」/ 'isolate it' / 'don't touch my working files'). Requires the workspace to be a git repository; cannot be combined with depends_on.",
+      ),
   })
   .strict()
   // 未点名（对齐稿 §三 #2/#5）：不点名员工只允许派生新普通会话；否则无落点。

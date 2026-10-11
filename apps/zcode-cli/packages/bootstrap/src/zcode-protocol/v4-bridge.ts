@@ -1388,6 +1388,8 @@ export function createConversationV4Gateway(
         ...(input.batchTitle ? { batchTitle: input.batchTitle } : {}),
         // 评审单重派透传（2026-10-07）：review 原样进端口，重派收口不改口味。
         ...(input.review === true ? { review: true } : {}),
+        // 隔离执行（任务隔离批 2026-10-11）：原样进端口，开仓/收仓都在端口里。
+        ...(input.isolation ? { isolation: input.isolation } : {}),
         sourceSessionId: sessionId,
       });
     },
