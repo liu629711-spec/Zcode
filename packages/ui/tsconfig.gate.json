@@ -25,6 +25,7 @@
     "test/assetTryPrompt.test.ts",
     "test/assetReferenceMessage.test.ts",
     "test/codePreviewTheme.test.ts",
-    "test/workspacePendingApprovals.test.ts"
+    "test/workspacePendingApprovals.test.ts",
+    "test/taskNotificationOrchestrator.test.ts"
   ]
 }

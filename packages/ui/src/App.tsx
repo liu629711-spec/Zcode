@@ -62,7 +62,7 @@ import {
 import { useTaskSidePaneMemoryBridge } from "@/app-shell/useTaskSidePaneMemoryBridge.js";
 import { resolveAppWorkspaceRpcTarget } from "@/app-shell/workspaceRpcTarget.js";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
-import { useWorkspaceTerminalTaskNotifications } from "@/hooks/useTaskNotifications.js";
+import { useWorkspaceTaskNotifications } from "@/hooks/useTaskNotifications.js";
 import { useOffPeakTaskNotifications } from "@/hooks/useOffPeakTaskNotifications.js";
 import type { AppProps, WorkspaceMainView } from "@/app-shell/types.js";
 import type {
@@ -274,15 +274,6 @@ export function App({
   });
   const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
   const notificationEnabled = useZCodeStore((s) => s.notificationEnabled);
-  useWorkspaceTerminalTaskNotifications({
-    workspacePath: workspaceAbsPath,
-    ...(workspaceIdentity ? { workspaceIdentity } : {}),
-    ...(workspaceRemoteSessionId ? { endpointKey: workspaceRemoteSessionId } : {}),
-    enabled: notificationEnabled,
-    rpcReady: workspaceRpcReady,
-    platform,
-    formatMessage: intl.formatMessage,
-  });
   // 闲时任务终态/等确认通知：仅桌面本地链路，main 进程按 status:taskId 去重多窗口重复。
   useOffPeakTaskNotifications({
     offPeakTaskService: services.offPeakTaskService,
@@ -408,6 +399,25 @@ export function App({
     [tabs],
   );
   const commandCenterWorkspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
+  // 通知中枢（2026-10-12）：终态 + 阻塞交互边沿覆盖**全部本地 workspace**（此前
+  // 只有活跃 workspace 的终态、正看着的那个会话的提问在响）。远程 shard 的会话
+  // 留待二期（订阅要走 endpoint 的 agent service）。settings 的「通知」总开关继续管一切。
+  const notificationScopes = useMemo(
+    () =>
+      commandCenterWorkspaceTabs
+        .filter((tab) => !tab.remoteTarget && !tab.remoteSessionId)
+        .map((tab) => ({
+          workspacePath: tab.workspacePath,
+          ...(tab.workspaceIdentity ? { workspaceIdentity: tab.workspaceIdentity } : {}),
+        })),
+    [commandCenterWorkspaceTabs],
+  );
+  useWorkspaceTaskNotifications({
+    scopes: notificationScopes,
+    enabled: notificationEnabled,
+    platform,
+    formatMessage: intl.formatMessage,
+  });
   const activeSidePaneTab = useMemo(() => getActiveSidePaneTab(sidePaneState), [sidePaneState]);
   const isBrowserOpen = activeSidePaneTab?.type === "browser";
   const isGitOpen = activeSidePaneTab?.type === "git";

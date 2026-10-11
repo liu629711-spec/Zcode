@@ -158,3 +158,48 @@ export function collectPendingInteractionNotificationPayloads(params: {
       return payload ? [payload] : [];
     });
 }
+
+/**
+ * 跨会话提问/待批准通知（通知中枢 2026-10-12）：sessions-index 摘要只带队首一条
+ * 的轻量身份（kind/toolName，不带问题正文），正文用会话标题拼。与快照版
+ * （collectPendingInteractionNotificationPayloads，正文有真实 prompt）并存：
+ * 快照版只在"你正看着的那个会话"挂载，摘要版覆盖其余所有会话——同一单两边都
+ * 发时 requestId 相同，主进程 3 秒去重窗兜住重复。
+ */
+export function collectSessionInteractionNotificationPayloads(params: {
+  summaries: readonly SessionSummary[];
+  seenInteractionIds: ReadonlySet<string>;
+  formatMessage: FormatMessage;
+}): TaskNotificationPayload[] {
+  const payloads: TaskNotificationPayload[] = [];
+  for (const session of params.summaries) {
+    const interaction = session.pendingInteraction;
+    if (!interaction || params.seenInteractionIds.has(interaction.interactionId)) {
+      continue;
+    }
+    if (interaction.kind === "permission") {
+      payloads.push({
+        taskId: session.sessionId,
+        status: "permission_request",
+        requestId: interaction.interactionId,
+        title: params.formatMessage({ id: "notification.permissionRequired" }),
+        body: taskTitleBody(session.title, "notification.permissionRequired", params.formatMessage),
+      });
+      continue;
+    }
+    // userInput：ExitPlanMode 计划批准有专属词表；其余按"等你输入"。
+    const isPlanApproval = interaction.toolName === "ExitPlanMode";
+    payloads.push({
+      taskId: session.sessionId,
+      status: "elicitation_request",
+      requestId: interaction.interactionId,
+      title: params.formatMessage({
+        id: isPlanApproval ? "notification.planApprovalRequired" : "notification.inputRequired",
+      }),
+      body: isPlanApproval
+        ? params.formatMessage({ id: "notification.planApprovalBody" })
+        : taskTitleBody(session.title, "notification.inputRequired", params.formatMessage),
+    });
+  }
+  return payloads;
+}
